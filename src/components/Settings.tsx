@@ -1,7 +1,9 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { THEMES } from "../themes";
 import { useSettings, DEFAULT_FONT, type CursorStyle } from "../stores/settings";
 import { useUi } from "../stores/ui";
+import { useUpdater } from "../stores/updater";
 
 const FONTS: { label: string; value: string }[] = [
   { label: "Cascadia Code", value: DEFAULT_FONT },
@@ -28,6 +30,30 @@ export function Settings() {
   const setCursorStyle = useSettings((s) => s.setCursorStyle);
   const cursorBlink = useSettings((s) => s.cursorBlink);
   const setCursorBlink = useSettings((s) => s.setCursorBlink);
+
+  const phase = useUpdater((s) => s.phase);
+  const detail = useUpdater((s) => s.detail);
+  const update = useUpdater((s) => s.update);
+  const checkNow = useUpdater((s) => s.checkNow);
+  const install = useUpdater((s) => s.install);
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => {});
+  }, []);
+  const statusText =
+    phase === "checking"
+      ? "checking…"
+      : phase === "available"
+        ? `v${update?.version} available`
+        : phase === "downloading"
+          ? detail
+          : phase === "uptodate"
+            ? "you're on the latest version"
+            : phase === "error"
+              ? detail
+              : "—";
 
   return (
     <div className="modal-overlay" onMouseDown={close}>
@@ -119,6 +145,34 @@ export function Settings() {
               >
                 <span className="toggle-knob" />
               </button>
+            </div>
+          </div>
+
+          <div className="set-section">
+            <div className="set-label">Updates</div>
+            <div className="set-row">
+              <span className="set-key">Current version</span>
+              <span className="set-val">{version || "…"}</span>
+            </div>
+            <div className="set-row">
+              <span className="set-key">Status</span>
+              <span className="set-val">{statusText}</span>
+            </div>
+            <div className="set-row">
+              <span className="set-key" />
+              {phase === "available" ? (
+                <button className="btn primary set-btn" onClick={() => void install()}>
+                  Restart &amp; update to {update?.version}
+                </button>
+              ) : (
+                <button
+                  className="btn set-btn"
+                  onClick={() => void checkNow()}
+                  disabled={phase === "checking" || phase === "downloading"}
+                >
+                  {phase === "checking" ? "Checking…" : "Check for updates"}
+                </button>
+              )}
             </div>
           </div>
         </div>

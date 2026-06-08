@@ -1,65 +1,37 @@
-import { useEffect, useState } from "react";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { useEffect } from "react";
+import { useUpdater } from "../stores/updater";
 
-// checks GitHub releases once on launch; if there's a newer signed build, offers a one-click update
+const RECHECK_MS = 6 * 60 * 60 * 1000; // re-check every 6h while the app stays open
+
 export function Updater() {
-  const [update, setUpdate] = useState<Update | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+  const phase = useUpdater((s) => s.phase);
+  const detail = useUpdater((s) => s.detail);
+  const update = useUpdater((s) => s.update);
+  const install = useUpdater((s) => s.install);
+  const dismiss = useUpdater((s) => s.dismiss);
 
+  // check once on launch, then quietly on an interval
   useEffect(() => {
-    let cancelled = false;
-    check()
-      .then((u) => {
-        if (!cancelled && u?.available) setUpdate(u);
-      })
-      .catch(() => {
-        /* offline / no release yet — just don't show anything */
-      });
-    return () => {
-      cancelled = true;
-    };
+    const run = () => void useUpdater.getState().checkNow();
+    run();
+    const id = setInterval(run, RECHECK_MS);
+    return () => clearInterval(id);
   }, []);
 
-  if (!update) return null;
-
-  const run = async () => {
-    setBusy(true);
-    setStatus("downloading…");
-    try {
-      let total = 0;
-      let got = 0;
-      await update.downloadAndInstall((e) => {
-        if (e.event === "Started") {
-          total = e.data.contentLength ?? 0;
-        } else if (e.event === "Progress") {
-          got += e.data.chunkLength;
-          setStatus(total ? `downloading ${Math.round((got / total) * 100)}%` : "downloading…");
-        } else if (e.event === "Finished") {
-          setStatus("installing…");
-        }
-      });
-      await relaunch();
-    } catch (err) {
-      console.error("update failed:", err);
-      setStatus("update failed — try again later");
-      setBusy(false);
-    }
-  };
+  // the toast only surfaces when there's actually something to act on
+  if (phase !== "available" && phase !== "downloading") return null;
+  const busy = phase === "downloading";
 
   return (
     <div className="updater">
       <span className="updater-dot" />
-      <span className="updater-text">
-        {busy ? status : `Update ${update.version} available`}
-      </span>
+      <span className="updater-text">{busy ? detail : `Update ${update?.version} available`}</span>
       {!busy && (
         <>
-          <button className="updater-btn" onClick={run}>
+          <button className="updater-btn" onClick={() => void install()}>
             Restart &amp; update
           </button>
-          <button className="updater-x" title="Later" onClick={() => setUpdate(null)}>
+          <button className="updater-x" title="Later" onClick={dismiss}>
             ×
           </button>
         </>
