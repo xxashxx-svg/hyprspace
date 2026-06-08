@@ -1,0 +1,39 @@
+/* GRAPHITE design tokens — near-black control room, one cool Iceline accent. */
+:root {
+  color-scheme: dark;
+
+  --bg-base: #121116;
+  --surface-1: #18171e;
+  --surface-2: #1e1d26;
+  --surface-3: #292731;
+  --bg-terminal: #141318;
+
+  --accent: #8b5cf6;
+  --accent-hover: #a78bfa;
+  --accent-dim: rgba(139, 92, 246, 0.16);
+  --on-accent: #ffffff;
+
+  --text-1: #e7e9ee;
+  --text-2: #a3a7b3;
+  --text-3: #6c7080;
+
+  --border-1: rgba(255, 255, 255, 0.07);
+  --border-2: rgba(255, 255, 255, 0.12);
+
+  --status-idle: #6c7080;
+  --status-busy: #e0a23f;
+  --status-awaiting: #3fb6e0;
+  --status-ok: #46c98a;
+  --status-error: #e5484d;
+  --status-claim: #b06ae0;
+
+  --radius-1: 6px;
+  --radius-2: 10px;
+  --radius-3: 14px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}

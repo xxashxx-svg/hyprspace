@@ -1,0 +1,255 @@
+import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { makeTerminal, termTheme } from "../terminal/createTerminal";
+import { useSettings } from "../stores/settings";
+import { useWorkspaces } from "../stores/workspace";
+import { createPty, writePty, resizePty, killPty, claudeHasHistory } from "../api";
+
+// on relaunch a claude pane resumes the latest conversation in its folder (--continue), so it comes
+// back to whatever you were last working on there — even if you manually /resume'd a different chat.
+// brand-new panes (and folders with no history yet) just start fresh.
+function withContinue(cmd: string): string {
+  if (/--session-id|--resume|--continue|(^|\s)-[cr](\s|$)/.test(cmd)) return cmd;
+  return cmd.replace(/^claude\b/, "claude --continue");
+}
+
+interface Props {
+  sessionId: string;
+  cwd: string;
+  command?: string;
+  started?: boolean;
+  active: boolean;
+  focused: boolean;
+  isMaxed: boolean;
+  onFocus: () => void;
+  onClose: () => void;
+  onToggleMax: () => void;
+  onGripDown: (e: RPointerEvent<HTMLDivElement>) => void;
+  onGripMove: (e: RPointerEvent<HTMLDivElement>) => void;
+  onGripUp: (e: RPointerEvent<HTMLDivElement>) => void;
+}
+
+export function TerminalPane({
+  sessionId,
+  cwd,
+  command,
+  started,
+  active,
+  focused,
+  isMaxed,
+  onFocus,
+  onClose,
+  onToggleMax,
+  onGripDown,
+  onGripMove,
+  onGripUp,
+}: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const [alive, setAlive] = useState(true);
+  const themeId = useSettings((s) => s.theme);
+  const fontSize = useSettings((s) => s.fontSize);
+  const fontFamily = useSettings((s) => s.fontFamily);
+  const cursorStyle = useSettings((s) => s.cursorStyle);
+  const cursorBlink = useSettings((s) => s.cursorBlink);
+
+  const isClaude = !!command && command.includes("claude");
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const term = makeTerminal(isClaude);
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(el);
+    try {
+      const webgl = new WebglAddon();
+      term.loadAddon(webgl);
+      webgl.onContextLoss(() => webgl.dispose());
+    } catch {
+      /* canvas/DOM fallback */
+    }
+    fit.fit();
+    termRef.current = term;
+    fitRef.current = fit;
+
+    let disposed = false;
+    const enc = new TextEncoder();
+    const dataDisp = term.onData((d) => {
+      void writePty(sessionId, enc.encode(d));
+    });
+
+    createPty(
+      { id: sessionId, cwd, args: [], cols: term.cols, rows: term.rows },
+      {
+        onData: (bytes) => {
+          if (!disposed) term.write(bytes);
+        },
+        onControl: (c) => {
+          if (!disposed && c.type === "exit") {
+            setAlive(false);
+            term.write(`\r\n\x1b[38;5;245m[process exited: ${c.code}]\x1b[0m\r\n`);
+          }
+        },
+      },
+    )
+      .then(async () => {
+        if (!command) return;
+        // a returning claude pane resumes its folder's latest chat (if any); otherwise start fresh
+        let toRun = command;
+        if (isClaude && started) {
+          const hasHist = await claudeHasHistory(cwd).catch(() => false);
+          if (hasHist) toRun = withContinue(command);
+        }
+        setTimeout(() => {
+          if (disposed) return;
+          void writePty(sessionId, enc.encode(toRun + "\r"));
+          if (isClaude && !started) useWorkspaces.getState().markStarted(sessionId);
+        }, 700);
+      })
+      .catch((e) => term.write(`\r\n\x1b[31mfailed to start: ${e}\x1b[0m\r\n`));
+
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (el.clientWidth === 0 || el.clientHeight === 0) return;
+        try {
+          fit.fit();
+          void resizePty(sessionId, term.cols, term.rows);
+        } catch {
+          /* not ready */
+        }
+      });
+    });
+    ro.observe(el);
+
+    return () => {
+      disposed = true;
+      if (raf) cancelAnimationFrame(raf);
+      ro.disconnect();
+      dataDisp.dispose();
+      void killPty(sessionId);
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // re-fit when revealed or when maximize toggles the pane size
+  useEffect(() => {
+    if (!active) return;
+    const id = requestAnimationFrame(() => {
+      const term = termRef.current;
+      const fit = fitRef.current;
+      if (!term || !fit) return;
+      try {
+        fit.fit();
+        void resizePty(sessionId, term.cols, term.rows);
+      } catch {
+        /* not ready */
+      }
+      term.scrollToBottom();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [active, isMaxed, sessionId]);
+
+  useEffect(() => {
+    if (focused) termRef.current?.focus();
+  }, [focused]);
+
+  // live theme change → re-skin the terminal
+  useEffect(() => {
+    const t = termRef.current;
+    if (!t) return;
+    t.options.theme = termTheme();
+    try {
+      t.clearTextureAtlas?.();
+      t.refresh(0, t.rows - 1);
+    } catch {
+      /* renderer not ready */
+    }
+  }, [themeId]);
+
+  // live font change → re-fit + resize the pty
+  useEffect(() => {
+    const t = termRef.current;
+    const f = fitRef.current;
+    if (!t) return;
+    t.options.fontFamily = fontFamily;
+    t.options.fontSize = fontSize;
+    try {
+      f?.fit();
+      void resizePty(sessionId, t.cols, t.rows);
+    } catch {
+      /* not ready */
+    }
+  }, [fontFamily, fontSize, sessionId]);
+
+  // live cursor change
+  useEffect(() => {
+    const t = termRef.current;
+    if (!t) return;
+    t.options.cursorStyle = cursorStyle;
+    t.options.cursorBlink = isClaude ? false : cursorBlink;
+  }, [cursorStyle, cursorBlink, isClaude]);
+
+  const folder = cwd.split(/[\\/]/).filter(Boolean).pop();
+
+  // right-click = paste (xterm.paste handles bracketed paste so multi-line input won't pre-submit)
+  const handlePaste = (e: RMouseEvent) => {
+    e.preventDefault();
+    readText()
+      .then((text) => {
+        if (text) termRef.current?.paste(text);
+      })
+      .catch(() => {});
+  };
+
+  return (
+    <div className={`terminal-pane ${focused ? "focused" : ""}`} onMouseDown={onFocus}>
+      <div
+        className="pane-header"
+        onPointerDown={onGripDown}
+        onPointerMove={onGripMove}
+        onPointerUp={onGripUp}
+      >
+        <span className="pane-head-left">
+          <span
+            className="pane-status"
+            style={{ background: alive ? "var(--status-ok)" : "var(--status-error)" }}
+          />
+          <span className="pane-title">{isClaude ? "claude" : "terminal"}</span>
+          {folder && <span className="pane-cwd">· {folder}</span>}
+        </span>
+        <span className="pane-head-right">
+          <button
+            className="pane-btn"
+            title={isMaxed ? "Restore" : "Maximize"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onToggleMax}
+          >
+            {isMaxed ? "❐" : "▢"}
+          </button>
+          <button
+            className="pane-btn close"
+            title="Close pane"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </span>
+      </div>
+      <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
+    </div>
+  );
+}
