@@ -518,6 +518,7 @@ body {
 }
 .terminal-pane {
   flex: 1;
+  position: relative;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -594,6 +595,70 @@ body {
 }
 .pane-term .xterm-viewport {
   background: transparent !important;
+}
+
+/* ---- terminal search bar (Ctrl+Shift+F) ---- */
+.term-search {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-2);
+  animation: searchIn 0.14s var(--ease);
+}
+@keyframes searchIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.term-search-input {
+  flex: 1;
+  min-width: 100px;
+  max-width: 280px;
+  padding: 4px 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font-size: 12px;
+  outline: none;
+}
+.term-search-input:focus {
+  border-color: var(--accent);
+}
+.term-search-btn {
+  padding: 4px 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.term-search-btn:hover {
+  color: var(--text-1);
+  border-color: var(--border-1);
+}
+.term-search-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.term-search-btn.close {
+  margin-left: auto;
 }
 
 /* ---- Empty state ---- */

@@ -30,6 +30,8 @@ export function Settings() {
   const setCursorStyle = useSettings((s) => s.setCursorStyle);
   const cursorBlink = useSettings((s) => s.cursorBlink);
   const setCursorBlink = useSettings((s) => s.setCursorBlink);
+  const copyOnSelect = useSettings((s) => s.copyOnSelect);
+  const setCopyOnSelect = useSettings((s) => s.setCopyOnSelect);
 
   const phase = useUpdater((s) => s.phase);
   const detail = useUpdater((s) => s.detail);
@@ -142,6 +144,17 @@ export function Settings() {
                 className={`toggle ${cursorBlink ? "on" : ""}`}
                 onClick={() => setCursorBlink(!cursorBlink)}
                 aria-pressed={cursorBlink}
+              >
+                <span className="toggle-knob" />
+              </button>
+            </div>
+
+            <div className="set-row">
+              <span className="set-key">Copy on select</span>
+              <button
+                className={`toggle ${copyOnSelect ? "on" : ""}`}
+                onClick={() => setCopyOnSelect(!copyOnSelect)}
+                aria-pressed={copyOnSelect}
               >
                 <span className="toggle-knob" />
               </button>

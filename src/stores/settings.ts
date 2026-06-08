@@ -9,12 +9,14 @@ interface SettingsState {
   fontFamily: string;
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
+  copyOnSelect: boolean;
   hydrated: boolean;
   setTheme: (id: string) => void;
   setFontSize: (n: number) => void;
   setFontFamily: (f: string) => void;
   setCursorStyle: (c: CursorStyle) => void;
   setCursorBlink: (b: boolean) => void;
+  setCopyOnSelect: (b: boolean) => void;
   hydrate: (partial: Partial<SettingsState>) => void;
   markHydrated: () => void;
 }
@@ -27,6 +29,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   fontFamily: DEFAULT_FONT,
   cursorStyle: "bar",
   cursorBlink: true,
+  copyOnSelect: false,
   hydrated: false,
 
   setTheme: (id) => {
@@ -37,6 +40,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   setFontFamily: (f) => set({ fontFamily: f }),
   setCursorStyle: (c) => set({ cursorStyle: c }),
   setCursorBlink: (b) => set({ cursorBlink: b }),
+  setCopyOnSelect: (b) => set({ copyOnSelect: b }),
 
   hydrate: (partial) => {
     set({ ...partial, hydrated: true });
