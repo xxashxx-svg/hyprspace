@@ -38,7 +38,7 @@ if ($bump -ne 'none') {
 }
 
 if (-not (Test-Path "$sigDir\hyprspace.key")) { throw "signing key not found at $sigDir\hyprspace.key" }
-$env:TAURI_SIGNING_PRIVATE_KEY = "$sigDir\hyprspace.key"
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content "$sigDir\hyprspace.key" -Raw).Trim()
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (Get-Content "$sigDir\password.txt" -Raw).Trim()
 
 Write-Host "==> Building signed installer (a few minutes)..." -ForegroundColor Cyan
