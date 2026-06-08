@@ -15,6 +15,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-start-resize-dragging",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "core:app:allow-version"
   ]
 }
