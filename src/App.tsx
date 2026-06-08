@@ -153,8 +153,16 @@ export default function App() {
       if (!s.hydrated) return;
       clearTimeout(t);
       t = setTimeout(() => {
-        const { theme, fontSize, fontFamily, cursorStyle, cursorBlink } = useSettings.getState();
-        const blob = JSON.stringify({ theme, fontSize, fontFamily, cursorStyle, cursorBlink });
+        const { theme, fontSize, fontFamily, cursorStyle, cursorBlink, copyOnSelect } =
+          useSettings.getState();
+        const blob = JSON.stringify({
+          theme,
+          fontSize,
+          fontFamily,
+          cursorStyle,
+          cursorBlink,
+          copyOnSelect,
+        });
         if (blob === lastSig) return;
         lastSig = blob;
         void saveState("settings", blob).catch((e) => console.error("settings save failed:", e));

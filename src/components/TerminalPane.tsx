@@ -3,11 +3,13 @@ import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "r
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { SearchAddon } from "@xterm/addon-search";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { makeTerminal, termTheme } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { createPty, writePty, resizePty, killPty, claudeHasHistory } from "../api";
+import { TerminalSearch } from "./TerminalSearch";
 
 // on relaunch a claude pane resumes the latest conversation in its folder (--continue), so it comes
 // back to whatever you were last working on there — even if you manually /resume'd a different chat.
@@ -51,7 +53,9 @@ export function TerminalPane({
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
   const [alive, setAlive] = useState(true);
+  const [showSearch, setShowSearch] = useState(false);
   const themeId = useSettings((s) => s.theme);
   const fontSize = useSettings((s) => s.fontSize);
   const fontFamily = useSettings((s) => s.fontFamily);
@@ -66,8 +70,39 @@ export function TerminalPane({
 
     const term = makeTerminal(isClaude);
     const fit = new FitAddon();
+    const search = new SearchAddon();
     term.loadAddon(fit);
+    term.loadAddon(search);
+    searchRef.current = search;
     term.open(el);
+
+    // Ctrl+Shift+F search · Ctrl+C copies selection (else SIGINT) · Ctrl+V / Ctrl+Shift+V paste
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || !e.ctrlKey || e.altKey) return true;
+      if (e.shiftKey && e.code === "KeyF") {
+        setShowSearch((p) => !p);
+        return false;
+      }
+      if (e.code === "KeyC") {
+        if (term.hasSelection()) {
+          const sel = term.getSelection();
+          if (sel) void writeText(sel);
+          term.clearSelection();
+          return false;
+        }
+        return !e.shiftKey; // nothing selected: plain Ctrl+C interrupts; Ctrl+Shift+C no-ops
+      }
+      if (e.code === "KeyV") {
+        void readText()
+          .then((t) => {
+            if (t) term.paste(t);
+          })
+          .catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
     try {
       const webgl = new WebglAddon();
       term.loadAddon(webgl);
@@ -83,6 +118,13 @@ export function TerminalPane({
     const enc = new TextEncoder();
     const dataDisp = term.onData((d) => {
       void writePty(sessionId, enc.encode(d));
+    });
+    // copy-on-select (opt-in) — via the Tauri clipboard so it works inside the webview
+    const selDisp = term.onSelectionChange(() => {
+      if (useSettings.getState().copyOnSelect && term.hasSelection()) {
+        const sel = term.getSelection();
+        if (sel) void writeText(sel);
+      }
     });
 
     createPty(
@@ -121,9 +163,11 @@ export function TerminalPane({
       raf = requestAnimationFrame(() => {
         raf = 0;
         if (el.clientWidth === 0 || el.clientHeight === 0) return;
+        const atBottom = term.buffer.active.viewportY === term.buffer.active.baseY;
         try {
           fit.fit();
           void resizePty(sessionId, term.cols, term.rows);
+          if (atBottom) term.scrollToBottom(); // don't fling scroll to the top on a reflow
         } catch {
           /* not ready */
         }
@@ -131,11 +175,47 @@ export function TerminalPane({
     });
     ro.observe(el);
 
+    // Ctrl+scroll zooms the font (persisted, so every pane tracks the same size)
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const cur = useSettings.getState().fontSize;
+      useSettings.getState().setFontSize(cur + (e.deltaY > 0 ? -1 : 1));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+
+    // after sleep/resume or refocus the WebGL atlas can go stale → ghost cursor; invalidate + repaint
+    const redraw = () => {
+      try {
+        term.clearTextureAtlas?.();
+        requestAnimationFrame(() => {
+          try {
+            term.refresh(0, term.rows - 1);
+          } catch {
+            /* not ready */
+          }
+        });
+      } catch {
+        /* not ready */
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") redraw();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", redraw);
+
     return () => {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
+      el.removeEventListener("wheel", onWheel);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", redraw);
       dataDisp.dispose();
+      selDisp.dispose();
+      search.dispose();
+      searchRef.current = null;
       void killPty(sessionId);
       term.dispose();
       termRef.current = null;
@@ -249,6 +329,15 @@ export function TerminalPane({
           </button>
         </span>
       </div>
+      {showSearch && searchRef.current && (
+        <TerminalSearch
+          search={searchRef.current}
+          onClose={() => {
+            setShowSearch(false);
+            termRef.current?.focus();
+          }}
+        />
+      )}
       <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
     </div>
   );
