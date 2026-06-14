@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
+import { Logo } from "./Logo";
 
 const win = getCurrentWindow();
 
@@ -15,7 +16,9 @@ export function Titlebar() {
   return (
     <div className="titlebar" data-tauri-drag-region>
       <div className="tb-left" data-tauri-drag-region>
-        <span className="tb-logo">◆</span>
+        <span className="tb-logo">
+          <Logo size={16} />
+        </span>
         <span className="tb-brand">HyprSpace</span>
       </div>
 

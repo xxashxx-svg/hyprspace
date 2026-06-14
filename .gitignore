@@ -29,3 +29,6 @@ dist-ssr
 
 # local release build artifacts
 release-artifacts/
+
+# intermediate icon raster (regenerate with: node scripts/gen-icon.mjs)
+scripts/logo-1024.png

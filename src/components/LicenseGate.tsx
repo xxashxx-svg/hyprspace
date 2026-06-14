@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { licenseStatus, activateLicense } from "../api";
+import { Logo } from "./Logo";
 
 type Phase = "checking" | "locked" | "ok";
 
@@ -49,7 +50,9 @@ export function LicenseGate({ children }: { children: ReactNode }) {
         </button>
       </div>
       <div className="license-card">
-        <div className="license-logo">◇</div>
+        <div className="license-logo">
+          <Logo size={34} />
+        </div>
         <div className="license-title">HyprSpace</div>
         <div className="license-sub">Enter your license key to activate</div>
         <input
