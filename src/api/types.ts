@@ -23,3 +23,8 @@ export interface PtyHandlers {
   onData: (bytes: Uint8Array) => void;
   onControl?: (c: PtyControl) => void;
 }
+
+export interface LicenseInfo {
+  name: string;
+  issued: string;
+}
