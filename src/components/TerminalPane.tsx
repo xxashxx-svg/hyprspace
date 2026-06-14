@@ -4,7 +4,9 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { makeTerminal, termTheme } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
@@ -73,6 +75,12 @@ export function TerminalPane({
     const search = new SearchAddon();
     term.loadAddon(fit);
     term.loadAddon(search);
+    // ctrl/cmd + click opens links in the system browser, like Windows Terminal.
+    // plain click does nothing so it doesn't fight text selection.
+    const links = new WebLinksAddon((e, uri) => {
+      if (e.ctrlKey || e.metaKey) void openUrl(uri).catch(() => {});
+    });
+    term.loadAddon(links);
     searchRef.current = search;
     term.open(el);
 
@@ -214,6 +222,7 @@ export function TerminalPane({
       window.removeEventListener("focus", redraw);
       dataDisp.dispose();
       selDisp.dispose();
+      links.dispose();
       search.dispose();
       searchRef.current = null;
       void killPty(sessionId);
