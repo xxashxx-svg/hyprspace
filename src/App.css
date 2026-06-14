@@ -531,6 +531,17 @@ body {
 .terminal-pane.focused {
   border-color: var(--accent);
 }
+.terminal-pane {
+  animation: paneIn 0.16s var(--ease);
+}
+@keyframes paneIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 .pane-header {
   height: 26px;
   flex: 0 0 auto;

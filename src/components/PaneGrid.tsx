@@ -3,6 +3,7 @@ import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { TerminalPane } from "./TerminalPane";
 import { pickFolders } from "../api";
+import { closeSession } from "../actions";
 
 const CLAUDE_CMD = "claude --permission-mode auto";
 
@@ -39,7 +40,6 @@ export function PaneGrid() {
   const activeId = useWorkspaces((s) => s.activeId);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const setFocused = useWorkspaces((s) => s.setFocused);
-  const removeSession = useWorkspaces((s) => s.removeSession);
   const reorder = useWorkspaces((s) => s.reorderSessions);
   const addSession = useWorkspaces((s) => s.addSession);
 
@@ -129,7 +129,7 @@ export function PaneGrid() {
                     focused={isActive && focusedSessionId === sess.id}
                     isMaxed={maximizedId === sess.id}
                     onFocus={() => setFocused(sess.id)}
-                    onClose={() => removeSession(w.id, sess.id)}
+                    onClose={() => void closeSession(w.id, sess.id)}
                     onToggleMax={() => toggleMaximized(sess.id)}
                     onGripDown={(e) => {
                       if (e.button !== 0) return;
