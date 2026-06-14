@@ -111,18 +111,28 @@ export function TerminalPane({
       return true;
     });
 
-    try {
-      const webgl = new WebglAddon();
-      term.loadAddon(webgl);
-      webgl.onContextLoss(() => webgl.dispose());
-    } catch {
-      /* canvas/DOM fallback */
-    }
+    let disposed = false;
+    // WebGL renderer with auto-recovery: if the GPU context drops (sleep/wake, driver
+    // reset) re-attach instead of falling back to the slow DOM renderer for good.
+    let webglTries = 0;
+    const loadWebgl = () => {
+      if (disposed || webglTries++ > 3) return;
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          addon.dispose();
+          setTimeout(loadWebgl, 500);
+        });
+        term.loadAddon(addon);
+      } catch {
+        /* canvas/DOM fallback */
+      }
+    };
+    loadWebgl();
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
 
-    let disposed = false;
     const enc = new TextEncoder();
     const dataDisp = term.onData((d) => {
       void writePty(sessionId, enc.encode(d));
