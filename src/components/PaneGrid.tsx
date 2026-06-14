@@ -6,12 +6,27 @@ import { pickFolders } from "../api";
 
 const CLAUDE_CMD = "claude --permission-mode auto";
 
-function gridColumns(n: number): string {
-  if (n <= 1) return "1fr";
-  if (n === 2) return "1fr 1fr";
-  if (n === 3) return "1fr 1fr 1fr";
-  if (n === 4) return "1fr 1fr";
-  return "1fr 1fr 1fr";
+// Tile like the Electron version did: keep rows balanced so a partial last row fills
+// the width instead of leaving a hole (the old 5-pane "3 over a gap"). For 5+ we lay
+// 3 panes per row on a 6-col grid and let a short last row span wider:
+//   last row of 1 → full width, of 2 → halves, of 3 → thirds.
+type GridLayout = { cols: string; span: (i: number) => string | undefined };
+
+function getLayout(n: number): GridLayout {
+  if (n <= 1) return { cols: "1fr", span: () => undefined };
+  if (n === 2) return { cols: "1fr 1fr", span: () => undefined };
+  if (n === 3) return { cols: "1fr 1fr 1fr", span: () => undefined };
+  if (n === 4) return { cols: "1fr 1fr", span: () => undefined };
+  return {
+    cols: "repeat(6, 1fr)",
+    span: (i) => {
+      const rem = n % 3;
+      const lastRowStart = n - (rem === 0 ? 3 : rem);
+      if (i < lastRowStart) return "span 2"; // full rows: three panes, 2 cols each
+      const inLast = n - lastRowStart;
+      return inLast === 1 ? "span 6" : inLast === 2 ? "span 3" : "span 2";
+    },
+  };
 }
 
 function cellSidAt(x: number, y: number): string | null {
@@ -82,16 +97,17 @@ export function PaneGrid() {
         if (w.sessions.length === 0) return null;
         const isActive = w.id === activeId;
         const maxedHere = isActive && !!maximizedId && w.sessions.some((s) => s.id === maximizedId);
+        const layout = getLayout(w.sessions.length);
         return (
           <div
             key={w.id}
             className="pane-grid"
             style={{
-              gridTemplateColumns: maxedHere ? "1fr" : gridColumns(w.sessions.length),
+              gridTemplateColumns: maxedHere ? "1fr" : layout.cols,
               display: isActive ? "grid" : "none",
             }}
           >
-            {w.sessions.map((sess) => {
+            {w.sessions.map((sess, i) => {
               // keep all panes mounted (PTYs alive); hide the non-maxed ones when one is zoomed
               const hidden = maxedHere && sess.id !== maximizedId;
               return (
@@ -99,7 +115,10 @@ export function PaneGrid() {
                   key={sess.id}
                   data-sid={sess.id}
                   className={`pane-cell${dragId === sess.id ? " dragging" : ""}${overId === sess.id ? " drop-over" : ""}`}
-                  style={hidden ? { display: "none" } : undefined}
+                  style={{
+                    ...(hidden ? { display: "none" } : null),
+                    gridColumn: maxedHere ? undefined : layout.span(i),
+                  }}
                 >
                   <TerminalPane
                     sessionId={sess.id}
