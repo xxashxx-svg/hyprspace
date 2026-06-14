@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, type ResizeDirection } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Titlebar } from "./components/Titlebar";
 import { Rail } from "./components/Rail";
 import { PaneGrid } from "./components/PaneGrid";
@@ -16,6 +16,17 @@ import "./styles/tokens.css";
 import "./App.css";
 
 const win = getCurrentWindow();
+
+// @tauri-apps/api declares this union but doesn't export it, so mirror it here
+type ResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
 
 // frameless window → we draw our own edge/corner resize grips.
 // NOTE: no top-edge ("n") grip — it would steal the titlebar's top pixels and block grab-to-move.
