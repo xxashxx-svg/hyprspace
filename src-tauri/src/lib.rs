@@ -1,3 +1,4 @@
+mod license;
 mod persist;
 mod pty;
 
@@ -109,7 +110,9 @@ pub fn run() {
             claude_has_history,
             save_state,
             load_state,
-            backup_state
+            backup_state,
+            license::activate_license,
+            license::license_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
