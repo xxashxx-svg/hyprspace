@@ -50,6 +50,8 @@ export function makeTerminal(isClaude: boolean): Terminal {
     lineHeight: 1.2,
     scrollback: 10000,
     smoothScrollDuration: 80,
+    fastScrollSensitivity: 5,
+    rescaleOverlappingGlyphs: true, // crisper box-drawing / powerline glyphs
     allowProposedApi: true,
     windowsPty,
     theme: termTheme(),
