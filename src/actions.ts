@@ -1,5 +1,6 @@
 // Shared app actions, callable from hotkeys and the command palette.
 // They read stores via getState() so they work outside React render.
+import { ask } from "@tauri-apps/plugin-dialog";
 import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
 import { pickFolders } from "./api";
@@ -26,12 +27,26 @@ async function launchInActive(command?: string) {
 export const newClaude = () => launchInActive(CLAUDE_CMD);
 export const newTerminal = () => launchInActive();
 
+// close a pane; for a running Claude session, confirm first so an agent mid-task
+// isn't killed by a stray Ctrl+Shift+W or misclick. Plain terminals close instantly.
+export async function closeSession(wsId: string, sessionId: string) {
+  const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
+  const sess = ws?.sessions.find((s) => s.id === sessionId);
+  if (!ws || !sess) return;
+  if (sess.command?.includes("claude") && sess.started) {
+    const ok = await ask("This Claude session is running. Close it?", {
+      title: "Close pane",
+      kind: "warning",
+    }).catch(() => true);
+    if (!ok) return;
+  }
+  useWorkspaces.getState().removeSession(wsId, sessionId);
+}
+
 export function closeFocused() {
   const ws = activeWs();
   const fid = useWorkspaces.getState().focusedSessionId;
-  if (ws && fid && ws.sessions.some((s) => s.id === fid)) {
-    useWorkspaces.getState().removeSession(ws.id, fid);
-  }
+  if (ws && fid) void closeSession(ws.id, fid);
 }
 
 export function toggleMaxFocused() {
