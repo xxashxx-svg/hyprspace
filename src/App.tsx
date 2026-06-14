@@ -10,6 +10,8 @@ import { useUi } from "./stores/ui";
 import { useSettings } from "./stores/settings";
 import { Settings } from "./components/Settings";
 import { Updater } from "./components/Updater";
+import { CommandPalette } from "./components/CommandPalette";
+import { Hotkeys } from "./components/Hotkeys";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
 import "./styles/tokens.css";
@@ -234,6 +236,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <Hotkeys />
       <Titlebar />
       <div className="app-body">
         <Rail />
@@ -241,6 +244,7 @@ export default function App() {
       </div>
       <StatusBar />
       <Updater />
+      <CommandPalette />
       {settingsOpen && <Settings />}
       {RESIZE.map(([k, dir]) => (
         <div
