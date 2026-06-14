@@ -36,6 +36,11 @@ export function termTheme(): ITheme {
 // Claude draws its own block cursor; for shell panes we honor the user's cursor settings.
 export function makeTerminal(isClaude: boolean): Terminal {
   const s = useSettings.getState();
+  // On Windows the PTY backend is ConPTY; declaring it lets xterm reconstruct wrapped
+  // lines so scrollback can reflow on resize instead of staying stuck at the old width.
+  const windowsPty = navigator.userAgent.includes("Windows")
+    ? ({ backend: "conpty" } as const)
+    : undefined;
   return new Terminal({
     cursorStyle: s.cursorStyle,
     cursorInactiveStyle: "none",
@@ -46,6 +51,7 @@ export function makeTerminal(isClaude: boolean): Terminal {
     scrollback: 10000,
     smoothScrollDuration: 80,
     allowProposedApi: true,
+    windowsPty,
     theme: termTheme(),
   });
 }
