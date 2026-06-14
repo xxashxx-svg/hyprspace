@@ -596,6 +596,24 @@ body {
 .pane-term .xterm-viewport {
   background: transparent !important;
 }
+/* give xterm a real (non-overlay) scrollbar so it reserves a gutter — otherwise the
+   WebView2 overlay bar paints over the rightmost column once scrollback kicks in. */
+.pane-term .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+.pane-term .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  background-clip: padding-box;
+}
 
 /* ---- terminal search bar (Ctrl+Shift+F) ---- */
 .term-search {
