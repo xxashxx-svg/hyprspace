@@ -51,6 +51,16 @@ export function Titlebar() {
       </div>
 
       <div className="tb-controls">
+        <button
+          className="tb-ctl"
+          title="Review dock — changes & run (Ctrl+Shift+G)"
+          onClick={() => useUi.getState().toggleDock()}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+            <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+            <line x1="10.5" y1="2.5" x2="10.5" y2="13.5" />
+          </svg>
+        </button>
         <button className="tb-ctl" title="Settings" onClick={toggleSettings}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <line x1="2" y1="4.5" x2="14" y2="4.5" />

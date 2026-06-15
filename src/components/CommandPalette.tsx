@@ -31,6 +31,12 @@ export function CommandPalette() {
       { id: "term", label: "New terminal", hint: "Ctrl+Shift+T", run: () => void newTerminal() },
       { id: "close", label: "Close focused pane", hint: "Ctrl+Shift+W", run: closeFocused },
       { id: "max", label: "Maximize / restore pane", hint: "Ctrl+Shift+M", run: toggleMaxFocused },
+      {
+        id: "dock",
+        label: "Toggle review dock — changes & run",
+        hint: "Ctrl+Shift+G",
+        run: () => useUi.getState().toggleDock(),
+      },
       { id: "settings", label: "Open settings", run: () => useUi.getState().toggleSettings() },
     ];
     const spaces: Cmd[] = workspaces.map((w, i) => ({
