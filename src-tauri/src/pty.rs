@@ -71,6 +71,10 @@ impl PtyManager {
         if !cwd.is_empty() {
             cmd.cwd(&cwd);
         }
+        // advertise a color-capable terminal — GUI-launched apps inherit no TERM, so
+        // CLIs (and Claude) suppress color on macOS/Linux without this. Caller env wins.
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
         for (k, v) in &env {
             cmd.env(k, v);
         }
