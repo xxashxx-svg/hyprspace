@@ -23,6 +23,15 @@ export function Hotkeys() {
         e.stopPropagation();
       };
 
+      // Ctrl+K opens the command palette — but NOT while a terminal is focused, where
+      // Ctrl+K is a real terminal key (kill-to-end-of-line); there it passes through.
+      if (!e.shiftKey && !e.altKey && e.code === "KeyK") {
+        if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
+        take();
+        useUi.getState().togglePalette();
+        return;
+      }
+
       if (e.shiftKey) {
         switch (e.code) {
           case "KeyP":

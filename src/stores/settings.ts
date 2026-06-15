@@ -24,7 +24,7 @@ interface SettingsState {
 export const DEFAULT_FONT = '"Cascadia Code", "JetBrains Mono", "Consolas", monospace';
 
 export const useSettings = create<SettingsState>()((set) => ({
-  theme: "obsidian",
+  theme: "mono",
   fontSize: 13,
   fontFamily: DEFAULT_FONT,
   cursorStyle: "bar",

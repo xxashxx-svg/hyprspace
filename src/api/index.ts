@@ -90,6 +90,15 @@ export function detectRunCmd(cwd: string): Promise<string> {
   return invoke("detect_run_cmd", { cwd });
 }
 
+// create an isolated git worktree off the workspace repo; returns its path
+export function worktreeCreate(cwd: string, name: string): Promise<string> {
+  return invoke("worktree_create", { cwd, name });
+}
+
+export function worktreeRemove(cwd: string, path: string): Promise<void> {
+  return invoke("worktree_remove", { cwd, path });
+}
+
 export async function pickFolder(): Promise<string | null> {
   const r = await open({ directory: true, multiple: false });
   return typeof r === "string" ? r : null;

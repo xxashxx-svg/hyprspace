@@ -95,6 +95,72 @@ pub fn git_diff(cwd: String, path: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+#[derive(Serialize)]
+pub struct Worktree {
+    path: String,
+    branch: String,
+}
+
+// Create an isolated worktree off the workspace repo so an agent can work without
+// colliding with others. Worktrees live under ~/.hyprspace/worktrees/<repo>-<branch>
+// (outside the repo, so they don't pollute its own git status).
+#[tauri::command]
+pub fn worktree_create(cwd: String, name: String) -> Result<String, String> {
+    if cwd.is_empty() {
+        return Err("no workspace folder".into());
+    }
+    let root = git(&cwd, &["rev-parse", "--show-toplevel"]).map_err(|_| "not a git repo")?;
+    let root = root.trim();
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    let branch = format!("hs/{}", safe.trim_matches('-'));
+
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let repo_name = Path::new(root)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "repo".into());
+    let wt = Path::new(&home)
+        .join(".hyprspace")
+        .join("worktrees")
+        .join(format!("{repo_name}-{}", branch.replace('/', "-")));
+    let wt = wt.to_string_lossy().to_string();
+
+    git(&cwd, &["worktree", "add", "-b", &branch, &wt, "HEAD"])?;
+    Ok(wt)
+}
+
+#[tauri::command]
+pub fn worktree_remove(cwd: String, path: String) -> Result<(), String> {
+    git(&cwd, &["worktree", "remove", "--force", &path])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn worktree_list(cwd: String) -> Result<Vec<Worktree>, String> {
+    if cwd.is_empty() {
+        return Ok(vec![]);
+    }
+    let out = git(&cwd, &["worktree", "list", "--porcelain"]).unwrap_or_default();
+    let mut res = vec![];
+    let mut path = String::new();
+    for line in out.lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            path = p.to_string();
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            res.push(Worktree {
+                path: path.clone(),
+                branch: b.replace("refs/heads/", ""),
+            });
+        }
+    }
+    Ok(res)
+}
+
 // Best-guess command to run the project (for the Run panel).
 #[tauri::command]
 pub fn detect_run_cmd(cwd: String) -> String {

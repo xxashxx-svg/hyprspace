@@ -117,7 +117,10 @@ pub fn run() {
             license::license_status,
             devtools::git_changes,
             devtools::git_diff,
-            devtools::detect_run_cmd
+            devtools::detect_run_cmd,
+            devtools::worktree_create,
+            devtools::worktree_remove,
+            devtools::worktree_list
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

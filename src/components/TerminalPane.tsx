@@ -11,6 +11,7 @@ import { makeTerminal, termTheme } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { createPty, writePty, resizePty, killPty, claudeHasHistory } from "../api";
+import { appendOutput, dropOutput } from "../terminal/buffers";
 import { TerminalSearch } from "./TerminalSearch";
 
 // on relaunch a claude pane resumes the latest conversation in its folder (--continue), so it comes
@@ -133,7 +134,21 @@ export function TerminalPane({
     termRef.current = term;
     fitRef.current = fit;
 
+    // A pane can open before the bundled webfont finishes loading, so WebGL rasterizes its
+    // glyph atlas with a fallback font → garbled text. Rebuild the atlas once fonts are ready.
+    document.fonts?.ready?.then(() => {
+      if (disposed) return;
+      try {
+        term.clearTextureAtlas?.();
+        fit.fit();
+        term.refresh(0, term.rows - 1);
+      } catch {
+        /* not ready */
+      }
+    });
+
     const enc = new TextEncoder();
+    const dec = new TextDecoder();
     const dataDisp = term.onData((d) => {
       void writePty(sessionId, enc.encode(d));
     });
@@ -149,7 +164,9 @@ export function TerminalPane({
       { id: sessionId, cwd, args: [], cols: term.cols, rows: term.rows },
       {
         onData: (bytes) => {
-          if (!disposed) term.write(bytes);
+          if (disposed) return;
+          term.write(bytes);
+          appendOutput(sessionId, dec.decode(bytes, { stream: true }));
         },
         onControl: (c) => {
           if (!disposed && c.type === "exit") {
@@ -235,6 +252,7 @@ export function TerminalPane({
       links.dispose();
       search.dispose();
       searchRef.current = null;
+      dropOutput(sessionId);
       void killPty(sessionId);
       term.dispose();
       termRef.current = null;
@@ -322,10 +340,7 @@ export function TerminalPane({
         onPointerUp={onGripUp}
       >
         <span className="pane-head-left">
-          <span
-            className="pane-status"
-            style={{ background: alive ? "var(--status-ok)" : "var(--status-error)" }}
-          />
+          {!alive && <span className="pane-status" title="process exited" />}
           <span className="pane-title">{isClaude ? "claude" : "terminal"}</span>
           {folder && <span className="pane-cwd">· {folder}</span>}
         </span>
