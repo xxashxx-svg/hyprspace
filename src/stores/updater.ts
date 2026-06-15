@@ -25,12 +25,6 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
   detail: "",
 
   checkNow: async () => {
-    // we only publish Windows release artifacts; skip the check on macOS/Linux so
-    // source builds don't error against a Windows-only manifest
-    if (typeof navigator !== "undefined" && !navigator.userAgent.includes("Windows")) {
-      set({ phase: "idle", detail: "" });
-      return;
-    }
     const p = get().phase;
     if (p === "checking" || p === "downloading") return;
     set({ phase: "checking", detail: "" });
