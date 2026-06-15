@@ -82,5 +82,10 @@ Write-Host "==> Publishing $tag to $relRepo ..." -ForegroundColor Cyan
 gh release create $tag --repo $relRepo --title "HyprSpace $new" --notes $notes $setup.FullName $latest
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
-Write-Host "==> Done. $tag is live — installed apps auto-update on next launch." -ForegroundColor Green
+# kick off the macOS CI build, which merges the darwin entry into this release's manifest
+Write-Host "==> Triggering macOS CI build for $tag ..." -ForegroundColor Cyan
+gh workflow run release.yml --repo "xxashxx-svg/hyprspace-2" --ref main -f tag=$tag
+if ($LASTEXITCODE -ne 0) { Write-Warning "macOS CI not triggered — run manually: gh workflow run release.yml -f tag=$tag" }
+
+Write-Host "==> Done. $tag is live (Windows). macOS build is queued — it'll add the darwin entry to the manifest shortly." -ForegroundColor Green
 Write-Host "    Installer: $($setup.Name)"
