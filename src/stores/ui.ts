@@ -6,6 +6,8 @@ interface UiState {
   fileDropId: string | null; // session id of the pane a file drag is currently over
   settingsOpen: boolean;
   paletteOpen: boolean;
+  dockOpen: boolean;
+  dockTab: "changes" | "run";
   toggleRail: () => void;
   toggleMaximized: (id: string) => void;
   clearMaximized: () => void;
@@ -13,6 +15,9 @@ interface UiState {
   toggleSettings: () => void;
   togglePalette: () => void;
   setPalette: (b: boolean) => void;
+  toggleDock: () => void;
+  setDock: (b: boolean) => void;
+  setDockTab: (t: "changes" | "run") => void;
 }
 
 export const useUi = create<UiState>()((set) => ({
@@ -21,6 +26,8 @@ export const useUi = create<UiState>()((set) => ({
   fileDropId: null,
   settingsOpen: false,
   paletteOpen: false,
+  dockOpen: false,
+  dockTab: "changes",
   toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
   toggleMaximized: (id) => set((s) => ({ maximizedId: s.maximizedId === id ? null : id })),
   clearMaximized: () => set({ maximizedId: null }),
@@ -28,4 +35,7 @@ export const useUi = create<UiState>()((set) => ({
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setPalette: (b) => set({ paletteOpen: b }),
+  toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),
+  setDock: (b) => set({ dockOpen: b }),
+  setDockTab: (t) => set({ dockTab: t, dockOpen: true }),
 }));

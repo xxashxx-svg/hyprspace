@@ -41,6 +41,10 @@ export function Hotkeys() {
             take();
             toggleMaxFocused();
             return;
+          case "KeyG":
+            take();
+            useUi.getState().toggleDock();
+            return;
           case "ArrowRight":
             take();
             cyclePane(1);

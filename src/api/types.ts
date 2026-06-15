@@ -28,3 +28,10 @@ export interface LicenseInfo {
   name: string;
   issued: string;
 }
+
+export interface FileChange {
+  path: string;
+  status: string; // git porcelain code: M, A, D, R, ??, …
+  added: number;
+  removed: number;
+}

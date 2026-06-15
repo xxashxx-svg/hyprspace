@@ -12,6 +12,7 @@ import { Settings } from "./components/Settings";
 import { Updater } from "./components/Updater";
 import { CommandPalette } from "./components/CommandPalette";
 import { Hotkeys } from "./components/Hotkeys";
+import { ReviewDock } from "./components/ReviewDock";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
 import "./styles/tokens.css";
@@ -241,6 +242,7 @@ export default function App() {
       <div className="app-body">
         <Rail />
         <PaneGrid />
+        <ReviewDock />
       </div>
       <StatusBar />
       <Updater />

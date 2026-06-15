@@ -1,7 +1,7 @@
 // Typed bridge over Tauri invoke()/Channel. Components import THIS, never invoke() directly.
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { CreatePtyOpts, LicenseInfo, PtyControl, PtyHandlers } from "./types";
+import type { CreatePtyOpts, FileChange, LicenseInfo, PtyControl, PtyHandlers } from "./types";
 
 // A Raw send from Rust arrives as ArrayBuffer; a Json send arrives as the parsed control object.
 type ChannelMsg = ArrayBuffer | PtyControl;
@@ -76,6 +76,18 @@ export function licenseStatus(): Promise<LicenseInfo | null> {
 
 export function activateLicense(key: string): Promise<LicenseInfo> {
   return invoke("activate_license", { key });
+}
+
+export function gitChanges(cwd: string): Promise<FileChange[]> {
+  return invoke("git_changes", { cwd });
+}
+
+export function gitDiff(cwd: string, path: string): Promise<string> {
+  return invoke("git_diff", { cwd, path });
+}
+
+export function detectRunCmd(cwd: string): Promise<string> {
+  return invoke("detect_run_cmd", { cwd });
 }
 
 export async function pickFolder(): Promise<string | null> {

@@ -1,3 +1,4 @@
+mod devtools;
 mod license;
 mod persist;
 mod pty;
@@ -113,7 +114,10 @@ pub fn run() {
             load_state,
             backup_state,
             license::activate_license,
-            license::license_status
+            license::license_status,
+            devtools::git_changes,
+            devtools::git_diff,
+            devtools::detect_run_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

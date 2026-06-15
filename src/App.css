@@ -1423,3 +1423,225 @@ body {
   color: var(--text-3);
   font-family: var(--font-mono);
 }
+
+/* ---- review dock (Ctrl+Shift+G) — slides in from the right, collapses to full-width terminals ---- */
+.dock {
+  width: 380px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-1);
+  animation: dockIn 0.16s var(--ease);
+}
+@keyframes dockIn {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.dock-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border-1);
+}
+.dock-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.dock-tab:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+.dock-tab.active {
+  color: var(--text-1);
+  background: var(--accent-dim);
+}
+.dock-x {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-1);
+}
+.dock-x:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dock-empty {
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.changes-list {
+  flex: 0 0 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-bottom: 1px solid var(--border-1);
+}
+.change-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.change-item:hover {
+  background: var(--surface-2);
+}
+.change-item.active {
+  background: var(--accent-dim);
+}
+.change-status {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.s-new {
+  color: var(--status-ok);
+}
+.s-mod {
+  color: var(--status-busy);
+}
+.s-del {
+  color: var(--status-error);
+}
+.change-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-num {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.change-num .add {
+  color: var(--status-ok);
+}
+.change-num .del {
+  color: var(--status-error);
+  margin-left: 4px;
+}
+.diff {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  background: var(--bg-terminal);
+}
+.d-line {
+  padding: 0 10px;
+  white-space: pre;
+}
+.d-add {
+  background: rgba(70, 201, 138, 0.12);
+  color: #b6f0cf;
+}
+.d-del {
+  background: rgba(229, 72, 77, 0.12);
+  color: #f3b0b3;
+}
+.d-hunk {
+  color: var(--accent-hover);
+}
+.d-meta {
+  color: var(--text-3);
+}
+.run-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-1);
+}
+.dock-mini {
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.dock-mini:hover {
+  background: var(--surface-3);
+}
+.dock-mini.run {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.dock-mini.run:hover {
+  background: var(--accent-hover);
+}
+.dock-mini.stop:hover {
+  background: var(--status-error);
+  border-color: var(--status-error);
+  color: #fff;
+}
+.dock-mini.open {
+  margin-left: auto;
+  color: var(--status-awaiting);
+}
+.run-term {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+}
+.run-term .xterm {
+  height: 100%;
+}
+.run-term .xterm-viewport {
+  background: transparent !important;
+}
