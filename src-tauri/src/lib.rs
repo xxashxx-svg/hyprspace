@@ -48,6 +48,16 @@ fn get_home_dir() -> String {
         .unwrap_or_default()
 }
 
+// friendly name of the shell we spawn by default (for the status bar)
+#[tauri::command]
+fn shell_name() -> String {
+    if cfg!(windows) {
+        return "powershell".to_string();
+    }
+    let sh = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    sh.rsplit('/').next().unwrap_or("bash").to_string()
+}
+
 // does claude have any saved conversation for this folder? lets the UI pick --continue vs fresh
 #[tauri::command]
 fn claude_has_history(cwd: String) -> bool {
@@ -109,6 +119,7 @@ pub fn run() {
             resize_pty,
             kill_pty,
             get_home_dir,
+            shell_name,
             claude_has_history,
             save_state,
             load_state,
