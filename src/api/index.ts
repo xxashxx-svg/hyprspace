@@ -69,6 +69,10 @@ export function claudeHasHistory(cwd: string): Promise<boolean> {
   return invoke("claude_has_history", { cwd });
 }
 
+export function shellName(): Promise<string> {
+  return invoke("shell_name");
+}
+
 // null = not licensed yet (no key, or stored key no longer verifies)
 export function licenseStatus(): Promise<LicenseInfo | null> {
   return invoke("license_status");

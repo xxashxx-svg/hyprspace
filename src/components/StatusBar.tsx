@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { useWorkspaces } from "../stores/workspace";
-import { pickFolders } from "../api";
+import { pickFolders, shellName } from "../api";
 
 const CLAUDE_CMD = "claude --permission-mode auto";
 
@@ -7,6 +8,12 @@ export function StatusBar() {
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId));
   const total = useWorkspaces((s) => s.workspaces.reduce((n, w) => n + w.sessions.length, 0));
   const addSession = useWorkspaces((s) => s.addSession);
+  const [shell, setShell] = useState("");
+  useEffect(() => {
+    shellName()
+      .then(setShell)
+      .catch(() => {});
+  }, []);
 
   const launch = async (command?: string) => {
     if (!ws) return;
@@ -23,7 +30,7 @@ export function StatusBar() {
       <div className="sb-left">
         <span className="sb-name">{ws?.name ?? "—"}</span>
         <span className="sb-sep">·</span>
-        <span className="sb-muted">powershell</span>
+        <span className="sb-muted">{shell || "shell"}</span>
         {ws?.cwd && (
           <>
             <span className="sb-sep">·</span>
