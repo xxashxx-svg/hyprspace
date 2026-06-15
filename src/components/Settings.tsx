@@ -55,7 +55,6 @@ export function Settings() {
       .then(setVersion)
       .catch(() => {});
   }, []);
-  const isWindows = navigator.userAgent.includes("Windows");
   const statusText =
     phase === "checking"
       ? "checking…"
@@ -213,35 +212,26 @@ export function Settings() {
                   <span className="set-key">Current version</span>
                   <span className="set-val">{version || "…"}</span>
                 </div>
-                {isWindows ? (
-                  <>
-                    <div className="set-row">
-                      <span className="set-key">Status</span>
-                      <span className="set-val">{statusText}</span>
-                    </div>
-                    <div className="set-row">
-                      <span className="set-key" />
-                      {phase === "available" ? (
-                        <button className="btn primary set-btn" onClick={() => void install()}>
-                          Restart &amp; update to {update?.version}
-                        </button>
-                      ) : (
-                        <button
-                          className="btn set-btn"
-                          onClick={() => void checkNow()}
-                          disabled={phase === "checking" || phase === "downloading"}
-                        >
-                          {phase === "checking" ? "Checking…" : "Check for updates"}
-                        </button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="set-note">
-                    Auto-update is delivered on Windows. On this platform, pull the latest and
-                    rebuild from source to update.
-                  </div>
-                )}
+                <div className="set-row">
+                  <span className="set-key">Status</span>
+                  <span className="set-val">{statusText}</span>
+                </div>
+                <div className="set-row">
+                  <span className="set-key" />
+                  {phase === "available" ? (
+                    <button className="btn primary set-btn" onClick={() => void install()}>
+                      Restart &amp; update to {update?.version}
+                    </button>
+                  ) : (
+                    <button
+                      className="btn set-btn"
+                      onClick={() => void checkNow()}
+                      disabled={phase === "checking" || phase === "downloading"}
+                    >
+                      {phase === "checking" ? "Checking…" : "Check for updates"}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
