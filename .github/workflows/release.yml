@@ -1,0 +1,111 @@
+name: release
+
+# Build Windows + macOS, sign the updater artifacts, and publish a combined
+# release (with latest.json) to the public hyprspace-releases repo so both
+# platforms auto-update. Trigger by pushing a tag (git tag v0.2.3 && git push
+# origin v0.2.3) or via the "Run workflow" button.
+#
+# Required repo secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.hyprspace-signing/hyprspace.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  contents of ~/.hyprspace-signing/password.txt
+#   RELEASES_TOKEN                      a PAT with contents:write on xxashxx-svg/hyprspace-releases
+# Optional (for trusted/notarized installs later — steps no-op until set):
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.2.3"
+        required: true
+
+env:
+  RELEASES_REPO: xxashxx-svg/hyprspace-releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon → aarch64
+            args: "--target aarch64-apple-darwin"
+            rust-target: aarch64-apple-darwin
+          - os: windows-latest
+            args: ""
+            rust-target: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+      - name: Install dependencies
+        run: npm install
+      - name: Build + sign updater artifacts
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Apple signing/notarization — empty until you add the secrets, then it kicks in
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          # no tagName → build only; the publish job below handles the cross-repo release
+          args: ${{ matrix.args }}
+      - name: Stage installers + updater artifacts
+        shell: bash
+        run: |
+          mkdir -p staged
+          find src-tauri/target -type f \( \
+            -name "*-setup.exe" -o -name "*-setup.exe.sig" -o \
+            -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.app.tar.gz.sig" \
+          \) -exec cp {} staged/ \;
+          ls -la staged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}
+          path: staged/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: echo "tag=${{ github.event_name == 'push' && github.ref_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+      - name: Assemble latest.json
+        run: node scripts/ci-build-latest.mjs "${{ steps.tag.outputs.tag }}" dist "$RELEASES_REPO"
+      - name: Publish to releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          assets=$(ls dist/*-setup.exe dist/*.dmg dist/*.app.tar.gz dist/latest.json 2>/dev/null)
+          if gh release view "$tag" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$RELEASES_REPO" --clobber $assets
+          else
+            gh release create "$tag" --repo "$RELEASES_REPO" \
+              --title "HyprSpace ${tag#v}" --notes "Automated release." $assets
+          fi
