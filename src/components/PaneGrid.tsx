@@ -101,7 +101,7 @@ export function PaneGrid() {
         return (
           <div
             key={w.id}
-            className="pane-grid"
+            className={`pane-grid${maxedHere ? " maxed" : ""}`}
             style={{
               gridTemplateColumns: maxedHere ? "1fr" : layout.cols,
               display: isActive ? "grid" : "none",

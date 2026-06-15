@@ -1,9 +1,9 @@
 // Shared app actions, callable from hotkeys and the command palette.
 // They read stores via getState() so they work outside React render.
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
-import { pickFolders } from "./api";
+import { pickFolders, worktreeCreate } from "./api";
 
 const CLAUDE_CMD = "claude --permission-mode auto";
 
@@ -26,6 +26,23 @@ async function launchInActive(command?: string) {
 
 export const newClaude = () => launchInActive(CLAUDE_CMD);
 export const newTerminal = () => launchInActive();
+
+// Launch a Claude agent in its own isolated git worktree (branch hs/agent-N) so it can
+// work in parallel without colliding with other agents in the same repo.
+export async function newClaudeInWorktree() {
+  const ws = activeWs();
+  if (!ws || !ws.cwd) {
+    await message("Open a project workspace (with a folder) first.", { title: "New agent" }).catch(() => {});
+    return;
+  }
+  const name = `agent-${ws.sessions.length + 1}`;
+  try {
+    const path = await worktreeCreate(ws.cwd, name);
+    useWorkspaces.getState().addSession(ws.id, CLAUDE_CMD, path);
+  } catch (e) {
+    await message(String(e), { title: "Couldn't create worktree", kind: "error" }).catch(() => {});
+  }
+}
 
 // close a pane; for a running Claude session, confirm first so an agent mid-task
 // isn't killed by a stray Ctrl+Shift+W or misclick. Plain terminals close instantly.

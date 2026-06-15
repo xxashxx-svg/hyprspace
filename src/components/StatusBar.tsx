@@ -21,7 +21,6 @@ export function StatusBar() {
   return (
     <div className="statusbar">
       <div className="sb-left">
-        {ws && <span className="dot" style={{ background: ws.color }} />}
         <span className="sb-name">{ws?.name ?? "—"}</span>
         <span className="sb-sep">·</span>
         <span className="sb-muted">powershell</span>

@@ -104,7 +104,10 @@ export function ReviewDock() {
   const open = useUi((s) => s.dockOpen);
   const tab = useUi((s) => s.dockTab);
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
-  const cwd = ws?.cwd ?? "";
+  const focusedId = useWorkspaces((s) => s.focusedSessionId);
+  // follow the focused pane's folder, so a worktree agent shows ITS diff, not the repo root's
+  const focused = ws?.sessions.find((s) => s.id === focusedId);
+  const cwd = focused?.cwd ?? ws?.cwd ?? "";
 
   if (!open) return null;
 

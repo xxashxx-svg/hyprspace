@@ -1,16 +1,11 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { Logo } from "./Logo";
+import { NotificationPanel } from "./NotificationPanel";
 
 const win = getCurrentWindow();
 
 export function Titlebar() {
-  const workspaces = useWorkspaces((s) => s.workspaces);
-  const activeId = useWorkspaces((s) => s.activeId);
-  const setActive = useWorkspaces((s) => s.setActive);
-  const removeWorkspace = useWorkspaces((s) => s.removeWorkspace);
-  const addOpenSpace = useWorkspaces((s) => s.addOpenSpace);
   const toggleSettings = useUi((s) => s.toggleSettings);
 
   return (
@@ -22,35 +17,24 @@ export function Titlebar() {
         <span className="tb-brand">HyprSpace</span>
       </div>
 
-      <div className="tb-tabs" data-tauri-drag-region>
-        {workspaces.map((w) => (
-          <div
-            key={w.id}
-            className={`tb-tab ${w.id === activeId ? "active" : ""}`}
-            onClick={() => setActive(w.id)}
-            title={w.cwd || w.name}
-          >
-            <span className="dot" style={{ background: w.color }} />
-            <span className="tb-tab-name">{w.name}</span>
-            {w.sessions.length > 0 && <span className="tb-tab-count">{w.sessions.length}</span>}
-            <button
-              className="tb-tab-close"
-              title="Clear space"
-              onClick={(e) => {
-                e.stopPropagation();
-                removeWorkspace(w.id);
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        <button className="tb-newtab" title="New open space" onClick={() => addOpenSpace()}>
-          +
+      {/* command center — workspaces live in the sidebar now, so this is the useful centerpiece */}
+      <div className="tb-center" data-tauri-drag-region>
+        <button
+          className="tb-cmd"
+          title="Search or run a command (Ctrl+K)"
+          onClick={() => useUi.getState().setPalette(true)}
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <circle cx="7" cy="7" r="4.5" />
+            <line x1="10.5" y1="10.5" x2="14.5" y2="14.5" />
+          </svg>
+          <span className="tb-cmd-text">Search or run a command</span>
+          <span className="tb-cmd-kbd">Ctrl K</span>
         </button>
       </div>
 
       <div className="tb-controls">
+        <NotificationPanel />
         <button
           className="tb-ctl"
           title="Review dock — changes & run (Ctrl+Shift+G)"

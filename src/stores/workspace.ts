@@ -16,6 +16,7 @@ export interface Workspace {
   color: string;
   kind: "project" | "open";
   sessions: Session[];
+  renamed?: boolean; // user renamed it → never auto-rename again
 }
 
 const COLORS = ["#3fb6e0", "#46c98a", "#e0a23f", "#b06ae0", "#e5484d", "#7dc4e8"];
@@ -31,6 +32,7 @@ interface WorkspaceState {
   removeWorkspace: (id: string) => void;
   renameWorkspace: (id: string, name: string) => void;
   setActive: (id: string) => void;
+  reorderWorkspaces: (fromId: string, toId: string) => void;
   addSession: (wsId: string, command?: string, cwd?: string) => void;
   removeSession: (wsId: string, sessionId: string) => void;
   markStarted: (sessionId: string) => void;
@@ -90,23 +92,46 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
 
   renameWorkspace: (id, name) =>
     set((s) => ({
-      workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name } : w)),
+      // mark renamed so auto-naming never overrides a user-chosen name
+      workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name, renamed: true } : w)),
     })),
 
   setActive: (id) => set({ activeId: id }),
+
+  // move one rail item to another's slot (drag-to-reorder; sections stay intact since
+  // you can only drop onto a sibling that's visible in the same group)
+  reorderWorkspaces: (fromId, toId) =>
+    set((s) => {
+      const arr = [...s.workspaces];
+      const fi = arr.findIndex((w) => w.id === fromId);
+      if (fi < 0) return {};
+      const [moved] = arr.splice(fi, 1);
+      const ti = arr.findIndex((w) => w.id === toId);
+      if (ti < 0) return {};
+      arr.splice(ti, 0, moved);
+      return { workspaces: arr };
+    }),
 
   addSession: (wsId, command, cwd) =>
     set((s) => {
       const id = uid();
       const title = command?.includes("claude") ? "Claude" : "Terminal";
-      return {
-        workspaces: s.workspaces.map((w) =>
-          w.id === wsId
-            ? { ...w, sessions: [...w.sessions, { id, title, command, cwd: cwd ?? w.cwd }] }
-            : w,
-        ),
-        focusedSessionId: id,
-      };
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== wsId) return w;
+        const sessions = [...w.sessions, { id, title, command, cwd: cwd ?? w.cwd }];
+        // auto-name an untouched open space after the folder it's working in (AI naming
+        // can replace this heuristic later once accounts/an API key exist)
+        let name = w.name;
+        if (w.kind === "open" && !w.renamed && /^Open \d+$/.test(w.name)) {
+          const folder = (cwd ?? "")
+            .split(/[\\/]/)
+            .filter(Boolean)
+            .pop();
+          if (folder) name = folder;
+        }
+        return { ...w, name, sessions };
+      });
+      return { workspaces, focusedSessionId: id };
     }),
 
   removeSession: (wsId, sessionId) =>
