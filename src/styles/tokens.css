@@ -2,24 +2,24 @@
 :root {
   color-scheme: dark;
 
-  /* default = Mono (monochrome). Pick "Obsidian" in Settings for the purple accent. */
-  --bg-base: #0a0a0a;
-  --surface-1: #121212;
-  --surface-2: #181818;
-  --surface-3: #232323;
-  --bg-terminal: #0c0c0c;
+  /* default = Ember (warm). Pick another theme in Settings → Appearance. */
+  --bg-base: #18120e;
+  --surface-1: #1f1813;
+  --surface-2: #281f18;
+  --surface-3: #362a21;
+  --bg-terminal: #17110d;
 
-  --accent: #ededed;
-  --accent-hover: #fbfbfb;
-  --accent-dim: rgba(255, 255, 255, 0.12);
-  --on-accent: #0a0a0a;
+  --accent: #f3884a;
+  --accent-hover: #fca066;
+  --accent-dim: rgba(243, 136, 74, 0.16);
+  --on-accent: #1c0e05;
 
-  --text-1: #ebebeb;
-  --text-2: #9e9e9e;
-  --text-3: #5e5e5e;
+  --text-1: #f3ebe4;
+  --text-2: #c2ae9f;
+  --text-3: #86736b;
 
-  --border-1: rgba(255, 255, 255, 0.08);
-  --border-2: rgba(255, 255, 255, 0.15);
+  --border-1: rgba(255, 188, 144, 0.08);
+  --border-2: rgba(255, 188, 144, 0.15);
 
   --status-idle: #6c7080;
   --status-busy: #e0a23f;

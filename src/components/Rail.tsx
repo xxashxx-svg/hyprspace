@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { pickFolder } from "../api";
+import { forceAutoName } from "../ai/autoName";
 
 const wsAt = (x: number, y: number): string | null => {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
@@ -182,6 +183,17 @@ export function Rail() {
             }}
           />
           <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+            {workspaces.find((w) => w.id === menu.id)?.kind === "open" && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  void forceAutoName(menu.id);
+                  setMenu(null);
+                }}
+              >
+                Rename with AI
+              </button>
+            )}
             <button
               className="ctx-item"
               onClick={() => {

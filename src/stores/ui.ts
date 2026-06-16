@@ -5,6 +5,7 @@ interface UiState {
   maximizedId: string | null; // session id of the zoomed-to-fullscreen pane
   fileDropId: string | null; // session id of the pane a file drag is currently over
   settingsOpen: boolean;
+  settingsTab: string; // active tab in the settings window
   paletteOpen: boolean;
   dockOpen: boolean;
   dockTab: "changes" | "run";
@@ -13,6 +14,8 @@ interface UiState {
   clearMaximized: () => void;
   setFileDrop: (id: string | null) => void;
   toggleSettings: () => void;
+  openSettings: (tab?: string) => void;
+  setSettingsTab: (t: string) => void;
   togglePalette: () => void;
   setPalette: (b: boolean) => void;
   toggleDock: () => void;
@@ -25,6 +28,7 @@ export const useUi = create<UiState>()((set) => ({
   maximizedId: null,
   fileDropId: null,
   settingsOpen: false,
+  settingsTab: "appearance",
   paletteOpen: false,
   dockOpen: false,
   dockTab: "changes",
@@ -33,6 +37,8 @@ export const useUi = create<UiState>()((set) => ({
   clearMaximized: () => set({ maximizedId: null }),
   setFileDrop: (id) => set({ fileDropId: id }),
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+  openSettings: (tab) => set((s) => ({ settingsOpen: true, settingsTab: tab ?? s.settingsTab })),
+  setSettingsTab: (t) => set({ settingsTab: t }),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setPalette: (b) => set({ paletteOpen: b }),
   toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),

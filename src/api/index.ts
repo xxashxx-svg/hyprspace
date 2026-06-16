@@ -69,6 +69,21 @@ export function claudeHasHistory(cwd: string): Promise<boolean> {
   return invoke("claude_has_history", { cwd });
 }
 
+// how a returning claude pane should relaunch: "resume" | "continue" | "fresh"
+export function claudeResumeMode(cwd: string, sessionId: string): Promise<string> {
+  return invoke("claude_resume_mode", { cwd, sessionId });
+}
+
+// a folder's claude conversations as [sessionId, modifiedMs] — newest = the chat that's live now
+export function claudeSessions(cwd: string): Promise<[string, number][]> {
+  return invoke("claude_sessions", { cwd });
+}
+
+// loopback listener for the Google OAuth redirect; resolves with the target (carries ?code=...)
+export function oauthListen(): Promise<string> {
+  return invoke("oauth_listen");
+}
+
 export function shellName(): Promise<string> {
   return invoke("shell_name");
 }
@@ -92,6 +107,11 @@ export function gitDiff(cwd: string, path: string): Promise<string> {
 
 export function detectRunCmd(cwd: string): Promise<string> {
   return invoke("detect_run_cmd", { cwd });
+}
+
+// ask the local `claude` CLI to name an open space from its terminal activity
+export function aiNameSpace(context: string): Promise<string> {
+  return invoke("ai_name_space", { context });
 }
 
 // create an isolated git worktree off the workspace repo; returns its path

@@ -18,6 +18,12 @@ export function dropOutput(id: string): void {
   buffers.delete(id);
 }
 
+// most-recent slice of a session's output (used for AI auto-naming a space)
+export function recentOutput(id: string, max = 4000): string {
+  const t = buffers.get(id) ?? "";
+  return t.length > max ? t.slice(t.length - max) : t;
+}
+
 export interface TermHit {
   sessionId: string;
   snippet: string;
