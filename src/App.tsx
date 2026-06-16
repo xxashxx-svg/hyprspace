@@ -13,6 +13,8 @@ import { Updater } from "./components/Updater";
 import { CommandPalette } from "./components/CommandPalette";
 import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
+import { useAutoNamer } from "./ai/autoName";
+import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
 import "./styles/tokens.css";
@@ -49,6 +51,7 @@ let booted = false;
 
 export default function App() {
   const settingsOpen = useUi((s) => s.settingsOpen);
+  useAutoNamer(); // AI-title open spaces from terminal activity
 
   // ---- hydrate on launch, carefully: a read hiccup must never clobber saved data ----
   useEffect(() => {
@@ -248,16 +251,18 @@ export default function App() {
       <Updater />
       <CommandPalette />
       {settingsOpen && <Settings />}
-      {RESIZE.map(([k, dir]) => (
-        <div
-          key={k}
-          className={`rh rh-${k}`}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            void win.startResizeDragging(dir);
-          }}
-        />
-      ))}
+      {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}
+      {!isMac &&
+        RESIZE.map(([k, dir]) => (
+          <div
+            key={k}
+            className={`rh rh-${k}`}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              void win.startResizeDragging(dir);
+            }}
+          />
+        ))}
     </div>
   );
 }

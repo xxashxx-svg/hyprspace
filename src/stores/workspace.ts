@@ -7,6 +7,9 @@ export interface Session {
   cwd?: string;
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
+  // the claude conversation this pane is currently on — starts as `id`, but follows a manual
+  // /resume so the right chat comes back next launch (tracked in claude/sessionTracker)
+  claudeSessionId?: string;
 }
 
 export interface Workspace {
@@ -17,6 +20,7 @@ export interface Workspace {
   kind: "project" | "open";
   sessions: Session[];
   renamed?: boolean; // user renamed it → never auto-rename again
+  aiNamed?: boolean; // AI already titled it → don't re-title (a manual rename still wins)
 }
 
 const COLORS = ["#3fb6e0", "#46c98a", "#e0a23f", "#b06ae0", "#e5484d", "#7dc4e8"];
@@ -31,11 +35,13 @@ interface WorkspaceState {
   addOpenSpace: (name?: string) => string;
   removeWorkspace: (id: string) => void;
   renameWorkspace: (id: string, name: string) => void;
+  autoNameWorkspace: (id: string, name: string) => void;
   setActive: (id: string) => void;
   reorderWorkspaces: (fromId: string, toId: string) => void;
   addSession: (wsId: string, command?: string, cwd?: string) => void;
   removeSession: (wsId: string, sessionId: string) => void;
   markStarted: (sessionId: string) => void;
+  setClaudeSessionId: (sessionId: string, claudeId: string) => void;
   reorderSessions: (wsId: string, fromId: string, toId: string) => void;
   setFocused: (id: string) => void;
   hydrate: (workspaces: Workspace[], activeId: string | null) => void;
@@ -96,6 +102,15 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name, renamed: true } : w)),
     })),
 
+  // AI-generated title. The periodic scanner skips already-aiNamed spaces itself, but a manual
+  // "Rename with AI" routes through here too, so we only block on the user's own rename.
+  autoNameWorkspace: (id, name) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === id && w.kind === "open" && !w.renamed ? { ...w, name, aiNamed: true } : w,
+      ),
+    })),
+
   setActive: (id) => set({ activeId: id }),
 
   // move one rail item to another's slot (drag-to-reorder; sections stay intact since
@@ -119,8 +134,8 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       const workspaces = s.workspaces.map((w) => {
         if (w.id !== wsId) return w;
         const sessions = [...w.sessions, { id, title, command, cwd: cwd ?? w.cwd }];
-        // auto-name an untouched open space after the folder it's working in (AI naming
-        // can replace this heuristic later once accounts/an API key exist)
+        // instant placeholder: name an untouched open space after its folder. The AI namer
+        // (ai/autoName) upgrades this to a descriptive title once there's real activity.
         let name = w.name;
         if (w.kind === "open" && !w.renamed && /^Open \d+$/.test(w.name)) {
           const folder = (cwd ?? "")
@@ -143,13 +158,27 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       ),
     })),
 
-  // flips once a claude pane has launched, so the next launch resumes instead of starting fresh
+  // flips once a claude pane has launched (we launch it with --session-id <id>, so its claude
+  // conversation id starts as the pane id), so the next launch resumes instead of starting fresh
   markStarted: (sessionId) =>
     set((s) => ({
       workspaces: s.workspaces.map((w) => ({
         ...w,
         sessions: w.sessions.map((ss) =>
-          ss.id === sessionId && !ss.started ? { ...ss, started: true } : ss,
+          ss.id === sessionId && !ss.started
+            ? { ...ss, started: true, claudeSessionId: ss.claudeSessionId ?? sessionId }
+            : ss,
+        ),
+      })),
+    })),
+
+  // the tracker calls this when a pane switches to a different claude conversation (e.g. /resume)
+  setClaudeSessionId: (sessionId, claudeId) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => ({
+        ...w,
+        sessions: w.sessions.map((ss) =>
+          ss.id === sessionId ? { ...ss, claudeSessionId: claudeId } : ss,
         ),
       })),
     })),

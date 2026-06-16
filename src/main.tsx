@@ -5,11 +5,11 @@ import "@fontsource/cascadia-code/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
 import App from "./App";
-import { LicenseGate } from "./components/LicenseGate";
+import { AuthGate } from "./components/AuthGate";
 
 // NO React.StrictMode — its double-mount corrupts the xterm terminal lifecycle.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <LicenseGate>
+  <AuthGate>
     <App />
-  </LicenseGate>,
+  </AuthGate>,
 );

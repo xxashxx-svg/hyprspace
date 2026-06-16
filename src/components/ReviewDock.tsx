@@ -109,10 +109,27 @@ export function ReviewDock() {
   const focused = ws?.sessions.find((s) => s.id === focusedId);
   const cwd = focused?.cwd ?? ws?.cwd ?? "";
 
-  if (!open) return null;
+  // keep the dock mounted through its close animation, then unmount — so closing animates too
+  const [render, setRender] = useState(open);
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      setClosing(false);
+    } else {
+      setClosing(true);
+    }
+  }, [open]);
+
+  if (!render) return null;
 
   return (
-    <div className="dock">
+    <div
+      className={`dock${closing ? " closing" : ""}`}
+      onAnimationEnd={() => {
+        if (closing) setRender(false);
+      }}
+    >
       <div className="dock-tabs">
         <button
           className={`dock-tab${tab === "changes" ? " active" : ""}`}

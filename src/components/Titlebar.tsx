@@ -1,5 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUi } from "../stores/ui";
+import { useAuth } from "../stores/auth";
+import { isMac } from "../platform";
 import { Logo } from "./Logo";
 import { NotificationPanel } from "./NotificationPanel";
 
@@ -7,9 +9,16 @@ const win = getCurrentWindow();
 
 export function Titlebar() {
   const toggleSettings = useUi((s) => s.toggleSettings);
+  const openSettings = useUi((s) => s.openSettings);
+  const user = useAuth((s) => s.user);
+  const avatarUrl =
+    typeof user?.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
+  const initial = (
+    ((user?.user_metadata?.full_name as string) || user?.email || "?").trim()[0] || "?"
+  ).toUpperCase();
 
   return (
-    <div className="titlebar" data-tauri-drag-region>
+    <div className={`titlebar${isMac ? " mac" : ""}`} data-tauri-drag-region>
       <div className="tb-left" data-tauri-drag-region>
         <span className="tb-logo">
           <Logo size={16} />
@@ -34,6 +43,19 @@ export function Titlebar() {
       </div>
 
       <div className="tb-controls">
+        {user && (
+          <button
+            className="tb-account"
+            title={user.email ?? "Account"}
+            onClick={() => openSettings("account")}
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" referrerPolicy="no-referrer" />
+            ) : (
+              <span>{initial}</span>
+            )}
+          </button>
+        )}
         <NotificationPanel />
         <button
           className="tb-ctl"
@@ -53,21 +75,26 @@ export function Titlebar() {
             <circle cx="10" cy="11.5" r="1.7" fill="var(--surface-1)" />
           </svg>
         </button>
-        <button className="tb-ctl" title="Minimize" onClick={() => win.minimize()}>
-          <svg width="10" height="10" viewBox="0 0 10 10">
-            <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
-          </svg>
-        </button>
-        <button className="tb-ctl" title="Maximize" onClick={() => win.toggleMaximize()}>
-          <svg width="10" height="10" viewBox="0 0 10 10">
-            <rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1" />
-          </svg>
-        </button>
-        <button className="tb-ctl close" title="Close" onClick={() => win.close()}>
-          <svg width="10" height="10" viewBox="0 0 10 10">
-            <path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" strokeWidth="1.2" />
-          </svg>
-        </button>
+        {/* Windows/Linux: our own controls. macOS draws native traffic lights instead. */}
+        {!isMac && (
+          <>
+            <button className="tb-ctl" title="Minimize" onClick={() => win.minimize()}>
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
+              </svg>
+            </button>
+            <button className="tb-ctl" title="Maximize" onClick={() => win.toggleMaximize()}>
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            </button>
+            <button className="tb-ctl close" title="Close" onClick={() => win.close()}>
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -32,8 +32,8 @@ export const useNotifications = create<NotifState>()((set) => ({
     },
     {
       id: "account",
-      title: "Accounts are coming soon",
-      body: "Sign-in and sync will arrive in a future update.",
+      title: "Accounts are here",
+      body: "Sign in with Google or email — you stay signed in across launches.",
       kind: "account",
       ts: Date.now(),
       read: false,

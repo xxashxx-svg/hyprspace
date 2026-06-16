@@ -10,16 +10,16 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { makeTerminal, termTheme } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
-import { createPty, writePty, resizePty, killPty, claudeHasHistory } from "../api";
+import { createPty, writePty, resizePty, killPty, claudeResumeMode } from "../api";
 import { appendOutput, dropOutput } from "../terminal/buffers";
 import { TerminalSearch } from "./TerminalSearch";
 
-// on relaunch a claude pane resumes the latest conversation in its folder (--continue), so it comes
-// back to whatever you were last working on there — even if you manually /resume'd a different chat.
-// brand-new panes (and folders with no history yet) just start fresh.
-function withContinue(cmd: string): string {
-  if (/--session-id|--resume|--continue|(^|\s)-[cr](\s|$)/.test(cmd)) return cmd;
-  return cmd.replace(/^claude\b/, "claude --continue");
+// Each claude pane owns its session id (= the pane's uuid), so on relaunch it resumes its OWN
+// conversation — not just "the folder's latest", which broke open spaces with several panes in
+// one folder. We claim the id with --session-id on first launch, then --resume <id> to return.
+function injectClaudeArg(cmd: string, arg: string): string {
+  if (/--session-id|--resume|--continue|(^|\s)-[cr](\s|$)/.test(cmd)) return cmd; // already pinned
+  return cmd.replace(/^claude\b/, `claude ${arg}`);
 }
 
 interface Props {
@@ -178,11 +178,17 @@ export function TerminalPane({
     )
       .then(async () => {
         if (!command) return;
-        // a returning claude pane resumes its folder's latest chat (if any); otherwise start fresh
         let toRun = command;
         if (isClaude && started) {
-          const hasHist = await claudeHasHistory(cwd).catch(() => false);
-          if (hasHist) toRun = withContinue(command);
+          // each pane owns its conversation under its own id, so resume that exact chat reliably;
+          // panes created before we owned the id fall back to the folder's latest, else fresh
+          const mode = await claudeResumeMode(cwd, sessionId).catch(() => "fresh");
+          if (mode === "resume") toRun = injectClaudeArg(command, `--resume ${sessionId}`);
+          else if (mode === "continue") toRun = injectClaudeArg(command, "--continue");
+          else toRun = injectClaudeArg(command, `--session-id ${sessionId}`);
+        } else if (isClaude) {
+          // first launch: claim this pane's uuid as claude's session id so we can resume it later
+          toRun = injectClaudeArg(command, `--session-id ${sessionId}`);
         }
         setTimeout(() => {
           if (disposed) return;
