@@ -1,7 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useUpdater } from "../stores/updater";
+import { X } from "lucide-react";
 
 const RECHECK_MS = 6 * 60 * 60 * 1000; // re-check every 6h while the app stays open
+const FOCUS_THROTTLE_MS = 15 * 60 * 1000; // also re-check when you return, but not more than this often
 
 export function Updater() {
   const phase = useUpdater((s) => s.phase);
@@ -9,13 +11,25 @@ export function Updater() {
   const update = useUpdater((s) => s.update);
   const install = useUpdater((s) => s.install);
   const dismiss = useUpdater((s) => s.dismiss);
+  const lastCheck = useRef(0);
 
-  // check once on launch, then quietly on an interval
+  // check on launch, on an interval, and when the window regains focus (throttled) so a shipped
+  // update surfaces promptly instead of waiting out the interval
   useEffect(() => {
-    const run = () => void useUpdater.getState().checkNow();
+    const run = () => {
+      lastCheck.current = Date.now();
+      void useUpdater.getState().checkNow();
+    };
     run();
     const id = setInterval(run, RECHECK_MS);
-    return () => clearInterval(id);
+    const onFocus = () => {
+      if (Date.now() - lastCheck.current > FOCUS_THROTTLE_MS) run();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   // the toast only surfaces when there's actually something to act on
@@ -32,7 +46,7 @@ export function Updater() {
             Restart &amp; update
           </button>
           <button className="updater-x" title="Later" onClick={dismiss}>
-            ×
+            <X size={13} />
           </button>
         </>
       )}

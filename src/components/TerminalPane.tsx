@@ -12,7 +12,28 @@ import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { createPty, writePty, resizePty, killPty, claudeResumeMode } from "../api";
 import { appendOutput, dropOutput } from "../terminal/buffers";
+import { useActivity } from "../stores/activity";
+import {
+  Maximize2,
+  Minimize2,
+  X,
+  FolderSymlink,
+  Sparkles,
+  Gem,
+  Bot,
+  SquareTerminal,
+  Terminal as TerminalIcon,
+} from "lucide-react";
 import { TerminalSearch } from "./TerminalSearch";
+
+// small lucide glyph per provider, shown at the start of the pane header
+const PROVIDER_ICONS = {
+  claude: Sparkles,
+  gemini: Gem,
+  codex: Bot,
+  wsl: SquareTerminal,
+  terminal: TerminalIcon,
+} as const;
 
 // Each claude pane owns its session id (= the pane's uuid), so on relaunch it resumes its OWN
 // conversation — not just "the folder's latest", which broke open spaces with several panes in
@@ -25,7 +46,9 @@ function injectClaudeArg(cmd: string, arg: string): string {
 interface Props {
   sessionId: string;
   cwd: string;
+  guest?: boolean;
   command?: string;
+  provider: "claude" | "gemini" | "codex" | "wsl" | "terminal";
   started?: boolean;
   active: boolean;
   focused: boolean;
@@ -41,7 +64,9 @@ interface Props {
 export function TerminalPane({
   sessionId,
   cwd,
+  guest,
   command,
+  provider,
   started,
   active,
   focused,
@@ -65,7 +90,7 @@ export function TerminalPane({
   const cursorStyle = useSettings((s) => s.cursorStyle);
   const cursorBlink = useSettings((s) => s.cursorBlink);
 
-  const isClaude = !!command && command.includes("claude");
+  const isClaude = provider === "claude";
 
   useEffect(() => {
     const el = ref.current;
@@ -160,6 +185,7 @@ export function TerminalPane({
       }
     });
 
+    useActivity.getState().markStart(sessionId);
     createPty(
       { id: sessionId, cwd, args: [], cols: term.cols, rows: term.rows },
       {
@@ -167,10 +193,12 @@ export function TerminalPane({
           if (disposed) return;
           term.write(bytes);
           appendOutput(sessionId, dec.decode(bytes, { stream: true }));
+          useActivity.getState().markOutput(sessionId);
         },
         onControl: (c) => {
           if (!disposed && c.type === "exit") {
             setAlive(false);
+            useActivity.getState().markExit(sessionId);
             term.write(`\r\n\x1b[38;5;245m[process exited: ${c.code}]\x1b[0m\r\n`);
           }
         },
@@ -199,19 +227,30 @@ export function TerminalPane({
       .catch((e) => term.write(`\r\n\x1b[31mfailed to start: ${e}\x1b[0m\r\n`));
 
     let raf = 0;
+    let tSettled: ReturnType<typeof setTimeout> | undefined;
+
+    // Robust resize: sync to RAF for smoothness, but also trigger a debounced "settle" fit
+    // to ensure the PTY gets the exact final pixel dimensions after grid animations finish.
+    const syncFit = () => {
+      if (el.clientWidth < 40 || el.clientHeight < 20) return; // guard against 0-size intermediate frames
+      const atBottom = term.buffer.active.viewportY === term.buffer.active.baseY;
+      try {
+        fit.fit();
+        void resizePty(sessionId, term.cols, term.rows);
+        if (atBottom) term.scrollToBottom();
+      } catch {
+        /* not ready */
+      }
+    };
+
     const ro = new ResizeObserver(() => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        if (el.clientWidth === 0 || el.clientHeight === 0) return;
-        const atBottom = term.buffer.active.viewportY === term.buffer.active.baseY;
-        try {
-          fit.fit();
-          void resizePty(sessionId, term.cols, term.rows);
-          if (atBottom) term.scrollToBottom(); // don't fling scroll to the top on a reflow
-        } catch {
-          /* not ready */
-        }
+        syncFit();
+        // grid layouts can have a 100-150ms "spring" or transition; ensure we capture the end.
+        clearTimeout(tSettled);
+        tSettled = setTimeout(syncFit, 150);
       });
     });
     ro.observe(el);
@@ -249,6 +288,7 @@ export function TerminalPane({
     return () => {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
+      clearTimeout(tSettled);
       ro.disconnect();
       el.removeEventListener("wheel", onWheel);
       document.removeEventListener("visibilitychange", onVis);
@@ -326,6 +366,7 @@ export function TerminalPane({
   }, [cursorStyle, cursorBlink, isClaude]);
 
   const folder = cwd.split(/[\\/]/).filter(Boolean).pop();
+  const PIcon = PROVIDER_ICONS[provider] ?? TerminalIcon;
 
   // right-click = paste (xterm.paste handles bracketed paste so multi-line input won't pre-submit)
   const handlePaste = (e: RMouseEvent) => {
@@ -338,7 +379,10 @@ export function TerminalPane({
   };
 
   return (
-    <div className={`terminal-pane ${focused ? "focused" : ""}`} onMouseDown={onFocus}>
+    <div
+      className={`terminal-pane ${focused ? "focused" : ""} p-${provider}${guest ? " guest" : ""}`}
+      onMouseDown={onFocus}
+    >
       <div
         className="pane-header"
         onPointerDown={onGripDown}
@@ -347,8 +391,16 @@ export function TerminalPane({
       >
         <span className="pane-head-left">
           {!alive && <span className="pane-status" title="process exited" />}
-          <span className="pane-title">{isClaude ? "claude" : "terminal"}</span>
-          {folder && <span className="pane-cwd">· {folder}</span>}
+          <PIcon size={12} className="pane-prov-ico" />
+          <span className="pane-title">{provider}</span>
+          {folder && (
+            <span
+              className={`pane-cwd${guest ? " guest" : ""}`}
+              title={guest ? `${cwd} — outside this space's folder` : cwd}
+            >
+              {guest && <FolderSymlink size={11} className="pane-cwd-ico" />}· {folder}
+            </span>
+          )}
         </span>
         <span className="pane-head-right">
           <button
@@ -357,7 +409,7 @@ export function TerminalPane({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={onToggleMax}
           >
-            {isMaxed ? "❐" : "▢"}
+            {isMaxed ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
           <button
             className="pane-btn close"
@@ -365,7 +417,7 @@ export function TerminalPane({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={onClose}
           >
-            ×
+            <X size={13} />
           </button>
         </span>
       </div>
@@ -382,3 +434,4 @@ export function TerminalPane({
     </div>
   );
 }
+

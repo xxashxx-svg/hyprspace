@@ -1,8 +1,21 @@
-import { useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { pickFolder } from "../api";
-import { forceAutoName } from "../ai/autoName";
+import { useActivity } from "../stores/activity";
+import { useAuth } from "../stores/auth";
+import { relTime } from "../lib/time";
+import { revealPath } from "../api";
+import {
+  GripVertical,
+  Folder,
+  LayoutGrid,
+  Settings as SettingsIcon,
+  Plus,
+  X,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 const wsAt = (x: number, y: number): string | null => {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
@@ -13,14 +26,29 @@ export function Rail() {
   const workspaces = useWorkspaces((s) => s.workspaces);
   const activeId = useWorkspaces((s) => s.activeId);
   const setActive = useWorkspaces((s) => s.setActive);
-  const addWorkspace = useWorkspaces((s) => s.addWorkspace);
   const addOpenSpace = useWorkspaces((s) => s.addOpenSpace);
   const removeWorkspace = useWorkspaces((s) => s.removeWorkspace);
   const renameWorkspace = useWorkspaces((s) => s.renameWorkspace);
   const reorderWorkspaces = useWorkspaces((s) => s.reorderWorkspaces);
   const collapsed = useUi((s) => s.railCollapsed);
   const toggleRail = useUi((s) => s.toggleRail);
+  const paneDragging = useUi((s) => s.paneDragging);
+  const paneDragOverWs = useUi((s) => s.paneDragOverWs);
+  const view = useUi((s) => s.view);
+  const goSpace = useUi((s) => s.goSpace);
+  const setFocused = useWorkspaces((s) => s.setFocused);
+  const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
+  const exited = useActivity((s) => s.exited);
+  const lastOut = useActivity((s) => s.lastOut);
+  const user = useAuth((s) => s.user);
+  const avatar =
+    typeof user?.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
+  const acctName =
+    ((user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Account").trim();
+  const acctInitial = (acctName || "?")[0]?.toUpperCase() ?? "?";
 
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [, tick] = useReducer((x) => x + 1, 0);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const drag = useRef<{ id: string; sx: number; sy: number; active: boolean } | null>(null);
@@ -30,117 +58,168 @@ export function Rail() {
   const projects = workspaces.filter((w) => w.kind !== "open");
   const openSpaces = workspaces.filter((w) => w.kind === "open");
 
-  const newProject = async () => {
-    const folder = await pickFolder();
-    if (!folder) return;
-    const name = folder.split(/[\\/]/).filter(Boolean).pop() || "Project";
-    addWorkspace(name, folder);
+  // keep the active space expanded; while anything is expanded, re-render once a second so the
+  // "working" dots decay back to idle when a terminal goes quiet
+  useEffect(() => {
+    if (activeId) setExpanded((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
+  }, [activeId]);
+  useEffect(() => {
+    if (expanded.size === 0) return;
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [expanded]);
+
+  const toggleExpand = (id: string) =>
+    setExpanded((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const focusSession = (wid: string, sid: string) => {
+    setActive(wid);
+    setFocused(sid);
+    goSpace();
+  };
+  const sessDot = (id: string): "busy" | "ready" | "exited" => {
+    if (exited[id]) return "exited";
+    const t = lastOut[id];
+    return t && Date.now() - t < 1500 ? "busy" : "ready";
   };
 
-  const item = (w: Workspace) => (
-    <div
-      key={w.id}
-      data-wsid={w.id}
-      className={`rail-item ${w.id === activeId ? "active" : ""}${dragId === w.id ? " dragging" : ""}${
-        overId === w.id ? " drop-over" : ""
-      }`}
-      title={w.cwd || w.name}
-      onClick={() => setActive(w.id)}
-      onDoubleClick={() => setEditing(w.id)}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setMenu({ x: e.clientX, y: e.clientY, id: w.id });
-      }}
-    >
-      <span
-        className="rail-grip"
-        title="Drag to reorder"
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          e.currentTarget.setPointerCapture?.(e.pointerId);
-          drag.current = { id: w.id, sx: e.clientX, sy: e.clientY, active: false };
-        }}
-        onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d) return;
-          if (!d.active) {
-            if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
-            d.active = true;
-            setDragId(d.id);
-          }
-          const t = wsAt(e.clientX, e.clientY);
-          setOverId(t && t !== d.id ? t : null);
-        }}
-        onPointerUp={(e) => {
-          const d = drag.current;
-          drag.current = null;
-          e.currentTarget.releasePointerCapture?.(e.pointerId);
-          if (d?.active) {
-            const t = wsAt(e.clientX, e.clientY);
-            if (t && t !== d.id) reorderWorkspaces(d.id, t);
-          }
-          setDragId(null);
-          setOverId(null);
-        }}
-      >
-        <svg width="6" height="13" viewBox="0 0 6 13" fill="currentColor" aria-hidden="true">
-          <circle cx="1.5" cy="2.5" r="0.9" />
-          <circle cx="4.5" cy="2.5" r="0.9" />
-          <circle cx="1.5" cy="6.5" r="0.9" />
-          <circle cx="4.5" cy="6.5" r="0.9" />
-          <circle cx="1.5" cy="10.5" r="0.9" />
-          <circle cx="4.5" cy="10.5" r="0.9" />
-        </svg>
-      </span>
-      {w.kind === "open" ? (
-        <svg className="rail-ico" width="12" height="12" viewBox="0 0 12 12" style={{ color: w.color }}>
-          <rect x="0.5" y="0.5" width="4.5" height="4.5" rx="1" fill="currentColor" />
-          <rect x="7" y="0.5" width="4.5" height="4.5" rx="1" fill="currentColor" />
-          <rect x="0.5" y="7" width="4.5" height="4.5" rx="1" fill="currentColor" />
-          <rect x="7" y="7" width="4.5" height="4.5" rx="1" fill="currentColor" />
-        </svg>
-      ) : (
-        <svg className="rail-ico" width="13" height="13" viewBox="0 0 14 14" style={{ color: w.color }}>
-          <path
-            d="M1 4a1.2 1.2 0 0 1 1.2-1.2h2.4l1.2 1.3H11.8A1.2 1.2 0 0 1 13 5.3V11a1.2 1.2 0 0 1-1.2 1.2H2.2A1.2 1.2 0 0 1 1 11V4z"
-            fill="currentColor"
-          />
-        </svg>
-      )}
-      {editing === w.id ? (
-        <input
-          className="rail-rename"
-          autoFocus
-          defaultValue={w.name}
-          onClick={(e) => e.stopPropagation()}
-          onBlur={(e) => {
-            const v = e.currentTarget.value.trim();
-            if (v) renameWorkspace(w.id, v);
-            setEditing(null);
+  const item = (w: Workspace) => {
+    const isExpanded = expanded.has(w.id);
+    const hasSessions = w.sessions.length > 0;
+    return (
+      <div key={w.id} className="rail-item-wrap" data-wsid={w.id}>
+        <div
+          data-wsid={w.id}
+          className={`rail-item ${w.id === activeId && view === "space" ? "active" : ""}${
+            dragId === w.id ? " dragging" : ""
+          }${overId === w.id ? " drop-over" : ""}${
+            paneDragging && w.id !== activeId ? " pane-droppable" : ""
+          }${paneDragOverWs === w.id ? " pane-drop-over" : ""}`}
+          title={w.cwd || w.name}
+          onClick={() => {
+            setActive(w.id);
+            goSpace();
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") setEditing(null);
+          onDoubleClick={() => setEditing(w.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenu({ x: e.clientX, y: e.clientY, id: w.id });
           }}
-        />
-      ) : (
-        <span className="rail-name">{w.name}</span>
-      )}
-      {w.sessions.length > 0 && <span className="rail-count">{w.sessions.length}</span>}
-      <button
-        className="rail-clear"
-        title={`Clear "${w.name}" (closes its sessions — your files stay)`}
-        onClick={(e) => {
-          e.stopPropagation();
-          removeWorkspace(w.id);
-        }}
-      >
-        ×
-      </button>
-    </div>
-  );
+        >
+          {hasSessions ? (
+            <button
+              className={`rail-twist${isExpanded ? " open" : ""}`}
+              title={isExpanded ? "Collapse" : "Expand"}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpand(w.id);
+              }}
+            >
+              <ChevronRight size={13} />
+            </button>
+          ) : (
+            <span className="rail-twist-spacer" />
+          )}
+          <span
+            className="rail-grip"
+            title="Drag to reorder"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              drag.current = { id: w.id, sx: e.clientX, sy: e.clientY, active: false };
+            }}
+            onPointerMove={(e) => {
+              const d = drag.current;
+              if (!d) return;
+              if (!d.active) {
+                if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
+                d.active = true;
+                setDragId(d.id);
+              }
+              const t = wsAt(e.clientX, e.clientY);
+              setOverId(t && t !== d.id ? t : null);
+            }}
+            onPointerUp={(e) => {
+              const d = drag.current;
+              drag.current = null;
+              e.currentTarget.releasePointerCapture?.(e.pointerId);
+              if (d?.active) {
+                const t = wsAt(e.clientX, e.clientY);
+                if (t && t !== d.id) reorderWorkspaces(d.id, t);
+              }
+              setDragId(null);
+              setOverId(null);
+            }}
+          >
+            <GripVertical size={13} aria-hidden="true" />
+          </span>
+          {w.kind === "open" ? (
+            <LayoutGrid className="rail-ico" size={14} style={{ color: w.color }} />
+          ) : (
+            <Folder className="rail-ico" size={14} style={{ color: w.color }} />
+          )}
+          {editing === w.id ? (
+            <input
+              className="rail-rename"
+              autoFocus
+              defaultValue={w.name}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                const v = e.currentTarget.value.trim();
+                if (v) renameWorkspace(w.id, v);
+                setEditing(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") setEditing(null);
+              }}
+            />
+          ) : (
+            <span className="rail-name">{w.name}</span>
+          )}
+          {hasSessions && <span className="rail-count">{w.sessions.length}</span>}
+          <button
+            className="rail-clear"
+            title={`Clear "${w.name}" (closes its sessions — your files stay)`}
+            onClick={(e) => {
+              e.stopPropagation();
+              removeWorkspace(w.id);
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+        {isExpanded && hasSessions && !collapsed && (
+          <div className="rail-sessions">
+            {w.sessions.map((s) => {
+              const dot = sessDot(s.id);
+              const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
+              return (
+                <button
+                  key={s.id}
+                  className={`rail-session${active ? " active" : ""}`}
+                  title={s.cwd || s.title}
+                  onClick={() => focusSession(w.id, s.id)}
+                >
+                  <span className={`rail-sess-dot s-${dot}`} />
+                  <span className="rail-sess-name">{s.title}</span>
+                  {lastOut[s.id] ? (
+                    <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className={`rail${collapsed ? " collapsed" : ""}`}>
@@ -149,27 +228,68 @@ export function Rail() {
         title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         onClick={toggleRail}
       >
-        {collapsed ? "›" : "‹"}
+        {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
       </button>
       <div className="rail-scroll">
+      <button className="rail-search" onClick={() => useUi.getState().setPalette(true)}>
+        <Search size={15} />
+        <span className="rail-search-label">Search</span>
+        <span className="rail-search-kbd">Ctrl K</span>
+      </button>
       <div className="rail-header">
         <span className="rail-title">PROJECTS</span>
-        <button className="rail-add" title="Open a folder as a project" onClick={newProject}>
-          +
+        <button
+          className="rail-add"
+          title="New project"
+          onClick={() => useUi.getState().openNewProject()}
+        >
+          <Plus size={15} />
         </button>
       </div>
       <div className="rail-list">{projects.map(item)}</div>
 
       <div className="rail-header">
         <span className="rail-title">OPEN SPACES</span>
-        <button className="rail-add" title="New open space" onClick={() => addOpenSpace()}>
-          +
+        <button
+          className="rail-add"
+          title="New open space"
+          onClick={() => {
+            addOpenSpace();
+            goSpace();
+          }}
+        >
+          <Plus size={15} />
         </button>
       </div>
       <div className="rail-list">
         {openSpaces.map(item)}
         {openSpaces.length === 0 && <div className="rail-empty">launch sessions in any folder</div>}
       </div>
+      </div>
+
+      <div className="rail-foot">
+        <button
+          className="rail-acct"
+          title={user?.email ?? "Account"}
+          onClick={() => useUi.getState().openSettings("account")}
+        >
+          {avatar ? (
+            <img className="rail-acct-ava" src={avatar} alt="" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="rail-acct-ava rail-acct-fallback">{acctInitial}</span>
+          )}
+          <span className="rail-acct-meta">
+            <span className="rail-acct-name">{acctName}</span>
+            <span className="rail-acct-sub">{user?.email ?? "Signed in"}</span>
+          </span>
+        </button>
+        <button
+          className="rail-foot-btn"
+          title="Settings"
+          onClick={() => useUi.getState().openSettings()}
+        >
+          <SettingsIcon size={16} strokeWidth={1.75} />
+        </button>
       </div>
 
       {menu && (
@@ -183,15 +303,16 @@ export function Rail() {
             }}
           />
           <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
-            {workspaces.find((w) => w.id === menu.id)?.kind === "open" && (
+            {workspaces.find((w) => w.id === menu.id)?.cwd && (
               <button
                 className="ctx-item"
                 onClick={() => {
-                  void forceAutoName(menu.id);
+                  const w = workspaces.find((x) => x.id === menu.id);
+                  if (w?.cwd) void revealPath(w.cwd).catch(() => {});
                   setMenu(null);
                 }}
               >
-                Rename with AI
+                Open folder
               </button>
             )}
             <button

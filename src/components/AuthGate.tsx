@@ -5,6 +5,7 @@ import { supabaseReady } from "../lib/supabase";
 import { applyTheme } from "../themes";
 import { loadState } from "../api";
 import { Logo } from "./Logo";
+import { EntitlementGate } from "./EntitlementGate";
 
 function GoogleMark() {
   return (
@@ -56,7 +57,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [init]);
 
-  if (session) return <>{children}</>;
+  // signed in → run the (currently dormant) subscription gate, then the app
+  if (session) return <EntitlementGate>{children}</EntitlementGate>;
   if (!ready) return <div className="license-boot" />; // brief blank while we restore the session
 
   const onField = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {

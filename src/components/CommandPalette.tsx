@@ -2,8 +2,13 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { searchOutput } from "../terminal/buffers";
+import { isWindows } from "../platform";
+import { Search } from "lucide-react";
 import {
   newClaude,
+  newGemini,
+  newCodex,
+  newWsl,
   newTerminal,
   newClaudeInWorktree,
   closeFocused,
@@ -32,6 +37,11 @@ export function CommandPalette() {
   const commands = useMemo<Item[]>(() => {
     const base: Item[] = [
       { id: "claude", label: "New Claude session", run: () => void newClaude() },
+      { id: "gemini", label: "New Gemini session", run: () => void newGemini() },
+      { id: "codex", label: "New Codex session", run: () => void newCodex() },
+      ...(isWindows
+        ? [{ id: "wsl", label: "New WSL (Linux) session", run: () => void newWsl() }]
+        : []),
       {
         id: "claude-wt",
         label: "New Claude in isolated worktree",
@@ -42,11 +52,16 @@ export function CommandPalette() {
       { id: "max", label: "Maximize / restore pane", hint: "Ctrl+Shift+M", run: toggleMaxFocused },
       {
         id: "dock",
-        label: "Toggle review dock — changes & run",
+        label: "Toggle review dock — source & skills",
         hint: "Ctrl+Shift+G",
         run: () => useUi.getState().toggleDock(),
       },
-      { id: "settings", label: "Open settings", run: () => useUi.getState().toggleSettings() },
+      {
+        id: "skills",
+        label: "Skills — drag into terminals",
+        run: () => useUi.getState().setDockTab("skills"),
+      },
+      { id: "settings", label: "Open settings", run: () => useUi.getState().openSettings() },
     ];
     const spaces: Item[] = workspaces.map((w, i) => ({
       id: "ws-" + w.id,
@@ -74,7 +89,7 @@ export function CommandPalette() {
         const sess = w.sessions.find((s) => s.id === hit.sessionId);
         if (sess) {
           wsId = w.id;
-          label = `${w.name} › ${sess.command?.includes("claude") ? "claude" : "terminal"}`;
+          label = `${w.name} › ${sess.provider !== "terminal" ? sess.provider : "terminal"}`;
           break;
         }
       }
@@ -116,29 +131,32 @@ export function CommandPalette() {
   return (
     <div className="cmdk-overlay" onMouseDown={close}>
       <div className="cmdk" onMouseDown={(e) => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          className="cmdk-input"
-          placeholder="Search commands or terminal output…"
-          value={q}
-          spellCheck={false}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              close();
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setSel((i) => Math.min(items.length - 1, i + 1));
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setSel((i) => Math.max(0, i - 1));
-            } else if (e.key === "Enter") {
-              e.preventDefault();
-              run(items[sel]);
-            }
-          }}
-        />
+        <div className="cmdk-input-row">
+          <Search size={16} className="cmdk-search-ico" />
+          <input
+            ref={inputRef}
+            className="cmdk-input"
+            placeholder="Search commands or terminal output…"
+            value={q}
+            spellCheck={false}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                close();
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSel((i) => Math.min(items.length - 1, i + 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSel((i) => Math.max(0, i - 1));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                run(items[sel]);
+              }
+            }}
+          />
+        </div>
         <div className="cmdk-list">
           {items.length === 0 && <div className="cmdk-empty">No matches</div>}
           {items.map((c, i) => {

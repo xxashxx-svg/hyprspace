@@ -53,6 +53,33 @@ export function killPty(id: string): Promise<void> {
   return invoke("kill_pty", { id });
 }
 
+// ---- native chat: drive a persistent `claude` stream-json session (runs on the subscription) ----
+// chatStart spawns the long-lived process and streams every event to onLine for its whole life;
+// chatTurn feeds one user-message envelope to its stdin; chatStop kills it.
+export function chatStart(
+  id: string,
+  cwd: string,
+  args: string[],
+  onLine: (line: string) => void,
+): Promise<void> {
+  const channel = new Channel<string>();
+  channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
+  return invoke("chat_start", { id, cwd, args, onEvent: channel });
+}
+export function chatTurn(id: string, message: string): Promise<void> {
+  return invoke("chat_turn", { id, message });
+}
+export function chatStop(id: string): Promise<void> {
+  return invoke("chat_stop", { id });
+}
+export function getHomeDir(): Promise<string> {
+  return invoke("get_home_dir");
+}
+// open a folder in the OS file manager
+export function revealPath(path: string): Promise<void> {
+  return invoke("reveal_path", { path });
+}
+
 export function saveState(name: string, data: string): Promise<void> {
   return invoke("save_state", { name, data });
 }
@@ -97,6 +124,17 @@ export function activateLicense(key: string): Promise<LicenseInfo> {
   return invoke("activate_license", { key });
 }
 
+// verify a subscription entitlement token offline (Ed25519, same key as licenses)
+export interface Entitlement {
+  uid: string;
+  tier: string;
+  mode: string;
+  exp: number;
+}
+export function entitlementVerify(token: string): Promise<Entitlement> {
+  return invoke("entitlement_verify", { token });
+}
+
 export function gitChanges(cwd: string): Promise<FileChange[]> {
   return invoke("git_changes", { cwd });
 }
@@ -107,6 +145,106 @@ export function gitDiff(cwd: string, path: string): Promise<string> {
 
 export function detectRunCmd(cwd: string): Promise<string> {
   return invoke("detect_run_cmd", { cwd });
+}
+
+// git write ops for the topbar "Commit & push" menu + the Source Control panel
+export function gitCommit(
+  cwd: string,
+  message: string,
+  push: boolean,
+  stageAll: boolean,
+): Promise<string> {
+  return invoke("git_commit", { cwd, message, push, stageAll });
+}
+export interface BranchInfo {
+  branch: string;
+  ahead: number;
+  behind: number;
+  upstream: boolean;
+  is_repo: boolean;
+}
+export function gitBranchInfo(cwd: string): Promise<BranchInfo> {
+  return invoke("git_branch_info", { cwd });
+}
+export function gitFileOp(cwd: string, op: "stage" | "unstage" | "discard", path: string): Promise<void> {
+  return invoke("git_file_op", { cwd, op, path });
+}
+export function gitPush(cwd: string): Promise<string> {
+  return invoke("git_push", { cwd });
+}
+export function gitCreatePr(cwd: string): Promise<string> {
+  return invoke("git_create_pr", { cwd });
+}
+export function gitIsRepo(cwd: string): Promise<boolean> {
+  return invoke("git_is_repo", { cwd });
+}
+export function gitInit(cwd: string): Promise<string> {
+  return invoke("git_init", { cwd });
+}
+// create/reuse a project folder, optionally seeding README.md and .gitignore
+export function createProjectDir(
+  path: string,
+  readme: string | null,
+  gitignore: string | null,
+): Promise<void> {
+  return invoke("create_project_dir", { path, readme, gitignore });
+}
+
+// version + signed-in account/plan for an AI CLI ("claude" | "gemini" | "codex")
+export interface ProviderStatus {
+  id: string;
+  installed: boolean;
+  version: string | null;
+  account: string | null;
+  plan: string | null;
+  detail: string | null;
+}
+export function providerStatus(id: string): Promise<ProviderStatus> {
+  return invoke("provider_status", { id });
+}
+
+// MCP servers configured for Claude (~/.claude.json "mcpServers")
+export interface McpEntry {
+  name: string;
+  config: Record<string, unknown>;
+}
+export function mcpList(): Promise<McpEntry[]> {
+  return invoke("mcp_list");
+}
+export function mcpSet(name: string, config: unknown, prevName: string | null): Promise<void> {
+  return invoke("mcp_set", { name, config, prevName });
+}
+export function mcpRemove(name: string): Promise<void> {
+  return invoke("mcp_remove", { name });
+}
+
+// discovered Claude skills/commands (project + user scope) for the Skills panel
+export interface SkillItem {
+  name: string;
+  command: string;
+  description: string;
+  body: string; // SKILL.md instructions (for inserting into non-Claude agents)
+  scope: "project" | "user";
+  kind: "skill" | "command";
+}
+export function listSkills(cwd: string): Promise<SkillItem[]> {
+  return invoke("list_skills", { cwd });
+}
+// create/edit/delete a Claude skill (skills/<name>/SKILL.md) or command (commands/<name>.md)
+export function skillRead(scope: string, cwd: string, name: string, kind: string): Promise<string> {
+  return invoke("skill_read", { scope, cwd, name, kind });
+}
+export function skillWrite(
+  scope: string,
+  cwd: string,
+  name: string,
+  content: string,
+  kind: string,
+): Promise<void> {
+  return invoke("skill_write", { scope, cwd, name, content, kind });
+}
+export function skillDelete(scope: string, cwd: string, name: string, kind: string): Promise<void> {
+  return invoke("skill_delete", { scope, cwd, name, kind });
 }
 
 // ask the local `claude` CLI to name an open space from its terminal activity

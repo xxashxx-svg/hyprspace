@@ -5,6 +5,7 @@ export interface Session {
   title: string;
   command?: string;
   cwd?: string;
+  provider: "claude" | "gemini" | "codex" | "wsl" | "terminal";
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
   // the claude conversation this pane is currently on — starts as `id`, but follows a manual
@@ -43,6 +44,7 @@ interface WorkspaceState {
   markStarted: (sessionId: string) => void;
   setClaudeSessionId: (sessionId: string, claudeId: string) => void;
   reorderSessions: (wsId: string, fromId: string, toId: string) => void;
+  moveSessionToWorkspace: (fromWsId: string, sessionId: string, toWsId: string) => void;
   setFocused: (id: string) => void;
   hydrate: (workspaces: Workspace[], activeId: string | null) => void;
   markHydrated: () => void;
@@ -130,10 +132,25 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
   addSession: (wsId, command, cwd) =>
     set((s) => {
       const id = uid();
-      const title = command?.includes("claude") ? "Claude" : "Terminal";
+      let provider: Session["provider"] = "terminal";
+      let title = "Terminal";
+      if (command?.includes("claude")) {
+        provider = "claude";
+        title = "Claude";
+      } else if (command?.includes("gemini")) {
+        provider = "gemini";
+        title = "Gemini";
+      } else if (command?.includes("codex")) {
+        provider = "codex";
+        title = "Codex";
+      } else if (command === "wsl") {
+        provider = "wsl";
+        title = "WSL";
+      }
+
       const workspaces = s.workspaces.map((w) => {
         if (w.id !== wsId) return w;
-        const sessions = [...w.sessions, { id, title, command, cwd: cwd ?? w.cwd }];
+        const sessions = [...w.sessions, { id, title, command, cwd: cwd ?? w.cwd, provider }];
         // instant placeholder: name an untouched open space after its folder. The AI namer
         // (ai/autoName) upgrades this to a descriptive title once there's real activity.
         let name = w.name;
@@ -198,8 +215,44 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       }),
     })),
 
+  // move a whole session (its live PTY travels with it) from one space into another. The pane
+  // grid renders every space's panes under one parent, so React keeps the component mounted —
+  // the terminal doesn't restart. We stay on the source space; the dest just gains the pane.
+  moveSessionToWorkspace: (fromWsId, sessionId, toWsId) =>
+    set((s) => {
+      if (fromWsId === toWsId) return {};
+      let moved: Session | undefined;
+      const stripped = s.workspaces.map((w) => {
+        if (w.id !== fromWsId) return w;
+        moved = w.sessions.find((ss) => ss.id === sessionId);
+        return { ...w, sessions: w.sessions.filter((ss) => ss.id !== sessionId) };
+      });
+      if (!moved) return {};
+      return {
+        workspaces: stripped.map((w) =>
+          w.id === toWsId ? { ...w, sessions: [...w.sessions, moved!] } : w,
+        ),
+      };
+    }),
+
   setFocused: (id) => set({ focusedSessionId: id }),
 
-  hydrate: (workspaces, activeId) => set({ workspaces, activeId, hydrated: true }),
+  hydrate: (workspaces, activeId) => {
+    // Migration: ensure every session has a 'provider' field (older saves won't have it)
+    const migrated = workspaces.map((w) => ({
+      ...w,
+      sessions: w.sessions.map((s) => {
+        if (s.provider) return s;
+        let provider: Session["provider"] = "terminal";
+        if (s.command?.includes("claude")) provider = "claude";
+        else if (s.command?.includes("gemini")) provider = "gemini";
+        else if (s.command?.includes("codex")) provider = "codex";
+        else if (s.command === "wsl") provider = "wsl";
+        return { ...s, provider };
+      }),
+    }));
+    set({ workspaces: migrated, activeId, hydrated: true });
+  },
   markHydrated: () => set({ hydrated: true }),
 }));
+

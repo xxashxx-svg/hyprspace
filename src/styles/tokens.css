@@ -1,40 +1,40 @@
-/* GRAPHITE design tokens — near-black control room, one cool Iceline accent. */
+/* Design tokens — modeled on T3 Code: neutral near-black, white-alpha lines, one blue accent. */
 :root {
   color-scheme: dark;
 
-  /* default = Ember (warm). Pick another theme in Settings → Appearance. */
-  --bg-base: #18120e;
-  --surface-1: #1f1813;
-  --surface-2: #281f18;
-  --surface-3: #362a21;
-  --bg-terminal: #17110d;
+  /* default = T3 (neutral near-black + indigo accent). Pick another in Settings → Appearance. */
+  --bg-base: #161616;
+  --surface-1: #161616; /* chrome (titlebar / sidebar) sits flat on the bg, split only by borders */
+  --surface-2: #1e1e1e; /* cards, inputs, raised fills */
+  --surface-3: #282828; /* dropdowns, active / pressed */
+  --bg-terminal: #121212;
 
-  --accent: #f3884a;
-  --accent-hover: #fca066;
-  --accent-dim: rgba(243, 136, 74, 0.16);
-  --on-accent: #1c0e05;
+  --accent: oklch(0.588 0.217 264); /* T3 primary — indigo/blue, used sparingly */
+  --accent-hover: oklch(0.66 0.2 264);
+  --accent-dim: rgba(255, 255, 255, 0.07); /* hover/active fills are neutral white-alpha, not colored */
+  --on-accent: #ffffff;
 
-  --text-1: #f3ebe4;
-  --text-2: #c2ae9f;
-  --text-3: #86736b;
+  --text-1: #f5f5f5;
+  --text-2: #a1a1a1;
+  --text-3: #767676;
 
-  --border-1: rgba(255, 188, 144, 0.08);
-  --border-2: rgba(255, 188, 144, 0.15);
+  --border-1: rgba(255, 255, 255, 0.06);
+  --border-2: rgba(255, 255, 255, 0.1);
 
-  --status-idle: #6c7080;
-  --status-busy: #e0a23f;
-  --status-awaiting: #3fb6e0;
-  --status-ok: #46c98a;
-  --status-error: #e5484d;
-  --status-claim: #b06ae0;
+  --status-idle: #737373;
+  --status-busy: #f59e0b;
+  --status-awaiting: #3b82f6;
+  --status-ok: #10b981;
+  --status-error: #ef4444;
+  --status-claim: #a855f7;
 
   --radius-1: 6px;
   --radius-2: 10px;
   --radius-3: 14px;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 12px 34px rgba(0, 0, 0, 0.55);
 
-  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ui: "DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }

@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
-import { gitChanges, gitDiff } from "../api";
+import { gitChanges, gitDiff, gitBranchInfo, gitFileOp, gitCommit, type BranchInfo } from "../api";
 import type { FileChange } from "../api/types";
-import { RunPanel } from "./RunPanel";
+import { SkillsPanel } from "./SkillsPanel";
+import { confirmDialog } from "../stores/confirm";
+import { useNotifications } from "../stores/notifications";
+import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2 } from "lucide-react";
 
 // porcelain code → a coarse class for the status chip color
 function statusClass(code: string): string {
@@ -35,81 +38,195 @@ function DiffView({ text }: { text: string }) {
   );
 }
 
-function ChangesView({ cwd }: { cwd: string }) {
+// Full source-control panel: branch + ahead/behind, staged/unstaged with per-file
+// stage/unstage/discard, a commit box (commits exactly what's staged), and a diff view.
+function SourceControl({ cwd }: { cwd: string }) {
   const [files, setFiles] = useState<FileChange[]>([]);
+  const [branch, setBranch] = useState<BranchInfo | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [diff, setDiff] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
 
+  const refresh = () => {
+    if (!cwd) {
+      setFiles([]);
+      setBranch(null);
+      return;
+    }
+    gitChanges(cwd).then(setFiles).catch(() => {});
+    gitBranchInfo(cwd).then(setBranch).catch(() => {});
+  };
   useEffect(() => {
     let stop = false;
-    const refresh = () => {
-      if (!cwd) {
-        setFiles([]);
-        return;
-      }
-      gitChanges(cwd)
-        .then((f) => {
-          if (!stop) setFiles(f);
-        })
-        .catch(() => {});
+    const tick = () => {
+      if (!stop) refresh();
     };
-    refresh();
-    const id = setInterval(refresh, 4000); // keep it fresh while the dock is open
+    tick();
+    const id = setInterval(tick, 4000); // keep fresh while the dock is open
     return () => {
       stop = true;
       clearInterval(id);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd]);
 
-  const openFile = (p: string) => {
+  const staged = files.filter((f) => f.status[0] !== " " && f.status[0] !== "?");
+  const unstaged = files.filter((f) => f.status[1] !== " ");
+
+  const openDiff = (p: string) => {
     setSel(p);
     setDiff("");
     gitDiff(cwd, p)
       .then(setDiff)
       .catch((e) => setDiff(String(e)));
   };
+  const op = async (operation: "stage" | "unstage" | "discard", path: string) => {
+    setBusy(true);
+    try {
+      await gitFileOp(cwd, operation, path);
+      refresh();
+    } catch (e) {
+      useNotifications.getState().add({ title: "Git", body: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const discard = async (path: string) => {
+    const ok = await confirmDialog({
+      title: "Discard changes",
+      message: `Discard all changes to "${path}"? This can't be undone.`,
+      confirmLabel: "Discard",
+      cancelLabel: "Cancel",
+      danger: true,
+    });
+    if (ok) void op("discard", path);
+  };
+  const commit = async (push: boolean) => {
+    if (!msg.trim() || busy) return;
+    setBusy(true);
+    try {
+      const res = await gitCommit(cwd, msg.trim(), push, false);
+      useNotifications.getState().add({ title: push ? "Committed & pushed" : "Committed", body: res });
+      setMsg("");
+      refresh();
+    } catch (e) {
+      useNotifications.getState().add({ title: "Commit failed", body: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  if (!cwd) return <div className="dock-empty">Open a project workspace to see its changes.</div>;
+  if (!cwd) return <div className="dock-empty">Open a project workspace to manage its git.</div>;
+  if (branch && !branch.is_repo) return <div className="dock-empty">Not a git repository.</div>;
+
+  const row = (f: FileChange, area: "staged" | "unstaged") => {
+    const ch = area === "staged" ? f.status[0] : f.status[1];
+    return (
+      <div className={`sc-file${sel === f.path ? " active" : ""}`} key={area + "-" + f.path}>
+        <button className="sc-file-main" onClick={() => openDiff(f.path)} title={f.path}>
+          <span className={`change-status s-${statusClass(f.status)}`}>{ch === "?" ? "U" : ch}</span>
+          <span className="change-path">{f.path}</span>
+        </button>
+        <span className="sc-file-acts">
+          {area === "unstaged" && (
+            <button className="sc-act" title="Discard changes" onClick={() => void discard(f.path)}>
+              <Undo2 size={13} />
+            </button>
+          )}
+          <button
+            className="sc-act"
+            title={area === "staged" ? "Unstage" : "Stage"}
+            onClick={() => void op(area === "staged" ? "unstage" : "stage", f.path)}
+          >
+            {area === "staged" ? <Minus size={13} /> : <Plus size={13} />}
+          </button>
+        </span>
+      </div>
+    );
+  };
 
   return (
-    <div className="dock-body">
-      <div className="changes-list">
-        {files.length === 0 && <div className="dock-empty">No changes — working tree clean.</div>}
-        {files.map((f) => (
-          <button
-            key={f.path}
-            className={`change-item${sel === f.path ? " active" : ""}`}
-            onClick={() => openFile(f.path)}
-            title={f.path}
-          >
-            <span className={`change-status s-${statusClass(f.status)}`}>{f.status || "·"}</span>
-            <span className="change-path">{f.path}</span>
-            {f.added + f.removed > 0 && (
-              <span className="change-num">
-                <span className="add">+{f.added}</span>
-                <span className="del">−{f.removed}</span>
-              </span>
-            )}
-          </button>
-        ))}
+    <div className="dock-body sc">
+      <div className="sc-head">
+        <GitBranch size={13} />
+        <span className="sc-branch">{branch?.branch || "—"}</span>
+        {branch?.upstream && (branch.ahead > 0 || branch.behind > 0) && (
+          <span className="sc-track">
+            {branch.ahead > 0 && <span>↑{branch.ahead}</span>}
+            {branch.behind > 0 && <span>↓{branch.behind}</span>}
+          </span>
+        )}
       </div>
+
+      <div className="sc-commit">
+        <textarea
+          className="sc-msg"
+          placeholder={staged.length ? "Message (commits staged changes)" : "Stage files, then write a message"}
+          value={msg}
+          onChange={(e) => setMsg(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void commit(false);
+          }}
+        />
+        <div className="sc-commit-btns">
+          <button className="btn" disabled={busy || !msg.trim() || !staged.length} onClick={() => void commit(false)}>
+            Commit
+          </button>
+          <button
+            className="btn primary"
+            disabled={busy || !msg.trim() || !staged.length}
+            onClick={() => void commit(true)}
+          >
+            Commit &amp; Push
+          </button>
+        </div>
+      </div>
+
+      {staged.length > 0 && (
+        <div className="sc-sec">
+          <div className="sc-sec-head">
+            <span>Staged · {staged.length}</span>
+            <button className="sc-mini" onClick={() => void op("unstage", "")}>
+              Unstage all
+            </button>
+          </div>
+          {staged.map((f) => row(f, "staged"))}
+        </div>
+      )}
+
+      <div className="sc-sec">
+        <div className="sc-sec-head">
+          <span>Changes · {unstaged.length}</span>
+          {unstaged.length > 0 && (
+            <button className="sc-mini" onClick={() => void op("stage", "")}>
+              Stage all
+            </button>
+          )}
+        </div>
+        {unstaged.length === 0 && staged.length === 0 && (
+          <div className="dock-empty">Working tree clean.</div>
+        )}
+        {unstaged.map((f) => row(f, "unstaged"))}
+      </div>
+
       {sel && <DiffView text={diff} />}
     </div>
   );
 }
 
-// Collapsible right "cockpit" dock — Changes (git diff) + Run (dev server). When closed it
-// renders nothing, so the terminal grid gets the full width exactly like before.
+// Collapsible right "cockpit" dock — Source Control (git) + Skills. When closed it renders
+// nothing, so the terminal grid gets the full width.
 export function ReviewDock() {
   const open = useUi((s) => s.dockOpen);
   const tab = useUi((s) => s.dockTab);
+  const view = useUi((s) => s.view);
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
-  // follow the focused pane's folder, so a worktree agent shows ITS diff, not the repo root's
+  // follow the focused pane's folder, so a worktree agent shows ITS git, not the repo root's
   const focused = ws?.sessions.find((s) => s.id === focusedId);
   const cwd = focused?.cwd ?? ws?.cwd ?? "";
 
-  // keep the dock mounted through its close animation, then unmount — so closing animates too
   const [render, setRender] = useState(open);
   const [closing, setClosing] = useState(false);
   useEffect(() => {
@@ -121,7 +238,7 @@ export function ReviewDock() {
     }
   }, [open]);
 
-  if (!render) return null;
+  if (!render || view === "home") return null;
 
   return (
     <div
@@ -135,23 +252,21 @@ export function ReviewDock() {
           className={`dock-tab${tab === "changes" ? " active" : ""}`}
           onClick={() => useUi.getState().setDockTab("changes")}
         >
-          Changes
+          <GitBranch size={13} />
+          Source
         </button>
         <button
-          className={`dock-tab${tab === "run" ? " active" : ""}`}
-          onClick={() => useUi.getState().setDockTab("run")}
+          className={`dock-tab${tab === "skills" ? " active" : ""}`}
+          onClick={() => useUi.getState().setDockTab("skills")}
         >
-          Run
+          <Zap size={13} />
+          Skills
         </button>
         <button className="dock-x" title="Hide dock (Ctrl+Shift+G)" onClick={() => useUi.getState().setDock(false)}>
-          ›
+          <ChevronRight size={16} />
         </button>
       </div>
-      {tab === "changes" ? (
-        <ChangesView cwd={cwd} />
-      ) : (
-        <RunPanel wsId={ws?.id ?? "none"} cwd={cwd} />
-      )}
+      {tab === "changes" ? <SourceControl cwd={cwd} /> : <SkillsPanel cwd={cwd} />}
     </div>
   );
 }

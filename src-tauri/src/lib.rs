@@ -1,4 +1,5 @@
 mod ai;
+mod chat;
 mod devtools;
 mod license;
 mod oauth;
@@ -7,9 +8,11 @@ mod pty;
 
 use std::collections::HashMap;
 
+use chat::ChatManager;
 use persist::Store;
 use pty::PtyManager;
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::Manager;
 use tauri::State;
 
 #[tauri::command]
@@ -41,6 +44,27 @@ fn resize_pty(state: State<PtyManager>, id: String, cols: u16, rows: u16) -> Res
 #[tauri::command]
 fn kill_pty(state: State<PtyManager>, id: String) -> Result<(), String> {
     state.kill(&id)
+}
+
+#[tauri::command]
+fn chat_start(
+    state: State<ChatManager>,
+    id: String,
+    cwd: String,
+    args: Vec<String>,
+    on_event: Channel<String>,
+) -> Result<(), String> {
+    state.start(id, cwd, args, on_event)
+}
+
+#[tauri::command]
+fn chat_turn(state: State<ChatManager>, id: String, message: String) -> Result<(), String> {
+    state.turn(&id, message)
+}
+
+#[tauri::command]
+fn chat_stop(state: State<ChatManager>, id: String) {
+    state.stop(&id);
 }
 
 #[tauri::command]
@@ -188,12 +212,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(PtyManager::default())
+        .manage(ChatManager::default())
         .manage(Store::new())
         .invoke_handler(tauri::generate_handler![
             create_pty,
             write_pty,
             resize_pty,
             kill_pty,
+            chat_start,
+            chat_turn,
+            chat_stop,
             get_home_dir,
             shell_name,
             claude_has_history,
@@ -204,15 +232,44 @@ pub fn run() {
             backup_state,
             license::activate_license,
             license::license_status,
+            license::entitlement_verify,
             devtools::git_changes,
             devtools::git_diff,
             devtools::detect_run_cmd,
+            devtools::git_commit,
+            devtools::git_push,
+            devtools::git_create_pr,
+            devtools::git_is_repo,
+            devtools::git_init,
+            devtools::git_branch_info,
+            devtools::git_file_op,
+            devtools::create_project_dir,
+            devtools::reveal_path,
+            devtools::provider_status,
+            devtools::mcp_list,
+            devtools::mcp_set,
+            devtools::mcp_remove,
+            devtools::list_skills,
+            devtools::skill_read,
+            devtools::skill_write,
+            devtools::skill_delete,
             devtools::worktree_create,
             devtools::worktree_remove,
             devtools::worktree_list,
             ai::ai_name_space,
             oauth::oauth_listen
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // On exit, kill every PTY session so ConPTY hosts (OpenConsole.exe) don't orphan and
+            // busy-spin — the root cause of the recurring high-CPU / "Not Responding".
+            match event {
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+                    app.state::<PtyManager>().kill_all();
+                    app.state::<ChatManager>().kill_all();
+                }
+                _ => {}
+            }
+        });
 }

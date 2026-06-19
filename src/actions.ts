@@ -1,11 +1,33 @@
 // Shared app actions, callable from hotkeys and the command palette.
 // They read stores via getState() so they work outside React render.
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { confirmDialog } from "./stores/confirm";
+import { useNotifications } from "./stores/notifications";
 import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
 import { pickFolders, worktreeCreate } from "./api";
+import { useSettings, type ClaudePermission, type CodexMode } from "./stores/settings";
 
-const CLAUDE_CMD = "claude --permission-mode auto";
+export const WSL_CMD = "wsl";
+
+// launch commands built from the user's per-provider settings (Settings → Providers).
+// pass an override to launch with a specific mode (e.g. from the New Project wizard).
+export function claudeCmd(mode?: ClaudePermission): string {
+  const m = mode ?? useSettings.getState().claudePermission;
+  if (m === "bypass") return "claude --dangerously-skip-permissions";
+  if (m === "default") return "claude";
+  return `claude --permission-mode ${m}`;
+}
+export function geminiCmd(yolo?: boolean): string {
+  const y = yolo ?? useSettings.getState().geminiYolo;
+  return y ? "gemini --yolo" : "gemini";
+}
+export function codexCmd(mode?: CodexMode): string {
+  const m = mode ?? useSettings.getState().codexMode;
+  if (m === "bypass") return "codex --dangerously-bypass-approvals-and-sandbox";
+  // workspace-write sandbox + model-decides approval = the modern "full-auto" (which was removed)
+  if (m === "auto") return "codex --sandbox workspace-write --ask-for-approval on-request";
+  return "codex";
+}
 
 function activeWs() {
   const { workspaces, activeId } = useWorkspaces.getState();
@@ -24,7 +46,10 @@ async function launchInActive(command?: string) {
   }
 }
 
-export const newClaude = () => launchInActive(CLAUDE_CMD);
+export const newClaude = () => launchInActive(claudeCmd());
+export const newGemini = () => launchInActive(geminiCmd());
+export const newCodex = () => launchInActive(codexCmd());
+export const newWsl = () => launchInActive(WSL_CMD);
 export const newTerminal = () => launchInActive();
 
 // Launch a Claude agent in its own isolated git worktree (branch hs/agent-N) so it can
@@ -32,33 +57,41 @@ export const newTerminal = () => launchInActive();
 export async function newClaudeInWorktree() {
   const ws = activeWs();
   if (!ws || !ws.cwd) {
-    await message("Open a project workspace (with a folder) first.", { title: "New agent" }).catch(() => {});
+    useNotifications.getState().add({
+      title: "New agent",
+      body: "Open a project workspace (with a folder) first.",
+    });
     return;
   }
   const name = `agent-${ws.sessions.length + 1}`;
   try {
     const path = await worktreeCreate(ws.cwd, name);
-    useWorkspaces.getState().addSession(ws.id, CLAUDE_CMD, path);
+    useWorkspaces.getState().addSession(ws.id, claudeCmd(), path);
   } catch (e) {
-    await message(String(e), { title: "Couldn't create worktree", kind: "error" }).catch(() => {});
+    useNotifications.getState().add({ title: "Couldn't create worktree", body: String(e) });
   }
 }
 
-// close a pane; for a running Claude session, confirm first so an agent mid-task
+// close a pane; for a running AI session, confirm first so an agent mid-task
 // isn't killed by a stray Ctrl+Shift+W or misclick. Plain terminals close instantly.
 export async function closeSession(wsId: string, sessionId: string) {
   const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
   const sess = ws?.sessions.find((s) => s.id === sessionId);
   if (!ws || !sess) return;
-  if (sess.command?.includes("claude") && sess.started) {
-    const ok = await ask("This Claude session is running. Close it?", {
+  const isAi = sess.provider === "claude" || sess.provider === "gemini";
+  if (isAi && sess.started) {
+    const ok = await confirmDialog({
       title: "Close pane",
-      kind: "warning",
-    }).catch(() => true);
+      message: `This ${sess.provider} session is still running. Close it anyway?`,
+      confirmLabel: "Close",
+      cancelLabel: "Cancel",
+      danger: true,
+    });
     if (!ok) return;
   }
   useWorkspaces.getState().removeSession(wsId, sessionId);
 }
+
 
 export function closeFocused() {
   const ws = activeWs();
