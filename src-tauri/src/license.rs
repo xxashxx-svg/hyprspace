@@ -88,3 +88,57 @@ pub fn license_status(store: State<Store>) -> Result<Option<LicenseInfo>, String
         None => Ok(None),
     }
 }
+
+// ---- subscription entitlement (separate from the one-time license) ----
+
+#[derive(serde::Deserialize)]
+struct EntPayload {
+    uid: String,
+    tier: String,
+    mode: String,
+    exp: i64,
+}
+
+#[derive(Serialize, Clone)]
+pub struct Entitlement {
+    pub uid: String,
+    pub tier: String,
+    pub mode: String,
+    pub exp: i64, // unix seconds; 0 = no expiry
+}
+
+// Offline-verify a subscription entitlement token shaped like
+//   HSENT-<payloadB64url>.<sigB64url>
+// signed (Ed25519) with the SAME key as licenses. The backend issues these to entitled accounts;
+// the frontend checks `exp` against the clock — this just proves the claims are authentic, so a
+// user can't fake entitlement by editing the cached blob.
+#[tauri::command]
+pub fn entitlement_verify(token: String) -> Result<Entitlement, String> {
+    let body = token
+        .trim()
+        .strip_prefix("HSENT-")
+        .ok_or("not an entitlement token")?;
+    let (payload_b64, sig_b64) = body.split_once('.').ok_or("malformed token")?;
+
+    let sig_bytes = URL_SAFE_NO_PAD.decode(sig_b64).map_err(|_| "malformed token")?;
+    let sig_arr: [u8; 64] = sig_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "malformed token")?;
+    let sig = Signature::from_bytes(&sig_arr);
+
+    pubkey()?
+        .verify(payload_b64.as_bytes(), &sig)
+        .map_err(|_| "invalid entitlement token")?;
+
+    let json = URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .map_err(|_| "malformed token")?;
+    let p: EntPayload = serde_json::from_slice(&json).map_err(|_| "malformed token")?;
+    Ok(Entitlement {
+        uid: p.uid,
+        tier: p.tier,
+        mode: p.mode,
+        exp: p.exp,
+    })
+}

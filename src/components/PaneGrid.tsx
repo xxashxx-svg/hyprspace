@@ -2,10 +2,12 @@ import { useRef, useState } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { TerminalPane } from "./TerminalPane";
+import { Logo } from "./Logo";
 import { pickFolders } from "../api";
-import { closeSession } from "../actions";
+import { closeSession, claudeCmd, geminiCmd, codexCmd } from "../actions";
+import { isWindows } from "../platform";
 
-const CLAUDE_CMD = "claude --permission-mode auto";
+const WSL_CMD = "wsl";
 
 // Tile like the Electron version did: keep rows balanced so a partial last row fills
 // the width instead of leaving a hole (the old 5-pane "3 over a gap"). For 5+ we lay
@@ -35,23 +37,36 @@ function cellSidAt(x: number, y: number): string | null {
   return el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
 }
 
+// which space (a rail row) is under the cursor — for dragging a pane out into another space
+function railWsAt(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  return el?.closest<HTMLElement>(".rail-item-wrap")?.dataset.wsid ?? null;
+}
+
 export function PaneGrid() {
   const workspaces = useWorkspaces((s) => s.workspaces);
   const activeId = useWorkspaces((s) => s.activeId);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const setFocused = useWorkspaces((s) => s.setFocused);
   const reorder = useWorkspaces((s) => s.reorderSessions);
+  const moveToWs = useWorkspaces((s) => s.moveSessionToWorkspace);
   const addSession = useWorkspaces((s) => s.addSession);
 
   const maximizedId = useUi((s) => s.maximizedId);
   const toggleMaximized = useUi((s) => s.toggleMaximized);
   const fileDropId = useUi((s) => s.fileDropId);
+  const skillDropId = useUi((s) => s.skillDropId);
 
-  const drag = useRef<{ id: string; sx: number; sy: number; active: boolean } | null>(null);
+  const drag = useRef<{ id: string; ws: string; sx: number; sy: number; active: boolean } | null>(
+    null,
+  );
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
   const active = workspaces.find((w) => w.id === activeId) ?? null;
+  const maxedHere = !!maximizedId && !!active && active.sessions.some((s) => s.id === maximizedId);
+  const activeLayout = getLayout(active?.sessions.length ?? 0);
+  const showGrid = !!active && active.sessions.length > 0;
 
   const launch = async (command?: string) => {
     if (!active) return;
@@ -67,114 +82,155 @@ export function PaneGrid() {
     <div className={`pane-stage${dragId ? " dragging-active" : ""}`}>
       {!active && (
         <div className="pane-empty">
-          <div className="empty-mark">›_</div>
+          <div className="empty-logo">
+            <Logo size={28} />
+          </div>
           <div className="empty-title">No spaces yet</div>
           <div className="empty-hint">Create a project or an open space from the sidebar to start</div>
         </div>
       )}
       {active && active.sessions.length === 0 && (
         <div className="pane-empty">
-          <div className="empty-mark">›_</div>
+          <div className="empty-logo">
+            <Logo size={28} />
+          </div>
           <div className="empty-title">{active.name}</div>
           <div className="empty-hint">
             {active.kind === "open"
-              ? "Launch Claude or a terminal in any folder — pick one or several"
-              : "Launch a terminal or Claude to start working"}
+              ? "Launch an AI assistant or a terminal in any folder — pick one or several"
+              : "Launch a terminal or an AI assistant to start working"}
           </div>
           <div className="empty-actions">
-            <button className="btn primary" onClick={() => launch(CLAUDE_CMD)}>
-              {active.kind === "open" ? "+ Claude in folder(s)" : "+ Claude"}
+            <button className="launch-btn launch-primary" onClick={() => launch(claudeCmd())}>
+              Claude
             </button>
-            <button className="btn" onClick={() => launch()}>
-              {active.kind === "open" ? "+ Terminal in folder(s)" : "+ Terminal"}
+            <button className="launch-btn" onClick={() => launch(geminiCmd())}>
+              Gemini
+            </button>
+            <button className="launch-btn" onClick={() => launch(codexCmd())}>
+              Codex
+            </button>
+            {isWindows && (
+              <button className="launch-btn" onClick={() => launch(WSL_CMD)}>
+                WSL
+              </button>
+            )}
+            <button className="launch-btn" onClick={() => launch()}>
+              Terminal
             </button>
           </div>
         </div>
       )}
 
-      {/* render EVERY workspace's grid; hide inactive with display:none so PTYs stay alive */}
-      {workspaces.map((w) => {
-        if (w.sessions.length === 0) return null;
-        const isActive = w.id === activeId;
-        const maxedHere = isActive && !!maximizedId && w.sessions.some((s) => s.id === maximizedId);
-        const layout = getLayout(w.sessions.length);
-        return (
-          <div
-            key={w.id}
-            className={`pane-grid${maxedHere ? " maxed" : ""}`}
-            style={{
-              gridTemplateColumns: maxedHere ? "1fr" : layout.cols,
-              display: isActive ? "grid" : "none",
-            }}
-          >
-            {w.sessions.map((sess, i) => {
-              // keep all panes mounted (PTYs alive); hide the non-maxed ones when one is zoomed
-              const hidden = maxedHere && sess.id !== maximizedId;
-              return (
-                <div
-                  key={sess.id}
-                  data-sid={sess.id}
-                  className={`pane-cell${dragId === sess.id ? " dragging" : ""}${overId === sess.id ? " drop-over" : ""}`}
-                  style={{
-                    ...(hidden ? { display: "none" } : null),
-                    gridColumn: maxedHere ? undefined : layout.span(i),
+      {/* ONE grid holds every space's panes; inactive ones are display:none so their PTYs stay
+          alive AND a pane can move between spaces without React remounting it — the key stays
+          under the same parent, so the xterm + PTY survive the move instead of restarting. */}
+      <div
+        className={`pane-grid${maxedHere ? " maxed" : ""}`}
+        style={{
+          display: showGrid ? "grid" : "none",
+          gridTemplateColumns: maxedHere ? "1fr" : activeLayout.cols,
+        }}
+      >
+        {workspaces.flatMap((w) => {
+          const isActiveWs = w.id === activeId;
+          const layout = getLayout(w.sessions.length);
+          return w.sessions.map((sess, i) => {
+            const hiddenByMax = maxedHere && sess.id !== maximizedId;
+            const visible = isActiveWs && !hiddenByMax;
+            // a "guest" pane sits in a project space but points at a different folder than the
+            // project (e.g. dragged in from an open space) — flag it so it's obvious at a glance
+            const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
+            return (
+              <div
+                key={sess.id}
+                data-sid={sess.id}
+                className={`pane-cell${dragId === sess.id ? " dragging" : ""}${overId === sess.id ? " drop-over" : ""}`}
+                style={{
+                  display: visible ? undefined : "none",
+                  gridColumn: visible && !maxedHere ? layout.span(i) : undefined,
+                }}
+              >
+                <TerminalPane
+                  sessionId={sess.id}
+                  cwd={sess.cwd ?? w.cwd}
+                  guest={guest}
+                  command={sess.command}
+                  provider={sess.provider}
+                  started={sess.started}
+                  active={isActiveWs}
+                  focused={isActiveWs && focusedSessionId === sess.id}
+                  isMaxed={maximizedId === sess.id}
+                  onFocus={() => setFocused(sess.id)}
+                  onClose={() => void closeSession(w.id, sess.id)}
+                  onToggleMax={() => toggleMaximized(sess.id)}
+                  onGripDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.currentTarget.setPointerCapture?.(e.pointerId);
+                    drag.current = { id: sess.id, ws: w.id, sx: e.clientX, sy: e.clientY, active: false };
+                    setFocused(sess.id);
                   }}
-                >
-                  <TerminalPane
-                    sessionId={sess.id}
-                    cwd={sess.cwd ?? w.cwd}
-                    command={sess.command}
-                    started={sess.started}
-                    active={isActive}
-                    focused={isActive && focusedSessionId === sess.id}
-                    isMaxed={maximizedId === sess.id}
-                    onFocus={() => setFocused(sess.id)}
-                    onClose={() => void closeSession(w.id, sess.id)}
-                    onToggleMax={() => toggleMaximized(sess.id)}
-                    onGripDown={(e) => {
-                      if (e.button !== 0) return;
-                      e.currentTarget.setPointerCapture?.(e.pointerId);
-                      drag.current = { id: sess.id, sx: e.clientX, sy: e.clientY, active: false };
-                      setFocused(sess.id);
-                    }}
-                    onGripMove={(e) => {
-                      const d = drag.current;
-                      if (!d) return;
-                      if (!d.active) {
-                        if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
-                        d.active = true;
-                        setDragId(d.id);
-                      }
+                  onGripMove={(e) => {
+                    const d = drag.current;
+                    if (!d) return;
+                    if (!d.active) {
+                      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
+                      d.active = true;
+                      setDragId(d.id);
+                      useUi.getState().setPaneDrag(true);
+                    }
+                    // hovering a different space in the rail → it becomes the drop target
+                    const overWs = railWsAt(e.clientX, e.clientY);
+                    if (overWs && overWs !== d.ws) {
+                      setOverId(null);
+                      useUi.getState().setPaneDragOverWs(overWs);
+                    } else {
+                      useUi.getState().setPaneDragOverWs(null);
                       const sid = cellSidAt(e.clientX, e.clientY);
                       setOverId(sid && sid !== d.id ? sid : null);
-                    }}
-                    onGripUp={(e) => {
-                      const d = drag.current;
-                      drag.current = null;
-                      e.currentTarget.releasePointerCapture?.(e.pointerId);
-                      if (d?.active) {
+                    }
+                  }}
+                  onGripUp={(e) => {
+                    const d = drag.current;
+                    drag.current = null;
+                    e.currentTarget.releasePointerCapture?.(e.pointerId);
+                    if (d?.active) {
+                      const overWs = railWsAt(e.clientX, e.clientY);
+                      if (overWs && overWs !== d.ws) {
+                        moveToWs(d.ws, d.id, overWs); // dropped onto another space → move it there
+                      } else {
                         const target = cellSidAt(e.clientX, e.clientY);
-                        if (target && target !== d.id) reorder(w.id, d.id, target);
+                        if (target && target !== d.id) reorder(d.ws, d.id, target);
                       }
-                      setDragId(null);
-                      setOverId(null);
-                    }}
-                  />
-                  {fileDropId === sess.id && (
-                    <div className="file-drop-overlay">
-                      <div className="fdo-card">
-                        <div className="fdo-icon">⤓</div>
-                        <div className="fdo-title">Drop to insert</div>
-                        <div className="fdo-sub">adds the path(s) to this terminal</div>
-                      </div>
+                    }
+                    setDragId(null);
+                    setOverId(null);
+                    useUi.getState().setPaneDrag(false);
+                  }}
+                />
+                {fileDropId === sess.id && (
+                  <div className="file-drop-overlay">
+                    <div className="fdo-card">
+                      <div className="fdo-icon">⤓</div>
+                      <div className="fdo-title">Drop to insert</div>
+                      <div className="fdo-sub">adds the path(s) to this terminal</div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
+                  </div>
+                )}
+                {skillDropId === sess.id && (
+                  <div className="file-drop-overlay">
+                    <div className="fdo-card">
+                      <div className="fdo-icon">⌁</div>
+                      <div className="fdo-title">Drop to insert</div>
+                      <div className="fdo-sub">inserts this skill into the terminal</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          });
+        })}
+      </div>
     </div>
   );
 }

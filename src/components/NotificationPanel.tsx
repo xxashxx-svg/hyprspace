@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNotifications } from "../stores/notifications";
 import { useUpdater } from "../stores/updater";
-
-function relTime(ts: number): string {
-  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
+import { relTime } from "../lib/time";
+import { Bell } from "lucide-react";
 
 export function NotificationPanel() {
   const items = useNotifications((s) => s.items);
@@ -57,10 +51,7 @@ export function NotificationPanel() {
   return (
     <div className="notif" ref={ref}>
       <button className="tb-ctl" title="Notifications" onClick={toggle}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-          <path d="M4 6.5a4 4 0 0 1 8 0c0 3 1 4 1.5 4.5H2.5C3 10.5 4 9.5 4 6.5z" />
-          <path d="M6.5 13a1.6 1.6 0 0 0 3 0" />
-        </svg>
+        <Bell size={14} strokeWidth={1.75} />
         {unread > 0 && <span className="notif-badge" />}
       </button>
       {open && (

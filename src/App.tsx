@@ -8,12 +8,16 @@ import { StatusBar } from "./components/StatusBar";
 import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
 import { useSettings } from "./stores/settings";
+import { initSettingsSync } from "./stores/settingsSync";
 import { Settings } from "./components/Settings";
+import { CommitDialog } from "./components/CommitDialog";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { NewProjectDialog } from "./components/NewProjectDialog";
 import { Updater } from "./components/Updater";
 import { CommandPalette } from "./components/CommandPalette";
 import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
-import { useAutoNamer } from "./ai/autoName";
+import { HomePage } from "./components/HomePage";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
@@ -50,8 +54,8 @@ const RESIZE: Array<[string, ResizeDirection]> = [
 let booted = false;
 
 export default function App() {
+  const view = useUi((s) => s.view);
   const settingsOpen = useUi((s) => s.settingsOpen);
-  useAutoNamer(); // AI-title open spaces from terminal activity
 
   // ---- hydrate on launch, carefully: a read hiccup must never clobber saved data ----
   useEffect(() => {
@@ -140,9 +144,10 @@ export default function App() {
     };
   }, []);
 
-  // ---- settings: hydrate + apply theme on launch, save on change ----
+  // ---- settings: restore + apply theme on launch, then keep both windows in sync ----
   useEffect(() => {
     let cancelled = false;
+    let dispose: (() => void) | undefined;
     loadState("settings")
       .catch(() => null)
       .then((raw) => {
@@ -150,44 +155,20 @@ export default function App() {
         if (raw) {
           try {
             useSettings.getState().hydrate(JSON.parse(raw));
-            return;
           } catch {
-            /* corrupt — fall through to defaults */
+            applyTheme(useSettings.getState().theme);
+            useSettings.getState().markHydrated();
           }
+        } else {
+          applyTheme(useSettings.getState().theme);
+          useSettings.getState().markHydrated();
         }
-        applyTheme(useSettings.getState().theme);
-        useSettings.getState().markHydrated();
+        // owns save-on-change + cross-window broadcast (the settings window does the same)
+        dispose = initSettingsSync();
       });
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let t: ReturnType<typeof setTimeout> | undefined;
-    let lastSig = "";
-    const unsub = useSettings.subscribe((s) => {
-      if (!s.hydrated) return;
-      clearTimeout(t);
-      t = setTimeout(() => {
-        const { theme, fontSize, fontFamily, cursorStyle, cursorBlink, copyOnSelect } =
-          useSettings.getState();
-        const blob = JSON.stringify({
-          theme,
-          fontSize,
-          fontFamily,
-          cursorStyle,
-          cursorBlink,
-          copyOnSelect,
-        });
-        if (blob === lastSig) return;
-        lastSig = blob;
-        void saveState("settings", blob).catch((e) => console.error("settings save failed:", e));
-      }, 250);
-    });
-    return () => {
-      clearTimeout(t);
-      unsub();
+      dispose?.();
     };
   }, []);
 
@@ -244,13 +225,20 @@ export default function App() {
       <Titlebar />
       <div className="app-body">
         <Rail />
-        <PaneGrid />
-        <ReviewDock />
+        {view === "home" && <HomePage />}
+        {/* kept mounted (PTYs stay alive) but hidden while on Home */}
+        <div className="workspace-view" style={{ display: view === "home" ? "none" : "flex" }}>
+          <PaneGrid />
+          <ReviewDock />
+        </div>
       </div>
       <StatusBar />
       <Updater />
       <CommandPalette />
       {settingsOpen && <Settings />}
+      <CommitDialog />
+      <ConfirmDialog />
+      <NewProjectDialog />
       {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}
       {!isMac &&
         RESIZE.map(([k, dir]) => (

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -46,6 +46,12 @@ pub struct PtyManager {
 }
 
 impl PtyManager {
+    // the guarded data is just a session map — recovering a poisoned lock is always safe, and one
+    // panic elsewhere must not brick PTY I/O for the rest of the session.
+    fn sessions(&self) -> MutexGuard<'_, HashMap<String, Session>> {
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
@@ -150,22 +156,20 @@ impl PtyManager {
             send_ctrl(&exit_ch, &Control::Exit { code });
         });
 
-        self.sessions
-            .lock()
-            .unwrap()
+        self.sessions()
             .insert(id, Session { master: pair.master, writer, killer });
         Ok(())
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
-        let mut g = self.sessions.lock().unwrap();
+        let mut g = self.sessions();
         let s = g.get_mut(id).ok_or("no such session")?;
         s.writer.write_all(data).map_err(|e| e.to_string())?;
         s.writer.flush().map_err(|e| e.to_string())
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let g = self.sessions.lock().unwrap();
+        let g = self.sessions();
         let s = g.get(id).ok_or("no such session")?;
         s.master
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -173,10 +177,19 @@ impl PtyManager {
     }
 
     pub fn kill(&self, id: &str) -> Result<(), String> {
-        if let Some(mut s) = self.sessions.lock().unwrap().remove(id) {
+        if let Some(mut s) = self.sessions().remove(id) {
             let _ = s.killer.kill();
         }
         Ok(())
+    }
+
+    // Kill every live session at once — called on app exit so the ConPTY host processes
+    // (OpenConsole.exe) don't orphan and busy-spin at ~8% CPU each. Removing each Session also
+    // drops its master PTY, which closes the pseudoconsole (ClosePseudoConsole) and ends the host.
+    pub fn kill_all(&self) {
+        for (_, mut s) in self.sessions().drain() {
+            let _ = s.killer.kill();
+        }
     }
 }
 

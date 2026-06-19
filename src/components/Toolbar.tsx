@@ -1,7 +1,10 @@
 import { useWorkspaces } from "../stores/workspace";
 import { pickFolders } from "../api";
+import { isWindows } from "../platform";
 
 const CLAUDE_CMD = "claude --permission-mode auto";
+const GEMINI_CMD = "gemini";
+const WSL_CMD = "wsl";
 
 export function Toolbar() {
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId));
@@ -35,6 +38,14 @@ export function Toolbar() {
       <div className="toolbar-actions">
         <button className="btn" onClick={() => launch()}>
           {isOpen ? "+ Terminal in folder" : "+ Terminal"}
+        </button>
+        {isWindows && (
+          <button className="btn" onClick={() => launch(WSL_CMD)}>
+            {isOpen ? "+ WSL in folder" : "+ WSL"}
+          </button>
+        )}
+        <button className="btn secondary" onClick={() => launch(GEMINI_CMD)}>
+          {isOpen ? "+ Gemini in folder" : "+ Gemini"}
         </button>
         <button className="btn primary" onClick={() => launch(CLAUDE_CMD)}>
           {isOpen ? "+ Claude in folder" : "+ Claude"}

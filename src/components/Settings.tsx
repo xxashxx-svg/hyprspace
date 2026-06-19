@@ -1,11 +1,42 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { THEMES } from "../themes";
-import { useSettings, DEFAULT_FONT, type CursorStyle } from "../stores/settings";
+import {
+  useSettings,
+  DEFAULT_FONT,
+  type CursorStyle,
+  type ClaudePermission,
+  type CodexMode,
+} from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { useUpdater } from "../stores/updater";
 import { useAuth } from "../stores/auth";
-import { Logo } from "./Logo";
+import { providerStatus, pickFolder, getHomeDir, type ProviderStatus } from "../api";
+import { relTime } from "../lib/time";
+import { McpServers } from "./McpServers";
+import { SkillsManager } from "./SkillsManager";
+import { useWorkspaces } from "../stores/workspace";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import {
+  User,
+  Palette,
+  Boxes,
+  SquareTerminal,
+  ArrowDownToLine,
+  Info,
+  X,
+  Sparkles,
+  Gem,
+  Bot,
+  RefreshCw,
+  Plug,
+  Check,
+  Copy,
+  Folder,
+  FolderCog,
+  LayoutGrid,
+  Zap,
+} from "lucide-react";
 
 const FONTS: { label: string; value: string }[] = [
   { label: "Cascadia Code", value: DEFAULT_FONT },
@@ -20,43 +51,36 @@ const CURSORS: { label: string; value: CursorStyle }[] = [
   { label: "Underline", value: "underline" },
 ];
 
-type Tab = "account" | "appearance" | "terminal" | "updates" | "about";
+type Tab =
+  | "account"
+  | "appearance"
+  | "workspace"
+  | "providers"
+  | "mcp"
+  | "skills"
+  | "terminal"
+  | "updates"
+  | "about";
 
 const ICONS: Record<Tab, ReactNode> = {
-  account: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5" />
-    </svg>
-  ),
-  appearance: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none" />
-    </svg>
-  ),
-  terminal: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <rect x="3" y="4.5" width="18" height="15" rx="2" />
-      <path d="M7 9.5l3 2.5-3 2.5M12.5 15h4.5" />
-    </svg>
-  ),
-  updates: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5M5 20.5h14" />
-    </svg>
-  ),
-  about: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v5M12 7.5h.01" />
-    </svg>
-  ),
+  account: <User strokeWidth={1.75} />,
+  appearance: <Palette strokeWidth={1.75} />,
+  workspace: <FolderCog strokeWidth={1.75} />,
+  providers: <Boxes strokeWidth={1.75} />,
+  mcp: <Plug strokeWidth={1.75} />,
+  skills: <Zap strokeWidth={1.75} />,
+  terminal: <SquareTerminal strokeWidth={1.75} />,
+  updates: <ArrowDownToLine strokeWidth={1.75} />,
+  about: <Info strokeWidth={1.75} />,
 };
 
 const TABS: { id: Tab; label: string; desc: string }[] = [
   { id: "account", label: "Account", desc: "Your profile and sign-in" },
   { id: "appearance", label: "Appearance", desc: "Theme, colors and fonts" },
+  { id: "workspace", label: "Workspace", desc: "Where projects are created" },
+  { id: "providers", label: "Providers", desc: "How each AI tool launches" },
+  { id: "mcp", label: "MCP", desc: "Model Context Protocol servers" },
+  { id: "skills", label: "Skills", desc: "Snippets and Claude skills" },
   { id: "terminal", label: "Terminal", desc: "Cursor style and behavior" },
   { id: "updates", label: "Updates", desc: "Version and update checks" },
   { id: "about", label: "About", desc: "About HyprSpace" },
@@ -75,8 +99,119 @@ function Row({ label, desc, children }: { label?: string; desc?: string; childre
   );
 }
 
+// a labeled card that groups related rows, split by dividers — the Cursor look
+function Group({ label, pad, children }: { label: string; pad?: boolean; children: ReactNode }) {
+  return (
+    <div className="set-section">
+      <div className="set-label">{label}</div>
+      <div className={`set-group${pad ? " pad" : ""}`}>{children}</div>
+    </div>
+  );
+}
+
+// the signed-in line under a provider's name — account + plan, or why it's unavailable
+function statusLine(s: ProviderStatus | "loading"): { cls: string; node: ReactNode } {
+  if (s === "loading") return { cls: "muted", node: "Checking…" };
+  if (!s.installed) {
+    const name = s.id ? s.id.charAt(0).toUpperCase() + s.id.slice(1) : "This";
+    return {
+      cls: "err",
+      node: (
+        <>
+          {name} CLI (<code className="provider-cli">{s.id || "?"}</code>) is not installed or not on
+          PATH.
+        </>
+      ),
+    };
+  }
+  if (s.account)
+    return {
+      cls: "ok",
+      node: (
+        <>
+          Authenticated as <span className="provider-acct">{s.account}</span>
+          {s.plan ? ` · ${s.plan}` : ""}
+        </>
+      ),
+    };
+  return { cls: "warn", node: s.detail || "Signed in" };
+}
+
+// ---- account-tab helpers ----
+function fmtDate(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+function fmtDateTime(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+}
+// copy-to-clipboard button with a brief check tick
+function CopyBtn({ value }: { value: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="acct-copy"
+      title="Copy"
+      onClick={() => {
+        void writeText(value);
+        setDone(true);
+        setTimeout(() => setDone(false), 1200);
+      }}
+    >
+      {done ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
+// a provider card — icon + name + version, the signed-in line, then its launch options
+function Provider({
+  icon,
+  name,
+  status,
+  children,
+}: {
+  icon: ReactNode;
+  name: string;
+  status?: ProviderStatus | "loading";
+  children: ReactNode;
+}) {
+  const line = status ? statusLine(status) : null;
+  return (
+    <div className="set-section">
+      <div className="provider-head">
+        <span className="provider-ico">{icon}</span>
+        <span className="provider-name">{name}</span>
+        {status && status !== "loading" && status.version && (
+          <span className="provider-ver">v{status.version}</span>
+        )}
+      </div>
+      {line && (
+        <div className={`provider-status ${line.cls}`}>
+          <span className="provider-status-dot" />
+          <span className="provider-status-text">{line.node}</span>
+        </div>
+      )}
+      <div className="set-group">{children}</div>
+    </div>
+  );
+}
+
+// In-app settings screen — rendered inside the main window (no separate OS window).
 export function Settings() {
-  const close = useUi((s) => s.toggleSettings);
+  const close = useUi((s) => s.closeSettings);
   const tab = useUi((s) => s.settingsTab) as Tab;
   const setTab = useUi((s) => s.setSettingsTab);
 
@@ -92,6 +227,60 @@ export function Settings() {
   const setCursorBlink = useSettings((s) => s.setCursorBlink);
   const copyOnSelect = useSettings((s) => s.copyOnSelect);
   const setCopyOnSelect = useSettings((s) => s.setCopyOnSelect);
+  const claudePermission = useSettings((s) => s.claudePermission);
+  const setClaudePermission = useSettings((s) => s.setClaudePermission);
+  const geminiYolo = useSettings((s) => s.geminiYolo);
+  const setGeminiYolo = useSettings((s) => s.setGeminiYolo);
+  const codexMode = useSettings((s) => s.codexMode);
+  const setCodexMode = useSettings((s) => s.setCodexMode);
+  const projectsDir = useSettings((s) => s.projectsDir);
+  const setProjectsDir = useSettings((s) => s.setProjectsDir);
+
+  // resolve what the projects folder actually is right now, for the Workspace tab
+  const [defaultProjectsDir, setDefaultProjectsDir] = useState("~/Documents/HyprSpace");
+  useEffect(() => {
+    getHomeDir()
+      .then((h) => {
+        if (!h) return;
+        const sep = h.includes("\\") ? "\\" : "/";
+        setDefaultProjectsDir([h, "Documents", "HyprSpace"].join(sep));
+      })
+      .catch(() => {});
+  }, []);
+  const chooseProjectsDir = async () => {
+    const f = await pickFolder();
+    if (f) setProjectsDir(f);
+  };
+
+  // live provider status (CLI version + signed-in account/plan) for the Providers tab
+  const [statuses, setStatuses] = useState<Record<string, ProviderStatus | "loading">>({});
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const refreshStatuses = () => {
+    const ids = ["claude", "gemini", "codex"];
+    setStatuses(Object.fromEntries(ids.map((id) => [id, "loading" as const])));
+    setCheckedAt(Date.now());
+    ids.forEach((id) =>
+      providerStatus(id)
+        .then((st) => setStatuses((p) => ({ ...p, [id]: st })))
+        .catch(() =>
+          setStatuses((p) => ({
+            ...p,
+            [id]: {
+              id,
+              installed: false,
+              version: null,
+              account: null,
+              plan: null,
+              detail: "Couldn't check",
+            },
+          })),
+        ),
+    );
+  };
+  useEffect(() => {
+    if (tab === "providers" && checkedAt == null) refreshStatuses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const phase = useUpdater((s) => s.phase);
   const detail = useUpdater((s) => s.detail);
@@ -103,6 +292,9 @@ export function Settings() {
   const signingIn = useAuth((s) => s.signingIn);
   const signInGoogle = useAuth((s) => s.signInWithGoogle);
   const signOut = useAuth((s) => s.signOut);
+  const workspaces = useWorkspaces((s) => s.workspaces);
+  const activeId = useWorkspaces((s) => s.activeId);
+  const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
 
   const [version, setVersion] = useState("");
   useEffect(() => {
@@ -110,6 +302,15 @@ export function Settings() {
       .then(setVersion)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [close]);
+
   const statusText =
     phase === "checking"
       ? "Checking…"
@@ -123,70 +324,151 @@ export function Settings() {
               ? detail
               : "—";
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [close]);
-
   const active = TABS.find((t) => t.id === tab) ?? TABS[0];
   const avatar =
     typeof authUser?.user_metadata?.avatar_url === "string" ? authUser.user_metadata.avatar_url : null;
+  const fullName = ((authUser?.user_metadata?.full_name as string) || authUser?.email || "").trim();
+  const initial = (fullName || "?")[0]?.toUpperCase() ?? "?";
+  const projectCount = workspaces.filter((w) => w.kind !== "open").length;
+  const openCount = workspaces.filter((w) => w.kind === "open").length;
+  const sessionCount = workspaces.reduce((n, w) => n + w.sessions.length, 0);
+  const acctProvider = authUser?.app_metadata?.provider;
+  const providerLabel = acctProvider
+    ? acctProvider.charAt(0).toUpperCase() + acctProvider.slice(1)
+    : "—";
+  const skillsCwd = (() => {
+    const w = workspaces.find((x) => x.id === activeId);
+    return w?.sessions.find((s) => s.id === focusedSessionId)?.cwd || w?.cwd || "";
+  })();
 
   return (
-    <div className="settings-overlay" onMouseDown={close}>
-      <div className="settings-win" onMouseDown={(e) => e.stopPropagation()}>
-        <nav className="settings-nav">
-          <div className="settings-brand">Settings</div>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={`settings-nav-item${tab === t.id ? " active" : ""}`}
-              onClick={() => setTab(t.id)}
-            >
-              {ICONS[t.id]}
-              {t.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="settings-main">
-          <div className="settings-header">
-            <div>
-              <div className="settings-header-title">{active.label}</div>
-              <div className="settings-header-desc">{active.desc}</div>
+    <div className="settings-screen">
+      <nav className="settings-nav">
+        <div className="settings-brand">Settings</div>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={`settings-nav-item${tab === t.id ? " active" : ""}`}
+            onClick={() => setTab(t.id)}
+          >
+            {ICONS[t.id]}
+            {t.label}
+          </button>
+        ))}
+        {authUser && (
+          <button
+            className={`settings-acct${tab === "account" ? " active" : ""}`}
+            onClick={() => setTab("account")}
+            title={authUser.email ?? "Account"}
+          >
+            {avatar ? (
+              <img src={avatar} alt="" referrerPolicy="no-referrer" />
+            ) : (
+              <span className="settings-acct-ava">{initial}</span>
+            )}
+            <div className="settings-acct-meta">
+              <div className="settings-acct-name">{fullName || "Account"}</div>
+              <div className="settings-acct-sub">{authUser.email}</div>
             </div>
-            <button className="modal-x" onClick={close} aria-label="Close">
-              ×
-            </button>
-          </div>
+          </button>
+        )}
+      </nav>
 
-          <div className="settings-content">
-            {tab === "account" && (
-              <div className="set-section">
-                <div className="set-label">{authUser ? "Profile" : "Account"}</div>
-                {authUser ? (
-                  <div className="acct-card">
-                    {avatar ? (
-                      <img className="acct-avatar" src={avatar} alt="" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="acct-avatar acct-avatar-fallback">
-                        {(authUser.email ?? "?").trim()[0]?.toUpperCase()}
+      <div className="settings-main">
+        <div className="settings-header">
+          <div>
+            <div className="settings-header-title">{active.label}</div>
+            <div className="settings-header-desc">{active.desc}</div>
+          </div>
+          <button className="settings-close" onClick={close} aria-label="Close settings" title="Close (Esc)">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="settings-content">
+          <div className="settings-page">
+            {tab === "account" &&
+              (authUser ? (
+                <>
+                  <Group label="Profile">
+                    <div className="acct-row">
+                      {avatar ? (
+                        <img className="acct-avatar" src={avatar} alt="" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="acct-avatar acct-avatar-fallback">{initial}</div>
+                      )}
+                      <div className="acct-meta">
+                        <div className="acct-name">{fullName || authUser.email}</div>
+                        <div className="acct-email">{authUser.email}</div>
                       </div>
-                    )}
-                    <div className="acct-meta">
-                      <div className="acct-name">
-                        {(authUser.user_metadata?.full_name as string) ?? authUser.email}
-                      </div>
-                      <div className="acct-email">{authUser.email}</div>
+                      <button className="btn" onClick={() => void signOut()}>
+                        Sign out
+                      </button>
                     </div>
-                    <button className="btn" onClick={() => void signOut()}>
-                      Sign out
-                    </button>
+                  </Group>
+
+                  <Group label="Account">
+                    <Row label="Signed in with">
+                      <span className="acct-val">{providerLabel}</span>
+                    </Row>
+                    <Row label="Email">
+                      <span className="acct-val acct-val-copy">
+                        {authUser.email}
+                        {authUser.email_confirmed_at && (
+                          <Check size={13} className="acct-verified" />
+                        )}
+                        <CopyBtn value={authUser.email ?? ""} />
+                      </span>
+                    </Row>
+                    <Row label="Member since">
+                      <span className="acct-val">{fmtDate(authUser.created_at)}</span>
+                    </Row>
+                    <Row label="Last sign-in">
+                      <span className="acct-val">{fmtDateTime(authUser.last_sign_in_at)}</span>
+                    </Row>
+                    <Row label="Account ID">
+                      <span className="acct-val acct-val-copy">
+                        <code className="acct-id">{authUser.id}</code>
+                        <CopyBtn value={authUser.id} />
+                      </span>
+                    </Row>
+                  </Group>
+
+                  <div className="set-section">
+                    <div className="set-label">Workspace</div>
+                    <div className="acct-stats">
+                      <div className="acct-stat">
+                        <span className="acct-stat-ico">
+                          <Folder size={16} />
+                        </span>
+                        <span className="acct-stat-body">
+                          <span className="acct-stat-n">{projectCount}</span>
+                          <span className="acct-stat-l">Projects</span>
+                        </span>
+                      </div>
+                      <div className="acct-stat">
+                        <span className="acct-stat-ico">
+                          <LayoutGrid size={16} />
+                        </span>
+                        <span className="acct-stat-body">
+                          <span className="acct-stat-n">{openCount}</span>
+                          <span className="acct-stat-l">Open spaces</span>
+                        </span>
+                      </div>
+                      <div className="acct-stat">
+                        <span className="acct-stat-ico">
+                          <SquareTerminal size={16} />
+                        </span>
+                        <span className="acct-stat-body">
+                          <span className="acct-stat-n">{sessionCount}</span>
+                          <span className="acct-stat-l">Sessions</span>
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                ) : (
+                </>
+              ) : (
+                <Group label="Account">
                   <Row label="Status" desc="You're not signed in.">
                     <button
                       className="btn primary"
@@ -196,14 +478,12 @@ export function Settings() {
                       {signingIn ? "Waiting…" : "Sign in with Google"}
                     </button>
                   </Row>
-                )}
-              </div>
-            )}
+                </Group>
+              ))}
 
             {tab === "appearance" && (
               <>
-                <div className="set-section">
-                  <div className="set-label">Theme</div>
+                <Group label="Theme" pad>
                   <div className="theme-grid">
                     {THEMES.map((t) => (
                       <button
@@ -228,10 +508,9 @@ export function Settings() {
                       </button>
                     ))}
                   </div>
-                </div>
+                </Group>
 
-                <div className="set-section">
-                  <div className="set-label">Font</div>
+                <Group label="Font">
                   <Row label="Family" desc="Used across all terminals">
                     <select
                       className="set-select"
@@ -252,14 +531,104 @@ export function Settings() {
                       <button onClick={() => setFontSize(fontSize + 1)}>+</button>
                     </div>
                   </Row>
-                </div>
+                </Group>
               </>
             )}
 
+            {tab === "workspace" && (
+              <Group label="Projects">
+                <Row
+                  label="Projects folder"
+                  desc="Where new projects are created — including ones the chat makes for you"
+                >
+                  <div className="set-path">
+                    <code className="set-path-val" title={projectsDir || defaultProjectsDir}>
+                      {projectsDir || defaultProjectsDir}
+                    </code>
+                    <button className="btn" onClick={() => void chooseProjectsDir()}>
+                      Change…
+                    </button>
+                    {projectsDir ? (
+                      <button className="btn" onClick={() => setProjectsDir("")}>
+                        Reset
+                      </button>
+                    ) : (
+                      <span className="set-path-tag">Default</span>
+                    )}
+                  </div>
+                </Row>
+              </Group>
+            )}
+
+            {tab === "providers" && (
+              <>
+                <div className="providers-bar">
+                  <span className="providers-checked">
+                    {checkedAt ? `Checked ${relTime(checkedAt)}` : "Checking…"}
+                  </span>
+                  <button
+                    className="providers-refresh"
+                    title="Re-check providers"
+                    onClick={refreshStatuses}
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+                <Provider icon={<Sparkles size={16} />} name="Claude" status={statuses.claude}>
+                  <Row label="Permission mode" desc="How Claude handles approvals when you launch it">
+                    <select
+                      className="set-select"
+                      value={claudePermission}
+                      onChange={(e) => setClaudePermission(e.target.value as ClaudePermission)}
+                    >
+                      <option value="default">Ask each time</option>
+                      <option value="acceptEdits">Accept edits</option>
+                      <option value="plan">Plan mode</option>
+                      <option value="bypass">Bypass permissions</option>
+                    </select>
+                  </Row>
+                </Provider>
+
+                <Provider icon={<Gem size={16} />} name="Gemini" status={statuses.gemini}>
+                  <Row label="Auto-approve (YOLO)" desc="Run actions without asking for confirmation">
+                    <button
+                      className={`toggle ${geminiYolo ? "on" : ""}`}
+                      onClick={() => setGeminiYolo(!geminiYolo)}
+                      aria-pressed={geminiYolo}
+                    >
+                      <span className="toggle-knob" />
+                    </button>
+                  </Row>
+                </Provider>
+
+                <Provider icon={<Bot size={16} />} name="Codex" status={statuses.codex}>
+                  <Row
+                    label="Approval mode"
+                    desc="How Codex handles approvals and sandboxing when you launch it"
+                  >
+                    <select
+                      className="set-select"
+                      value={codexMode}
+                      onChange={(e) => setCodexMode(e.target.value as CodexMode)}
+                    >
+                      <option value="default">Suggest (ask)</option>
+                      <option value="auto">Auto (sandboxed)</option>
+                      <option value="bypass">Full access (bypass)</option>
+                    </select>
+                  </Row>
+                </Provider>
+
+                <div className="set-hint">Terminal and WSL open plain shells — no agent options.</div>
+              </>
+            )}
+
+            {tab === "mcp" && <McpServers />}
+
+            {tab === "skills" && <SkillsManager cwd={skillsCwd} />}
+
             {tab === "terminal" && (
               <>
-                <div className="set-section">
-                  <div className="set-label">Cursor</div>
+                <Group label="Cursor">
                   <Row label="Style" desc="Shape of the terminal cursor">
                     <div className="seg">
                       {CURSORS.map((c) => (
@@ -282,10 +651,9 @@ export function Settings() {
                       <span className="toggle-knob" />
                     </button>
                   </Row>
-                </div>
+                </Group>
 
-                <div className="set-section">
-                  <div className="set-label">Behavior</div>
+                <Group label="Behavior">
                   <Row label="Copy on select" desc="Copy text to the clipboard as soon as you select it">
                     <button
                       className={`toggle ${copyOnSelect ? "on" : ""}`}
@@ -295,20 +663,19 @@ export function Settings() {
                       <span className="toggle-knob" />
                     </button>
                   </Row>
-                </div>
+                </Group>
               </>
             )}
 
             {tab === "updates" && (
-              <div className="set-section">
-                <div className="set-label">Updates</div>
+              <Group label="Updates">
                 <Row label="Current version">
                   <span className="set-val">{version || "…"}</span>
                 </Row>
                 <Row label="Status" desc="Updates install on restart">
                   <span className="set-val">{statusText}</span>
                 </Row>
-                <Row>
+                <Row label="Check for updates" desc="HyprSpace updates itself in the background">
                   {phase === "available" ? (
                     <button className="btn primary" onClick={() => void install()}>
                       Restart &amp; update to {update?.version}
@@ -319,18 +686,15 @@ export function Settings() {
                       onClick={() => void checkNow()}
                       disabled={phase === "checking" || phase === "downloading"}
                     >
-                      {phase === "checking" ? "Checking…" : "Check for updates"}
+                      {phase === "checking" ? "Checking…" : "Check now"}
                     </button>
                   )}
                 </Row>
-              </div>
+              </Group>
             )}
 
             {tab === "about" && (
               <div className="settings-about">
-                <div className="about-logo">
-                  <Logo size={42} />
-                </div>
                 <div className="about-name">HyprSpace</div>
                 <div className="about-ver">Version {version || "…"}</div>
                 <div className="about-blurb">

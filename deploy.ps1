@@ -1,10 +1,13 @@
 # deploy.ps1 — ship a HyprSpace update: bump version, build + sign the installer,
 # and publish a GitHub release carrying the auto-update manifest.
 #
-#   .\deploy.ps1 patch "Fixed the thing"   # 0.1.0 -> 0.1.1
-#   .\deploy.ps1 minor "New feature"       # 0.1.0 -> 0.2.0
-#   .\deploy.ps1 major "Big change"        # 0.1.0 -> 1.0.0
+#   .\deploy.ps1 patch "Fixed the thing"   # 0.1.0 -> 0.1.1   (bug fix / polish)
+#   .\deploy.ps1 minor "New feature"       # 0.1.0 -> 0.2.0   (new user-facing feature)
+#   .\deploy.ps1 major "Big change"        # 0.1.0 -> 1.0.0   (milestone / 1.0 / breaking)
 #   .\deploy.ps1 none  "First release"     # publish the current version as-is
+#
+# Pick the bump by docs/VERSIONING.md. Full release steps (and how to do it without Claude):
+# docs/DEPLOY.md. Never hand-edit version numbers — this script keeps all three files in sync.
 param(
   [ValidateSet('none', 'patch', 'minor', 'major')][string]$bump = 'patch',
   [string]$notes = ""

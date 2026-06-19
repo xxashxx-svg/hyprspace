@@ -22,7 +22,14 @@ impl Store {
     }
 
     fn path(&self, name: &str) -> PathBuf {
-        self.dir.join(format!("{name}.json"))
+        // keep the name a single safe token so it can't traverse out of the state dir
+        // (a "../x" or absolute name would otherwise escape via Path::join)
+        let safe: String = name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+            .collect();
+        let safe = if safe.is_empty() { "_".to_string() } else { safe };
+        self.dir.join(format!("{safe}.json"))
     }
 
     // the protected data is just (), so recovering a poisoned lock is always safe —

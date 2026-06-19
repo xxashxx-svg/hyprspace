@@ -37,7 +37,7 @@ const NOISE = [
   /original prompt:/i,
   /claude-mem|worker-service|bun-runner|CLAUDE_PLUGIN_ROOT|CLAUDE_CONFIG_DIR|PLUGIN_ROOT/i,
   /auto mode on|shift\+tab to cycle|↵ for agents|for agents$/i,
-  /opus [\d.]+ \(1m context\)|\[opus|\[sonnet|\[haiku|\[claude/i,
+  /opus [\d.]+ \(1m context\)|\[opus|\[sonnet|\[haiku|\[claude|gemini/i,
   /'s organization/i,
   /windows powershell|copyright \(c\) microsoft|try the new cross-platform|aka\.ms\/pscore6/i,
   /^[\s│|`└├─.>*+-]*$/, // box-drawing / blank / lone prompt-arrow lines
