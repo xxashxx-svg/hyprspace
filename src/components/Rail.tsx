@@ -59,10 +59,13 @@ export function Rail() {
   const projects = workspaces.filter((w) => w.kind !== "open");
   const openSpaces = workspaces.filter((w) => w.kind === "open");
 
-  // keep the active space expanded; while anything is expanded, re-render once a second so the
-  // "working" dots decay back to idle when a terminal goes quiet
+  // auto-expand the active OPEN SPACE so its session list shows. projects aren't auto-expanded —
+  // their chevron opens a file tree, and dumping that on every click is annoying (toggle it yourself).
+  // while anything is expanded, re-render once a second so the "working" dots decay back to idle.
   useEffect(() => {
-    if (activeId) setExpanded((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
+    if (!activeId) return;
+    const ws = useWorkspaces.getState().workspaces.find((w) => w.id === activeId);
+    if (ws?.kind === "open") setExpanded((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
   }, [activeId]);
   useEffect(() => {
     if (expanded.size === 0) return;
