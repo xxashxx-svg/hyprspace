@@ -335,10 +335,21 @@ body {
   }
 }
 .rail-sess-name {
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* the subfolder a session runs in, shown dim after its name */
+.rail-sess-sub {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
 }
 .rail-sess-time {
   flex: 0 0 auto;
@@ -4994,9 +5005,21 @@ body.skill-dragging * {
   color: var(--text-3);
 }
 .ft-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* dot on a folder that has a live session running in it */
+.ft-live {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--status-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-ok) 20%, transparent);
 }
 .ft-dim {
   color: var(--text-3);
