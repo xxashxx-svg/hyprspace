@@ -472,6 +472,37 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+// ---- file tree: list one directory level for the Files panel ----
+
+#[derive(Serialize)]
+pub struct DirEntry {
+    name: String,
+    dir: bool,
+}
+
+// list a single directory level (folders first, then files; case-insensitive alphabetical).
+// lazy — the UI calls this per folder on expand, so a huge tree is never read all at once.
+#[tauri::command]
+pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let rd = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+        let mut out: Vec<DirEntry> = vec![];
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            out.push(DirEntry { name, dir });
+        }
+        out.sort_by(|a, b| {
+            (b.dir as u8)
+                .cmp(&(a.dir as u8))
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---- provider status (version + signed-in account/plan) for Settings → Providers ----
 
 #[derive(Serialize, Default)]

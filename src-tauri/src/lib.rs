@@ -5,10 +5,12 @@ mod license;
 mod oauth;
 mod persist;
 mod pty;
+mod services;
 
 use std::collections::HashMap;
 
 use chat::ChatManager;
+use services::ServiceManager;
 use persist::Store;
 use pty::PtyManager;
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -64,6 +66,23 @@ fn chat_turn(state: State<ChatManager>, id: String, message: String) -> Result<(
 
 #[tauri::command]
 fn chat_stop(state: State<ChatManager>, id: String) {
+    state.stop(&id);
+}
+
+#[tauri::command]
+fn service_start(
+    state: State<ServiceManager>,
+    id: String,
+    cwd: String,
+    command: String,
+    env: HashMap<String, String>,
+    on_event: Channel<String>,
+) -> Result<(), String> {
+    state.start(id, cwd, command, env, on_event)
+}
+
+#[tauri::command]
+fn service_stop(state: State<ServiceManager>, id: String) {
     state.stop(&id);
 }
 
@@ -213,6 +232,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(PtyManager::default())
         .manage(ChatManager::default())
+        .manage(ServiceManager::default())
         .manage(Store::new())
         .invoke_handler(tauri::generate_handler![
             create_pty,
@@ -222,6 +242,8 @@ pub fn run() {
             chat_start,
             chat_turn,
             chat_stop,
+            service_start,
+            service_stop,
             get_home_dir,
             shell_name,
             claude_has_history,
@@ -245,6 +267,7 @@ pub fn run() {
             devtools::git_file_op,
             devtools::create_project_dir,
             devtools::reveal_path,
+            devtools::list_dir,
             devtools::provider_status,
             devtools::mcp_list,
             devtools::mcp_set,
@@ -268,6 +291,7 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     app.state::<PtyManager>().kill_all();
                     app.state::<ChatManager>().kill_all();
+                    app.state::<ServiceManager>().kill_all();
                 }
                 _ => {}
             }

@@ -5,6 +5,7 @@ import { useActivity } from "../stores/activity";
 import { useAuth } from "../stores/auth";
 import { relTime } from "../lib/time";
 import { revealPath } from "../api";
+import { FileTree } from "./FilesPanel";
 import {
   GripVertical,
   Folder,
@@ -90,6 +91,8 @@ export function Rail() {
   const item = (w: Workspace) => {
     const isExpanded = expanded.has(w.id);
     const hasSessions = w.sessions.length > 0;
+    // projects can expand to browse their folders even with no sessions yet
+    const canExpand = hasSessions || (w.kind !== "open" && !!w.cwd);
     return (
       <div key={w.id} className="rail-item-wrap" data-wsid={w.id}>
         <div
@@ -111,7 +114,7 @@ export function Rail() {
             setMenu({ x: e.clientX, y: e.clientY, id: w.id });
           }}
         >
-          {hasSessions ? (
+          {canExpand ? (
             <button
               className={`rail-twist${isExpanded ? " open" : ""}`}
               title={isExpanded ? "Collapse" : "Expand"}
@@ -195,27 +198,36 @@ export function Rail() {
             <X size={12} />
           </button>
         </div>
-        {isExpanded && hasSessions && !collapsed && (
-          <div className="rail-sessions">
-            {w.sessions.map((s) => {
-              const dot = sessDot(s.id);
-              const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
-              return (
-                <button
-                  key={s.id}
-                  className={`rail-session${active ? " active" : ""}`}
-                  title={s.cwd || s.title}
-                  onClick={() => focusSession(w.id, s.id)}
-                >
-                  <span className={`rail-sess-dot s-${dot}`} />
-                  <span className="rail-sess-name">{s.title}</span>
-                  {lastOut[s.id] ? (
-                    <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+        {isExpanded && !collapsed && (
+          <>
+            {hasSessions && (
+              <div className="rail-sessions">
+                {w.sessions.map((s) => {
+                  const dot = sessDot(s.id);
+                  const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      className={`rail-session${active ? " active" : ""}`}
+                      title={s.cwd || s.title}
+                      onClick={() => focusSession(w.id, s.id)}
+                    >
+                      <span className={`rail-sess-dot s-${dot}`} />
+                      <span className="rail-sess-name">{s.title}</span>
+                      {lastOut[s.id] ? (
+                        <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {w.kind !== "open" && w.cwd && (
+              <div className="rail-files">
+                <FileTree cwd={w.cwd} wsId={w.id} />
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -313,6 +325,18 @@ export function Rail() {
                 }}
               >
                 Open folder
+              </button>
+            )}
+            {workspaces.find((w) => w.id === menu.id)?.cwd && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const w = workspaces.find((x) => x.id === menu.id);
+                  if (w?.cwd) useUi.getState().openServices({ folder: w.cwd, wsId: w.id, name: w.name });
+                  setMenu(null);
+                }}
+              >
+                Services
               </button>
             )}
             <button

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { useGit } from "../stores/git";
+import { useServices } from "../stores/services";
 import { isMac, isWindows } from "../platform";
 import { pickFolder, gitIsRepo, revealPath } from "../api";
 import { newClaude, newGemini, newCodex, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
@@ -76,6 +77,147 @@ function ActionMenu({ label, lead, items }: { label: string; lead?: ReactNode; i
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// right-click menu for one background service: the full set of things you can do with it
+function ServiceCtxMenu({ menu, onClose }: { menu: { x: number; y: number; id: string }; onClose: () => void }) {
+  const meta = useServices((s) => s.running[menu.id]);
+  const known = useServices((s) => s.known[menu.id]);
+  const isRunning = !!meta;
+  const name = meta?.name || known?.name || "service";
+  const command = meta?.command || known?.command || "";
+  const cwd = known?.cwd || "";
+  const left = Math.min(menu.x, window.innerWidth - 210);
+  return (
+    <>
+      <div
+        className="ctx-backdrop"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
+      <div className="ctx-menu" style={{ left, top: menu.y }}>
+        <button
+          className="ctx-item"
+          onClick={() => {
+            useUi.getState().openServiceLogs({ id: menu.id, name });
+            onClose();
+          }}
+        >
+          View logs
+        </button>
+        <button
+          className="ctx-item"
+          onClick={() => {
+            useServices.getState().restart(menu.id);
+            onClose();
+          }}
+        >
+          {isRunning ? "Restart" : "Start"}
+        </button>
+        {cwd && (
+          <button
+            className="ctx-item"
+            onClick={() => {
+              void revealPath(cwd).catch(() => {});
+              onClose();
+            }}
+          >
+            Open folder
+          </button>
+        )}
+        {command && (
+          <button
+            className="ctx-item"
+            onClick={() => {
+              void navigator.clipboard.writeText(command).catch(() => {});
+              onClose();
+            }}
+          >
+            Copy command
+          </button>
+        )}
+        {isRunning && (
+          <button
+            className="ctx-item danger"
+            onClick={() => {
+              useServices.getState().stop(menu.id);
+              onClose();
+            }}
+          >
+            Stop
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Live indicator for background services. Hidden when nothing's running; left-click opens logs (a
+// single service) or a picker list (several); right-click opens a full actions menu.
+function ServicesIndicator() {
+  const running = useServices((s) => s.running);
+  const ids = Object.keys(running);
+  const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  if (ids.length === 0) return null;
+  const openLogs = (id: string) => {
+    useUi.getState().openServiceLogs({ id, name: running[id]?.name || "service" });
+    setOpen(false);
+  };
+  const showMenu = (e: ReactMouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpen(false);
+    setMenu({ x: e.clientX, y: e.clientY, id });
+  };
+  const label = ids.length === 1 ? running[ids[0]]?.name || "service" : `${ids.length} services`;
+  return (
+    <div className="tb-svc" ref={ref}>
+      <button
+        className="tb-svc-btn"
+        title={`${ids.length} background service${ids.length > 1 ? "s" : ""} running — click for logs, right-click for actions`}
+        onClick={() => (ids.length === 1 ? openLogs(ids[0]) : setOpen((o) => !o))}
+        onContextMenu={(e) => {
+          if (ids.length === 1) showMenu(e, ids[0]);
+          else {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span className="tb-svc-dot" />
+        <span className="tb-svc-label">{label}</span>
+      </button>
+      {open && ids.length > 1 && (
+        <div className="tb-menu-pop tb-svc-pop">
+          {ids.map((id) => (
+            <button
+              key={id}
+              className="tb-menu-item"
+              onClick={() => openLogs(id)}
+              onContextMenu={(e) => showMenu(e, id)}
+            >
+              <span className="tb-svc-dot" />
+              {running[id]?.name || "service"}
+            </button>
+          ))}
+        </div>
+      )}
+      {menu && <ServiceCtxMenu menu={menu} onClose={() => setMenu(null)} />}
     </div>
   );
 }
@@ -201,6 +343,7 @@ export function Titlebar() {
               />
             ))}
         </div>
+        <ServicesIndicator />
         <NotificationPanel />
         <button
           className="tb-ctl"

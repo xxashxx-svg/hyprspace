@@ -9,9 +9,11 @@ interface UiState {
   settingsOpen: boolean; // in-app settings screen
   settingsTab: string;
   newProjectOpen: boolean; // the New Project wizard
+  servicesFor: { folder: string; wsId: string; name: string } | null; // the Services config modal
+  serviceLogsFor: { id: string; name: string } | null; // the background-service log viewer
   paletteOpen: boolean;
   dockOpen: boolean;
-  dockTab: "changes" | "skills";
+  dockTab: "changes" | "skills" | "services" | "files";
   paneDragging: boolean; // a terminal pane is mid-drag (rail shows spaces as drop targets)
   paneDragOverWs: string | null; // the space the dragged pane is hovering over in the rail
   goHome: () => void;
@@ -26,11 +28,15 @@ interface UiState {
   setSettingsTab: (t: string) => void;
   openNewProject: () => void;
   closeNewProject: () => void;
+  openServices: (t: { folder: string; wsId: string; name: string }) => void;
+  closeServices: () => void;
+  openServiceLogs: (t: { id: string; name: string }) => void;
+  closeServiceLogs: () => void;
   togglePalette: () => void;
   setPalette: (b: boolean) => void;
   toggleDock: () => void;
   setDock: (b: boolean) => void;
-  setDockTab: (t: "changes" | "skills") => void;
+  setDockTab: (t: "changes" | "skills" | "services" | "files") => void;
   setPaneDrag: (on: boolean) => void;
   setPaneDragOverWs: (id: string | null) => void;
 }
@@ -44,6 +50,8 @@ export const useUi = create<UiState>()((set) => ({
   settingsOpen: false,
   settingsTab: "appearance",
   newProjectOpen: false,
+  servicesFor: null,
+  serviceLogsFor: null,
   paletteOpen: false,
   dockOpen: false,
   dockTab: "skills",
@@ -61,6 +69,10 @@ export const useUi = create<UiState>()((set) => ({
   setSettingsTab: (t) => set({ settingsTab: t }),
   openNewProject: () => set({ newProjectOpen: true }),
   closeNewProject: () => set({ newProjectOpen: false }),
+  openServices: (t) => set({ servicesFor: t }),
+  closeServices: () => set({ servicesFor: null }),
+  openServiceLogs: (t) => set({ serviceLogsFor: t }),
+  closeServiceLogs: () => set({ serviceLogsFor: null }),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setPalette: (b) => set({ paletteOpen: b }),
   toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),

@@ -4,9 +4,11 @@ import { useWorkspaces } from "../stores/workspace";
 import { gitChanges, gitDiff, gitBranchInfo, gitFileOp, gitCommit, type BranchInfo } from "../api";
 import type { FileChange } from "../api/types";
 import { SkillsPanel } from "./SkillsPanel";
+import { ServicesPanel } from "./ServicesPanel";
+import { FilesPanel } from "./FilesPanel";
 import { confirmDialog } from "../stores/confirm";
 import { useNotifications } from "../stores/notifications";
-import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2 } from "lucide-react";
+import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, Server, FolderTree } from "lucide-react";
 
 // porcelain code → a coarse class for the status chip color
 function statusClass(code: string): string {
@@ -256,6 +258,20 @@ export function ReviewDock() {
           Source
         </button>
         <button
+          className={`dock-tab${tab === "files" ? " active" : ""}`}
+          onClick={() => useUi.getState().setDockTab("files")}
+        >
+          <FolderTree size={13} />
+          Files
+        </button>
+        <button
+          className={`dock-tab${tab === "services" ? " active" : ""}`}
+          onClick={() => useUi.getState().setDockTab("services")}
+        >
+          <Server size={13} />
+          Services
+        </button>
+        <button
           className={`dock-tab${tab === "skills" ? " active" : ""}`}
           onClick={() => useUi.getState().setDockTab("skills")}
         >
@@ -266,7 +282,15 @@ export function ReviewDock() {
           <ChevronRight size={16} />
         </button>
       </div>
-      {tab === "changes" ? <SourceControl cwd={cwd} /> : <SkillsPanel cwd={cwd} />}
+      {tab === "changes" ? (
+        <SourceControl cwd={cwd} />
+      ) : tab === "files" ? (
+        <FilesPanel />
+      ) : tab === "services" ? (
+        <ServicesPanel />
+      ) : (
+        <SkillsPanel cwd={cwd} />
+      )}
     </div>
   );
 }

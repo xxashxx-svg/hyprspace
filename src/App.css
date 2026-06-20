@@ -2161,6 +2161,88 @@ body.skill-dragging * {
   gap: 8px;
   margin-top: 22px;
 }
+.empty-services {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.empty-services-label {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.empty-services-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.empty-svc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 11px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.empty-svc-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.empty-svc-chip > svg {
+  color: var(--status-ok);
+}
+/* background-service chip: a wrapper holding the run/logs button + a log shortcut */
+.empty-svc-chip.bg {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.empty-svc-chip.bg.on {
+  border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-1));
+}
+.empty-svc-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 11px;
+  cursor: pointer;
+}
+.empty-svc-main > svg {
+  color: var(--status-ok);
+}
+.empty-svc-logs {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-1);
+  color: var(--text-3);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.empty-svc-logs:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
 .launch-btn {
   padding: 9px 18px;
   background: var(--surface-2);
@@ -3188,6 +3270,62 @@ body.skill-dragging * {
 }
 .tb-action-caret {
   color: var(--text-3);
+}
+/* live background-service pill in the topbar */
+.tb-svc {
+  position: relative;
+  margin-right: 4px;
+}
+.tb-svc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  max-width: 170px;
+  padding: 0 11px;
+  background: color-mix(in srgb, var(--status-ok) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
+  border-radius: 999px;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.tb-svc-btn:hover {
+  background: color-mix(in srgb, var(--status-ok) 18%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-1));
+}
+.tb-svc-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--status-ok);
+  animation: svcPulse 2s var(--ease) infinite;
+}
+.tb-svc-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tb-svc-pop {
+  left: auto;
+  right: 0;
+  min-width: 180px;
+}
+@keyframes svcPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-ok) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 .tb-menu-pop {
   position: absolute;
@@ -4764,6 +4902,598 @@ body.skill-dragging * {
   padding: 16px;
   color: var(--text-3);
   font-size: 12px;
+}
+/* ---- files tree ---- */
+.ft {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ft-empty {
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.ft-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--border-1);
+}
+.ft-root {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-1);
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.ft-refresh:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.ft-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 10px;
+}
+.ft-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 3px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.ft-row:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.ft-twist {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: transform 0.12s var(--ease);
+}
+.ft-twist.open {
+  transform: rotate(90deg);
+}
+.ft-spacer {
+  width: 13px;
+  flex: 0 0 auto;
+}
+.ft-ico {
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.ft-ico.file {
+  color: var(--text-3);
+}
+.ft-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-dim {
+  color: var(--text-3);
+  font-size: 11.5px;
+  padding: 3px 8px;
+}
+/* the file tree inside the left sidebar (under an expanded project) — flows with the rail scroll */
+.rail-files {
+  padding: 2px 0 6px 14px;
+}
+.rail-files .ft-tree {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+.rail-files .ft-row {
+  font-size: 12px;
+}
+/* ---- services panel ---- */
+.svc {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.svc-empty {
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.svc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.svc-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.svc-startall {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.svc-startall:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.svc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.svc-label {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.svc-task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+}
+.svc-task-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.svc-in {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+.svc-in:focus {
+  border-color: var(--accent);
+}
+.svc-cmd {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+}
+.svc-run,
+.svc-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  cursor: pointer;
+}
+.svc-run:hover {
+  color: var(--status-ok);
+  border-color: var(--border-2);
+}
+.svc-del:hover {
+  color: var(--status-error);
+  border-color: var(--border-2);
+}
+.svc-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  cursor: pointer;
+}
+.svc-stop:hover {
+  color: var(--status-error);
+  border-color: var(--border-2);
+}
+.svc-run.on {
+  color: var(--status-ok);
+}
+.svc-task.running {
+  border-color: color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
+}
+.svc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-3);
+}
+.svc-dot.on {
+  background: var(--status-ok);
+}
+.svc-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.svc-flags {
+  gap: 16px;
+  padding-top: 1px;
+}
+
+/* ---- background-service log viewer ---- */
+.log-dialog {
+  width: min(720px, calc(100vw - 48px));
+  height: min(72vh, 620px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  animation: paneIn 0.14s var(--ease);
+}
+.log-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 10px 10px 14px;
+  border-bottom: 1px solid var(--border-1);
+}
+.log-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-3);
+}
+.log-dot.on {
+  background: var(--status-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-ok) 22%, transparent);
+}
+.log-title {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-state {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.log-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.log-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-1);
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.log-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.log-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  background: var(--surface-0, var(--surface-1));
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log-empty {
+  color: var(--text-3);
+  font-style: italic;
+  padding: 4px 0;
+}
+.svc-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.svc-add:hover {
+  color: var(--text-1);
+  border-color: var(--accent);
+}
+.svc-drop {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 13px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.12s var(--ease),
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.svc-drop > svg {
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.svc-drop b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.svc-drop:hover {
+  border-color: var(--accent);
+  color: var(--text-2);
+}
+.svc-drop.over {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.svc-drop.over b {
+  color: var(--text-1);
+}
+.svc-env-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.svc-eq {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.svc-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+/* settings → startup */
+.startup-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.su-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.su-bar-label {
+  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 550;
+}
+.su-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.su-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--surface-1);
+}
+.su-item.active {
+  border-color: var(--accent);
+}
+.su-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.su-pick:hover {
+  color: var(--text-1);
+}
+.su-item.active .su-pick {
+  color: var(--text-1);
+}
+.su-pick > svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.su-path {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.su-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  align-self: stretch;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-1);
+  color: var(--text-3);
+  cursor: pointer;
+}
+.su-del:hover {
+  color: var(--status-error);
+}
+.su-editor {
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+}
+.su-editor .svc {
+  padding: 14px;
+}
+/* services config modal (from the project right-click menu) */
+.svc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  animation: fdoIn 0.12s var(--ease);
+}
+.svc-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(76vh, 760px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  animation: paneIn 0.14s var(--ease);
+}
+.svc-dialog-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px 11px 16px;
+  border-bottom: 1px solid var(--border-1);
+}
+.svc-dialog-path {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.svc-dialog-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-1);
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.svc-dialog-x:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.svc-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.svc-dialog-body .svc {
+  overflow: visible;
 }
 .changes-list {
   flex: 0 0 auto;

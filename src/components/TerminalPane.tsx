@@ -10,6 +10,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { makeTerminal, termTheme } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
+import { useProjectConfigs } from "../stores/projectConfig";
 import { createPty, writePty, resizePty, killPty, claudeResumeMode } from "../api";
 import { appendOutput, dropOutput } from "../terminal/buffers";
 import { useActivity } from "../stores/activity";
@@ -186,8 +187,22 @@ export function TerminalPane({
     });
 
     useActivity.getState().markStart(sessionId);
+    // apply the owning project's per-project env vars + default shell, if set
+    const ownerWs = useWorkspaces
+      .getState()
+      .workspaces.find((w) => w.sessions.some((s) => s.id === sessionId));
+    const cfg = ownerWs ? useProjectConfigs.getState().getConfig(ownerWs.cwd) : null;
+    const projEnv = cfg && Object.keys(cfg.env).length ? cfg.env : undefined;
     createPty(
-      { id: sessionId, cwd, args: [], cols: term.cols, rows: term.rows },
+      {
+        id: sessionId,
+        cwd,
+        args: [],
+        cols: term.cols,
+        rows: term.rows,
+        ...(projEnv ? { env: projEnv } : {}),
+        ...(cfg?.defaultShell ? { shell: cfg.defaultShell } : {}),
+      },
       {
         onData: (bytes) => {
           if (disposed) return;
