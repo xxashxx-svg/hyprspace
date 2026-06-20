@@ -4,7 +4,11 @@ import { useUi } from "../stores/ui";
 import { listDir, revealPath, type DirEntry } from "../api";
 import { joinPath } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
+import { claudeCmd, geminiCmd, codexCmd } from "../actions";
+import { isWindows } from "../platform";
 import { ChevronRight, Folder, File as FileIcon, RefreshCw } from "lucide-react";
+
+const WSL_CMD = "wsl";
 
 const parentOf = (path: string) => path.replace(/[\\/][^\\/]+[\\/]?$/, "") || path;
 
@@ -42,17 +46,25 @@ function TreeNode({
     useUi.getState().goSpace();
     setMenu(null);
   };
-  const newTerminalHere = () => {
+  // launch a pane in this folder — a provider (claude/gemini/…) or a plain terminal (no command)
+  const launchHere = (command?: string) => {
     const ws = useWorkspaces.getState();
     const target = wsId ?? ws.activeId;
     if (target) {
       ws.setActive(target);
-      ws.addSession(target, undefined, path);
+      ws.addSession(target, command, path);
       maybeAutostart(target);
     }
     useUi.getState().goSpace();
     setMenu(null);
   };
+  const launchers: { label: string; cmd?: string }[] = [
+    { label: "Open Claude here", cmd: claudeCmd() },
+    { label: "Open Gemini here", cmd: geminiCmd() },
+    { label: "Open Codex here", cmd: codexCmd() },
+    ...(isWindows ? [{ label: "Open WSL here", cmd: WSL_CMD }] : []),
+    { label: "Open terminal here", cmd: undefined },
+  ];
   const reveal = () => {
     void revealPath(dir ? path : parentOf(path)).catch(() => {});
     setMenu(null);
@@ -121,11 +133,12 @@ function TreeNode({
                 Open as project
               </button>
             )}
-            {dir && (
-              <button className="ctx-item" onClick={newTerminalHere}>
-                Open terminal here
-              </button>
-            )}
+            {dir &&
+              launchers.map((l) => (
+                <button key={l.label} className="ctx-item" onClick={() => launchHere(l.cmd)}>
+                  {l.label}
+                </button>
+              ))}
             <button className="ctx-item" onClick={reveal}>
               Reveal in Explorer
             </button>
