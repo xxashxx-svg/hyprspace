@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { listDir, revealPath, type DirEntry } from "../api";
@@ -12,18 +12,22 @@ const WSL_CMD = "wsl";
 
 const parentOf = (path: string) => path.replace(/[\\/][^\\/]+[\\/]?$/, "") || path;
 
+const normPath = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
+
 function TreeNode({
   path,
   name,
   dir,
   depth,
   wsId,
+  liveDirs,
 }: {
   path: string;
   name: string;
   dir: boolean;
   depth: number;
   wsId?: string;
+  liveDirs?: Set<string>; // normalized cwds that have an open session — so we can flag them
 }) {
   const [open, setOpen] = useState(false);
   const [kids, setKids] = useState<DirEntry[] | null>(null);
@@ -90,6 +94,9 @@ function TreeNode({
         )}
         {dir ? <Folder size={14} className="ft-ico" /> : <FileIcon size={14} className="ft-ico file" />}
         <span className="ft-name">{name}</span>
+        {dir && liveDirs?.has(normPath(path)) && (
+          <span className="ft-live" title="A session is running here" />
+        )}
       </button>
 
       {open && dir && (
@@ -107,6 +114,7 @@ function TreeNode({
               dir={k.dir}
               depth={depth + 1}
               wsId={wsId}
+              liveDirs={liveDirs}
             />
           ))}
           {kids && kids.length === 0 && (
@@ -161,6 +169,13 @@ export function FileTree({
   wsId?: string;
 }) {
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
+  // folders (normalized cwds) that have an open session in this project — to flag them in the tree.
+  // select the stable sessions array, then memo the Set (a fresh Set per render breaks the store snapshot)
+  const sessions = useWorkspaces((s) => s.workspaces.find((w) => w.id === wsId)?.sessions);
+  const liveDirs = useMemo(
+    () => new Set((sessions ?? []).map((x) => normPath(x.cwd ?? "")).filter(Boolean)),
+    [sessions],
+  );
   useEffect(() => {
     setEntries(null);
     listDir(cwd)
@@ -180,7 +195,15 @@ export function FileTree({
         </div>
       ) : (
         entries.map((e) => (
-          <TreeNode key={e.name} path={joinPath(cwd, e.name)} name={e.name} dir={e.dir} depth={0} wsId={wsId} />
+          <TreeNode
+            key={e.name}
+            path={joinPath(cwd, e.name)}
+            name={e.name}
+            dir={e.dir}
+            depth={0}
+            wsId={wsId}
+            liveDirs={liveDirs}
+          />
         ))
       )}
     </div>

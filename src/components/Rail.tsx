@@ -23,6 +23,17 @@ const wsAt = (x: number, y: number): string | null => {
   return el?.closest<HTMLElement>(".rail-item")?.dataset.wsid ?? null;
 };
 
+// the part of a session's cwd below its project folder (e.g. "spookeypumpkin27"), "" if it's the root
+function relSub(wsCwd: string, sessCwd?: string): string {
+  if (!sessCwd || !wsCwd) return "";
+  const a = wsCwd.replace(/[\\/]+$/, "").toLowerCase();
+  const b = sessCwd.replace(/[\\/]+$/, "");
+  const bl = b.toLowerCase();
+  if (bl === a) return "";
+  if (bl.startsWith(a + "\\") || bl.startsWith(a + "/")) return b.slice(a.length + 1);
+  return b.split(/[\\/]/).pop() || ""; // not under the project — just its name
+}
+
 export function Rail() {
   const workspaces = useWorkspaces((s) => s.workspaces);
   const activeId = useWorkspaces((s) => s.activeId);
@@ -208,6 +219,7 @@ export function Rail() {
                 {w.sessions.map((s) => {
                   const dot = sessDot(s.id);
                   const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
+                  const sub = relSub(w.cwd, s.cwd); // subfolder it's running in, if any
                   return (
                     <button
                       key={s.id}
@@ -217,6 +229,11 @@ export function Rail() {
                     >
                       <span className={`rail-sess-dot s-${dot}`} />
                       <span className="rail-sess-name">{s.title}</span>
+                      {sub && (
+                        <span className="rail-sess-sub" title={s.cwd}>
+                          {sub}
+                        </span>
+                      )}
                       {lastOut[s.id] ? (
                         <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
                       ) : null}
