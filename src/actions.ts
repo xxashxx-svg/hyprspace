@@ -6,6 +6,8 @@ import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
 import { pickFolders, worktreeCreate } from "./api";
 import { useSettings, type ClaudePermission, type CodexMode } from "./stores/settings";
+import { useProjectConfigs } from "./stores/projectConfig";
+import { maybeAutostart } from "./lib/startup";
 
 export const WSL_CMD = "wsl";
 
@@ -44,6 +46,8 @@ async function launchInActive(command?: string) {
   } else {
     useWorkspaces.getState().addSession(ws.id, command);
   }
+  // opening a terminal/agent in a project also kicks off its autostart services (folder-deduped)
+  maybeAutostart(ws.id);
 }
 
 export const newClaude = () => launchInActive(claudeCmd());
@@ -79,11 +83,20 @@ export async function closeSession(wsId: string, sessionId: string) {
   const sess = ws?.sessions.find((s) => s.id === sessionId);
   if (!ws || !sess) return;
   const isAi = sess.provider === "claude" || sess.provider === "gemini";
-  if (isAi && sess.started) {
+  // a pane whose command matches a configured startup task is a running service — confirm before killing
+  const isService =
+    !!ws.cwd &&
+    useProjectConfigs
+      .getState()
+      .getConfig(ws.cwd)
+      .startup.some((t) => (t.command ?? "") === (sess.command ?? ""));
+  if ((isAi && sess.started) || isService) {
     const ok = await confirmDialog({
-      title: "Close pane",
-      message: `This ${sess.provider} session is still running. Close it anyway?`,
-      confirmLabel: "Close",
+      title: isService ? "Stop service" : "Close pane",
+      message: isService
+        ? `"${sess.title || "This service"}" is running here. Stop it?`
+        : `This ${sess.provider} session is still running. Close it anyway?`,
+      confirmLabel: isService ? "Stop" : "Close",
       cancelLabel: "Cancel",
       danger: true,
     });

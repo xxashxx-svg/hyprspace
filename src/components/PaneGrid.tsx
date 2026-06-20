@@ -1,13 +1,66 @@
 import { useRef, useState } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
+import { useProjectConfigs, folderKey } from "../stores/projectConfig";
+import { launchTask, maybeAutostart } from "../lib/startup";
+import { useServices, serviceId } from "../stores/services";
 import { TerminalPane } from "./TerminalPane";
 import { Logo } from "./Logo";
 import { pickFolders } from "../api";
 import { closeSession, claudeCmd, geminiCmd, codexCmd } from "../actions";
 import { isWindows } from "../platform";
+import { Play, ScrollText } from "lucide-react";
 
 const WSL_CMD = "wsl";
+
+// configured services for the open project, as quick Run chips (so they're discoverable on open).
+// background services show a live dot + open their logs on click instead of spawning a pane.
+function EmptyServices({ wsId, folder }: { wsId: string; folder: string }) {
+  const cfg = useProjectConfigs((s) => s.configs[folderKey(folder)]);
+  const tasks = cfg?.startup ?? [];
+  const running = useServices((s) => s.running);
+  const known = useServices((s) => s.known);
+  if (tasks.length === 0) return null;
+  const openLogs = (t: { id: string; name: string }) =>
+    useUi.getState().openServiceLogs({ id: serviceId(t.id), name: t.name || "service" });
+  return (
+    <div className="empty-services">
+      <span className="empty-services-label">Services</span>
+      <div className="empty-services-row">
+        {tasks.map((t) => {
+          if (!t.background) {
+            return (
+              <button key={t.id} className="empty-svc-chip" onClick={() => launchTask(wsId, t)}>
+                <Play size={11} />
+                {t.name || "service"}
+              </button>
+            );
+          }
+          const sid = serviceId(t.id);
+          const on = !!running[sid];
+          const hasLogs = on || !!known[sid];
+          return (
+            <div className={`empty-svc-chip bg${on ? " on" : ""}`} key={t.id}>
+              <button
+                className="empty-svc-main"
+                title={on ? "Running in background — view logs" : "Run in background"}
+                onClick={() => (on ? openLogs(t) : launchTask(wsId, t))}
+              >
+                {on ? <span className="svc-dot on" /> : <Play size={11} />}
+                {t.name || "service"}
+              </button>
+              {hasLogs && (
+                <button className="empty-svc-logs" title="View logs" onClick={() => openLogs(t)}>
+                  <ScrollText size={11} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Tile like the Electron version did: keep rows balanced so a partial last row fills
 // the width instead of leaving a hole (the old 5-pane "3 over a gap"). For 5+ we lay
@@ -76,6 +129,7 @@ export function PaneGrid() {
     } else {
       addSession(active.id, command);
     }
+    maybeAutostart(active.id);
   };
 
   return (
@@ -119,6 +173,9 @@ export function PaneGrid() {
               Terminal
             </button>
           </div>
+          {active.kind !== "open" && active.cwd && (
+            <EmptyServices wsId={active.id} folder={active.cwd} />
+          )}
         </div>
       )}
 

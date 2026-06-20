@@ -72,12 +72,36 @@ export function chatTurn(id: string, message: string): Promise<void> {
 export function chatStop(id: string): Promise<void> {
   return invoke("chat_stop", { id });
 }
+
+// ---- background services: run a command headless and stream its stdout+stderr as log lines ----
+export function serviceStart(
+  id: string,
+  cwd: string,
+  command: string,
+  env: Record<string, string>,
+  onLine: (line: string) => void,
+): Promise<void> {
+  const channel = new Channel<string>();
+  channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
+  return invoke("service_start", { id, cwd, command, env, onEvent: channel });
+}
+export function serviceStop(id: string): Promise<void> {
+  return invoke("service_stop", { id });
+}
 export function getHomeDir(): Promise<string> {
   return invoke("get_home_dir");
 }
 // open a folder in the OS file manager
 export function revealPath(path: string): Promise<void> {
   return invoke("reveal_path", { path });
+}
+// one directory level for the Files tree
+export interface DirEntry {
+  name: string;
+  dir: boolean;
+}
+export function listDir(path: string): Promise<DirEntry[]> {
+  return invoke("list_dir", { path });
 }
 
 export function saveState(name: string, data: string): Promise<void> {
@@ -263,6 +287,11 @@ export function worktreeRemove(cwd: string, path: string): Promise<void> {
 
 export async function pickFolder(): Promise<string | null> {
   const r = await open({ directory: true, multiple: false });
+  return typeof r === "string" ? r : null;
+}
+
+export async function pickFile(): Promise<string | null> {
+  const r = await open({ directory: false, multiple: false });
   return typeof r === "string" ? r : null;
 }
 

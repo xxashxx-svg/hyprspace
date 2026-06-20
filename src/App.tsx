@@ -6,6 +6,8 @@ import { Rail } from "./components/Rail";
 import { PaneGrid } from "./components/PaneGrid";
 import { StatusBar } from "./components/StatusBar";
 import { useWorkspaces } from "./stores/workspace";
+import { useProjectConfigs } from "./stores/projectConfig";
+import { taskFromFile } from "./lib/startup";
 import { useUi } from "./stores/ui";
 import { useSettings } from "./stores/settings";
 import { initSettingsSync } from "./stores/settingsSync";
@@ -13,11 +15,14 @@ import { Settings } from "./components/Settings";
 import { CommitDialog } from "./components/CommitDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NewProjectDialog } from "./components/NewProjectDialog";
+import { ServicesDialog } from "./components/ServicesDialog";
+import { ServiceLogs } from "./components/ServiceLogs";
 import { Updater } from "./components/Updater";
 import { CommandPalette } from "./components/CommandPalette";
 import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
 import { HomePage } from "./components/HomePage";
+import { StartupRunner } from "./components/StartupRunner";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
@@ -193,19 +198,44 @@ export default function App() {
       const el = document.elementFromPoint(px / dpr, py / dpr) as HTMLElement | null;
       return el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
     };
+    // the services config dropzone (drop a .bat/script/.exe to add it as a startup task)
+    const svcDropAt = (px: number, py: number): HTMLElement | null => {
+      const dpr = window.devicePixelRatio || 1;
+      const el = document.elementFromPoint(px / dpr, py / dpr) as HTMLElement | null;
+      return el?.closest<HTMLElement>(".svc-drop") ?? null;
+    };
+    const highlightSvc = (el: HTMLElement | null) => {
+      document.querySelectorAll(".svc-drop.over").forEach((e) => e.classList.remove("over"));
+      el?.classList.add("over");
+    };
     win
       .onDragDropEvent((event) => {
         const p = event.payload;
         if (p.type === "over") {
-          setDrop(sidAt(p.position.x, p.position.y));
+          const svc = svcDropAt(p.position.x, p.position.y);
+          highlightSvc(svc);
+          setDrop(svc ? null : sidAt(p.position.x, p.position.y));
         } else if (p.type === "drop") {
-          const sid = sidAt(p.position.x, p.position.y);
+          const svc = svcDropAt(p.position.x, p.position.y);
+          highlightSvc(null);
           setDrop(null);
-          if (sid && p.paths.length) {
-            const text = p.paths.map((path) => (/\s/.test(path) ? `"${path}"` : path)).join(" ");
-            void writePty(sid, new TextEncoder().encode(text));
+          if (svc && p.paths.length) {
+            const folder = svc.dataset.folder ?? "";
+            if (folder) {
+              const cur = useProjectConfigs.getState().getConfig(folder).startup;
+              useProjectConfigs
+                .getState()
+                .setConfig(folder, { startup: [...cur, ...p.paths.map((path) => taskFromFile(path))] });
+            }
+          } else {
+            const sid = sidAt(p.position.x, p.position.y);
+            if (sid && p.paths.length) {
+              const text = p.paths.map((path) => (/\s/.test(path) ? `"${path}"` : path)).join(" ");
+              void writePty(sid, new TextEncoder().encode(text));
+            }
           }
         } else if (p.type === "leave") {
+          highlightSvc(null);
           setDrop(null);
         }
       })
@@ -234,11 +264,14 @@ export default function App() {
       </div>
       <StatusBar />
       <Updater />
+      <StartupRunner />
       <CommandPalette />
       {settingsOpen && <Settings />}
       <CommitDialog />
       <ConfirmDialog />
       <NewProjectDialog />
+      <ServicesDialog />
+      <ServiceLogs />
       {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}
       {!isMac &&
         RESIZE.map(([k, dir]) => (
