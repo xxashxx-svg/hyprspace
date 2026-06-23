@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import type { PointerEvent as RPointerEvent } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useProjectConfigs, folderKey } from "../stores/projectConfig";
@@ -132,6 +133,64 @@ export function PaneGrid() {
     maybeAutostart(active.id);
   };
 
+  // ONE stable reference per handler (store actions + setState setters are stable, drag is a ref),
+  // so memoized TerminalPanes don't re-render when a sibling is focused or a drag updates overId.
+  const onPaneFocus = useCallback((sid: string) => setFocused(sid), [setFocused]);
+  const onPaneClose = useCallback((wsId: string, sid: string) => void closeSession(wsId, sid), []);
+  const onPaneToggleMax = useCallback((sid: string) => toggleMaximized(sid), [toggleMaximized]);
+  const onGripDown = useCallback(
+    (e: RPointerEvent<HTMLDivElement>, wsId: string, sid: string) => {
+      if (e.button !== 0) return;
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      drag.current = { id: sid, ws: wsId, sx: e.clientX, sy: e.clientY, active: false };
+      setFocused(sid);
+    },
+    [setFocused],
+  );
+  const onGripMove = useCallback(
+    (e: RPointerEvent<HTMLDivElement>) => {
+      const d = drag.current;
+      if (!d) return;
+      if (!d.active) {
+        if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
+        d.active = true;
+        setDragId(d.id);
+        useUi.getState().setPaneDrag(true);
+      }
+      // hovering a different space in the rail → it becomes the drop target
+      const overWs = railWsAt(e.clientX, e.clientY);
+      if (overWs && overWs !== d.ws) {
+        setOverId(null);
+        useUi.getState().setPaneDragOverWs(overWs);
+      } else {
+        useUi.getState().setPaneDragOverWs(null);
+        const sid = cellSidAt(e.clientX, e.clientY);
+        setOverId(sid && sid !== d.id ? sid : null);
+      }
+    },
+    [setDragId, setOverId],
+  );
+  const onGripUp = useCallback(
+    (e: RPointerEvent<HTMLDivElement>) => {
+      const d = drag.current;
+      drag.current = null;
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+      if (d?.active) {
+        const overWs = railWsAt(e.clientX, e.clientY);
+        if (overWs && overWs !== d.ws) {
+          moveToWs(d.ws, d.id, overWs); // dropped onto another space → move it there
+        } else {
+          const target = cellSidAt(e.clientX, e.clientY);
+          if (target && target !== d.id) reorder(d.ws, d.id, target);
+        }
+      }
+      setDragId(null);
+      setOverId(null);
+      useUi.getState().setPaneDrag(false);
+    },
+    [moveToWs, reorder, setDragId, setOverId],
+  );
+
   return (
     <div className={`pane-stage${dragId ? " dragging-active" : ""}`}>
       {!active && (
@@ -210,6 +269,7 @@ export function PaneGrid() {
               >
                 <TerminalPane
                   sessionId={sess.id}
+                  wsId={w.id}
                   cwd={sess.cwd ?? w.cwd}
                   guest={guest}
                   command={sess.command}
@@ -218,52 +278,12 @@ export function PaneGrid() {
                   active={isActiveWs}
                   focused={isActiveWs && focusedSessionId === sess.id}
                   isMaxed={maximizedId === sess.id}
-                  onFocus={() => setFocused(sess.id)}
-                  onClose={() => void closeSession(w.id, sess.id)}
-                  onToggleMax={() => toggleMaximized(sess.id)}
-                  onGripDown={(e) => {
-                    if (e.button !== 0) return;
-                    e.currentTarget.setPointerCapture?.(e.pointerId);
-                    drag.current = { id: sess.id, ws: w.id, sx: e.clientX, sy: e.clientY, active: false };
-                    setFocused(sess.id);
-                  }}
-                  onGripMove={(e) => {
-                    const d = drag.current;
-                    if (!d) return;
-                    if (!d.active) {
-                      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
-                      d.active = true;
-                      setDragId(d.id);
-                      useUi.getState().setPaneDrag(true);
-                    }
-                    // hovering a different space in the rail → it becomes the drop target
-                    const overWs = railWsAt(e.clientX, e.clientY);
-                    if (overWs && overWs !== d.ws) {
-                      setOverId(null);
-                      useUi.getState().setPaneDragOverWs(overWs);
-                    } else {
-                      useUi.getState().setPaneDragOverWs(null);
-                      const sid = cellSidAt(e.clientX, e.clientY);
-                      setOverId(sid && sid !== d.id ? sid : null);
-                    }
-                  }}
-                  onGripUp={(e) => {
-                    const d = drag.current;
-                    drag.current = null;
-                    e.currentTarget.releasePointerCapture?.(e.pointerId);
-                    if (d?.active) {
-                      const overWs = railWsAt(e.clientX, e.clientY);
-                      if (overWs && overWs !== d.ws) {
-                        moveToWs(d.ws, d.id, overWs); // dropped onto another space → move it there
-                      } else {
-                        const target = cellSidAt(e.clientX, e.clientY);
-                        if (target && target !== d.id) reorder(d.ws, d.id, target);
-                      }
-                    }
-                    setDragId(null);
-                    setOverId(null);
-                    useUi.getState().setPaneDrag(false);
-                  }}
+                  onFocus={onPaneFocus}
+                  onClose={onPaneClose}
+                  onToggleMax={onPaneToggleMax}
+                  onGripDown={onGripDown}
+                  onGripMove={onGripMove}
+                  onGripUp={onGripUp}
                 />
                 {fileDropId === sess.id && (
                   <div className="file-drop-overlay">

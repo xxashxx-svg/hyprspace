@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -46,6 +46,7 @@ function injectClaudeArg(cmd: string, arg: string): string {
 
 interface Props {
   sessionId: string;
+  wsId: string;
   cwd: string;
   guest?: boolean;
   command?: string;
@@ -54,16 +55,19 @@ interface Props {
   active: boolean;
   focused: boolean;
   isMaxed: boolean;
-  onFocus: () => void;
-  onClose: () => void;
-  onToggleMax: () => void;
-  onGripDown: (e: RPointerEvent<HTMLDivElement>) => void;
+  // id-param callbacks so PaneGrid can pass ONE stable reference per handler (not a fresh closure
+  // per pane per render) — that's what lets the memo below actually skip re-renders.
+  onFocus: (sid: string) => void;
+  onClose: (wsId: string, sid: string) => void;
+  onToggleMax: (sid: string) => void;
+  onGripDown: (e: RPointerEvent<HTMLDivElement>, wsId: string, sid: string) => void;
   onGripMove: (e: RPointerEvent<HTMLDivElement>) => void;
   onGripUp: (e: RPointerEvent<HTMLDivElement>) => void;
 }
 
-export function TerminalPane({
+function TerminalPaneInner({
   sessionId,
+  wsId,
   cwd,
   guest,
   command,
@@ -396,11 +400,11 @@ export function TerminalPane({
   return (
     <div
       className={`terminal-pane ${focused ? "focused" : ""} p-${provider}${guest ? " guest" : ""}`}
-      onMouseDown={onFocus}
+      onMouseDown={() => onFocus(sessionId)}
     >
       <div
         className="pane-header"
-        onPointerDown={onGripDown}
+        onPointerDown={(e) => onGripDown(e, wsId, sessionId)}
         onPointerMove={onGripMove}
         onPointerUp={onGripUp}
       >
@@ -422,7 +426,7 @@ export function TerminalPane({
             className="pane-btn"
             title={isMaxed ? "Restore" : "Maximize"}
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={onToggleMax}
+            onClick={() => onToggleMax(sessionId)}
           >
             {isMaxed ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
@@ -430,7 +434,7 @@ export function TerminalPane({
             className="pane-btn close"
             title="Close pane"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={onClose}
+            onClick={() => onClose(wsId, sessionId)}
           >
             <X size={13} />
           </button>
@@ -449,4 +453,8 @@ export function TerminalPane({
     </div>
   );
 }
+
+// memo: with stable (id-param) callbacks from PaneGrid, a pane only re-renders when ITS own
+// active/focused/isMaxed/cwd/etc. change — not when a sibling is focused or a drag updates overId.
+export const TerminalPane = memo(TerminalPaneInner);
 
