@@ -38,6 +38,7 @@ import {
   LayoutGrid,
   Zap,
   Rocket,
+  ArrowLeft,
 } from "lucide-react";
 
 const FONTS: { label: string; value: string }[] = [
@@ -360,23 +361,29 @@ export function Settings() {
             {t.label}
           </button>
         ))}
-        {authUser && (
-          <button
-            className={`settings-acct${tab === "account" ? " active" : ""}`}
-            onClick={() => setTab("account")}
-            title={authUser.email ?? "Account"}
-          >
-            {avatar ? (
-              <img src={avatar} alt="" referrerPolicy="no-referrer" />
-            ) : (
-              <span className="settings-acct-ava">{initial}</span>
-            )}
-            <div className="settings-acct-meta">
-              <div className="settings-acct-name">{fullName || "Account"}</div>
-              <div className="settings-acct-sub">{authUser.email}</div>
-            </div>
+        <div className="settings-nav-bottom">
+          {authUser && (
+            <button
+              className={`settings-acct${tab === "account" ? " active" : ""}`}
+              onClick={() => setTab("account")}
+              title={authUser.email ?? "Account"}
+            >
+              {avatar ? (
+                <img src={avatar} alt="" referrerPolicy="no-referrer" />
+              ) : (
+                <span className="settings-acct-ava">{initial}</span>
+              )}
+              <div className="settings-acct-meta">
+                <div className="settings-acct-name">{fullName || "Account"}</div>
+                <div className="settings-acct-sub">{authUser.email}</div>
+              </div>
+            </button>
+          )}
+          <button className="settings-nav-item settings-back" onClick={close} title="Back (Esc)">
+            <ArrowLeft strokeWidth={1.75} />
+            Back
           </button>
-        )}
+        </div>
       </nav>
 
       <div className="settings-main">
