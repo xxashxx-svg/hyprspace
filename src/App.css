@@ -714,19 +714,31 @@ body {
   color: var(--accent);
   opacity: 1;
 }
-/* account chip pinned to the bottom of the nav, Cursor-style */
-.settings-acct {
+/* account chip + Back button pinned to the bottom of the nav, Cursor/T3-style */
+.settings-nav-bottom {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-1);
+}
+.settings-back {
+  color: var(--text-3);
+}
+.settings-back:hover {
+  color: var(--text-1);
+}
+.settings-acct {
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
   background: transparent;
   border: none;
-  border-top: 1px solid var(--border-1);
   color: var(--text-2);
   font: inherit;
-  padding: 12px 8px 2px;
+  padding: 8px 8px 4px;
   cursor: pointer;
 }
 .settings-acct:hover,
