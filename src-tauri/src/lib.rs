@@ -1,3 +1,4 @@
+mod agent;
 mod ai;
 mod chat;
 mod devtools;
@@ -9,6 +10,7 @@ mod services;
 
 use std::collections::HashMap;
 
+use agent::AgentManager;
 use chat::ChatManager;
 use services::ServiceManager;
 use persist::Store;
@@ -83,6 +85,24 @@ fn service_start(
 
 #[tauri::command]
 fn service_stop(state: State<ServiceManager>, id: String) {
+    state.stop(&id);
+}
+
+#[tauri::command]
+fn agent_start(
+    state: State<AgentManager>,
+    id: String,
+    cwd: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    prompt: String,
+    on_event: Channel<String>,
+) -> Result<(), String> {
+    state.start(id, cwd, args, env, prompt, on_event)
+}
+
+#[tauri::command]
+fn agent_stop(state: State<AgentManager>, id: String) {
     state.stop(&id);
 }
 
@@ -233,6 +253,7 @@ pub fn run() {
         .manage(PtyManager::default())
         .manage(ChatManager::default())
         .manage(ServiceManager::default())
+        .manage(AgentManager::default())
         .manage(Store::new())
         .invoke_handler(tauri::generate_handler![
             create_pty,
@@ -244,6 +265,8 @@ pub fn run() {
             chat_stop,
             service_start,
             service_stop,
+            agent_start,
+            agent_stop,
             get_home_dir,
             shell_name,
             claude_has_history,
@@ -292,6 +315,7 @@ pub fn run() {
                     app.state::<PtyManager>().kill_all();
                     app.state::<ChatManager>().kill_all();
                     app.state::<ServiceManager>().kill_all();
+                    app.state::<AgentManager>().kill_all();
                 }
                 _ => {}
             }
