@@ -23,6 +23,7 @@ import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
 import { HomePage } from "./components/HomePage";
 import { StartupRunner } from "./components/StartupRunner";
+import { LoopRunner } from "./components/LoopRunner";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
@@ -265,6 +266,7 @@ export default function App() {
       <StatusBar />
       <Updater />
       <StartupRunner />
+      <LoopRunner />
       <CommandPalette />
       {settingsOpen && <Settings />}
       <CommitDialog />
