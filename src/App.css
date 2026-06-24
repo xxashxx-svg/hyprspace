@@ -5213,6 +5213,173 @@ body.skill-dragging * {
   padding-top: 1px;
 }
 
+/* ---- Loops manager (Settings → Loops) ---- */
+.loops-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.loops-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 16px 0;
+}
+.loop-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.loop-card.on {
+  border-color: color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
+}
+.loop-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.loop-name {
+  flex: 1;
+  font-weight: 500;
+}
+.loop-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--status-idle);
+}
+.loop-dot.s-running {
+  background: var(--status-awaiting);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-awaiting) 22%, transparent);
+}
+.loop-dot.s-paused {
+  background: var(--status-busy);
+}
+.loop-dot.s-done {
+  background: var(--status-ok);
+}
+.loop-dot.s-error,
+.loop-dot.s-crashloop {
+  background: var(--status-error);
+}
+.loop-prompt {
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.loop-grid,
+.loop-stops {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.loop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.loop-field > span {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.loop-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.loop-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.loop-folder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.loop-folder:hover {
+  color: var(--text-1);
+  border-color: var(--border-2);
+}
+.loop-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+  flex-wrap: wrap;
+}
+.loop-status-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  color: var(--text-2);
+}
+.loop-status-badge.s-running {
+  color: var(--status-awaiting);
+}
+.loop-status-badge.s-done {
+  color: var(--status-ok);
+}
+.loop-status-badge.s-error,
+.loop-status-badge.s-crashloop {
+  color: var(--status-error);
+}
+.loop-last {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 48ch;
+}
+.loop-logs {
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.loop-logs-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.loop-logs-empty {
+  color: var(--text-3);
+  font-style: italic;
+}
+.svc-run:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ---- background-service log viewer ---- */
 .log-dialog {
   width: min(720px, calc(100vw - 48px));

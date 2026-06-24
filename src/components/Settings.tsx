@@ -16,6 +16,7 @@ import { relTime } from "../lib/time";
 import { McpServers } from "./McpServers";
 import { SkillsManager } from "./SkillsManager";
 import { StartupSettings } from "./StartupSettings";
+import { LoopsManager } from "./LoopsManager";
 import { useWorkspaces } from "../stores/workspace";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
@@ -38,6 +39,7 @@ import {
   LayoutGrid,
   Zap,
   Rocket,
+  Repeat,
   ArrowLeft,
 } from "lucide-react";
 
@@ -59,6 +61,7 @@ type Tab =
   | "appearance"
   | "workspace"
   | "startup"
+  | "loops"
   | "providers"
   | "mcp"
   | "skills"
@@ -71,6 +74,7 @@ const ICONS: Record<Tab, ReactNode> = {
   appearance: <Palette strokeWidth={1.75} />,
   workspace: <FolderCog strokeWidth={1.75} />,
   startup: <Rocket strokeWidth={1.75} />,
+  loops: <Repeat strokeWidth={1.75} />,
   providers: <Boxes strokeWidth={1.75} />,
   mcp: <Plug strokeWidth={1.75} />,
   skills: <Zap strokeWidth={1.75} />,
@@ -84,6 +88,7 @@ const TABS: { id: Tab; label: string; desc: string }[] = [
   { id: "appearance", label: "Appearance", desc: "Theme, colors and fonts" },
   { id: "workspace", label: "Workspace", desc: "Where projects are created" },
   { id: "startup", label: "Startup", desc: "Services that run per folder" },
+  { id: "loops", label: "Loops", desc: "Scheduled & looping agents" },
   { id: "providers", label: "Providers", desc: "How each AI tool launches" },
   { id: "mcp", label: "MCP", desc: "Model Context Protocol servers" },
   { id: "skills", label: "Skills", desc: "Snippets and Claude skills" },
@@ -573,6 +578,8 @@ export function Settings() {
             )}
 
             {tab === "startup" && <StartupSettings />}
+
+            {tab === "loops" && <LoopsManager />}
 
             {tab === "providers" && (
               <>
