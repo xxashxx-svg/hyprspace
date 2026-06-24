@@ -88,6 +88,24 @@ export function serviceStart(
 export function serviceStop(id: string): Promise<void> {
   return invoke("service_stop", { id });
 }
+
+// ---- loop agents: run ONE provider turn (args = full argv; prompt piped over stdin) ----
+// streams stdout+stderr lines to onLine for the turn's life; the loop runner drives the loop around it.
+export function agentStart(
+  id: string,
+  cwd: string,
+  args: string[],
+  env: Record<string, string>,
+  prompt: string,
+  onLine: (line: string) => void,
+): Promise<void> {
+  const channel = new Channel<string>();
+  channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
+  return invoke("agent_start", { id, cwd, args, env, prompt, onEvent: channel });
+}
+export function agentStop(id: string): Promise<void> {
+  return invoke("agent_stop", { id });
+}
 export function getHomeDir(): Promise<string> {
   return invoke("get_home_dir");
 }
