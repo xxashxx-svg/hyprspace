@@ -40,7 +40,10 @@ function TreeNode({
     setLoading(false);
   };
   const toggle = () => {
-    if (!dir) return;
+    if (!dir) {
+      useUi.getState().openInEditor(path); // click a file → open it in the editor tab
+      return;
+    }
     if (!open && kids === null) void load();
     setOpen((o) => !o);
   };
@@ -136,6 +139,17 @@ function TreeNode({
             }}
           />
           <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+            {!dir && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  useUi.getState().openInEditor(path);
+                  setMenu(null);
+                }}
+              >
+                Open in editor
+              </button>
+            )}
             {dir && (
               <button className="ctx-item" onClick={openAsProject}>
                 Open as project

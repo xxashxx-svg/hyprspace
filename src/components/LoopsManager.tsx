@@ -1,9 +1,38 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLoops, newLoop, type LoopDef, type LoopStop } from "../stores/loops";
-import { startLoop, stopLoop, pauseLoop } from "../lib/loops";
+import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
+import { LOOP_TEMPLATES, type LoopTemplate } from "../lib/loopTemplates";
 import { useWorkspaces } from "../stores/workspace";
-import { pickFolder } from "../api";
-import { Play, Square, Pause, Trash2, ScrollText, Plus, FolderOpen } from "lucide-react";
+import { pickFolder, secretSet, secretHas, secretClear } from "../api";
+import {
+  Play,
+  Square,
+  Pause,
+  Trash2,
+  ScrollText,
+  Plus,
+  FolderOpen,
+  KeyRound,
+  FolderGit2,
+  FlaskConical,
+  Hammer,
+  ListChecks,
+  Sparkles,
+  RefreshCw,
+  BookText,
+  ScanEye,
+} from "lucide-react";
+
+// template icon key → element (size is constant, so a lookup map is simplest)
+const TPL_ICON: Record<string, ReactNode> = {
+  FlaskConical: <FlaskConical size={16} />,
+  Hammer: <Hammer size={16} />,
+  ListChecks: <ListChecks size={16} />,
+  Sparkles: <Sparkles size={16} />,
+  RefreshCw: <RefreshCw size={16} />,
+  BookText: <BookText size={16} />,
+  ScanEye: <ScanEye size={16} />,
+};
 
 const STATUS_LABEL: Record<string, string> = {
   idle: "idle",
@@ -22,6 +51,27 @@ export function LoopsManager() {
   const ids = Object.keys(loops);
   const [logsFor, setLogsFor] = useState<string | null>(null);
 
+  // Anthropic API key lives in the OS keychain; we only ever know whether it's set, never its value.
+  const [hasKey, setHasKey] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [editingKey, setEditingKey] = useState(false);
+  useEffect(() => {
+    void secretHas("anthropic").then(setHasKey).catch(() => {});
+  }, []);
+  const saveKey = async () => {
+    const v = keyInput.trim();
+    if (v) {
+      await secretSet("anthropic", v).catch(() => {});
+      setHasKey(true);
+    }
+    setKeyInput("");
+    setEditingKey(false);
+  };
+  const clearKey = async () => {
+    await secretClear("anthropic").catch(() => {});
+    setHasKey(false);
+  };
+
   const activeCwd = useWorkspaces((s) => {
     const w = s.workspaces.find((x) => x.id === s.activeId);
     return w && w.kind !== "open" ? w.cwd : "";
@@ -31,6 +81,9 @@ export function LoopsManager() {
     const def = newLoop(activeCwd || "");
     def.name = "New loop";
     useLoops.getState().upsert(def);
+  };
+  const addTemplate = (t: LoopTemplate) => {
+    useLoops.getState().upsert(t.build(activeCwd || ""));
   };
   const update = (id: string, patch: Partial<LoopDef>) => {
     const def = useLoops.getState().loops[id];
@@ -62,9 +115,57 @@ export function LoopsManager() {
         limit, so it can never run forever. Loops run while HyprSpace is open.
       </div>
 
-      {ids.length === 0 && (
-        <div className="loops-empty">No loops yet. Create one to get started.</div>
-      )}
+      <div className="loop-key">
+        <KeyRound size={14} />
+        <span className="loop-key-label">Anthropic API key</span>
+        {editingKey ? (
+          <>
+            <input
+              className="svc-in"
+              type="password"
+              placeholder="sk-ant-…"
+              value={keyInput}
+              autoFocus
+              onChange={(e) => setKeyInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveKey();
+                if (e.key === "Escape") {
+                  setKeyInput("");
+                  setEditingKey(false);
+                }
+              }}
+            />
+            <button className="btn" onClick={() => void saveKey()}>Save</button>
+            <button className="btn" onClick={() => { setKeyInput(""); setEditingKey(false); }}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <span className={`loop-key-status${hasKey ? " ok" : ""}`}>
+              {hasKey ? "stored in keychain" : "not set"}
+            </span>
+            <button className="btn" onClick={() => setEditingKey(true)}>{hasKey ? "Update" : "Set key"}</button>
+            {hasKey && <button className="btn" onClick={() => void clearKey()}>Clear</button>}
+            <span className="loop-key-note">used only by Claude loops; never your subscription</span>
+          </>
+        )}
+      </div>
+
+      <div className="loop-templates">
+        <div className="loop-templates-head">
+          {ids.length === 0 ? "Start from a template" : "Add from a template"}
+        </div>
+        <div className="loop-templates-grid">
+          {LOOP_TEMPLATES.map((t) => (
+            <button key={t.id} className="loop-tpl" onClick={() => addTemplate(t)} title={t.blurb}>
+              <span className="loop-tpl-ico">{TPL_ICON[t.icon]}</span>
+              <span className="loop-tpl-text">
+                <span className="loop-tpl-title">{t.title}</span>
+                <span className="loop-tpl-blurb">{t.blurb}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {ids.map((id) => {
         const def = loops[id];
@@ -97,8 +198,8 @@ export function LoopsManager() {
               ) : (
                 <button
                   className="svc-run"
-                  title="Run"
-                  disabled={!def.prompt.trim() || !def.folder}
+                  title={def.provider === "claude" && !hasKey ? "Add an Anthropic API key first" : "Run"}
+                  disabled={!def.prompt.trim() || !def.folder || (def.provider === "claude" && !hasKey)}
                   onClick={() => startLoop(id)}
                 >
                   <Play size={13} />
@@ -128,6 +229,14 @@ export function LoopsManager() {
             />
 
             <div className="loop-grid">
+              <label className="loop-field">
+                <span>Backend</span>
+                <select className="set-select" value={def.provider} onChange={(e) => update(id, { provider: e.target.value as LoopDef["provider"] })}>
+                  <option value="claude">Claude (API key)</option>
+                  <option value="codex">Codex</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+              </label>
               <label className="loop-field">
                 <span>Mode</span>
                 <select className="set-select" value={def.mode} onChange={(e) => update(id, { mode: e.target.value as LoopDef["mode"] })}>
@@ -233,6 +342,15 @@ export function LoopsManager() {
                   onChange={(e) => updateStop(id, { timeBudgetMin: e.target.value ? +e.target.value : undefined })}
                 />
               </label>
+              <label className="loop-field loop-field-wide">
+                <span>Stop when this passes</span>
+                <input
+                  className="svc-in"
+                  placeholder="e.g. cargo build"
+                  value={def.stop.untilCheck ?? ""}
+                  onChange={(e) => updateStop(id, { untilCheck: e.target.value || undefined })}
+                />
+              </label>
             </div>
 
             <div className="loop-flags">
@@ -259,6 +377,11 @@ export function LoopsManager() {
               <span className={`loop-status-badge s-${status}`}>{STATUS_LABEL[status] ?? status}</span>
               {run && run.iteration > 0 && <span>iteration {run.iteration}</span>}
               {run?.lastResult && <span className="loop-last" title={run.lastResult}>{run.lastResult}</span>}
+              {run?.worktreePath && (
+                <button className="loop-review" title={`Open the isolated worktree:\n${run.worktreePath}`} onClick={() => revealLoopWorktree(id)}>
+                  <FolderGit2 size={12} /> Review changes
+                </button>
+              )}
             </div>
 
             {logsFor === id && (

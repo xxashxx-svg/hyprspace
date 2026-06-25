@@ -91,20 +91,34 @@ export function serviceStop(id: string): Promise<void> {
 
 // ---- loop agents: run ONE provider turn (args = full argv; prompt piped over stdin) ----
 // streams stdout+stderr lines to onLine for the turn's life; the loop runner drives the loop around it.
+// `secrets` maps an env-var name → a keychain secret name (e.g. { ANTHROPIC_API_KEY: "anthropic" }).
+// Rust reads each from the OS keychain and injects it into the child env — the value never enters JS.
 export function agentStart(
   id: string,
   cwd: string,
   args: string[],
   env: Record<string, string>,
+  secrets: Record<string, string>,
   prompt: string,
   onLine: (line: string) => void,
 ): Promise<void> {
   const channel = new Channel<string>();
   channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
-  return invoke("agent_start", { id, cwd, args, env, prompt, onEvent: channel });
+  return invoke("agent_start", { id, cwd, args, env, secrets, prompt, onEvent: channel });
 }
 export function agentStop(id: string): Promise<void> {
   return invoke("agent_stop", { id });
+}
+
+// OS keychain — store/check/clear a named secret (write-only from the UI; the value never comes back)
+export function secretSet(name: string, value: string): Promise<void> {
+  return invoke("secret_set", { name, value });
+}
+export function secretHas(name: string): Promise<boolean> {
+  return invoke("secret_has", { name });
+}
+export function secretClear(name: string): Promise<void> {
+  return invoke("secret_clear", { name });
 }
 export function getHomeDir(): Promise<string> {
   return invoke("get_home_dir");
@@ -120,6 +134,13 @@ export interface DirEntry {
 }
 export function listDir(path: string): Promise<DirEntry[]> {
   return invoke("list_dir", { path });
+}
+// editor file IO — read_file rejects >2MB and binary files; write_file saves the buffer
+export function readFile(path: string): Promise<string> {
+  return invoke("read_file", { path });
+}
+export function writeFile(path: string, content: string): Promise<void> {
+  return invoke("write_file", { path, content });
 }
 
 export function saveState(name: string, data: string): Promise<void> {
@@ -187,6 +208,12 @@ export function gitDiff(cwd: string, path: string): Promise<string> {
 
 export function detectRunCmd(cwd: string): Promise<string> {
   return invoke("detect_run_cmd", { cwd });
+}
+
+// run a one-shot shell command in cwd; resolves with its exit code (-1 if it can't start).
+// the Loops "until check passes" guard uses this (exit 0 = the goal is met → stop).
+export function runCheck(cwd: string, command: string): Promise<number> {
+  return invoke("run_check", { cwd, command });
 }
 
 // git write ops for the topbar "Commit & push" menu + the Source Control panel

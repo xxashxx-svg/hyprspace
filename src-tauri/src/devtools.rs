@@ -153,7 +153,17 @@ fn worktree_create_blocking(cwd: String, name: String) -> Result<String, String>
         .join(format!("{repo_name}-{}", branch.replace('/', "-")));
     let wt = wt.to_string_lossy().to_string();
 
-    git(&cwd, &["worktree", "add", "-b", &branch, &wt, "HEAD"])?;
+    // idempotent: a stable-named caller (e.g. a loop that re-runs) reuses its worktree instead of
+    // erroring. existing dir → reuse as-is; existing branch but no dir → re-attach; else create new.
+    if Path::new(&wt).exists() {
+        return Ok(wt);
+    }
+    let branch_exists = git(&cwd, &["rev-parse", "--verify", &format!("refs/heads/{branch}")]).is_ok();
+    if branch_exists {
+        git(&cwd, &["worktree", "add", &wt, &branch])?;
+    } else {
+        git(&cwd, &["worktree", "add", "-b", &branch, &wt, "HEAD"])?;
+    }
     Ok(wt)
 }
 
@@ -215,6 +225,37 @@ fn detect_run_cmd_blocking(cwd: String) -> String {
         return "cargo run".into();
     }
     String::new()
+}
+
+// Run a one-shot shell command in `cwd` and return its exit code (-1 if it couldn't start).
+// Used by the Loops "until check passes" guard — e.g. loop until `cargo build` exits 0.
+#[tauri::command]
+pub async fn run_check(cwd: String, command: String) -> i32 {
+    tauri::async_runtime::spawn_blocking(move || run_check_blocking(&cwd, &command))
+        .await
+        .unwrap_or(-1)
+}
+
+fn run_check_blocking(cwd: &str, command: &str) -> i32 {
+    let mut cmd = if cfg!(windows) {
+        let mut c = Command::new("cmd");
+        c.arg("/c").arg(command);
+        c
+    } else {
+        let mut c = Command::new("sh");
+        c.arg("-c").arg(command);
+        c
+    };
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+    cmd.env_remove("NoDefaultCurrentDirectoryInExePath"); // same fix as the agent/service spawns
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    match cmd.status() {
+        Ok(s) => s.code().unwrap_or(-1),
+        Err(_) => -1,
+    }
 }
 
 // ---- git write ops for the topbar "Commit & push" menu ----
@@ -501,6 +542,33 @@ pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// Read a text file for the editor. Caps at ~2MB and rejects binary (NUL-containing) files so the
+// editor never tries to load a huge blob or a compiled artifact. Returns the UTF-8 text.
+#[tauri::command]
+pub async fn read_file(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+        if meta.len() > 2_000_000 {
+            return Err("file is too large to open in the editor (>2MB)".into());
+        }
+        let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+        if bytes.contains(&0) {
+            return Err("looks like a binary file".into());
+        }
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// Save the editor's contents back to disk.
+#[tauri::command]
+pub async fn write_file(path: String, content: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || std::fs::write(&path, content).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // ---- provider status (version + signed-in account/plan) for Settings → Providers ----

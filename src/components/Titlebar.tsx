@@ -4,6 +4,7 @@ import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { useGit } from "../stores/git";
 import { useServices } from "../stores/services";
+import { useLoops } from "../stores/loops";
 import { isMac, isWindows } from "../platform";
 import { pickFolder, gitIsRepo, revealPath } from "../api";
 import { newClaude, newGemini, newCodex, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
@@ -25,6 +26,7 @@ import {
   FolderPlus,
   LayoutGrid,
   ExternalLink,
+  Rocket,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { NotificationPanel } from "./NotificationPanel";
@@ -222,6 +224,33 @@ function ServicesIndicator() {
   );
 }
 
+// Live indicator for running loops. Hidden when none are active; click jumps to Settings → Loops.
+function LoopsIndicator() {
+  const runs = useLoops((s) => s.runs);
+  const loops = useLoops((s) => s.loops);
+  const active = Object.keys(runs).filter((id) => {
+    const st = runs[id]?.status;
+    return st === "running" || st === "paused";
+  });
+  if (active.length === 0) return null;
+  const only = active.length === 1 ? loops[active[0]] : null;
+  const iter = active.length === 1 ? runs[active[0]]?.iteration : 0;
+  const label = only ? `${only.name || "loop"}${iter ? ` · ${iter}` : ""}` : `${active.length} loops`;
+  const running = active.some((id) => runs[id]?.status === "running");
+  return (
+    <div className="tb-svc">
+      <button
+        className={`tb-svc-btn${running ? "" : " paused"}`}
+        title={`${active.length} loop${active.length > 1 ? "s" : ""} active — click to manage`}
+        onClick={() => useUi.getState().goLoops()}
+      >
+        <span className={`tb-svc-dot${running ? " spin" : ""}`} />
+        <span className="tb-svc-label">{label}</span>
+      </button>
+    </div>
+  );
+}
+
 export function Titlebar() {
   const go = () => useUi.getState().goSpace();
   const openProjectFolder = async () => {
@@ -233,6 +262,7 @@ export function Titlebar() {
   };
 
   const newItems: MenuItem[] = [
+    { label: "Launch workspace…", icon: <Rocket size={14} />, onClick: () => useUi.getState().openLaunch() },
     { label: "Claude", icon: <Sparkles size={14} />, onClick: () => { void newClaude(); go(); } },
     { label: "Gemini", icon: <Gem size={14} />, onClick: () => { void newGemini(); go(); } },
     { label: "Codex", icon: <Bot size={14} />, onClick: () => { void newCodex(); go(); } },
@@ -343,6 +373,7 @@ export function Titlebar() {
               />
             ))}
         </div>
+        <LoopsIndicator />
         <ServicesIndicator />
         <NotificationPanel />
         <button

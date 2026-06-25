@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { pickAgentName } from "../lib/names";
 
 export interface Session {
   id: string;
@@ -134,18 +135,18 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       const id = uid();
       let provider: Session["provider"] = "terminal";
       let title = "Terminal";
-      if (command?.includes("claude")) {
-        provider = "claude";
-        title = "Claude";
-      } else if (command?.includes("gemini")) {
-        provider = "gemini";
-        title = "Gemini";
-      } else if (command?.includes("codex")) {
-        provider = "codex";
-        title = "Codex";
-      } else if (command === "wsl") {
+      if (command?.includes("claude")) provider = "claude";
+      else if (command?.includes("gemini")) provider = "gemini";
+      else if (command?.includes("codex")) provider = "codex";
+      else if (command === "wsl") {
         provider = "wsl";
         title = "WSL";
+      }
+      // agent panes get a short friendly name (the provider icon still shows what they are) so a
+      // grid of identical agents is tellable apart; terminals/wsl keep their plain label.
+      if (provider === "claude" || provider === "gemini" || provider === "codex") {
+        const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
+        title = pickAgentName(used);
       }
 
       const workspaces = s.workspaces.map((w) => {

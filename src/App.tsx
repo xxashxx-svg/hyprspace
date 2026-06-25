@@ -15,6 +15,7 @@ import { Settings } from "./components/Settings";
 import { CommitDialog } from "./components/CommitDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NewProjectDialog } from "./components/NewProjectDialog";
+import { LaunchWorkspace } from "./components/LaunchWorkspace";
 import { ServicesDialog } from "./components/ServicesDialog";
 import { ServiceLogs } from "./components/ServiceLogs";
 import { Updater } from "./components/Updater";
@@ -22,6 +23,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
 import { HomePage } from "./components/HomePage";
+import { LoopsPage } from "./components/LoopsPage";
 import { StartupRunner } from "./components/StartupRunner";
 import { LoopRunner } from "./components/LoopRunner";
 import { isMac } from "./platform";
@@ -257,8 +259,9 @@ export default function App() {
       <div className="app-body">
         <Rail />
         {view === "home" && <HomePage />}
-        {/* kept mounted (PTYs stay alive) but hidden while on Home */}
-        <div className="workspace-view" style={{ display: view === "home" ? "none" : "flex" }}>
+        {view === "loops" && <LoopsPage />}
+        {/* kept mounted (PTYs stay alive) but hidden unless we're in a space */}
+        <div className="workspace-view" style={{ display: view === "space" ? "flex" : "none" }}>
           <PaneGrid />
           <ReviewDock />
         </div>
@@ -272,6 +275,7 @@ export default function App() {
       <CommitDialog />
       <ConfirmDialog />
       <NewProjectDialog />
+      <LaunchWorkspace />
       <ServicesDialog />
       <ServiceLogs />
       {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}

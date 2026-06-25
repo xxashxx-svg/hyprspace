@@ -31,3 +31,11 @@ tauri-plugin-window-state = "2"
 ed25519-dalek = "2"
 base64 = "0.22"
 
+# OS keychain for loop-agent API keys (Windows Credential Manager / macOS Keychain).
+# per-target so each platform pulls only its native backend.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+

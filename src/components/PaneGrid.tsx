@@ -274,6 +274,7 @@ export function PaneGrid() {
                   guest={guest}
                   command={sess.command}
                   provider={sess.provider}
+                  title={sess.title}
                   started={sess.started}
                   active={isActiveWs}
                   focused={isActiveWs && focusedSessionId === sess.id}

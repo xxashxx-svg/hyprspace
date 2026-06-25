@@ -54,6 +54,7 @@ export interface LoopRun {
   lastResult?: string; // short summary of the last iteration
   tokensUsed?: number;
   stale: number; // consecutive no-change iterations (drives the crash-loop guard)
+  worktreePath?: string; // isolated git worktree the run is editing in (when worktree mode is on)
   logs: string[]; // captured output lines (capped)
 }
 
