@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HyprSpace · one workspace for every coding agent</title>
+    <meta
+      name="description"
+      content="Run Claude, Gemini, and Codex side by side across your projects. HyprSpace launches the CLI you already log into, so your subscription and keys stay yours."
+    />
+    <meta property="og:title" content="HyprSpace" />
+    <meta property="og:description" content="One workspace for every coding agent. Runs your own CLI on your own subscription." />
+    <meta name="theme-color" content="#161616" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d4d4d4'%3E%3Crect x='2' y='2' width='8' height='20' rx='1.8'/%3E%3Crect x='11.5' y='2' width='10.5' height='9' rx='1.8'/%3E%3Crect x='11.5' y='13' width='10.5' height='9' rx='1.8'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f0f0f;
+        --surface-1: #181818;
+        --surface-2: #1f1f1f;
+        --surface-3: #2c2c2c;
+        --term: #0b0b0b;
+        --accent: #ededed;
+        --accent-hover: #ffffff;
+        --text-1: #fafafa;
+        --text-2: #b4b4b4;
+        --text-3: #717171;
+        --line-1: rgba(255, 255, 255, 0.07);
+        --line-2: rgba(255, 255, 255, 0.13);
+        --r1: 6px;
+        --r2: 10px;
+        --r3: 14px;
+        --ui: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+        --mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+        --ease: cubic-bezier(0.2, 0, 0, 1);
+        --maxw: 1080px;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text-1);
+        font-family: var(--ui);
+        font-size: 16px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: -28% 0 auto 0;
+        height: 64vh;
+        background: radial-gradient(58% 56% at 50% 0%, color-mix(in oklch, var(--accent) 20%, transparent), transparent 70%);
+        opacity: 0.55;
+        pointer-events: none;
+        z-index: 0;
+      }
+      a { color: inherit; text-decoration: none; }
+      h1, h2, h3 { margin: 0; letter-spacing: -0.02em; line-height: 1.06; }
+      p { margin: 0; }
+      .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+      .label { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
+
+      .btn {
+        display: inline-flex; align-items: center; gap: 9px;
+        font: inherit; font-weight: 600; font-size: 14.5px;
+        padding: 11px 18px; border-radius: var(--r2);
+        border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text-1);
+        cursor: pointer; transition: background 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.12s var(--ease);
+      }
+      .btn:hover { background: var(--surface-3); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: linear-gradient(180deg, #ffffff, #e6e6e6); border-color: transparent; color: #141414; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); }
+      .btn-primary:hover { background: linear-gradient(180deg, #ffffff, #f2f2f2); }
+      .btn svg { width: 16px; height: 16px; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+      header.nav { position: sticky; top: 0; z-index: 20; background: color-mix(in oklch, var(--bg) 80%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line-1); }
+      .nav-row { display: flex; align-items: center; gap: 16px; height: 58px; }
+      .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
+      .brand .mark { width: 22px; height: 22px; color: var(--accent); }
+      .chip { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 8px; }
+      .nav-spacer { flex: 1; }
+      .nav-links { display: flex; gap: 2px; }
+      .nav-links a { padding: 7px 12px; border-radius: var(--r1); color: var(--text-2); font-size: 14px; font-weight: 500; transition: color 0.15s, background 0.15s; }
+      .nav-links a:hover { color: var(--text-1); background: var(--surface-2); }
+
+      /* ---------- hero ---------- */
+      .hero { padding: 72px 0 28px; }
+      .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 48px; align-items: center; }
+      .hero h1 { font-size: clamp(40px, 5.6vw, 60px); font-weight: 700; background: linear-gradient(176deg, #ffffff 38%, #b6b6b6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+      .hero h1 .a { -webkit-text-fill-color: #ffffff; }
+      .lead { color: var(--text-2); font-size: clamp(16px, 1.5vw, 18px); margin-top: 22px; max-width: 40ch; }
+      .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+      .fineprint { margin-top: 18px; color: var(--text-3); font-size: 13px; font-family: var(--mono); }
+
+      /* ---------- the signature: a small live HyprSpace workspace ---------- */
+      .mock { background: linear-gradient(180deg, #1c1c1c, #141414); border: 1px solid var(--line-2); border-radius: var(--r3); box-shadow: 0 32px 80px rgba(0, 0, 0, 0.66), inset 0 1px 0 rgba(255, 255, 255, 0.05); overflow: hidden; }
+      .mock-bar { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border-bottom: 1px solid var(--line-1); }
+      .mock-bar .mark { width: 15px; height: 15px; color: var(--accent); }
+      .mock-bar .t { font-size: 12.5px; font-weight: 600; }
+      .mock-bar .pill { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; }
+      .mock-body { display: grid; grid-template-columns: 108px 1fr; height: 320px; }
+      .mock-rail { border-right: 1px solid var(--line-1); padding: 12px 8px; background: var(--bg); }
+      .rail-h { font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; color: var(--text-3); padding: 6px 6px 7px; }
+      .rail-i { display: flex; align-items: center; gap: 8px; padding: 6px 7px; border-radius: var(--r1); font-size: 12px; color: var(--text-2); }
+      .rail-i.on { background: var(--surface-2); color: var(--text-1); }
+      .rail-i svg { width: 13px; height: 13px; opacity: 0.65; flex: 0 0 auto; }
+      .mock-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--line-1); }
+      .pane { background: var(--term); display: flex; flex-direction: column; min-width: 0; }
+      .pane-h { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 1px solid var(--line-1); }
+      .pane-h .pi { width: 11px; height: 11px; flex: 0 0 auto; color: var(--text-2); }
+      .pane-h .pt { font-size: 11.5px; font-weight: 500; }
+      .pane-h .pc { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; margin-left: auto; }
+      .dot.ok { background: var(--text-1); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1); }
+      .dot.busy { background: var(--text-1); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1); animation: pulse 1.5s var(--ease) infinite; }
+      .dot.await { background: var(--text-3); }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      .pane-b { padding: 9px 10px; font-family: var(--mono); font-size: 10.5px; line-height: 1.55; color: var(--text-2); flex: 1; overflow: hidden; }
+      .pane-b .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .pane-b .g { color: var(--text-1); }
+      .pane-b .d { color: var(--text-3); }
+      .pane-b .c { color: var(--accent); }
+
+      /* ---------- sections ---------- */
+      section { padding: 76px 0; }
+      .top-line { border-top: 1px solid var(--line-1); }
+      .head h2 { font-size: clamp(27px, 3.4vw, 36px); font-weight: 700; margin-top: 12px; max-width: 22ch; }
+      .head p { color: var(--text-2); font-size: 16.5px; margin-top: 14px; max-width: 50ch; }
+
+      /* subscription */
+      .sub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; margin-top: 34px; }
+      .sub-points { display: grid; gap: 18px; }
+      .sub-point b { font-weight: 600; }
+      .sub-point span { color: var(--text-2); }
+      .sub-point .h { display: flex; align-items: center; gap: 9px; }
+      .sub-point .k { color: var(--text-1); }
+      .codecard { background: var(--term); border: 1px solid var(--line-2); border-radius: var(--r3); overflow: hidden; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+      .codecard .cc-bar { display: flex; align-items: center; gap: 7px; padding: 9px 13px; border-bottom: 1px solid var(--line-1); }
+      .cc-d { width: 11px; height: 11px; border-radius: 50%; background: var(--surface-3); }
+      .codecard .cc-t { margin-left: 6px; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+      .codecard pre { margin: 0; padding: 16px; font-family: var(--mono); font-size: 13px; line-height: 1.9; color: var(--text-2); overflow-x: auto; }
+      .codecard .p { color: var(--accent); user-select: none; }
+      .codecard .c { color: var(--text-1); }
+      .codecard .cm { color: var(--text-3); }
+
+      /* features: a clean list, no tinted icon boxes */
+      .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 36px; background: var(--line-1); border: 1px solid var(--line-1); border-radius: var(--r3); overflow: hidden; }
+      .feat { background: linear-gradient(180deg, #1a1a1a, #151515); padding: 22px 22px; display: flex; gap: 14px; align-items: flex-start; }
+      .feat svg { width: 18px; height: 18px; color: var(--accent); flex: 0 0 auto; margin-top: 2px; }
+      .feat h3 { font-size: 16px; font-weight: 600; }
+      .feat p { color: var(--text-2); font-size: 14.5px; margin-top: 4px; }
+      .feat .km { font-family: var(--mono); font-size: 12px; color: var(--text-1); background: var(--surface-3); border-radius: 4px; padding: 1px 5px; }
+
+      /* home chat */
+      .show { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+      .card { background: linear-gradient(180deg, #1b1b1b, #141414); border: 1px solid var(--line-2); border-radius: var(--r3); overflow: hidden; box-shadow: 0 22px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+      .card-bar { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-bottom: 1px solid var(--line-1); font-size: 12px; color: var(--text-2); }
+      .card-bar .mark { width: 13px; height: 13px; color: var(--accent); }
+      .chat { padding: 16px; display: grid; gap: 12px; }
+      .bubble { max-width: 88%; padding: 11px 14px; border-radius: var(--r3); font-size: 14.5px; line-height: 1.5; }
+      .bubble.you { margin-left: auto; background: var(--surface-3); border: 1px solid var(--line-2); border-bottom-right-radius: 5px; }
+      .bubble.hs { background: color-mix(in oklch, var(--accent) 10%, var(--surface-2)); border: 1px solid color-mix(in oklch, var(--accent) 20%, var(--line-2)); border-bottom-left-radius: 5px; }
+      .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+      .act { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11.5px; background: var(--surface-1); border: 1px solid var(--line-2); border-radius: 999px; padding: 5px 11px; }
+      .act .dot { margin: 0; }
+
+      /* closing */
+      .final { text-align: center; }
+      .final h2 { font-size: clamp(30px, 4.4vw, 48px); font-weight: 700; max-width: none; }
+      .final p { color: var(--text-2); margin: 16px auto 0; max-width: 42ch; font-size: 17px; }
+      .final .cta-row { justify-content: center; margin-top: 28px; }
+      .dl-note { margin-top: 16px; font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+
+      footer { border-top: 1px solid var(--line-1); padding: 38px 0 52px; }
+      .foot-row { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+      .foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+      .foot-brand .mark { width: 19px; height: 19px; color: var(--accent); }
+      .foot-tag { color: var(--text-3); font-size: 13.5px; margin-top: 10px; max-width: 32ch; }
+      .foot-links { margin-left: auto; display: flex; gap: 18px; }
+      .foot-links a { color: var(--text-2); font-size: 14px; }
+      .foot-links a:hover { color: var(--text-1); }
+      .foot-legal { margin-top: 28px; color: var(--text-3); font-size: 12.5px; font-family: var(--mono); }
+
+      /* polish: anchor offset, skip link, hover micro-interactions, providers strip */
+      html { scroll-padding-top: 72px; }
+      .skip { position: fixed; left: 12px; top: -60px; z-index: 50; background: var(--accent); color: #fff; padding: 9px 14px; border-radius: var(--r1); font-weight: 600; transition: top 0.15s var(--ease); }
+      .skip:focus { top: 12px; }
+      .feat { transition: background 0.15s var(--ease); }
+      .feat:hover { background: var(--surface-2); }
+      .card { transition: transform 0.2s var(--ease); }
+      .card:hover { transform: translateY(-2px); }
+      .providers { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 6px 0 24px; }
+      .providers .plabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
+      .providers .prov { font-family: var(--mono); font-size: 13px; color: var(--text-2); }
+
+      .reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.55s var(--ease), transform 0.55s var(--ease); }
+      .reveal.in { opacity: 1; transform: none; }
+
+      @media (max-width: 880px) {
+        .hero-grid, .sub-grid, .show, .feat-grid { grid-template-columns: 1fr; }
+        .nav-links { display: none; }
+        .hero { padding: 44px 0 8px; }
+        section { padding: 56px 0; }
+      }
+      @media (max-width: 540px) {
+        .foot-links { margin-left: 0; }
+        .mock-body { grid-template-columns: 1fr; height: auto; }
+        .mock-rail { display: none; }
+        .mock-grid { grid-template-rows: repeat(4, 108px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        .reveal { opacity: 1; transform: none; transition: none; }
+        .dot.busy { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#top">Skip to content</a>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="mark" viewBox="0 0 24 24">
+        <rect x="2" y="2" width="8" height="20" rx="1.8" fill="currentColor" />
+        <rect x="11.5" y="2" width="10.5" height="9" rx="1.8" fill="currentColor" />
+        <rect x="11.5" y="13" width="10.5" height="9" rx="1.8" fill="currentColor" />
+      </symbol>
+    </svg>
+
+    <header class="nav">
+      <div class="wrap nav-row">
+        <a class="brand" href="#top">
+          <svg class="mark"><use href="#mark" /></svg>
+          HyprSpace
+          <span class="chip">private beta</span>
+        </a>
+        <span class="nav-spacer"></span>
+        <nav class="nav-links">
+          <a href="#subscription">Subscription</a>
+          <a href="#features">Features</a>
+          <a href="#chat">Home chat</a>
+        </nav>
+        <a class="btn btn-primary" data-download href="https://github.com/xxashxx-svg/hyprspace-releases/releases/latest/download/HyprSpace-windows-x64-setup.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Download
+        </a>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- HERO -->
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div>
+            <h1>One workspace for <span class="a">every coding agent.</span></h1>
+            <p class="lead">
+              Run Claude, Gemini, and Codex right next to each other across your projects. HyprSpace
+              just launches the CLI you already log into, so your subscription and keys stay yours.
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-primary" data-download href="https://github.com/xxashxx-svg/hyprspace-releases/releases/latest/download/HyprSpace-windows-x64-setup.exe">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                Download for Windows
+              </a>
+              <a class="btn" href="#subscription">How it works</a>
+            </div>
+            <p class="fineprint">Your own CLI. No API keys. No resold quota.</p>
+          </div>
+
+          <div class="mock" aria-hidden="true">
+            <div class="mock-bar">
+              <svg class="mark"><use href="#mark" /></svg>
+              <span class="t">HyprSpace</span>
+              <span class="pill"><span class="dot ok"></span> 4 agents working</span>
+            </div>
+            <div class="mock-body">
+              <div class="mock-rail">
+                <div class="rail-h">PROJECTS</div>
+                <div class="rail-i on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>web app</div>
+                <div class="rail-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>api</div>
+                <div class="rail-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>infra</div>
+              </div>
+              <div class="mock-grid">
+                <div class="pane">
+                  <div class="pane-h"><svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3Z"/></svg><span class="pt">claude</span><span class="pc">web app</span><span class="dot busy"></span></div>
+                  <div class="pane-b">
+                    <div class="l">wiring up the auth route</div>
+                    <div class="l g">✓ Read 12 · Edit 3</div>
+                    <div class="l d">Opus 4.8 · 1M context</div>
+                  </div>
+                </div>
+                <div class="pane">
+                  <div class="pane-h"><svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3c0 .6.2 1.1.5 1.5A3 3 0 0 0 6 10.5 3 3 0 0 0 9 13.5 3 3 0 0 0 12 21a3 3 0 0 0 3-7.5 3 3 0 0 0 3-3 3 3 0 0 0-3.5-3A3 3 0 0 0 12 3Z"/></svg><span class="pt">gemini</span><span class="pc">api</span><span class="dot ok"></span></div>
+                  <div class="pane-b">
+                    <div class="l">wrote the api spec</div>
+                    <div class="l g">✓ tests pass (114)</div>
+                    <div class="l d">waiting for review</div>
+                  </div>
+                </div>
+                <div class="pane">
+                  <div class="pane-h"><svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><span class="pt">codex</span><span class="pc">infra</span><span class="dot busy"></span></div>
+                  <div class="pane-b">
+                    <div class="l">moving CI to the new runner</div>
+                    <div class="l g">+41 <span class="d">lines</span></div>
+                    <div class="l d">on request approvals</div>
+                  </div>
+                </div>
+                <div class="pane">
+                  <div class="pane-h"><svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/></svg><span class="pt">terminal</span><span class="pc">web app</span><span class="dot await"></span></div>
+                  <div class="pane-b">
+                    <div class="l d">$ npm run dev</div>
+                    <div class="l g">ready on localhost:5173</div>
+                    <div class="l c">› <span style="opacity:.5">▍</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap providers reveal">
+        <span class="plabel">Works with</span>
+        <span class="prov">Claude Code &nbsp;·&nbsp; Gemini &nbsp;·&nbsp; Codex &nbsp;·&nbsp; WSL &nbsp;·&nbsp; any shell</span>
+      </div>
+
+      <!-- SUBSCRIPTION -->
+      <section id="subscription" class="top-line">
+        <div class="wrap">
+          <div class="head reveal">
+            <span class="label">Your subscription</span>
+            <h2>Your CLI, your quota, no middleman.</h2>
+            <p>HyprSpace never touches your API keys and never resells your usage. Each pane just runs the agent you already signed into. Log in once, then run them all at once.</p>
+          </div>
+          <div class="sub-grid">
+            <div class="codecard reveal">
+              <div class="cc-bar"><span class="cc-d"></span><span class="cc-d"></span><span class="cc-d"></span><span class="cc-t">~/projects</span></div>
+<pre><span class="cm"># sign in to the agents you already pay for</span>
+<span class="p">$</span> <span class="c">claude</span>      <span class="cm"># Claude Code</span>
+<span class="p">$</span> <span class="c">gemini</span>      <span class="cm"># Gemini CLI</span>
+<span class="p">$</span> <span class="c">codex login</span> <span class="cm"># OpenAI Codex</span>
+
+<span class="cm"># then open HyprSpace and tile them. that's it.</span></pre>
+            </div>
+            <div class="sub-points reveal">
+              <div class="sub-point">
+                <div class="h"><svg class="k" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><b>No keys stored</b></div>
+                <span>Your token stays in your CLI. HyprSpace only reads display fields like your plan.</span>
+              </div>
+              <div class="sub-point">
+                <div class="h"><svg class="k" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><b>No quota resold</b></div>
+                <span>You get exactly what your plan gives you. HyprSpace is the workspace, not a reseller.</span>
+              </div>
+              <div class="sub-point">
+                <div class="h"><svg class="k" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><b>Resume any pane</b></div>
+                <span>Every Claude pane keeps its own chat, so reopening it picks up right where you left off.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FEATURES -->
+      <section id="features" class="top-line">
+        <div class="wrap">
+          <div class="head reveal">
+            <span class="label">The workspace</span>
+            <h2>Made for running a fleet, not one chat.</h2>
+          </div>
+          <div class="feat-grid reveal">
+            <div class="feat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+              <div><h3>Tile and swap</h3><p>Drag any pane to rearrange, or drop it into another space.</p></div>
+            </div>
+            <div class="feat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              <div><h3>Resume any pane</h3><p>Reopen a pane and Claude picks up the same chat.</p></div>
+            </div>
+            <div class="feat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              <div><h3>Projects and spaces</h3><p>Pin a project to a folder, or make a scratch space across repos.</p></div>
+            </div>
+            <div class="feat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 3a3 3 0 1 0-1 5.83V15a3 3 0 1 0 2 0V8.83A3 3 0 0 0 10 3Z"/><path d="M14 5h4a3 3 0 0 1 0 6h-4"/></svg>
+              <div><h3>Command palette</h3><p>Hit <span class="km">Ctrl K</span> to jump to any project, pane, or action.</p></div>
+            </div>
+            <div class="feat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6M18 6a3 3 0 0 0-3 3v3a3 3 0 0 1-3 3H6"/><circle cx="18" cy="6" r="3"/></svg>
+              <div><h3>Review and ship</h3><p>See every change in the git dock, then commit, push, and open a PR.</p></div>
+            </div>
+            <div class="feat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>
+              <div><h3>Services on startup</h3><p>Auto run your dev server or any script when you open a folder.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOME CHAT -->
+      <section id="chat" class="top-line">
+        <div class="wrap show">
+          <div class="head reveal">
+            <span class="label">Home chat</span>
+            <h2>Tell it what to build. It sets up the workspace.</h2>
+            <p>The home screen is a Claude session that can drive HyprSpace itself. Ask it to make a project or open a few agents, and it does.</p>
+          </div>
+          <div class="card reveal">
+            <div class="card-bar"><svg class="mark"><use href="#mark" /></svg> Home</div>
+            <div class="chat">
+              <div class="bubble you">make a project for a discord bot with claude and a shell</div>
+              <div class="bubble hs">
+                Done. Made the project and opened two panes.
+                <div class="acts">
+                  <span class="act"><span class="dot ok"></span> created · discord-bot</span>
+                  <span class="act"><span class="dot ok"></span> opened · claude</span>
+                  <span class="act"><span class="dot ok"></span> opened · terminal</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CLOSING -->
+      <section class="final top-line">
+        <div class="wrap">
+          <h2>Stop juggling terminal windows.</h2>
+          <p>One workspace for every agent you already pay for.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" data-download href="https://github.com/xxashxx-svg/hyprspace-releases/releases/latest/download/HyprSpace-windows-x64-setup.exe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              Download for Windows
+            </a>
+            <a class="btn" href="https://github.com/xxashxx-svg/hyprspace-releases/releases">Releases</a>
+          </div>
+          <p class="dl-note">Windows 10 and 11. Private beta, needs an access code. macOS and Linux soon.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap foot-row">
+        <div>
+          <div class="foot-brand"><svg class="mark"><use href="#mark" /></svg> HyprSpace</div>
+          <p class="foot-tag">A workspace for the coding agents you already pay for.</p>
+        </div>
+        <div class="foot-links">
+          <a href="#features">Features</a>
+          <a href="#subscription">Subscription</a>
+          <a href="https://github.com/xxashxx-svg/hyprspace-releases/releases">Releases</a>
+        </div>
+      </div>
+      <div class="wrap"><p class="foot-legal">© 2026 HyprSpace. Runs your own CLI.</p></div>
+    </footer>
+
+    <script>
+      // reveal sections on scroll (reduced-motion safe via CSS)
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+        },
+        { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+      );
+      document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+    </script>
+  </body>
+</html>
