@@ -70,18 +70,23 @@ src/                         React frontend
   App.tsx / App.css          shell layout + all component CSS
   styles/tokens.css          design tokens (theme variables)
   components/                UI: Titlebar, Rail (sidebar), PaneGrid, TerminalPane, HomePage,
-                             ChatPanel, ReviewDock, Settings, NewProjectDialog, CommandPalette, …
+                             ChatPanel, ReviewDock, Settings, NewProjectDialog, CommandPalette,
+                             LoopsPage + LoopsManager + LoopRunner (Loops), StartupSettings, …
   stores/                    Zustand: workspace, ui, settings, settingsSync, chat, orchestrator,
-                             git, activity, skills, auth, updater, notifications, confirm
+                             git, activity, skills, auth, updater, notifications, confirm, loops,
+                             projectConfig, services
   api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
                              never invoke() directly
   actions.ts                 shared actions (launch panes, worktrees, close) + provider cmd builders
-  lib/                       small helpers (projects.ts = where new projects go, time.ts)
+  lib/                       small helpers (projects.ts = where new projects go, time.ts) +
+                             loops.ts (the Loops engine)
 
 src-tauri/                   Rust backend
   src/lib.rs                 all #[tauri::command] registrations + app lifecycle (kill_all on exit)
   src/pty.rs                 PtyManager — ConPTY/portable-pty, byte coalescing
   src/chat.rs                ChatManager — the persistent home-chat claude process (stream-json)
+  src/agent.rs               AgentManager — runs ONE provider turn (claude -p …) for the Loops engine
+  src/services.rs            ServiceManager — per-folder startup services (background processes)
   src/devtools.rs            git ops, provider_status, skills, mcp, worktrees, create_project_dir, reveal_path
   src/persist.rs             crash-safe JSON state store (~/.hyprspace/v2)
   src/oauth.rs               loopback listener for the app's own Google/Supabase sign-in (PKCE)
@@ -113,6 +118,13 @@ deploy.ps1                   Windows release script
 - **Orchestrator.** The chat model can operate the app by emitting ```hyprspace fenced JSON blocks
   (create_project / new_open_space / spawn_agents / switch_space) which `stores/orchestrator.ts`
   parses and executes against the stores. It's in-process text directives — **not** an MCP bridge.
+- **Loops.** Scheduled / interval / until-done / manual agents. A `LoopDef` (persisted `"loops"`,
+  `stores/loops.ts`) is driven by the engine in `lib/loops.ts`, which runs each iteration through the
+  headless agent runner (`agent.rs`). Pluggable backends: **Claude** (on a user Anthropic API key from
+  the OS keychain — never the subscription), **Codex**, **Gemini**. Every loop **must** declare a stop
+  limit (mandatory max-iterations; optional sentinel / `untilCheck` command / time budget / no-progress
+  auto-stop) — it can't run forever. Optional worktree isolation + Review-changes. On the dedicated
+  **Loops** page (rail); runs only while the app is open. See ARCHITECTURE.
 - **IPC discipline.** Components call `src/api/index.ts` wrappers, never `invoke()` directly. Sync
   Tauri commands run on the UI thread, so anything filesystem-heavy is `async fn` + `spawn_blocking`.
 - **Windows note.** `claude` is a `.cmd` shim, so it's spawned via `cmd /c claude …` so PATHEXT
@@ -136,6 +148,9 @@ coalescing): **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
   CSP breaks Vite dev HMR, so it's a production-build task, not a dev change.
 - **Persisted state names** are sanitized to a token in `persist.rs`; the chat blob is capped
   (30 threads, 200 msgs/thread, tool results truncated) on save.
+- **A Loop can never run forever.** `LoopStop.maxIterations` is mandatory by construction, and the
+  engine also auto-stops on no-progress (3 consecutive unchanged/empty iterations → `crashloop`),
+  an optional sentinel token in the output, and an optional time budget. Don't add an infinite path.
 
 ## Docs index
 - [docs/README.md](./docs/README.md) — index of everything below

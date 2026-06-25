@@ -5,8 +5,8 @@
 
 A multi-terminal AI workspace built with **Tauri 2 + React**. It tiles Claude Code / Gemini / Codex
 / shell sessions across **projects** and **open spaces**, with per-pane resume, drag-to-swap, a
-command palette, a git review dock, a home-screen AI chat that can operate the app, and live
-auto-update.
+command palette, a git review dock, scheduled & looping agents (**Loops**), a home-screen AI chat
+that can operate the app, and live auto-update.
 
 ## Tech stack
 - **Frontend:** React 19, Vite, TypeScript, Zustand. Vanilla CSS with design tokens (no Tailwind).
@@ -38,6 +38,12 @@ auto-update.
 - **Home chat / orchestrator:** `chat.rs` + `stores/chat.ts` (persistent stream-json session);
   `stores/orchestrator.ts` parses the model's ```hyprspace blocks to operate the app. Details in
   [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+- **Loops:** scheduled / interval / until-done / manual agents. `stores/loops.ts` (the `LoopDef`
+  data model, persisted `"loops"`) + `lib/loops.ts` (the engine) drive each iteration through the
+  headless agent runner `src-tauri/src/agent.rs`. Pluggable backends — Claude (on a user Anthropic
+  API key from the OS keychain, never the subscription), Codex, Gemini — with optional worktree
+  isolation. Every loop must declare a stop limit, so it can never run forever. UI: the dedicated
+  **Loops** page (rail).
 
 ## Build / run / deploy
 ```bash

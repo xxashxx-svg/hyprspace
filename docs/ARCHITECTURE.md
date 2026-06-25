@@ -104,6 +104,96 @@ Where new projects go: `src/lib/projects.ts` → `projectsBaseDir()` (the Settin
 "Projects folder", default `~/Documents/HyprSpace`) + `joinPath`. Both the chat and the New Project
 dialog use it so they agree.
 
+## Startup services (`services.rs` ↔ `StartupSettings.tsx`)
+
+Per-folder startup tasks that run as **background processes** (no PTY, no pane) so a dev server /
+watcher can run while its output stays viewable in the Services panel — the "Run in background"
+option. Configured in Settings → Startup; the per-folder list + env live in `stores/projectConfig.ts`.
+
+- `ServiceManager` (`services.rs`) owns a `Mutex<HashMap<id, Child>>`. `start(id, cwd, command, env, ch)`
+  spawns the command through a shell — `powershell -NoProfile -NonInteractive -Command "<command>"`
+  on Windows, `sh -c "<command>"` elsewhere — with `stdin` nulled, streaming every stdout+stderr line
+  to a `Channel`. On stdout EOF it sends the exit sentinel `\u{0}__service_exit__` so the UI marks the
+  service stopped.
+- Like the agent runner it clears `NoDefaultCurrentDirectoryInExePath` so a script behaves like a
+  double-click (an `.exe` next to a `.bat` still resolves).
+- Commands: `service_start` / `service_stop` (`api/index.ts` → `serviceStart`/`serviceStop`). Reaped
+  by `kill_all` on app exit (`taskkill /T /F` on Windows), same as PTYs and the chat process.
+
+## Loops (`stores/loops.ts` + `lib/loops.ts` + `agent.rs`)
+
+HyprSpace's scheduled / looping agents. A **`LoopDef`** is a saved definition (persisted as `"loops"`,
+a map keyed by id); its live `LoopRun` (status / iteration / logs / stale counter / worktree path) is
+**in-memory only** — loops run only while the app is open. UI: a dedicated **Loops & Automations**
+page reached from the rail (`LoopsPage.tsx` wrapping `LoopsManager.tsx`), plus command-palette entries
+and a titlebar/rail badge while any run. The page leads with one-click starter templates
+(`lib/loopTemplates.ts`).
+
+### Backends (pluggable — and the subscription is never used)
+Each loop picks a `provider`. **Loops deliberately do not use the Claude subscription** — that path is
+reserved for the panes + home chat. Instead:
+- **Claude** runs on a user-provided **Anthropic API key** stored in the OS keychain (Windows
+  Credential Manager / macOS Keychain via `secret_set`/`secret_has`/`secret_clear`). The key is read
+  in Rust at spawn time and injected as `ANTHROPIC_API_KEY` — it never crosses into the webview. A
+  Claude loop **refuses to start** without a key (otherwise `claude -p` would fall back to the
+  subscription, which it must not).
+- **Codex** uses your `codex login` auth; **Gemini** uses its own CLI login. Neither needs a key.
+
+### Engine (`lib/loops.ts`)
+`startLoop`/`stopLoop`/`pauseLoop` drive a per-loop controller held in a module `Map` (so each loop
+has one in-flight chain; `isLoopActive(id)` checks it). Each iteration runs **one provider turn
+headless**: `buildArgs(def, cont)` produces the argv and `runIteration` calls `agentStart` (with the
+keychain `secrets` map), piping the prompt over stdin and resolving when the turn's exit sentinel
+arrives. Per backend:
+- **claude** — `claude -p --output-format stream-json --verbose [--model X] --permission-mode <mode>`;
+  the stream-json events are parsed into readable log lines (`→ Read/Edit/Bash …`, the agent's text,
+  and a final `✓ done · $cost`).
+- **codex** — `codex exec [-m X] -s <sandbox> --skip-git-repo-check`.
+- **gemini** — `gemini [-m X] -p "" --approval-mode <mode> --skip-trust`.
+
+`permissionMode` (plan / acceptEdits / bypass / default) maps onto each CLI's own vocabulary
+(`--permission-mode bypassPermissions`, codex `-s read-only|workspace-write` or
+`--dangerously-bypass-approvals-and-sandbox`, gemini `--approval-mode plan|auto_edit|yolo`). Modes:
+- **until-done** — re-prompt back-to-back with a ~1.2s breather between iterations.
+- **interval** — every `intervalSec` seconds (min 5).
+- **cron** ("Schedule") — `nextFire(schedule)` from `everyMin` or a daily `HH:MM` (raw 5-field cron is
+  a typed-but-not-yet-implemented field); defaults hourly.
+- **manual** — runs exactly once.
+
+**Session.** `session: "continue"` keeps context across iterations — the first run seeds the session,
+the rest add the backend's continue/resume flag (`claude --continue` / `codex exec resume --last -` /
+`gemini --resume latest`). `"fresh"` starts each iteration clean.
+
+**Worktree isolation.** With `worktree` on and the folder a git repo, the run happens in a throwaway
+worktree (branch `hs/loop-<id>`, idempotent so re-runs reuse it) so an autonomous agent never touches
+the working tree until you review the diff; the card exposes a **Review changes** button. Falls back
+to running in place when the folder isn't a repo. (`run: "pane"` is in the data model but not yet wired.)
+
+### Stop guards (a loop can never run forever)
+Enforced in the tick loop, in this order:
+- **`maxIterations`** — mandatory hard cap → status `done`.
+- **`timeBudgetMin`** — optional wall-clock cap → status `stopped`.
+- **no-progress** — if `noProgress` is on and 3 iterations in a row produce identical (output hashed
+  with the multiply-by-31 mod 2147483647 family) or empty output, it auto-stops → status `crashloop`.
+- **sentinel** — if the output contains the `sentinel` token (e.g. `LOOP_DONE`) → status `done`.
+- **untilCheck** — an optional shell command run after each iteration (`run_check` in `devtools.rs`,
+  in the loop's folder/worktree); exit `0` means the goal is met (e.g. `npm test` passes) → `done`.
+
+(`tokenBudget` exists on `LoopStop` but isn't wired in yet — it needs token counts from the JSON output.)
+
+### Agent runner (`agent.rs`)
+`AgentManager` runs **one** provider turn per call — the headless analog of `chat.rs`. `start(id, cwd,
+args, env, secrets, prompt, ch)` spawns the full argv (via `cmd /c …` on Windows so the `.cmd` shim
+resolves), writes the prompt to stdin then closes it (so a long/multiline prompt never has to survive
+shell quoting), and streams stdout+stderr as lines. `secrets` maps an env-var name → a keychain secret
+name (e.g. `ANTHROPIC_API_KEY` ← `"anthropic"`); each is read from the OS keychain **in Rust** and set
+on the child env, so the value never enters JS. On stdout EOF it emits `\u{0}__agent_exit__` so the
+runner advances the loop. Commands: `agent_start` / `agent_stop` (`api/index.ts` → `agentStart`/
+`agentStop`); the run id is `loop:<defId>`. Reaped by `kill_all` on exit like the other managers.
+
+`LoopRunner.tsx` mounts once, hydrates saved loops, and auto-starts the **enabled** `cron`/`interval`
+loops; `until-done` and `manual` loops are started by hand from the UI.
+
 ## Provider command builders (`actions.ts`)
 
 `claudeCmd(mode)`, `geminiCmd(yolo)`, `codexCmd(mode)`, `WSL_CMD` produce **constant** command
