@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
+import { useLoops } from "../stores/loops";
 import { useActivity } from "../stores/activity";
 import { useAuth } from "../stores/auth";
 import { relTime } from "../lib/time";
@@ -16,6 +17,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Repeat,
 } from "lucide-react";
 
 const wsAt = (x: number, y: number): string | null => {
@@ -48,6 +50,10 @@ export function Rail() {
   const paneDragOverWs = useUi((s) => s.paneDragOverWs);
   const view = useUi((s) => s.view);
   const goSpace = useUi((s) => s.goSpace);
+  const loopRuns = useLoops((s) => s.runs);
+  const activeLoops = Object.values(loopRuns).filter(
+    (r) => r.status === "running" || r.status === "paused",
+  ).length;
   const setFocused = useWorkspaces((s) => s.setFocused);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const exited = useActivity((s) => s.exited);
@@ -267,6 +273,15 @@ export function Rail() {
         <Search size={15} />
         <span className="rail-search-label">Search</span>
         <span className="rail-search-kbd">Ctrl K</span>
+      </button>
+      <button
+        className={`rail-nav${view === "loops" ? " active" : ""}`}
+        title="Loops & automations"
+        onClick={() => useUi.getState().goLoops()}
+      >
+        <Repeat size={15} />
+        <span className="rail-nav-label">Loops</span>
+        {activeLoops > 0 && <span className="rail-nav-badge">{activeLoops}</span>}
       </button>
       <div className="rail-header">
         <span className="rail-title">PROJECTS</span>

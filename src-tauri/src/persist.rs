@@ -87,6 +87,13 @@ impl Store {
 }
 
 fn state_dir() -> PathBuf {
+    // dev escape hatch: point a dev instance at its own state dir so it can't clobber the
+    // installed app's data. unset in release builds, so it never affects real users.
+    if let Ok(d) = std::env::var("HYPRSPACE_STATE_DIR") {
+        if !d.trim().is_empty() {
+            return PathBuf::from(d);
+        }
+    }
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();

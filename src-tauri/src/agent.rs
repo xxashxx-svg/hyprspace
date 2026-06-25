@@ -53,6 +53,7 @@ impl AgentManager {
         cwd: String,
         args: Vec<String>,
         env: HashMap<String, String>,
+        secrets: HashMap<String, String>,
         prompt: String,
         ch: Channel<String>,
     ) -> Result<(), String> {
@@ -81,6 +82,13 @@ impl AgentManager {
         }
         for (k, v) in &env {
             cmd.env(k, v);
+        }
+        // inject keychain secrets by name (e.g. ANTHROPIC_API_KEY ← "anthropic"): read here in Rust
+        // so the key never crosses into the JS/webview layer.
+        for (env_name, secret_name) in &secrets {
+            if let Ok(val) = keyring::Entry::new("hyprspace", secret_name).and_then(|e| e.get_password()) {
+                cmd.env(env_name, val);
+            }
         }
         // behave like a double-click: don't inherit a hardened cwd-exclusion (the lualink lesson)
         cmd.env_remove("NoDefaultCurrentDirectoryInExePath");

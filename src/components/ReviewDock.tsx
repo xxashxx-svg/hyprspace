@@ -6,9 +6,10 @@ import type { FileChange } from "../api/types";
 import { SkillsPanel } from "./SkillsPanel";
 import { ServicesPanel } from "./ServicesPanel";
 import { FilesPanel } from "./FilesPanel";
+import { CodeEditor } from "./CodeEditor";
 import { confirmDialog } from "../stores/confirm";
 import { useNotifications } from "../stores/notifications";
-import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, Server, FolderTree } from "lucide-react";
+import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, Server, FolderTree, FileCode } from "lucide-react";
 
 // porcelain code → a coarse class for the status chip color
 function statusClass(code: string): string {
@@ -222,6 +223,7 @@ function SourceControl({ cwd }: { cwd: string }) {
 export function ReviewDock() {
   const open = useUi((s) => s.dockOpen);
   const tab = useUi((s) => s.dockTab);
+  const openFile = useUi((s) => s.openFile);
   const view = useUi((s) => s.view);
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
@@ -278,6 +280,15 @@ export function ReviewDock() {
           <Zap size={13} />
           Skills
         </button>
+        {openFile && (
+          <button
+            className={`dock-tab${tab === "editor" ? " active" : ""}`}
+            onClick={() => useUi.getState().setDockTab("editor")}
+          >
+            <FileCode size={13} />
+            Editor
+          </button>
+        )}
         <button className="dock-x" title="Hide dock (Ctrl+Shift+G)" onClick={() => useUi.getState().setDock(false)}>
           <ChevronRight size={16} />
         </button>
@@ -288,6 +299,8 @@ export function ReviewDock() {
         <FilesPanel />
       ) : tab === "services" ? (
         <ServicesPanel />
+      ) : tab === "editor" ? (
+        openFile ? <CodeEditor key={openFile} path={openFile} /> : <FilesPanel />
       ) : (
         <SkillsPanel cwd={cwd} />
       )}

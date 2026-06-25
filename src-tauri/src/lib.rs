@@ -95,15 +95,42 @@ fn agent_start(
     cwd: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+    secrets: HashMap<String, String>,
     prompt: String,
     on_event: Channel<String>,
 ) -> Result<(), String> {
-    state.start(id, cwd, args, env, prompt, on_event)
+    state.start(id, cwd, args, env, secrets, prompt, on_event)
 }
 
 #[tauri::command]
 fn agent_stop(state: State<AgentManager>, id: String) {
     state.stop(&id);
+}
+
+// ---- OS keychain: store loop-agent API keys (Windows Credential Manager / macOS Keychain) ----
+const KEYCHAIN_SVC: &str = "hyprspace";
+
+#[tauri::command]
+fn secret_set(name: String, value: String) -> Result<(), String> {
+    keyring::Entry::new(KEYCHAIN_SVC, &name)
+        .and_then(|e| e.set_password(&value))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn secret_has(name: String) -> bool {
+    keyring::Entry::new(KEYCHAIN_SVC, &name)
+        .and_then(|e| e.get_password())
+        .is_ok()
+}
+
+#[tauri::command]
+fn secret_clear(name: String) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYCHAIN_SVC, &name).map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -267,6 +294,9 @@ pub fn run() {
             service_stop,
             agent_start,
             agent_stop,
+            secret_set,
+            secret_has,
+            secret_clear,
             get_home_dir,
             shell_name,
             claude_has_history,
@@ -281,6 +311,7 @@ pub fn run() {
             devtools::git_changes,
             devtools::git_diff,
             devtools::detect_run_cmd,
+            devtools::run_check,
             devtools::git_commit,
             devtools::git_push,
             devtools::git_create_pr,
@@ -291,6 +322,8 @@ pub fn run() {
             devtools::create_project_dir,
             devtools::reveal_path,
             devtools::list_dir,
+            devtools::read_file,
+            devtools::write_file,
             devtools::provider_status,
             devtools::mcp_list,
             devtools::mcp_set,

@@ -11,8 +11,11 @@ import { makeTerminal, termTheme } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { useProjectConfigs } from "../stores/projectConfig";
-import { createPty, writePty, resizePty, killPty, claudeResumeMode } from "../api";
-import { appendOutput, dropOutput } from "../terminal/buffers";
+import { useUi } from "../stores/ui";
+import { useNotifications } from "../stores/notifications";
+import { claudeCmd } from "../actions";
+import { createPty, writePty, resizePty, killPty, claudeResumeMode, revealPath, worktreeCreate } from "../api";
+import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { useActivity } from "../stores/activity";
 import {
   Maximize2,
@@ -24,6 +27,13 @@ import {
   Bot,
   SquareTerminal,
   Terminal as TerminalIcon,
+  MoreHorizontal,
+  Copy,
+  FolderOpen,
+  ClipboardList,
+  GitBranch,
+  GitPullRequestArrow,
+  SplitSquareHorizontal,
 } from "lucide-react";
 import { TerminalSearch } from "./TerminalSearch";
 
@@ -51,6 +61,7 @@ interface Props {
   guest?: boolean;
   command?: string;
   provider: "claude" | "gemini" | "codex" | "wsl" | "terminal";
+  title?: string;
   started?: boolean;
   active: boolean;
   focused: boolean;
@@ -72,6 +83,7 @@ function TerminalPaneInner({
   guest,
   command,
   provider,
+  title,
   started,
   active,
   focused,
@@ -387,6 +399,28 @@ function TerminalPaneInner({
   const folder = cwd.split(/[\\/]/).filter(Boolean).pop();
   const PIcon = PROVIDER_ICONS[provider] ?? TerminalIcon;
 
+  // ---- pane actions menu (… button / right-click the header) ----
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const note = (title: string) => useNotifications.getState().add({ title });
+  const openMenuAt = (e: RMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: Math.min(e.clientX, window.innerWidth - 210), y: e.clientY });
+  };
+  const openMenuFromBtn = (e: RMouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenu({ x: Math.min(r.right - 196, window.innerWidth - 210), y: r.bottom + 4 });
+  };
+  const newWorktreeHere = async () => {
+    try {
+      const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
+      const path = await worktreeCreate(cwd, `agent-${(ws?.sessions.length ?? 0) + 1}`);
+      useWorkspaces.getState().addSession(wsId, claudeCmd(), path);
+    } catch (e) {
+      note(`Couldn't create worktree: ${e}`);
+    }
+  };
+
   // right-click = paste (xterm.paste handles bracketed paste so multi-line input won't pre-submit)
   const handlePaste = (e: RMouseEvent) => {
     e.preventDefault();
@@ -407,11 +441,12 @@ function TerminalPaneInner({
         onPointerDown={(e) => onGripDown(e, wsId, sessionId)}
         onPointerMove={onGripMove}
         onPointerUp={onGripUp}
+        onContextMenu={openMenuAt}
       >
         <span className="pane-head-left">
           {!alive && <span className="pane-status" title="process exited" />}
           <PIcon size={12} className="pane-prov-ico" />
-          <span className="pane-title">{provider}</span>
+          <span className="pane-title">{title || provider}</span>
           {folder && (
             <span
               className={`pane-cwd${guest ? " guest" : ""}`}
@@ -422,6 +457,22 @@ function TerminalPaneInner({
           )}
         </span>
         <span className="pane-head-right">
+          <button
+            className="pane-btn"
+            title={`Split — add another ${provider === "terminal" ? "terminal" : provider} pane here`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => useWorkspaces.getState().addSession(wsId, command, cwd)}
+          >
+            <SplitSquareHorizontal size={12} />
+          </button>
+          <button
+            className="pane-btn"
+            title="Pane actions"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={openMenuFromBtn}
+          >
+            <MoreHorizontal size={13} />
+          </button>
           <button
             className="pane-btn"
             title={isMaxed ? "Restore" : "Maximize"}
@@ -450,6 +501,81 @@ function TerminalPaneInner({
         />
       )}
       <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
+      {menu && (
+        <>
+          <div
+            className="pane-menu-backdrop"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setMenu(null);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div className="pane-menu" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
+            <button
+              className="pane-menu-item"
+              onClick={() => {
+                void writeText(cwd);
+                note("Path copied");
+                setMenu(null);
+              }}
+            >
+              <Copy size={14} /> Copy current path
+            </button>
+            <button
+              className="pane-menu-item"
+              onClick={() => {
+                void revealPath(cwd).catch(() => {});
+                setMenu(null);
+              }}
+            >
+              <FolderOpen size={14} /> Open current directory
+            </button>
+            <button
+              className="pane-menu-item"
+              onClick={() => {
+                void writeText(recentOutput(sessionId, 24000));
+                note("Output copied");
+                setMenu(null);
+              }}
+            >
+              <ClipboardList size={14} /> Copy output
+            </button>
+            <div className="pane-menu-sep" />
+            <button
+              className="pane-menu-item"
+              onClick={() => {
+                void newWorktreeHere();
+                setMenu(null);
+              }}
+            >
+              <GitBranch size={14} /> New worktree from here
+            </button>
+            <button
+              className="pane-menu-item"
+              onClick={() => {
+                useUi.getState().setDockTab("changes");
+                setMenu(null);
+              }}
+            >
+              <GitPullRequestArrow size={14} /> Open Git panel
+            </button>
+            <div className="pane-menu-sep" />
+            <button
+              className="pane-menu-item danger"
+              onClick={() => {
+                onClose(wsId, sessionId);
+                setMenu(null);
+              }}
+            >
+              <X size={14} /> Close pane
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -57,6 +57,11 @@ $setup = Get-ChildItem $nsisDir -Filter "*-setup.exe" | Sort-Object LastWriteTim
 $sig = Get-ChildItem $nsisDir -Filter "*-setup.exe.sig" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $setup -or -not $sig) { throw "installer/signature not found in $nsisDir" }
 
+# stable-named copy so the website's "Download" link (releases/latest/download/HyprSpace-windows-x64-setup.exe)
+# resolves to the newest installer on every release without hardcoding the version
+$dlAlias = Join-Path $nsisDir "HyprSpace-windows-x64-setup.exe"
+Copy-Item $setup.FullName $dlAlias -Force
+
 $tag = "v$new"
 $url = "https://github.com/$relRepo/releases/download/$tag/$($setup.Name)"
 if ([string]::IsNullOrWhiteSpace($notes)) { $notes = "HyprSpace $new" }
@@ -83,7 +88,7 @@ if ($bump -ne 'none') {
 }
 
 Write-Host "==> Publishing $tag to $relRepo ..." -ForegroundColor Cyan
-gh release create $tag --repo $relRepo --title "HyprSpace $new" --notes $notes $setup.FullName $latest
+gh release create $tag --repo $relRepo --title "HyprSpace $new" --notes $notes $setup.FullName $dlAlias $latest
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
 # kick off the macOS CI build (merges the darwin entry into this release's manifest) — paused for now

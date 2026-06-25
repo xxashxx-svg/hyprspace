@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
+import { useLoops, newLoop } from "../stores/loops";
+import { pauseLoop } from "../lib/loops";
 import { searchOutput } from "../terminal/buffers";
 import { isWindows } from "../platform";
 import { Search } from "lucide-react";
@@ -36,6 +38,11 @@ export function CommandPalette() {
 
   const commands = useMemo<Item[]>(() => {
     const base: Item[] = [
+      {
+        id: "launch",
+        label: "Launch workspace — fan out many agents",
+        run: () => useUi.getState().openLaunch(),
+      },
       { id: "claude", label: "New Claude session", run: () => void newClaude() },
       { id: "gemini", label: "New Gemini session", run: () => void newGemini() },
       { id: "codex", label: "New Codex session", run: () => void newCodex() },
@@ -60,6 +67,32 @@ export function CommandPalette() {
         id: "skills",
         label: "Skills — drag into terminals",
         run: () => useUi.getState().setDockTab("skills"),
+      },
+      {
+        id: "loops-open",
+        label: "Loops & automations",
+        run: () => useUi.getState().goLoops(),
+      },
+      {
+        id: "loop-new",
+        label: "New loop / automation",
+        run: () => {
+          const w = useWorkspaces.getState();
+          const ws = w.workspaces.find((x) => x.id === w.activeId);
+          const folder = ws && ws.kind !== "open" ? ws.cwd : "";
+          const def = newLoop(folder);
+          def.name = "New loop";
+          useLoops.getState().upsert(def);
+          useUi.getState().goLoops();
+        },
+      },
+      {
+        id: "loops-pause",
+        label: "Pause all running loops",
+        run: () => {
+          const runs = useLoops.getState().runs;
+          for (const id of Object.keys(runs)) if (runs[id].status === "running") pauseLoop(id, true);
+        },
       },
       { id: "settings", label: "Open settings", run: () => useUi.getState().openSettings() },
     ];

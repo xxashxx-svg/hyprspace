@@ -4,7 +4,7 @@ import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useAuth } from "../stores/auth";
 import { pickFolder } from "../api";
-import { Folder, FolderPlus, LayoutGrid, ChevronRight } from "lucide-react";
+import { Folder, FolderPlus, LayoutGrid, ChevronRight, Rocket } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
 
 export function HomePage() {
@@ -59,6 +59,16 @@ export function HomePage() {
         </header>
 
         <div className="home-actions">
+          <button className="home-action home-action-primary" onClick={() => useUi.getState().openLaunch()}>
+            <span className="home-action-ico">
+              <Rocket size={18} />
+            </span>
+            <span className="home-action-body">
+              <span className="home-action-title">Launch agents</span>
+              <span className="home-action-sub">Fan out many agents in a folder at once</span>
+            </span>
+            <ChevronRight size={16} className="home-action-arrow" />
+          </button>
           <button className="home-action" onClick={openNewProject}>
             <span className="home-action-ico">
               <FolderPlus size={18} />
