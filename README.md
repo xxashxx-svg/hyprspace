@@ -2,8 +2,8 @@
 
 A multi-terminal AI workspace — tile many Claude Code / Gemini / Codex / shell sessions across
 **projects** and **open spaces**, with per-pane resume, drag-to-swap, a command palette, a git
-review dock, themes, a home-screen AI chat that can operate the app, and live auto-update. Built
-with **Tauri 2 + React**.
+review dock, themes, scheduled & looping agents (**Loops**), a home-screen AI chat that can operate
+the app, and live auto-update. Built with **Tauri 2 + React**.
 
 ## Develop
 
