@@ -117,4 +117,5 @@
   font-size: 11.5px;
   color: var(--text-2);
   line-height: 1.4;
+  white-space: pre-line; /* render multi-line release notes as separate lines */
 }

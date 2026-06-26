@@ -81,8 +81,14 @@ proactively rather than getting blocked mid-edit.
 4. **Terminal stability** — don't add patterns that unmount/remount `TerminalPane`; dispose xterm +
    addons on cleanup.
 5. **Versions via `deploy.ps1` only.**
-6. **Don't commit / push / deploy unless explicitly asked.** Work in dev mode (HMR).
-7. **Code style:** human/casual, minimal comments (only tricky logic, short and lowercase).
+6. **Never ship unless explicitly asked.** Do NOT run `deploy.ps1` / publish a release yourself —
+   other agents may be mid-work and a surprise release is hard to undo. Same for commit/push: only
+   on request. Otherwise stay in dev mode (HMR).
+7. **Release notes are written at ship time, not per task.** Don't maintain a running changelog as you
+   work. When the user asks to ship, the shipping agent looks at `git log <lastTag>..HEAD`, writes a
+   few user-facing bullets, and passes them as the `deploy.ps1` notes — which records them in
+   `CHANGELOG.md` + the in-app "What's new".
+8. **Code style:** human/casual, minimal comments (only tricky logic, short and lowercase).
 
 ---
 

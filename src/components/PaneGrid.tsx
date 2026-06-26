@@ -63,27 +63,25 @@ function EmptyServices({ wsId, folder }: { wsId: string; folder: string }) {
   );
 }
 
-// Tile like the Electron version did: keep rows balanced so a partial last row fills
-// the width instead of leaving a hole (the old 5-pane "3 over a gap"). For 5+ we lay
-// 3 panes per row on a 6-col grid and let a short last row span wider:
-//   last row of 1 → full width, of 2 → halves, of 3 → thirds.
+// Balanced tiling: split N panes into ~√N rows, biggest rows first, and let each row fill the full
+// width evenly — so 7 → 4+3, 10 → 4+3+3, never a lonely full-width pane (the old "3+3+1"). Rows can
+// have different counts, so we render on a grid whose column count is the LCM of the row sizes and
+// span each pane to fill its row (row of 4 → span 3 of 12, row of 3 → span 4, etc.).
 type GridLayout = { cols: string; span: (i: number) => string | undefined };
+
+const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+const lcm = (a: number, b: number) => (a / gcd(a, b)) * b;
 
 function getLayout(n: number): GridLayout {
   if (n <= 1) return { cols: "1fr", span: () => undefined };
-  if (n === 2) return { cols: "1fr 1fr", span: () => undefined };
-  if (n === 3) return { cols: "1fr 1fr 1fr", span: () => undefined };
-  if (n === 4) return { cols: "1fr 1fr", span: () => undefined };
-  return {
-    cols: "repeat(6, 1fr)",
-    span: (i) => {
-      const rem = n % 3;
-      const lastRowStart = n - (rem === 0 ? 3 : rem);
-      if (i < lastRowStart) return "span 2"; // full rows: three panes, 2 cols each
-      const inLast = n - lastRowStart;
-      return inLast === 1 ? "span 6" : inLast === 2 ? "span 3" : "span 2";
-    },
-  };
+  const rows = Math.max(1, Math.floor(Math.sqrt(n)));
+  const base = Math.floor(n / rows);
+  const extra = n % rows; // the first `extra` rows get one more pane (bigger rows on top)
+  const rowSizes = Array.from({ length: rows }, (_, r) => base + (r < extra ? 1 : 0));
+  const cols = rowSizes.reduce((acc, s) => lcm(acc, s), 1);
+  const rowOf: number[] = []; // pane index → how many panes share its row
+  for (const s of rowSizes) for (let k = 0; k < s; k++) rowOf.push(s);
+  return { cols: `repeat(${cols}, 1fr)`, span: (i) => `span ${cols / rowOf[i]}` };
 }
 
 function cellSidAt(x: number, y: number): string | null {
