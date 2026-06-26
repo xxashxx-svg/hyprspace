@@ -1,0 +1,151 @@
+/* ---- Empty state ---- */
+.pane-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  z-index: 2;
+}
+.empty-logo {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+.empty-title {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.empty-hint {
+  color: var(--text-3);
+  font-size: 13px;
+  margin-top: 7px;
+  max-width: 420px;
+  text-align: center;
+  line-height: 1.5;
+}
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+.empty-services {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.empty-services-label {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.empty-services-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.empty-svc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 11px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.empty-svc-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.empty-svc-chip > svg {
+  color: var(--status-ok);
+}
+/* background-service chip: a wrapper holding the run/logs button + a log shortcut */
+.empty-svc-chip.bg {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.empty-svc-chip.bg.on {
+  border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-1));
+}
+.empty-svc-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 11px;
+  cursor: pointer;
+}
+.empty-svc-main > svg {
+  color: var(--status-ok);
+}
+.empty-svc-logs {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-1);
+  color: var(--text-3);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.empty-svc-logs:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+.launch-btn {
+  padding: 9px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  color: var(--text-1);
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.13s var(--ease), border-color 0.13s var(--ease);
+}
+.launch-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+}
+/* Claude is the default AI → subtle indigo-tinted primary */
+.launch-primary {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.launch-primary:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+  border-color: var(--accent-hover);
+}

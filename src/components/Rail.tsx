@@ -1,4 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
+import autoAnimate from "@formkit/auto-animate";
 import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useLoops } from "../stores/loops";
@@ -73,6 +75,17 @@ export function Rail() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
+  // smooth list add/remove/reorder (the two rail lists) + per-item expand/collapse, T3-style
+  const [projRef] = useAutoAnimate();
+  const [spaceRef] = useAutoAnimate();
+  const animated = useRef(new WeakSet<HTMLElement>());
+  const animateWrap = (el: HTMLElement | null) => {
+    if (el && !animated.current.has(el)) {
+      animated.current.add(el);
+      autoAnimate(el);
+    }
+  };
+
   const projects = workspaces.filter((w) => w.kind !== "open");
   const openSpaces = workspaces.filter((w) => w.kind === "open");
 
@@ -114,7 +127,7 @@ export function Rail() {
     // projects can expand to browse their folders even with no sessions yet
     const canExpand = hasSessions || (w.kind !== "open" && !!w.cwd);
     return (
-      <div key={w.id} className="rail-item-wrap" data-wsid={w.id}>
+      <div key={w.id} className="rail-item-wrap" data-wsid={w.id} ref={animateWrap}>
         <div
           data-wsid={w.id}
           className={`rail-item ${w.id === activeId && view === "space" ? "active" : ""}${
@@ -293,7 +306,7 @@ export function Rail() {
           <Plus size={15} />
         </button>
       </div>
-      <div className="rail-list">{projects.map(item)}</div>
+      <div className="rail-list" ref={projRef}>{projects.map(item)}</div>
 
       <div className="rail-header">
         <span className="rail-title">OPEN SPACES</span>
@@ -308,7 +321,7 @@ export function Rail() {
           <Plus size={15} />
         </button>
       </div>
-      <div className="rail-list">
+      <div className="rail-list" ref={spaceRef}>
         {openSpaces.map(item)}
         {openSpaces.length === 0 && <div className="rail-empty">launch sessions in any folder</div>}
       </div>

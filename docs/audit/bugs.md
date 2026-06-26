@@ -19,7 +19,7 @@ Disposition: **[FIXED]** done this pass · **[DOC]** documented / lower priority
 `stores/chat.ts`. `load()` only checked `Array.isArray(threads)` then cast; a malformed `messages`/`blocks` shape throws in render. **Fixed** — normalize each thread on load (ensure arrays, drop malformed messages/blocks).
 
 ## B5 — `worktree_create/remove/list` are sync commands that block the UI thread  ·  severity: LOW  ·  [FIXED]
-`src-tauri/src/devtools.rs`. These shell out to `git` synchronously on the IPC thread (`git worktree add` can take seconds → "Not Responding"), the exact issue other git commands were refactored to avoid. **Fixed** — made async + `spawn_blocking`, matching the rest.
+`src-tauri/src/devtools/worktree.rs`. These shell out to `git` synchronously on the IPC thread (`git worktree add` can take seconds → "Not Responding"), the exact issue other git commands were refactored to avoid. **Fixed** — made async + `spawn_blocking`, matching the rest.
 
 ## B6 — Chat `start` can orphan a process if `insert` overwrites a live one  ·  severity: LOW  ·  [FIXED]
 `src-tauri/src/chat.rs`. Two `start`s for the same id could both spawn; the overwritten `Proc` was dropped without `taskkill`, orphaning a `cmd → claude` tree. **Fixed** — `start` now reaps any `Proc` it displaces on insert.
@@ -31,7 +31,7 @@ Disposition: **[FIXED]** done this pass · **[DOC]** documented / lower priority
 `stores/chat.ts`. Reuse mutates `live.asstId` in place, so in principle a late event from turn N could land on turn N+1. In practice turns are **serialized**: `result` is the last event of a turn and clears the throttle + sets `busy:false` before the next turn can start, so no turn-N events exist afterward. **Mitigated by serialization** — left as-is to avoid added complexity.
 
 ## B9 — `git_changes` porcelain parsing fragile for renamed/quoted paths  ·  severity: LOW  ·  [DOC]
-`src-tauri/src/devtools.rs`. `split(" -> ")` + quote-trim mishandles paths containing `" -> "` or C-quoted escapes → wrong per-file line counts (cosmetic). Byte-slicing `line[..2]` is safe (the XY prefix is ASCII). **Recommendation:** switch to `--porcelain=v2 -z` if exact rename mapping ever matters. Not fixed (cosmetic).
+`src-tauri/src/devtools/git.rs`. `split(" -> ")` + quote-trim mishandles paths containing `" -> "` or C-quoted escapes → wrong per-file line counts (cosmetic). Byte-slicing `line[..2]` is safe (the XY prefix is ASCII). **Recommendation:** switch to `--porcelain=v2 -z` if exact rename mapping ever matters. Not fixed (cosmetic).
 
 ## B10 — `taskkill /T /F` by PID is best-effort, no fallback  ·  severity: LOW  ·  [DOC]
 `src-tauri/src/chat.rs`. Kills by PID without a `try_wait` first (tiny PID-reuse window) and ignores `taskkill` failure with no `child.kill()` fallback. Low likelihood. **Recommendation:** `try_wait()` before `taskkill`, fall back to `child.kill()`. Not fixed (low risk, current behavior works).

@@ -8,9 +8,10 @@ How to ship a new version and push an auto-update — **written so you can do it
   toolchain). This is the source of truth for a release — it creates the GitHub release and the
   Windows half of the update manifest.
 - **macOS** can only be built on a Mac, so it's built by **GitHub Actions CI**
-  (`.github/workflows/release.yml`) on a macOS runner. `deploy.ps1` triggers it automatically after
-  publishing; CI builds + signs the Mac app and **merges** the darwin entry into the same
-  release's `latest.json` (keeping the Windows entry).
+  (`.github/workflows/release.yml`) on a macOS runner. **macOS CI is paused by default** — pass
+  `-Mac` to `deploy.ps1` to trigger it. When triggered, CI builds + signs the Mac app and **merges**
+  the darwin entry into the same release's `latest.json` (keeping the Windows entry). Most releases
+  are Windows-only right now.
 
 Two repos:
 | Repo | Visibility | Role |
@@ -64,24 +65,28 @@ Pick the bump level by the rules in [VERSIONING.md](./VERSIONING.md):
 3. Loads the signing key/password from `~/.hyprspace-signing` into env.
 4. `npm run tauri build` → builds + signs the **NSIS** installer
    (`src-tauri/target/release/bundle/nsis/*-setup.exe` + `.sig`). Takes a few minutes.
-5. Writes `release-artifacts/latest.json` (the update manifest: version, notes, date, and the
+5. Copies the versioned installer to a **stable-named alias** `HyprSpace-windows-x64-setup.exe` so
+   the website's `releases/latest/download/…` link always resolves to the newest build.
+6. Writes `release-artifacts/latest.json` (the update manifest: version, notes, date, and the
    Windows `signature` + download `url`).
-6. If the bump isn't `none`: `git add -A`, commits `release v<new>`, and `git push` (to
+7. If the bump isn't `none`: `git add -A`, commits `release v<new>`, and `git push` (to
    `hyprspace-2`).
-7. `gh release create v<new> --repo hyprspace-releases …` — publishes the release with the
-   installer + `latest.json`.
-8. `gh workflow run release.yml --repo hyprspace-2 -f tag=v<new>` — kicks the macOS CI build, which
-   adds the darwin entry to the manifest a few minutes later.
+8. `gh release create v<new> --repo hyprspace-releases …` — publishes the release with the versioned
+   installer + the stable alias + `latest.json`.
+9. **Only if `-Mac` was passed:** `gh workflow run release.yml --repo hyprspace-2 -f tag=v<new>` —
+   kicks the macOS CI build, which adds the darwin entry to the manifest a few minutes later.
+   Without `-Mac` it prints "Skipping macOS CI (paused)".
 
-When it finishes, the Windows release is live immediately; the macOS half lands when CI completes
-(~10–15 min).
+When it finishes, the Windows release is live immediately; the macOS half (if `-Mac`) lands when CI
+completes (~10–15 min).
 
 ---
 
 ## macOS build (CI)
 
-`deploy.ps1` triggers it for you. To run it **manually** (e.g. CI didn't fire, or you re-ran a
-release):
+macOS CI is **paused by default** — `deploy.ps1` only triggers it when you pass `-Mac`
+(`.\deploy.ps1 patch "…" -Mac`). To trigger it **manually** (no `-Mac`, CI didn't fire, or you
+re-ran a release):
 
 ```bash
 gh workflow run release.yml --repo xxashxx-svg/hyprspace-2 --ref main -f tag=v0.3.0
@@ -117,7 +122,8 @@ or `gh run watch`.
 1. `git status` clean-ish, on `main`, changes are what you want to ship.
 2. `npx tsc --noEmit` passes; app runs in `npm run tauri dev`.
 3. Decide bump level (VERSIONING.md).
-4. `.\deploy.ps1 <patch|minor|major> "what changed"`.
+4. `.\deploy.ps1 <patch|minor|major> "what changed"` (add `-Mac` only if you want the macOS build too).
 5. Confirm the release appears on `hyprspace-releases` with the `*-setup.exe` + `latest.json`.
-6. Wait for macOS CI (or trigger manually); confirm the `.dmg` + updated `latest.json` land.
+6. **Windows-only by default.** If you passed `-Mac`: wait for CI (or trigger manually); confirm the
+   `.dmg` + updated `latest.json` land.
 7. Done — installed apps will self-update on next launch.

@@ -1,0 +1,221 @@
+/* ---- home / dashboard ---- */
+.home {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+.home-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+}
+.home-inner {
+  flex: 1;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 56px 32px 40px;
+}
+.home-head {
+  margin-bottom: 28px;
+}
+.home-greeting {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+.home-sub {
+  font-size: 14px;
+  color: var(--text-3);
+  margin-top: 6px;
+}
+.home-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-bottom: 38px;
+}
+.home-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.14s var(--ease), border-color 0.14s var(--ease), transform 0.14s var(--ease);
+}
+.home-action:hover {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-pop);
+}
+/* the launcher is the headline action — subtle accent edge */
+.home-action-primary {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-2));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-1));
+}
+.home-action-primary:hover {
+  border-color: var(--accent);
+}
+.home-action-ico {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-1);
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+/* the launcher icon keeps a hint of the brand so the headline action still reads as special */
+.home-action-primary .home-action-ico {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+  color: color-mix(in srgb, var(--accent) 70%, var(--text-1));
+}
+.home-action-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.home-action-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-action-sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.home-action-arrow {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: transform 0.14s var(--ease), color 0.14s var(--ease);
+}
+.home-action:hover .home-action-arrow {
+  color: var(--text-1);
+  transform: translateX(2px);
+}
+.home-section-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.home-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.14s var(--ease), border-color 0.14s var(--ease), transform 0.14s var(--ease);
+}
+.home-card:hover {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-pop);
+}
+.home-card-ico {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--ws, var(--accent)) 16%, var(--surface-2));
+  color: var(--ws, var(--accent));
+}
+.home-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.home-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-card-meta {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.home-card-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+.home-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 20px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-2);
+  text-align: center;
+}
+.home-tips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-1);
+}
+.home-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.home-tip kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.home-foot {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 32px;
+  border-top: 1px solid var(--border-1);
+  color: var(--text-3);
+  font-size: 12px;
+}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { listDir, revealPath, type DirEntry } from "../api";
@@ -33,6 +34,7 @@ function TreeNode({
   const [kids, setKids] = useState<DirEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [aaRef] = useAutoAnimate(); // smooth folder expand/collapse
 
   const load = async () => {
     setLoading(true);
@@ -79,7 +81,7 @@ function TreeNode({
 
   const pad = depth * 12 + 8;
   return (
-    <>
+    <div className="ft-node" ref={aaRef}>
       <button
         className="ft-row"
         style={{ paddingLeft: pad }}
@@ -167,7 +169,7 @@ function TreeNode({
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
 

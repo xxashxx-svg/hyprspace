@@ -1,0 +1,93 @@
+/* ---- review dock (Ctrl+Shift+G) — slides in from the right, collapses to full-width terminals ---- */
+.dock {
+  width: 380px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-1);
+  animation: dockIn 0.16s var(--ease);
+}
+@keyframes dockIn {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes dockOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+}
+.dock.closing {
+  animation: dockOut 0.16s var(--ease) forwards;
+}
+.dock-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border-1);
+}
+.dock-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.dock-tab:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+.dock-tab.active {
+  color: var(--text-1);
+  background: var(--accent-dim);
+}
+.dock-x {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-1);
+}
+.dock-x:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dock-empty {
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 12px;
+}

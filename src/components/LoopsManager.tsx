@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useLoops, newLoop, type LoopDef, type LoopStop } from "../stores/loops";
 import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
 import { LOOP_TEMPLATES, type LoopTemplate } from "../lib/loopTemplates";
@@ -50,6 +51,7 @@ export function LoopsManager() {
   const runs = useLoops((s) => s.runs);
   const ids = Object.keys(loops);
   const [logsFor, setLogsFor] = useState<string | null>(null);
+  const [listRef] = useAutoAnimate(); // smooth add/remove of loop cards
 
   // Anthropic API key lives in the OS keychain; we only ever know whether it's set, never its value.
   const [hasKey, setHasKey] = useState(false);
@@ -167,6 +169,7 @@ export function LoopsManager() {
         </div>
       </div>
 
+      <div ref={listRef}>
       {ids.map((id) => {
         const def = loops[id];
         const run = runs[id];
@@ -400,6 +403,7 @@ export function LoopsManager() {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

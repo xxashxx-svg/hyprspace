@@ -1,0 +1,207 @@
+/* ---- license gate ---- */
+.license-boot {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-base);
+  z-index: 400;
+}
+.license-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.license-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.license-quit {
+  width: 40px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.license-quit:hover {
+  background: #e5484d;
+  color: #fff;
+}
+.license-card {
+  width: 360px;
+  max-width: 88vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 34px 36px 30px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  animation: fdoIn 0.13s var(--ease);
+}
+.license-logo {
+  color: var(--accent);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.license-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.license-sub {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.license-input {
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-align: center;
+  outline: none;
+}
+.license-input:focus {
+  border-color: var(--accent);
+}
+.license-input::placeholder {
+  color: var(--text-3);
+}
+.license-err {
+  width: 100%;
+  font-size: 12px;
+  color: var(--status-error);
+  text-align: center;
+}
+.license-btn {
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+.license-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.license-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.auth-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 0;
+  padding: 11px 14px;
+  background: #fff;
+  color: #1f1f1f;
+  border: none;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+.auth-google:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+.auth-google:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.auth-altlink {
+  margin-top: 16px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.auth-altlink:hover {
+  color: var(--text-2);
+}
+.auth-keyrow {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* account panel (settings) */
+.acct-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+}
+.acct-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  object-fit: cover;
+}
+.acct-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 18px;
+  font-weight: 600;
+}
+.acct-meta {
+  flex: 1;
+  min-width: 0;
+}
+.acct-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.acct-email {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

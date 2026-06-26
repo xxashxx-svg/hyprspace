@@ -1,0 +1,321 @@
+/* ---- Loops manager (Settings → Loops) ---- */
+/* ---- Loops dedicated page (rail → Loops) ---- */
+.loops-page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg-base);
+}
+.loops-page-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 28px 32px 60px;
+}
+.loops-page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.loops-page-head > svg {
+  color: var(--accent);
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+.loops-page-head h1 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.loops-page-head p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+/* the page already shows the title, so the embedded panel's own bar label is redundant */
+.loops-page .loops-bar .set-label {
+  display: none;
+}
+.loops-page .loops-bar {
+  justify-content: flex-end;
+}
+
+.loops-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.loops-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 16px 0;
+}
+.loop-key {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  color: var(--text-2);
+}
+.loop-key > svg {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.loop-key-label {
+  font-weight: 500;
+  color: var(--text-1);
+  font-size: 13px;
+}
+.loop-key .svc-in {
+  flex: 1;
+  min-width: 160px;
+  max-width: 340px;
+}
+.loop-key-status {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.loop-key-status.ok {
+  color: var(--status-ok);
+}
+.loop-key-note {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-left: auto;
+}
+/* starter-template gallery */
+.loop-templates {
+  margin-bottom: 18px;
+}
+.loop-templates-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-3);
+  margin-bottom: 9px;
+}
+.loop-templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.loop-tpl {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.loop-tpl:hover {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+.loop-tpl-ico {
+  flex: 0 0 auto;
+  color: var(--accent);
+  margin-top: 1px;
+}
+.loop-tpl-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.loop-tpl-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.loop-tpl-blurb {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+.loop-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.loop-card.on {
+  border-color: color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
+}
+.loop-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.loop-name {
+  flex: 1;
+  font-weight: 500;
+}
+.loop-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--status-idle);
+}
+.loop-dot.s-running {
+  background: var(--status-awaiting);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-awaiting) 22%, transparent);
+}
+.loop-dot.s-paused {
+  background: var(--status-busy);
+}
+.loop-dot.s-done {
+  background: var(--status-ok);
+}
+.loop-dot.s-error,
+.loop-dot.s-crashloop {
+  background: var(--status-error);
+}
+.loop-prompt {
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.loop-grid,
+.loop-stops {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.loop-field-wide {
+  grid-column: 1 / -1;
+}
+.loop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.loop-field > span {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.loop-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.loop-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.loop-folder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.loop-folder:hover {
+  color: var(--text-1);
+  border-color: var(--border-2);
+}
+.loop-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+  flex-wrap: wrap;
+}
+.loop-status-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  color: var(--text-2);
+}
+.loop-status-badge.s-running {
+  color: var(--status-awaiting);
+}
+.loop-status-badge.s-done {
+  color: var(--status-ok);
+}
+.loop-status-badge.s-error,
+.loop-status-badge.s-crashloop {
+  color: var(--status-error);
+}
+.loop-last {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 48ch;
+}
+.loop-review {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.loop-review:hover {
+  color: var(--text-1);
+  border-color: var(--border-2);
+  background: var(--surface-3);
+}
+.loop-logs {
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.loop-logs-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.loop-logs-empty {
+  color: var(--text-3);
+  font-style: italic;
+}
+.svc-run:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

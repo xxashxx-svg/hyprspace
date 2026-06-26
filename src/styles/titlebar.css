@@ -1,0 +1,285 @@
+/* ---- frameless titlebar ---- */
+.titlebar {
+  height: 36px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 10px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-1);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tb-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding-right: 2px;
+}
+/* macOS: native traffic lights sit at the top-left, so clear room for them */
+.titlebar.mac {
+  padding-left: 0;
+}
+.titlebar.mac .tb-left {
+  padding-left: 76px;
+}
+.tb-logo {
+  color: var(--accent);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+.tb-brand {
+  font-weight: 600;
+  font-size: 13px;
+}
+/* topbar action dropdowns (T3-style outlined menus) */
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 10px;
+}
+.tb-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tb-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.tb-action:hover {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+}
+.tb-action-caret {
+  color: var(--text-3);
+}
+/* live background-service pill in the topbar */
+.tb-svc {
+  position: relative;
+  margin-right: 4px;
+}
+.tb-svc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  max-width: 170px;
+  padding: 0 11px;
+  background: color-mix(in srgb, var(--status-ok) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
+  border-radius: 999px;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.tb-svc-btn:hover {
+  background: color-mix(in srgb, var(--status-ok) 18%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-1));
+}
+.tb-svc-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--status-ok);
+  animation: svcPulse 2s var(--ease) infinite;
+}
+.tb-svc-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* loops pill: a dimmer dot when paused, a slow ring spin while iterating */
+.tb-svc-btn.paused .tb-svc-dot {
+  background: var(--text-3);
+  animation: none;
+}
+.tb-svc-dot.spin {
+  background: var(--accent);
+  animation: svcPulse 1.4s var(--ease) infinite;
+}
+.tb-svc-pop {
+  left: auto;
+  right: 0;
+  min-width: 180px;
+}
+@keyframes svcPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-ok) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.tb-menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  min-width: 210px;
+  padding: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: fdoIn 0.12s var(--ease);
+}
+.tb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tb-menu-item:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.tb-menu-item svg {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+/* commit dialog (topbar Commit & push) */
+.cd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+}
+.cd {
+  width: 520px;
+  max-width: 92vw;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fdoIn 0.13s var(--ease);
+}
+.cd-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cd-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.cd-count {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.cd-msg {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  padding: 10px 12px;
+  outline: none;
+}
+.cd-msg:focus {
+  border-color: var(--accent);
+}
+.cd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cd-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cd-actions {
+  display: flex;
+  gap: 8px;
+}
+/* in-app confirm dialog (replaces the native OS ask()) */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 380;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm {
+  width: 380px;
+  max-width: 90vw;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  padding: 18px;
+  animation: fdoIn 0.13s var(--ease);
+}
+.confirm-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.confirm-msg {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}

@@ -1,12 +1,14 @@
 # HyprSpace — project guide
 
 > Read this first. It's the canonical guide for anyone (human or AI agent) working on this repo.
-> Deep dives live in [`docs/`](./docs/README.md).
+> Deep dives live in [`docs/`](./docs/README.md). **Working in parallel with other agents?**
+> Read [`AGENTS.md`](./AGENTS.md) — where to work so you don't collide + the shared hot-files.
 
 HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
 Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
-resume, drag-to-swap, a command palette, a git review dock, and a home-screen AI chat that can
-operate the app. Neutral, T3-Code-inspired dark UI.
+resume, drag-to-swap, a multi-agent **launcher** (fan out N agents in a folder at once), scheduled
+**Loops**, an integrated **code editor**, a command palette, a git review dock, and a home-screen
+AI chat that can operate the app. Neutral, T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
@@ -67,14 +69,18 @@ changes (`src-tauri/`) trigger a recompile + app relaunch — confirm with `carg
 ```
 src/                         React frontend
   main.tsx                   entry (NO StrictMode), store hydration
-  App.tsx / App.css          shell layout + all component CSS
+  App.tsx                    shell layout
+  App.css                    ordered @import index of styles/*.css (edit the per-area file, not this)
   styles/tokens.css          design tokens (theme variables)
+  styles/<area>.css          per-area component CSS (rail, home, pane, loops, launcher, editor, …) —
+                             split out of the old monolithic App.css so agents don't collide
   components/                UI: Titlebar, Rail (sidebar), PaneGrid, TerminalPane, HomePage,
                              ChatPanel, ReviewDock, Settings, NewProjectDialog, CommandPalette,
-                             LoopsPage + LoopsManager + LoopRunner (Loops), StartupSettings, …
+                             LaunchWorkspace (multi-agent launcher), CodeEditor (dock editor),
+                             LoopsPage + LoopsManager + LoopRunner (Loops), StartupSettings, Logo, …
   stores/                    Zustand: workspace, ui, settings, settingsSync, chat, orchestrator,
                              git, activity, skills, auth, updater, notifications, confirm, loops,
-                             projectConfig, services
+                             launchPresets, projectConfig, services
   api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
                              never invoke() directly
   actions.ts                 shared actions (launch panes, worktrees, close) + provider cmd builders
@@ -87,7 +93,8 @@ src-tauri/                   Rust backend
   src/chat.rs                ChatManager — the persistent home-chat claude process (stream-json)
   src/agent.rs               AgentManager — runs ONE provider turn (claude -p …) for the Loops engine
   src/services.rs            ServiceManager — per-folder startup services (background processes)
-  src/devtools.rs            git ops, provider_status, skills, mcp, worktrees, create_project_dir, reveal_path
+  src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
+                             providers.rs, mcp.rs, skills.rs (+ mod.rs re-exports + shared helpers)
   src/persist.rs             crash-safe JSON state store (~/.hyprspace/v2)
   src/oauth.rs               loopback listener for the app's own Google/Supabase sign-in (PKCE)
   src/license.rs             Ed25519 license verification
@@ -112,6 +119,12 @@ deploy.ps1                   Windows release script
   **typed into the shell as keystrokes** — not passed as argv. Provider command strings come from
   `actions.ts` (`claudeCmd`/`geminiCmd`/`codexCmd`/`WSL_CMD`) and are constant (no user/LLM data
   interpolated into them).
+- **Launcher.** `LaunchWorkspace` (opened from Home / palette / titlebar) fans out N agents in a
+  folder at once: pick a folder → grid size → agent mix (quick-fill), then `addWorkspace` + N
+  `addSession` calls so `PaneGrid` tiles them. Saved configs are `stores/launchPresets.ts`; agent
+  panes get friendly names (`lib/names.ts`).
+- **Editor.** `CodeEditor` (CodeMirror) lives in the Review dock's "Editor" tab; clicking a file in
+  the Files tree opens it (`read_file`/`write_file` in `devtools/fs.rs`), with save / autosave.
 - **Home chat = a persistent `claude` stream-json process.** `ChatPanel` → `stores/chat.ts` →
   `chat.rs`. One long-lived process per thread (`--input-format stream-json`), fed user turns over
   stdin, streaming events back. Runs on the subscription (spawns the CLI). See ARCHITECTURE.

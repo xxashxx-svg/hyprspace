@@ -16,7 +16,7 @@ Disposition legend: **[FIXED]** done this pass · **[DOC]** documented, needs yo
 - **Orchestrator command injection** — spawned panes type the command into a *bare shell PTY* as keystrokes; the PTY is launched as `powershell`/`$SHELL` with `args:[]`. Provider builders (`claudeCmd`/`geminiCmd`/`codexCmd`/`WSL_CMD`) emit **constant** strings with no model interpolation. `provider` is whitelisted, `count` clamped 1–8. **Model output can't smuggle argv/flags.**
 - **Orchestrator path escape** — `slug()` replaces every non-`[a-zA-Z0-9_-]` run with `-`, collapsing `..`, `/`, `\`, `:`; `joinPath(base, slug(name))` can't escape the projects base. `startsWith(base)` is redundant defense. **Confined.**
 - **License verification** (`license.rs`) — Ed25519 verify against an embedded pubkey with revocation list and length checks, re-verified on load. Not spoofable without the private key. **Correct.**
-- **`reveal_path`** (`devtools.rs`) — `canonicalize` + `is_dir` + leading-`-` reject is a real guard against scheme/flag injection into `explorer`/`open`/`xdg-open`. **Good.**
+- **`reveal_path`** (`devtools/fs.rs`) — `canonicalize` + `is_dir` + leading-`-` reject is a real guard against scheme/flag injection into `explorer`/`open`/`xdg-open`. **Good.**
 - **No remote IPC / dangerous flags** — `withGlobalTauri`, `dangerousRemoteDomainIpcAccess`, `dangerousDisableAssetCspModification`, `devtools` overrides are all unset; `frontendDist` is local. **Good.**
 
 ---
@@ -43,7 +43,7 @@ Tauri injects hashes for its own scripts when a CSP is set. Test login + Google 
 `src-tauri/src/persist.rs` joined a caller-supplied `name` directly (`{name}.json`); an absolute/`..` name escapes `~/.hyprspace/v2`. All real names are fixed tokens (`chat`, `settings`, …), so validating `name` to `[A-Za-z0-9_-]+` closes it with zero functional impact. **Fixed.**
 
 ## S6 — `cli_version` builds a `cmd /c "<cli> --version"` shell string  ·  severity: LOW (latent)  ·  [FIXED]
-`src-tauri/src/devtools.rs`. `cli` is whitelisted to `claude|gemini|codex` so not exploitable today, but it's an interpolated-shell footgun. **Fixed** by passing `cli` and `--version` as separate argv entries (no shell string).
+`src-tauri/src/devtools/providers.rs`. `cli` is whitelisted to `claude|gemini|codex` so not exploitable today, but it's an interpolated-shell footgun. **Fixed** by passing `cli` and `--version` as separate argv entries (no shell string).
 
 ## S7 — WebView2 args disable SmartScreen  ·  severity: MEDIUM  ·  [DOC]
 `src-tauri/tauri.conf.json` `additionalBrowserArgs` includes `--disable-features=…,msSmartScreenProtection,…`. Removes reputation-based download/nav protection. **Recommendation:** drop `msSmartScreenProtection` from the disable list (keep the backgrounding flags). Left for you to verify it wasn't working around a specific bug.
