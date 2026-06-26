@@ -277,6 +277,12 @@
   white-space: nowrap;
   max-width: 48ch;
 }
+.loop-usage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
 .loop-review {
   display: inline-flex;
   align-items: center;
@@ -318,4 +324,398 @@
 .svc-run:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ---- shared spinner ---- */
+@keyframes loop-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.rail-loop-spin,
+.loop-run .spin {
+  animation: loop-spin 0.9s linear infinite;
+}
+
+/* ---- rail: per-loop quick list ---- */
+.rail-loops {
+  margin: 2px 0 4px;
+}
+.rail-loop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px 5px 12px;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.rail-loop:hover {
+  background: var(--surface-1);
+}
+.rail-loop.active {
+  background: var(--surface-2);
+  border-left-color: var(--accent);
+  color: var(--text-1);
+}
+.rail-loop-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-loop-spin {
+  flex: 0 0 auto;
+  color: var(--status-awaiting);
+}
+.rail-loop-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+/* ---- Loops page: Runs / Manage tabs ---- */
+.loops-page-inner.wide {
+  max-width: 1180px;
+}
+.loops-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 2px;
+}
+.loops-tab {
+  padding: 5px 14px;
+  background: none;
+  border: none;
+  border-radius: calc(var(--radius-1) - 2px);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.loops-tab:hover {
+  color: var(--text-1);
+}
+.loops-tab.active {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.loops-empty-runs {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 32px 0;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* ---- master-detail layout ---- */
+.loops-split {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 210px);
+  min-height: 460px;
+}
+.loops-master {
+  flex: 0 0 232px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.loops-master-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.loops-master-item:hover {
+  background: var(--surface-1);
+}
+.loops-master-item.active {
+  background: var(--surface-2);
+  border-color: var(--border-1);
+  color: var(--text-1);
+}
+.loops-master-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loops-master-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: none;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.loops-master-add:hover {
+  color: var(--text-1);
+  border-color: var(--accent);
+}
+.loops-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  padding: 12px 14px;
+}
+.loops-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-1);
+}
+.loops-detail-name {
+  font-weight: 500;
+  color: var(--text-1);
+  font-size: 13.5px;
+}
+.loops-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ---- live agentic transcript ---- */
+.loop-run {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.loop-run-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 2px;
+}
+.loop-run-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 24px 8px;
+}
+.loop-ev {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--radius-1);
+}
+.loop-ev-iter {
+  margin: 12px 0 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-1);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.loop-ev-iter:first-child {
+  margin-top: 2px;
+  padding-top: 0;
+  border-top: none;
+}
+.loop-ev-tool {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.loop-ev-tool:hover {
+  background: var(--surface-2);
+}
+.loop-ev-stat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--status-awaiting);
+}
+.loop-ev-stat.s-ok {
+  color: var(--status-ok);
+}
+.loop-ev-stat.s-error {
+  color: var(--status-error);
+}
+.loop-ev-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--text-3);
+}
+.loop-ev-label {
+  flex: 0 0 auto;
+  color: var(--text-1);
+}
+.loop-ev-arg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+}
+.loop-ev-dur {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.loop-ev-twist {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: transform 0.12s var(--ease);
+}
+.loop-ev-twist.open {
+  transform: rotate(90deg);
+}
+.loop-ev-detail {
+  margin: 2px 8px 6px 30px;
+  padding: 8px 10px;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+.loop-ev-think {
+  color: var(--text-3);
+  font-style: italic;
+  align-items: flex-start;
+}
+.loop-ev-think .loop-ev-ico {
+  margin-top: 3px;
+  opacity: 0.7;
+}
+.loop-ev-think-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.loop-ev-text {
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.loop-ev-result {
+  color: var(--status-ok);
+  font-size: 11.5px;
+  gap: 6px;
+}
+
+/* ---- docked "Loop agent running" card ---- */
+.loop-run-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-1));
+  border-radius: var(--radius-2);
+}
+.loop-run-card-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--accent);
+}
+.loop-run-card-text {
+  flex: 1;
+  min-width: 0;
+}
+.loop-run-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.loop-run-card-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+.loop-run-resume {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.loop-run-resume:hover {
+  color: var(--text-1);
+  border-color: var(--border-2);
+}
+.loop-run-stop {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--status-error) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-error) 40%, transparent);
+  color: var(--status-error);
+  cursor: pointer;
+}
+.loop-run-stop:hover {
+  background: color-mix(in srgb, var(--status-error) 26%, transparent);
 }

@@ -1,6 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import autoAnimate from "@formkit/auto-animate";
 import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useLoops } from "../stores/loops";
@@ -8,7 +7,7 @@ import { useActivity } from "../stores/activity";
 import { useAuth } from "../stores/auth";
 import { relTime } from "../lib/time";
 import { revealPath } from "../api";
-import { FileTree } from "./FilesPanel";
+import { FileTree, loadDir } from "./FilesPanel";
 import {
   GripVertical,
   Folder,
@@ -20,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Repeat,
+  Loader2,
 } from "lucide-react";
 
 const wsAt = (x: number, y: number): string | null => {
@@ -52,10 +52,20 @@ export function Rail() {
   const paneDragOverWs = useUi((s) => s.paneDragOverWs);
   const view = useUi((s) => s.view);
   const goSpace = useUi((s) => s.goSpace);
+  const openLoopId = useUi((s) => s.openLoopId);
+  const loops = useLoops((s) => s.loops);
   const loopRuns = useLoops((s) => s.runs);
   const activeLoops = Object.values(loopRuns).filter(
     (r) => r.status === "running" || r.status === "paused",
   ).length;
+  // running/paused loops float to the top of the rail list so the live ones are always in view
+  const loopList = Object.values(loops).sort((a, b) => {
+    const rank = (id: string) => {
+      const st = loopRuns[id]?.status;
+      return st === "running" || st === "paused" ? 0 : 1;
+    };
+    return rank(a.id) - rank(b.id);
+  });
   const setFocused = useWorkspaces((s) => s.setFocused);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const exited = useActivity((s) => s.exited);
@@ -74,20 +84,34 @@ export function Rail() {
   const drag = useRef<{ id: string; sx: number; sy: number; active: boolean } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  // a wrap's sub-content (sessions / file tree) is mounted once it's first expanded and kept mounted
+  // after — so collapsing/expanding the whole sidebar never remounts (and refetches) it. the .rail-sub
+  // grid-rows reveal hides it when not open. readyTrees = projects whose file listing has loaded, so
+  // we only reveal once the height is known (no Loading→pop).
+  const [mountedSubs, setMountedSubs] = useState<Set<string>>(new Set());
+  const [readyTrees, setReadyTrees] = useState<Set<string>>(new Set());
 
-  // smooth list add/remove/reorder (the two rail lists) + per-item expand/collapse, T3-style
+  // smooth list add/remove/reorder (the two rail lists), T3-style. the per-item expand reveal is CSS
+  // (.rail-sub grid-rows) so it tolerates the async file tree and doesn't fight the width transition.
   const [projRef] = useAutoAnimate();
   const [spaceRef] = useAutoAnimate();
-  const animated = useRef(new WeakSet<HTMLElement>());
-  const animateWrap = (el: HTMLElement | null) => {
-    if (el && !animated.current.has(el)) {
-      animated.current.add(el);
-      autoAnimate(el);
-    }
-  };
 
   const projects = workspaces.filter((w) => w.kind !== "open");
   const openSpaces = workspaces.filter((w) => w.kind === "open");
+
+  const hasTree = (w: Workspace) => w.kind !== "open" && !!w.cwd;
+  const contentReady = (w: Workspace) => !hasTree(w) || readyTrees.has(w.id);
+  // expand/collapse a wrap; on first expand, mount its sub-content and (for projects) warm the dir
+  // cache so the reveal animates straight to full height
+  const expandSub = (w: Workspace) => {
+    const willOpen = !expanded.has(w.id);
+    toggleExpand(w.id);
+    if (!willOpen) return;
+    setMountedSubs((p) => (p.has(w.id) ? p : new Set(p).add(w.id)));
+    if (w.kind !== "open" && w.cwd && !readyTrees.has(w.id)) {
+      void loadDir(w.cwd).then(() => setReadyTrees((p) => new Set(p).add(w.id)));
+    }
+  };
 
   // auto-expand the active OPEN SPACE so its session list shows. projects aren't auto-expanded —
   // their chevron opens a file tree, and dumping that on every click is annoying (toggle it yourself).
@@ -95,7 +119,10 @@ export function Rail() {
   useEffect(() => {
     if (!activeId) return;
     const ws = useWorkspaces.getState().workspaces.find((w) => w.id === activeId);
-    if (ws?.kind === "open") setExpanded((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
+    if (ws?.kind === "open") {
+      setExpanded((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
+      setMountedSubs((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
+    }
   }, [activeId]);
   useEffect(() => {
     if (expanded.size === 0) return;
@@ -127,7 +154,7 @@ export function Rail() {
     // projects can expand to browse their folders even with no sessions yet
     const canExpand = hasSessions || (w.kind !== "open" && !!w.cwd);
     return (
-      <div key={w.id} className="rail-item-wrap" data-wsid={w.id} ref={animateWrap}>
+      <div key={w.id} className="rail-item-wrap" data-wsid={w.id}>
         <div
           data-wsid={w.id}
           className={`rail-item ${w.id === activeId && view === "space" ? "active" : ""}${
@@ -153,7 +180,7 @@ export function Rail() {
               title={isExpanded ? "Collapse" : "Expand"}
               onClick={(e) => {
                 e.stopPropagation();
-                toggleExpand(w.id);
+                expandSub(w);
               }}
             >
               <ChevronRight size={13} />
@@ -231,42 +258,44 @@ export function Rail() {
             <X size={12} />
           </button>
         </div>
-        {isExpanded && !collapsed && (
-          <>
-            {hasSessions && (
-              <div className="rail-sessions">
-                {w.sessions.map((s) => {
-                  const dot = sessDot(s.id);
-                  const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
-                  const sub = relSub(w.cwd, s.cwd); // subfolder it's running in, if any
-                  return (
-                    <button
-                      key={s.id}
-                      className={`rail-session${active ? " active" : ""}`}
-                      title={s.cwd || s.title}
-                      onClick={() => focusSession(w.id, s.id)}
-                    >
-                      <span className={`rail-sess-dot s-${dot}`} />
-                      <span className="rail-sess-name">{s.title}</span>
-                      {sub && (
-                        <span className="rail-sess-sub" title={s.cwd}>
-                          {sub}
-                        </span>
-                      )}
-                      {lastOut[s.id] ? (
-                        <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {w.kind !== "open" && w.cwd && (
-              <div className="rail-files">
-                <FileTree cwd={w.cwd} wsId={w.id} />
-              </div>
-            )}
-          </>
+        {mountedSubs.has(w.id) && (
+          <div className={`rail-sub${isExpanded && contentReady(w) ? " open" : ""}`}>
+            <div className="rail-sub-inner">
+              {hasSessions && (
+                <div className="rail-sessions">
+                  {w.sessions.map((s) => {
+                    const dot = sessDot(s.id);
+                    const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
+                    const sub = relSub(w.cwd, s.cwd); // subfolder it's running in, if any
+                    return (
+                      <button
+                        key={s.id}
+                        className={`rail-session${active ? " active" : ""}`}
+                        title={s.cwd || s.title}
+                        onClick={() => focusSession(w.id, s.id)}
+                      >
+                        <span className={`rail-sess-dot s-${dot}`} />
+                        <span className="rail-sess-name">{s.title}</span>
+                        {sub && (
+                          <span className="rail-sess-sub" title={s.cwd}>
+                            {sub}
+                          </span>
+                        )}
+                        {lastOut[s.id] ? (
+                          <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {w.kind !== "open" && w.cwd && (
+                <div className="rail-files">
+                  <FileTree cwd={w.cwd} wsId={w.id} />
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     );
@@ -296,6 +325,39 @@ export function Rail() {
         <span className="rail-nav-label">Loops</span>
         {activeLoops > 0 && <span className="rail-nav-badge">{activeLoops}</span>}
       </button>
+
+      {!collapsed && loopList.length > 0 && (
+        <div className="rail-loops">
+          <div className="rail-header">
+            <span className="rail-title">LOOPS</span>
+            <button className="rail-add" title="Manage loops" onClick={() => useUi.getState().goLoops()}>
+              <Plus size={15} />
+            </button>
+          </div>
+          {loopList.map((def) => {
+            const run = loopRuns[def.id];
+            const status = run?.status ?? "idle";
+            const running = status === "running";
+            const active = view === "loops" && openLoopId === def.id;
+            return (
+              <button
+                key={def.id}
+                className={`rail-loop${active ? " active" : ""}`}
+                title={def.name || "Untitled loop"}
+                onClick={() => useUi.getState().focusLoop(def.id)}
+              >
+                <span className={`loop-dot s-${status}`} />
+                <span className="rail-loop-name">{def.name || "Untitled loop"}</span>
+                {running && <Loader2 className="rail-loop-spin" size={12} />}
+                <span className="rail-loop-count">
+                  {run?.iteration ?? 0}/{def.stop.maxIterations}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="rail-header">
         <span className="rail-title">PROJECTS</span>
         <button

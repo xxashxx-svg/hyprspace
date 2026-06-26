@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
@@ -14,6 +14,36 @@ const WSL_CMD = "wsl";
 const parentOf = (path: string) => path.replace(/[\\/][^\\/]+[\\/]?$/, "") || path;
 
 const normPath = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
+
+// shared dir-listing cache (module-level) so reopening a folder — or re-expanding the sidebar —
+// paints instantly from cache instead of flashing "Loading…" then popping to full height. survives
+// unmounts, dedupes in-flight fetches.
+const dirCache = new Map<string, DirEntry[]>();
+const dirPending = new Map<string, Promise<DirEntry[]>>();
+export function peekDir(path: string): DirEntry[] | null {
+  return dirCache.get(normPath(path)) ?? null;
+}
+export function loadDir(path: string, force = false): Promise<DirEntry[]> {
+  const key = normPath(path);
+  if (!force) {
+    const cached = dirCache.get(key);
+    if (cached) return Promise.resolve(cached);
+    const inflight = dirPending.get(key);
+    if (inflight) return inflight;
+  }
+  const p = listDir(path)
+    .catch(() => [] as DirEntry[])
+    .then((e) => {
+      dirCache.set(key, e);
+      dirPending.delete(key);
+      return e;
+    });
+  dirPending.set(key, p);
+  return p;
+}
+export function invalidateDir(path: string) {
+  dirCache.delete(normPath(path));
+}
 
 function TreeNode({
   path,
@@ -31,23 +61,27 @@ function TreeNode({
   liveDirs?: Set<string>; // normalized cwds that have an open session — so we can flag them
 }) {
   const [open, setOpen] = useState(false);
-  const [kids, setKids] = useState<DirEntry[] | null>(null);
+  const [kids, setKids] = useState<DirEntry[] | null>(() => peekDir(path));
   const [loading, setLoading] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [aaRef] = useAutoAnimate(); // smooth folder expand/collapse
 
   const load = async () => {
     setLoading(true);
-    setKids(await listDir(path).catch(() => []));
+    setKids(await loadDir(path));
     setLoading(false);
   };
-  const toggle = () => {
+  const toggle = async () => {
     if (!dir) {
       useUi.getState().openInEditor(path); // click a file → open it in the editor tab
       return;
     }
-    if (!open && kids === null) void load();
-    setOpen((o) => !o);
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (kids === null) await load(); // fetch BEFORE revealing so it opens straight to full height (no pop)
+    setOpen(true);
   };
 
   const openAsProject = () => {
@@ -85,7 +119,7 @@ function TreeNode({
       <button
         className="ft-row"
         style={{ paddingLeft: pad }}
-        onClick={toggle}
+        onClick={() => void toggle()}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -184,7 +218,7 @@ export function FileTree({
   refreshKey?: number;
   wsId?: string;
 }) {
-  const [entries, setEntries] = useState<DirEntry[] | null>(null);
+  const [entries, setEntries] = useState<DirEntry[] | null>(() => peekDir(cwd));
   // folders (normalized cwds) that have an open session in this project — to flag them in the tree.
   // select the stable sessions array, then memo the Set (a fresh Set per render breaks the store snapshot)
   const sessions = useWorkspaces((s) => s.workspaces.find((w) => w.id === wsId)?.sessions);
@@ -192,11 +226,22 @@ export function FileTree({
     () => new Set((sessions ?? []).map((x) => normPath(x.cwd ?? "")).filter(Boolean)),
     [sessions],
   );
+  const lastCwd = useRef<string | null>(null);
   useEffect(() => {
-    setEntries(null);
-    listDir(cwd)
-      .then(setEntries)
-      .catch(() => setEntries([]));
+    const cwdChanged = lastCwd.current !== cwd;
+    lastCwd.current = cwd;
+    // switching projects: show this folder's cache (or null→Loading). a refreshKey bump (same cwd)
+    // forces a fresh read but keeps the stale tree on screen meanwhile — no Loading flash, no pop.
+    if (cwdChanged) setEntries(peekDir(cwd));
+    const force = !cwdChanged;
+    if (force) invalidateDir(cwd);
+    let alive = true;
+    loadDir(cwd, force).then((e) => {
+      if (alive) setEntries(e);
+    });
+    return () => {
+      alive = false;
+    };
   }, [cwd, refreshKey]);
 
   return (

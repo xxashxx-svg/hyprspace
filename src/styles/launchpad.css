@@ -99,6 +99,12 @@
 .lp-app:active .lp-app-ico {
   transform: translateY(-1px);
 }
+/* brand marks render as svg images (their own colors), so they don't track currentColor */
+.lp-app-img {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
 .lp-app-name {
   font-size: 12px;
   color: var(--text-3);
@@ -107,14 +113,11 @@
 .lp-app:hover .lp-app-name {
   color: var(--text-1);
 }
-/* Claude = the default, indigo-tinted as primary */
+/* Claude = the default tool → a subtle accent ring (the coral brand mark carries the color now) */
 .lp-app.primary .lp-app-ico {
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
   border-color: var(--accent);
-  color: var(--text-1);
 }
 .lp-app.primary:hover .lp-app-ico {
-  background: color-mix(in srgb, var(--accent) 26%, var(--surface-2));
   border-color: var(--accent-hover);
 }
 .lp-app.primary .lp-app-name {

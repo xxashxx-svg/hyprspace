@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import type { LucideIcon } from "lucide-react";
+import { useEffect, type ComponentType } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useProjectConfigs, folderKey } from "../stores/projectConfig";
@@ -10,33 +9,29 @@ import { pickFolders } from "../api";
 import { claudeCmd, geminiCmd, codexCmd } from "../actions";
 import { isWindows } from "../platform";
 import { Logo } from "./Logo";
-import {
-  Sparkles,
-  Gem,
-  Bot,
-  SquareTerminal,
-  Terminal as TerminalIcon,
-  Play,
-  ScrollText,
-  Layers,
-  Bookmark,
-} from "lucide-react";
+import { Terminal as TerminalIcon, Play, ScrollText, Layers, Bookmark } from "lucide-react";
+import claudeLogo from "../assets/brand/claude.svg";
+import geminiLogo from "../assets/brand/gemini.svg";
+import openaiLogo from "../assets/brand/openai.svg";
+import linuxLogo from "../assets/brand/linux.svg";
 
-// the tools you can drop into a space, shown as app-style icons in the dock
+// the tools you can drop into a space, shown as app-style icons in the dock. the AI providers
+// wear their real brand marks (svg); plain terminal keeps a lucide glyph.
 type Tool = {
   key: string;
   name: string;
   desc: string;
-  Icon: LucideIcon;
+  iconSrc?: string;
+  Icon?: ComponentType<{ size?: number }>;
   cmd: () => string | undefined;
   primary?: boolean;
   winOnly?: boolean;
 };
 const TOOLS: Tool[] = [
-  { key: "claude", name: "Claude", desc: "Anthropic's coding agent", Icon: Sparkles, cmd: () => claudeCmd(), primary: true },
-  { key: "gemini", name: "Gemini", desc: "Google's Gemini CLI", Icon: Gem, cmd: () => geminiCmd() },
-  { key: "codex", name: "Codex", desc: "OpenAI's Codex CLI", Icon: Bot, cmd: () => codexCmd() },
-  { key: "wsl", name: "WSL", desc: "Linux shell", Icon: SquareTerminal, cmd: () => "wsl", winOnly: true },
+  { key: "claude", name: "Claude", desc: "Anthropic's coding agent", iconSrc: claudeLogo, cmd: () => claudeCmd(), primary: true },
+  { key: "gemini", name: "Gemini", desc: "Google's Gemini CLI", iconSrc: geminiLogo, cmd: () => geminiCmd() },
+  { key: "codex", name: "Codex", desc: "OpenAI's Codex CLI", iconSrc: openaiLogo, cmd: () => codexCmd() },
+  { key: "wsl", name: "WSL", desc: "Linux shell", iconSrc: linuxLogo, cmd: () => "wsl", winOnly: true },
   { key: "terminal", name: "Terminal", desc: "Plain shell", Icon: TerminalIcon, cmd: () => undefined },
 ];
 
@@ -104,7 +99,11 @@ export function Launchpad({ wsId, name, kind, cwd }: Props) {
             onClick={() => void launch(t.cmd())}
           >
             <span className="lp-app-ico">
-              <t.Icon size={24} />
+              {t.iconSrc ? (
+                <img className="lp-app-img" src={t.iconSrc} width={24} height={24} alt="" />
+              ) : t.Icon ? (
+                <t.Icon size={24} />
+              ) : null}
             </span>
             <span className="lp-app-name">{t.name}</span>
           </button>
