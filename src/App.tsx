@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Titlebar } from "./components/Titlebar";
 import { Rail } from "./components/Rail";
 import { PaneGrid } from "./components/PaneGrid";
-import { StatusBar } from "./components/StatusBar";
 import { useWorkspaces } from "./stores/workspace";
 import { useProjectConfigs } from "./stores/projectConfig";
 import { taskFromFile } from "./lib/startup";
@@ -266,7 +265,6 @@ export default function App() {
           <ReviewDock />
         </div>
       </div>
-      <StatusBar />
       <Updater />
       <StartupRunner />
       <LoopRunner />

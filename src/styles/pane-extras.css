@@ -1,0 +1,110 @@
+/* ---- pane header extras ---- */
+.pane-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--status-error);
+}
+.pane-head-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0.5;
+  transition: opacity 0.12s var(--ease);
+}
+/* reveal the pane controls on hover / when focused — quieter chrome at rest */
+.terminal-pane:hover .pane-head-right,
+.terminal-pane.focused .pane-head-right {
+  opacity: 1;
+}
+.pane-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease), transform 0.08s var(--ease);
+}
+.pane-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+}
+.pane-btn:active {
+  transform: scale(0.9);
+}
+.pane-btn.close:hover {
+  background: rgba(239, 68, 68, 0.16);
+  color: #ff6b6b;
+}
+
+/* ---- pane actions menu (… button / right-click header) ---- */
+.pane-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+.pane-menu {
+  position: fixed;
+  z-index: 91;
+  min-width: 196px;
+  padding: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: paneMenuIn 0.1s var(--ease);
+}
+@keyframes paneMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.pane-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.pane-menu-item svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.pane-menu-item:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.pane-menu-item:hover svg {
+  color: var(--text-2);
+}
+.pane-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ff6b6b;
+}
+.pane-menu-item.danger:hover svg {
+  color: #ff6b6b;
+}
+.pane-menu-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border-1);
+}

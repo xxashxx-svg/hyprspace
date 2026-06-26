@@ -1,0 +1,274 @@
+/* ---- code editor (dock → Editor tab) ---- */
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.editor-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 11px;
+  border-bottom: 1px solid var(--border-1);
+  background: var(--surface-1);
+}
+.editor-head-ico {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.editor-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-dirty {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-busy);
+}
+.editor-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+}
+.editor-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.editor-save:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+}
+.editor-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.editor-cm {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.editor-cm .cm-editor {
+  height: 100%;
+}
+.editor-err {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  text-align: center;
+}
+.editor-err svg {
+  color: var(--status-busy);
+  flex: 0 0 auto;
+}
+.np-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.np-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: var(--radius-1);
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.np-opt:hover {
+  background: var(--bg-base);
+}
+.np-opt svg {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.np-opt input {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.np-opt-disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.np-opt-disabled:hover {
+  background: transparent;
+}
+.np-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border-1);
+  background: var(--surface-1);
+}
+.np-foot-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.np-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn.danger {
+  background: var(--status-error);
+  border-color: var(--status-error);
+  color: #fff;
+  font-weight: 600;
+}
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--status-error) 86%, #000);
+}
+.tb-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-1);
+  font-size: 12px;
+}
+.tb-icon:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+/* command center — centered search/command pill where the tabs used to be */
+.tb-center {
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+}
+.tb-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 400px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 8px 0 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    color 0.14s var(--ease);
+}
+.tb-cmd:hover {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+  color: var(--text-2);
+}
+.tb-cmd-text {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tb-cmd-kbd {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.tb-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+}
+.tb-ctl {
+  width: 40px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.tb-ctl:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.tb-account {
+  width: 24px;
+  height: 24px;
+  margin: 0 6px 0 2px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--surface-3);
+  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  flex: 0 0 auto;
+  transition: border-color 0.14s var(--ease);
+}
+.tb-account:hover {
+  border-color: var(--accent);
+}
+.tb-account img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tb-ctl.close:hover {
+  background: #e5484d;
+  color: #fff;
+}

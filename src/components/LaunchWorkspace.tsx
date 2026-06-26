@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { useSettings, type ClaudePermission } from "../stores/settings";
@@ -25,6 +26,7 @@ export function LaunchWorkspace() {
   const open = useUi((s) => s.launchOpen);
   const close = useUi((s) => s.closeLaunch);
   const presets = useLaunchPresets((s) => s.presets);
+  const [presetRef] = useAutoAnimate(); // smooth add/remove of preset chips
 
   const [folder, setFolder] = useState("");
   const [count, setCount] = useState(4);
@@ -121,7 +123,7 @@ export function LaunchWorkspace() {
           {presets.length > 0 && (
             <div className="np-field">
               <span className="np-label">Presets</span>
-              <div className="lw-presets">
+              <div className="lw-presets" ref={presetRef}>
                 {presets.map((p) => (
                   <span key={p.id} className="lw-preset">
                     <button className="lw-preset-apply" onClick={() => applyPreset(p)} title={`${p.folder} · ${p.count} terminals`}>

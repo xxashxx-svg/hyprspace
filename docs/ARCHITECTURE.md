@@ -194,6 +194,37 @@ runner advances the loop. Commands: `agent_start` / `agent_stop` (`api/index.ts`
 `LoopRunner.tsx` mounts once, hydrates saved loops, and auto-starts the **enabled** `cron`/`interval`
 loops; `until-done` and `manual` loops are started by hand from the UI.
 
+## Multi-agent launcher (`LaunchWorkspace.tsx` + `stores/launchPresets.ts`)
+
+Fan out many agents at once: pick a working folder, a grid size (1–12 terminals), and an agent mix
+(per-provider counts with quick-fill — All Claude / One of each / Split evenly). Launch creates a
+project (`addWorkspace`) then loops `addSession` for each agent command, so `PaneGrid` tiles them.
+Agent panes get a short friendly name (`lib/names.ts`) so identical agents are tellable apart. A
+config (folder + grid + mix) can be saved as a **preset** (`stores/launchPresets.ts`, persisted
+`"launchPresets"`) and relaunched in one click. Opened from Home, the command palette, or the
+titlebar **New** menu.
+
+## Integrated editor (`CodeEditor.tsx` + `devtools/fs.rs`)
+
+A CodeMirror 6 editor in the Review dock's **Editor** tab. Clicking a file in the Files tree (or its
+context menu) calls `openInEditor` (`stores/ui.ts`), which reads the file via `read_file`
+(`devtools/fs.rs`, capped at 2 MB, rejects binary) and shows it with syntax highlighting; **Ctrl/⌘+S**
+or the autosave toggle writes it back via `write_file`. Themed to the app tokens with one-dark colors.
+
+## Code structure & animation notes
+
+- **CSS is split per area.** `src/App.css` is just an ordered `@import` index of `src/styles/*.css`
+  (one file per area: rail, home, pane, loops, launcher, editor, …). Edit the area file, not the
+  index; order is preserved so the cascade is identical to the old single file.
+- **`devtools` is a folder module** (`git` / `worktree` / `project` / `fs` / `providers` / `mcp` /
+  `skills`), re-exported by `mod.rs` so `devtools::*` paths in `lib.rs` are unchanged. Shared helpers
+  (`git`, `home_dir`, `read_json`) live in `mod.rs`.
+- **Smooth UI** uses `@formkit/auto-animate` (rail lists + expand/collapse, the file tree, the Loops
+  list, launcher presets) plus a `.no-transitions` guard toggled in `applyTheme` so a theme switch
+  snaps colors instead of animating every element. `prefers-reduced-motion` is respected app-wide.
+- **Dev-state isolation.** `persist.rs` honors a `HYPRSPACE_STATE_DIR` env override (unset in release
+  builds) so a dev instance can run on a scratch state dir without touching the user's `~/.hyprspace/v2`.
+
 ## Provider command builders (`actions.ts`)
 
 `claudeCmd(mode)`, `geminiCmd(yolo)`, `codexCmd(mode)`, `WSL_CMD` produce **constant** command
@@ -216,7 +247,7 @@ loopback listener (`127.0.0.1:8765`) for the OAuth redirect and PKCE (Supabase v
 `code_verifier`). This is **not** the Claude subscription auth — that's handled entirely by the
 `claude` CLI we spawn. Credential files are only ever read for display-only fields.
 
-## Provider status (`devtools.rs::provider_status`)
+## Provider status (`devtools/providers.rs::provider_status`)
 
 For Settings → Providers: runs `<cli> --version` (args passed separately, never a shell string) and
 reads `~/.claude.json` / `.credentials.json` / Codex `auth.json` for **display-only** account/plan

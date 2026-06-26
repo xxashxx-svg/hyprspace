@@ -1,0 +1,77 @@
+/* ---- collapsible rail (edge hover-handle toggles it) ---- */
+.rail {
+  transition: width 0.16s var(--ease);
+  padding-top: 6px;
+}
+/* collapsed = thin icon strip */
+.rail.collapsed {
+  width: 52px;
+  padding-top: 0;
+}
+.rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* a chevron that rides the rail's right edge; fades in on hover (always shown when collapsed) */
+.rail-edge {
+  position: absolute;
+  top: 50%;
+  right: -10px;
+  transform: translateY(-50%);
+  z-index: 6;
+  width: 20px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  box-shadow: var(--shadow-1);
+  transition:
+    opacity 0.14s var(--ease),
+    background 0.14s var(--ease),
+    color 0.14s var(--ease);
+}
+.rail:hover .rail-edge {
+  opacity: 1;
+}
+.rail-edge:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+  border-color: var(--accent);
+}
+.rail.collapsed .rail-title,
+.rail.collapsed .rail-add,
+.rail.collapsed .rail-name,
+.rail.collapsed .rail-count,
+.rail.collapsed .rail-clear,
+.rail.collapsed .rail-empty {
+  display: none;
+}
+.rail.collapsed .rail-header {
+  padding: 5px 0;
+}
+.rail.collapsed .rail-list {
+  padding: 4px 6px;
+  align-items: center;
+}
+.rail.collapsed .rail-item {
+  justify-content: center;
+  padding: 9px 0;
+}
+.rail.collapsed .dot {
+  width: 10px;
+  height: 10px;
+}
+.rail.collapsed .rail-ico {
+  width: 14px;
+  height: 14px;
+}

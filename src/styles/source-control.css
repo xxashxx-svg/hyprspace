@@ -1,0 +1,350 @@
+/* ---- Source Control panel ---- */
+.dock-body.sc {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0;
+}
+.sc-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-1);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.sc-branch {
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-track {
+  display: flex;
+  gap: 7px;
+  margin-left: auto;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.sc-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border-1);
+}
+.sc-msg {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 9px;
+}
+.sc-msg:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.sc-commit-btns {
+  display: flex;
+  gap: 7px;
+}
+.sc-commit-btns .btn {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+}
+.sc-sec {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-1);
+}
+.sc-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 12px 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.sc-mini {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.sc-mini:hover {
+  color: var(--accent);
+}
+.sc-file {
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 12px;
+  height: 27px;
+}
+.sc-file:hover {
+  background: var(--surface-1);
+}
+.sc-file.active {
+  background: var(--surface-2);
+}
+.sc-file-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  height: 100%;
+  padding: 0;
+}
+.sc-file-acts {
+  display: none;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.sc-file:hover .sc-file-acts {
+  display: flex;
+}
+.sc-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.sc-act:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.set-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 2px;
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.theme-swatch {
+  background: transparent;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  padding: 7px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.theme-swatch:hover {
+  border-color: var(--border-2);
+}
+.theme-swatch.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.sw-preview {
+  height: 46px;
+  border-radius: 6px;
+  background: var(--sw-bg);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+}
+.sw-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sw-text);
+  width: 72%;
+}
+.sw-bar.accent {
+  background: var(--sw-accent);
+  width: 46%;
+}
+.sw-bar.short {
+  width: 56%;
+}
+.sw-name {
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+}
+.theme-swatch.active .sw-name {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border-1);
+  min-height: 32px;
+}
+.set-group .set-row:last-child {
+  border-bottom: none;
+}
+.set-row-info {
+  min-width: 0;
+}
+.set-key {
+  font-size: 13px;
+  color: var(--text-1);
+}
+.set-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.set-control {
+  flex: 0 0 auto;
+}
+.set-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-path-val {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 5px 9px;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-path-tag {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0 2px;
+}
+.set-select {
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  color: var(--text-1);
+  border-radius: var(--radius-1);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 170px;
+}
+.set-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+}
+.stepper button {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+}
+.stepper button:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.stepper-val {
+  min-width: 28px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.seg {
+  display: flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+.seg-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+}
+.seg-btn:hover {
+  color: var(--text-1);
+}
+.seg-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.toggle {
+  width: 38px;
+  height: 22px;
+  border-radius: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-1);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: background 0.14s var(--ease);
+}
+.toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.14s var(--ease);
+}
+.toggle.on .toggle-knob {
+  left: 18px;
+}

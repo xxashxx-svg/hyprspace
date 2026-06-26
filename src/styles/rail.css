@@ -1,0 +1,525 @@
+/* ---- Rail ---- */
+.rail {
+  width: 220px;
+  flex: 0 0 auto;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border-1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+.rail-title {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.rail-add {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-1);
+}
+.rail-add:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+/* sidebar search at the very top (T3-style) — opens the command palette */
+.rail-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  margin-bottom: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.rail-search:hover {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.rail-search svg {
+  flex: 0 0 auto;
+}
+.rail-search-label {
+  flex: 1;
+  text-align: left;
+}
+.rail-search-kbd {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.rail.collapsed .rail-search {
+  justify-content: center;
+  padding: 9px 0;
+}
+.rail.collapsed .rail-search-label,
+.rail.collapsed .rail-search-kbd {
+  display: none;
+}
+.rail-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  margin-bottom: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.rail-home svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.rail-home:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.rail-home.active {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.rail.collapsed .rail-home {
+  justify-content: center;
+  padding: 9px 0;
+}
+.rail.collapsed .rail-home-label {
+  display: none;
+}
+/* top-level Loops/automations nav entry */
+.rail-nav {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  margin-bottom: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.rail-nav svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.rail-nav:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.rail-nav:hover svg {
+  color: var(--text-2);
+}
+.rail-nav.active {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.rail-nav.active svg {
+  color: var(--accent);
+}
+.rail-nav-label {
+  flex: 1;
+}
+.rail-nav-badge {
+  flex: 0 0 auto;
+  min-width: 17px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface-0);
+}
+.rail.collapsed .rail-nav {
+  justify-content: center;
+  padding: 9px 0;
+}
+.rail.collapsed .rail-nav-label {
+  display: none;
+}
+.rail.collapsed .rail-nav-badge {
+  position: absolute;
+  margin-left: 18px;
+  margin-top: -14px;
+  min-width: 0;
+  padding: 2px 4px;
+}
+/* settings pinned to the bottom of the sidebar (Cursor-style, bottom-left) */
+.rail-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px 8px;
+  border-top: 1px solid var(--border-1);
+}
+.rail-acct {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.rail-acct:hover {
+  background: var(--surface-2);
+}
+.rail-acct-ava {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.rail-acct-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rail-acct-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rail-acct-name {
+  font-size: 12.5px;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-acct-sub {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-foot-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.rail-foot-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.rail.collapsed .rail-foot {
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 8px;
+}
+.rail.collapsed .rail-acct {
+  justify-content: center;
+  padding: 4px 0;
+}
+.rail.collapsed .rail-acct-meta {
+  display: none;
+}
+/* expandable space → sessions hierarchy (T3-style) */
+.rail-item-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.rail-twist {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.rail-twist:hover {
+  color: var(--text-1);
+}
+.rail-twist svg {
+  transition: transform 0.14s var(--ease);
+}
+.rail-twist.open svg {
+  transform: rotate(90deg);
+}
+.rail-twist-spacer {
+  flex: 0 0 auto;
+  width: 16px;
+}
+.rail-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 4px;
+  padding-left: 24px;
+}
+.rail-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.rail-session:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.rail-session.active {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.rail-sess-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-idle);
+}
+.rail-sess-dot.s-ready {
+  background: var(--status-ok);
+}
+.rail-sess-dot.s-exited {
+  background: var(--status-idle);
+}
+.rail-sess-dot.s-busy {
+  background: var(--status-awaiting);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-awaiting) 22%, transparent);
+  animation: sessPulse 1.3s ease-in-out infinite;
+}
+@keyframes sessPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.rail-sess-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the subfolder a session runs in, shown dim after its name */
+.rail-sess-sub {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+}
+.rail-sess-time {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.rail.collapsed .rail-twist,
+.rail.collapsed .rail-twist-spacer,
+.rail.collapsed .rail-sessions {
+  display: none;
+}
+.rail-list {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rail-header:not(:first-child) {
+  margin-top: 4px;
+}
+.rail-empty {
+  padding: 2px 12px 6px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-style: italic;
+}
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+}
+.rail-item:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.rail-item.active {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.rail-grip {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-3);
+  opacity: 0;
+  margin: 0 -2px 0 -3px;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 0.12s var(--ease);
+}
+.rail-item:hover .rail-grip {
+  opacity: 0.6;
+}
+.rail-grip:active {
+  cursor: grabbing;
+}
+.rail-item.dragging {
+  opacity: 0.5;
+}
+.rail-item.drop-over {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+/* dragging a terminal pane over the sidebar: spaces light up as drop targets */
+.rail-item.pane-droppable {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.rail-item.pane-drop-over {
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.rail.collapsed .rail-grip {
+  display: none;
+}
+.rail-ico {
+  flex: 0 0 auto;
+  display: block;
+}
+.rail-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-count {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border-radius: 9px;
+  padding: 1px 7px;
+}
+.rail-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 4px;
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+  opacity: 0;
+}
+.rail-item:hover .rail-clear {
+  opacity: 1;
+}
+.rail-item:hover .rail-count {
+  display: none;
+}
+.rail-clear:hover {
+  background: var(--surface-3);
+  color: var(--status-error);
+}
+.rail-rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-base);
+  border: 1px solid var(--accent);
+  color: var(--text-1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}

@@ -1,0 +1,233 @@
+/* ---- Pane stage / grid ---- */
+.pane-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+.pane-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+/* maximized: fill the stage edge-to-edge — no margin, border, or rounded outline */
+.pane-grid.maxed {
+  gap: 0;
+  padding: 0;
+}
+.pane-grid.maxed .terminal-pane {
+  border-color: transparent;
+  border-radius: 0;
+}
+.pane-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.terminal-pane {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-1);
+  border-radius: 0;
+  overflow: hidden;
+  transition: border-color 0.12s var(--ease), box-shadow 0.16s var(--ease);
+}
+.terminal-pane.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 8px 24px rgba(0, 0, 0, 0.28);
+  z-index: 1;
+}
+.terminal-pane.focused .pane-header {
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
+}
+.terminal-pane.p-gemini.focused {
+  border-color: var(--accent);
+}
+.terminal-pane.p-gemini .pane-header {
+  border-bottom-color: var(--border-1);
+}
+.terminal-pane.p-wsl.focused {
+  border-color: var(--accent);
+}
+.terminal-pane.p-wsl .pane-header {
+  border-bottom-color: var(--border-1);
+}
+.terminal-pane {
+  animation: paneIn 0.16s var(--ease);
+}
+@keyframes paneIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.pane-header {
+  height: 28px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 0 11px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-1);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pane-header:active {
+  cursor: grabbing;
+}
+.pane-head-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pane-grip {
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: -1px;
+}
+.pane-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0.01em;
+}
+.pane-prov-ico {
+  flex: 0 0 auto;
+  display: block;
+  color: var(--text-3);
+}
+.terminal-pane.focused .pane-title {
+  color: var(--text-1);
+}
+.terminal-pane.focused .pane-prov-ico {
+  color: var(--text-2);
+}
+.pane-cwd {
+  font-size: 10px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+/* a pane whose folder differs from its (project) space — subtle amber "guest" cue */
+.terminal-pane.guest .pane-header {
+  background: linear-gradient(rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.1)), var(--surface-2);
+  border-bottom-color: rgba(245, 158, 11, 0.35);
+}
+.pane-cwd.guest {
+  color: var(--status-busy);
+  max-width: 170px;
+}
+.pane-cwd-ico {
+  display: inline;
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+.pane-term {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+}
+.pane-term .xterm {
+  height: 100%;
+}
+.pane-term .xterm-viewport {
+  background: transparent !important;
+}
+/* give xterm a real (non-overlay) scrollbar so it reserves a gutter — otherwise the
+   WebView2 overlay bar paints over the rightmost column once scrollback kicks in. */
+.pane-term .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+.pane-term .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.pane-term .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  background-clip: padding-box;
+}
+
+/* ---- terminal search bar (Ctrl+Shift+F) ---- */
+.term-search {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-2);
+  animation: searchIn 0.14s var(--ease);
+}
+@keyframes searchIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.term-search-input {
+  flex: 1;
+  min-width: 100px;
+  max-width: 280px;
+  padding: 4px 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font-size: 12px;
+  outline: none;
+}
+.term-search-input:focus {
+  border-color: var(--accent);
+}
+.term-search-btn {
+  padding: 4px 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.term-search-btn:hover {
+  color: var(--text-1);
+  border-color: var(--border-1);
+}
+.term-search-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.term-search-btn.close {
+  margin-left: auto;
+}

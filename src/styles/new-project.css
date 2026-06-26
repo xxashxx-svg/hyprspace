@@ -1,0 +1,221 @@
+/* ---- New project wizard ---- */
+.np-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 370;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+}
+.np {
+  width: 560px;
+  max-width: 94vw;
+  max-height: 84vh;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fdoIn 0.13s var(--ease);
+}
+.np-head {
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid var(--border-1);
+}
+.np-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.np-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.np-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+.np-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.np-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.np-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  text-transform: none;
+}
+.np-input {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.np-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.np-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 2px;
+  gap: 2px;
+}
+.np-seg button {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: calc(var(--radius-1) - 2px);
+  cursor: pointer;
+}
+.np-seg button.active {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.np-browse {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.np-browse .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.np-foldername {
+  flex: 1;
+}
+.np-path {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", monospace;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 6px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-path-empty {
+  color: var(--text-3);
+  font-style: italic;
+  font-family: inherit;
+}
+.np-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.np-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+}
+.np-agent-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-1);
+  background: var(--surface-3);
+  color: var(--text-2);
+  flex: 0 0 auto;
+}
+.np-agent-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.np-step {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.np-step button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  cursor: pointer;
+}
+.np-step button:hover:not(:disabled) {
+  background: var(--surface-1);
+  border-color: var(--border-2);
+}
+.np-step button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.np-step span {
+  min-width: 22px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.np-claude-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.np-claude-mode select {
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  cursor: pointer;
+}

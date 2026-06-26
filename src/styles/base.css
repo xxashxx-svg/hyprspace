@@ -1,0 +1,65 @@
+* {
+  box-sizing: border-box;
+}
+/* while a theme is switching, kill transitions so colors snap (no per-element color animation) */
+.no-transitions,
+.no-transitions *,
+.no-transitions *::before,
+.no-transitions *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+}
+/* respect reduced-motion: near-instant transitions/animations app-wide (auto-animate self-disables) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+body {
+  background: var(--bg-base);
+  overflow: hidden;
+  font-family: var(--font-ui);
+  color: var(--text-1);
+  font-size: var(--text-base);
+  line-height: var(--line-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+/* headings sit a touch tighter than body for a crisper rhythm */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.012em;
+  line-height: var(--line-tight);
+}
+
+.app-shell {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  overflow: hidden;
+  position: relative;
+}
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.workspace-view {
+  flex: 1;
+  min-width: 0;
+}

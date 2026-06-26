@@ -30,8 +30,8 @@ export const THEMES: Theme[] = [
     name: "T3",
     vars: {
       ...base,
-      "--accent": "oklch(0.588 0.217 264)",
-      "--accent-hover": "oklch(0.66 0.2 264)",
+      "--accent": "oklch(0.488 0.217 264)", // T3's exact --primary (deep indigo, used sparingly)
+      "--accent-hover": "oklch(0.55 0.21 264)",
       "--on-accent": "#ffffff",
     },
   },
@@ -80,7 +80,10 @@ export const THEMES: Theme[] = [
 export function applyTheme(id: string): void {
   const theme = THEMES.find((t) => t.id === id) ?? THEMES[0];
   const root = document.documentElement;
+  // suppress transitions during the swap so colors snap instead of every element animating (T3 trick)
+  root.classList.add("no-transitions");
   for (const [k, val] of Object.entries(theme.vars)) {
     root.style.setProperty(k, val);
   }
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("no-transitions")));
 }

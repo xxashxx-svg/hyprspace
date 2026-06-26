@@ -1,0 +1,36 @@
+/* ---- right-click context menu ---- */
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 201;
+  min-width: 144px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.ctx-item {
+  background: transparent;
+  border: none;
+  color: var(--text-1);
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+}
+.ctx-item:hover {
+  background: var(--surface-3);
+}
+.ctx-item.danger:hover {
+  background: var(--status-error);
+  color: #fff;
+}

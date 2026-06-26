@@ -1,0 +1,63 @@
+/* ---- pane drag-to-swap (pointer-based) ---- */
+.pane-stage.dragging-active,
+.pane-stage.dragging-active * {
+  cursor: grabbing !important;
+}
+.pane-cell.dragging .terminal-pane {
+  opacity: 0.5;
+}
+.pane-cell.drop-over .terminal-pane {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-dim);
+}
+.file-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  border-radius: 0;
+  background: rgba(10, 9, 14, 0.55);
+  backdrop-filter: blur(2px);
+  border: 2px dashed var(--accent);
+}
+.fdo-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 18px 30px;
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: var(--shadow-2);
+  animation: fdoIn 0.13s var(--ease);
+}
+.fdo-icon {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--accent-hover);
+  margin-bottom: 5px;
+}
+.fdo-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.fdo-sub {
+  font-size: 12px;
+  color: var(--text-2);
+}
+@keyframes fdoIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
