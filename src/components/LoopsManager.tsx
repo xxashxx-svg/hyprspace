@@ -45,6 +45,13 @@ const STATUS_LABEL: Record<string, string> = {
   crashloop: "stopped · no progress",
 };
 
+// compact token count: 980 → "980", 12345 → "12.3k", 1500000 → "1.5M"
+function fmtTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 // Settings → Loops. Create/edit loops and drive them live (start/stop/pause, iteration count, logs).
 export function LoopsManager() {
   const loops = useLoops((s) => s.loops);
@@ -345,6 +352,17 @@ export function LoopsManager() {
                   onChange={(e) => updateStop(id, { timeBudgetMin: e.target.value ? +e.target.value : undefined })}
                 />
               </label>
+              <label className="loop-field">
+                <span>Token budget</span>
+                <input
+                  className="svc-in"
+                  type="number"
+                  min={0}
+                  placeholder="none"
+                  value={def.stop.tokenBudget ?? ""}
+                  onChange={(e) => updateStop(id, { tokenBudget: e.target.value ? +e.target.value : undefined })}
+                />
+              </label>
               <label className="loop-field loop-field-wide">
                 <span>Stop when this passes</span>
                 <input
@@ -379,6 +397,12 @@ export function LoopsManager() {
             <div className="loop-status">
               <span className={`loop-status-badge s-${status}`}>{STATUS_LABEL[status] ?? status}</span>
               {run && run.iteration > 0 && <span>iteration {run.iteration}</span>}
+              {run && (run.costUsed || run.tokensUsed) ? (
+                <span className="loop-usage" title="cost · tokens this run">
+                  {run.costUsed ? `$${run.costUsed.toFixed(3)}` : ""}
+                  {run.tokensUsed ? `${run.costUsed ? " · " : ""}${fmtTokens(run.tokensUsed)} tok` : ""}
+                </span>
+              ) : null}
               {run?.lastResult && <span className="loop-last" title={run.lastResult}>{run.lastResult}</span>}
               {run?.worktreePath && (
                 <button className="loop-review" title={`Open the isolated worktree:\n${run.worktreePath}`} onClick={() => revealLoopWorktree(id)}>

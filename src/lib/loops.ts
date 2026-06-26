@@ -5,6 +5,7 @@ import {
   useLoops,
   loopRunId,
   type LoopDef,
+  type LoopEvent,
   type LoopStatus,
   type ScheduleCfg,
 } from "../stores/loops";
@@ -90,30 +91,95 @@ function toolLabel(name: string, input: Record<string, unknown> | undefined): st
   return name;
 }
 
-// turn one claude stream-json line into a readable log line; carries the final result text when
-// the run ends. non-JSON lines (e.g. stderr warnings) pass straight through.
-function parseClaudeLine(line: string): { log?: string; result?: string } {
+// the argument we surface for a tool call: the command for Bash, the path for file tools, the
+// pattern for search tools. left full here — the transcript truncates long ones itself.
+function toolArg(name: string, input: Record<string, unknown> | undefined): string {
+  if (name === "Bash") {
+    return String(input?.command ?? "").trim().replace(/^cd\s+("[^"]*"|'[^']*'|\S+)\s*&&\s*/, "");
+  }
+  const path = (input?.file_path ?? input?.path) as string | undefined;
+  if (path) return path;
+  const pat = (input?.pattern ?? input?.query) as string | undefined;
+  return pat ?? "";
+}
+
+let evSeq = 0;
+function newLoopEvent(iter: number, partial: Partial<LoopEvent>): LoopEvent {
+  return { id: `e${Date.now().toString(36)}-${evSeq++}`, iteration: iter, ts: Date.now(), kind: "text", ...partial };
+}
+
+// parse one claude stream-json line into transcript events: a tool_use becomes a "running" tool row,
+// its tool_result flips it to ok/error with a duration, and thinking/text/result carry the words.
+// `append` keeps the flat log line going for the classic panel. non-JSON (stderr) passes through.
+// pull a token count out of the stream's usage block (input + output + cache, best-effort)
+function usageTokens(usage: Record<string, unknown> | undefined): number {
+  if (!usage) return 0;
+  const n = (k: string) => (typeof usage[k] === "number" ? (usage[k] as number) : 0);
+  return n("input_tokens") + n("output_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+}
+
+function handleClaudeLine(
+  loopId: string,
+  iter: number,
+  line: string,
+  toolMap: Map<string, { eventId: string; start: number }>,
+  setResult: (r: string, tokens: number, cost: number) => void,
+  append: (line: string) => void,
+) {
+  const S = useLoops.getState;
   let ev: Record<string, unknown>;
   try {
     ev = JSON.parse(line);
   } catch {
-    return { log: line };
+    S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
+    append(line);
+    return;
   }
   if (ev.type === "assistant") {
     const content = (ev.message as { content?: unknown[] } | undefined)?.content ?? [];
-    const out: string[] = [];
     for (const b of content as Array<Record<string, unknown>>) {
-      if (b.type === "text" && typeof b.text === "string" && b.text.trim()) out.push(b.text.trim());
-      else if (b.type === "tool_use") out.push(`→ ${toolLabel(b.name as string, b.input as Record<string, unknown>)}`);
+      if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+        const t = b.text.trim();
+        S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: t }));
+        append(t);
+      } else if (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim()) {
+        S().pushEvent(loopId, newLoopEvent(iter, { kind: "thinking", text: b.thinking.trim() }));
+      } else if (b.type === "tool_use") {
+        const name = b.name as string;
+        const input = b.input as Record<string, unknown>;
+        const e = newLoopEvent(iter, { kind: "tool", tool: name, arg: toolArg(name, input), status: "running" });
+        if (typeof b.id === "string") toolMap.set(b.id, { eventId: e.id, start: e.ts });
+        S().pushEvent(loopId, e);
+        append(`→ ${toolLabel(name, input)}`);
+      }
     }
-    return { log: out.join("\n") || undefined };
+    return;
+  }
+  if (ev.type === "user") {
+    const content = (ev.message as { content?: unknown[] } | undefined)?.content ?? [];
+    for (const b of content as Array<Record<string, unknown>>) {
+      if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+        const t = toolMap.get(b.tool_use_id);
+        if (t) {
+          S().patchEvent(loopId, t.eventId, { status: b.is_error ? "error" : "ok", durationMs: Date.now() - t.start });
+          toolMap.delete(b.tool_use_id);
+        }
+      }
+    }
+    return;
   }
   if (ev.type === "result") {
     const r = typeof ev.result === "string" ? ev.result : "";
-    const cost = typeof ev.total_cost_usd === "number" ? ` · $${(ev.total_cost_usd as number).toFixed(3)}` : "";
-    return { result: r, log: `✓ done${cost}` };
+    const costNum = typeof ev.total_cost_usd === "number" ? (ev.total_cost_usd as number) : 0;
+    const tokens = usageTokens(ev.usage as Record<string, unknown> | undefined);
+    // the turn finished — any tool still showing "running" did complete, so settle it
+    for (const t of toolMap.values()) S().patchEvent(loopId, t.eventId, { status: "ok" });
+    toolMap.clear();
+    const costStr = costNum ? ` · $${costNum.toFixed(3)}` : "";
+    setResult(r, tokens, costNum);
+    S().pushEvent(loopId, newLoopEvent(iter, { kind: "result", text: r, arg: costStr.trim() || undefined }));
+    append(`✓ done${costStr}`);
   }
-  return {};
 }
 
 function hash(s: string): string {
@@ -142,37 +208,51 @@ function nextFire(s?: ScheduleCfg): number {
 
 // run ONE iteration headless, streaming lines to `append`; resolves with the full output once the
 // turn's exit sentinel arrives. `cont` continues the prior session instead of starting fresh.
-function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line: string) => void): Promise<string> {
+interface IterResult {
+  out: string; // readable output, used for progress/sentinel checks
+  tokens: number; // tokens this iteration burned (claude only; 0 otherwise)
+  cost: number; // USD this iteration cost (claude only)
+}
+
+function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line: string) => void): Promise<IterResult> {
   return new Promise((resolve) => {
     const rid = loopRunId(def.id);
+    const loopId = def.id;
+    const iter = useLoops.getState().runs[loopId]?.iteration ?? 0;
     const env = useProjectConfigs.getState().getConfig(def.folder).env;
     const lines: string[] = []; // readable text, used for progress/sentinel checks
+    const toolMap = new Map<string, { eventId: string; start: number }>(); // tool_use id → its event + start
     let result = ""; // claude's final result text (when stream-json reports it)
+    let tokens = 0;
+    let cost = 0;
     let done = false;
+    const record = (line: string) => {
+      lines.push(line);
+      append(line);
+    };
     const finish = () => {
       if (done) return;
       done = true;
-      resolve(result || lines.join("\n"));
+      resolve({ out: result || lines.join("\n"), tokens, cost });
     };
     void agentStart(rid, folder, buildArgs(def, cont), env, secretsFor(def), def.prompt, (line) => {
       if (line === EXIT) {
         finish();
         return;
       }
-      // claude streams JSON events → parse to readable progress; other backends are plain text
+      // claude streams JSON events → structured transcript; other backends are plain text
       if (def.provider === "claude") {
-        const ev = parseClaudeLine(line);
-        if (ev.result !== undefined) result = ev.result;
-        if (ev.log) {
-          lines.push(ev.log);
-          append(ev.log);
-        }
+        handleClaudeLine(loopId, iter, line, toolMap, (r, t, c) => {
+          result = r;
+          tokens = t;
+          cost = c;
+        }, record);
       } else {
-        lines.push(line);
-        append(line);
+        useLoops.getState().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
+        record(line);
       }
     }).catch((e) => {
-      append(`⚠ failed to start: ${e}`);
+      record(`⚠ failed to start: ${e}`);
       finish();
     });
   });
@@ -221,13 +301,22 @@ export function startLoop(id: string) {
     // guard: time budget
     if (def.stop.timeBudgetMin && run.startedAt && Date.now() - run.startedAt > def.stop.timeBudgetMin * 60000)
       return finish("stopped", "time budget reached");
+    // guard: token budget (claude reports usage per turn; other backends never accumulate, so it's a no-op there)
+    if (def.stop.tokenBudget && (run.tokensUsed ?? 0) >= def.stop.tokenBudget)
+      return finish("done", `token budget reached (${(run.tokensUsed ?? 0).toLocaleString()} tokens)`);
 
     const iter = run.iteration + 1;
     S().setRun(id, { status: "running", iteration: iter, lastRunAt: Date.now() });
     append(`\n— iteration ${iter} —`);
+    S().pushEvent(id, newLoopEvent(iter, { kind: "iteration" }));
     const cont = def.session === "continue" && iter > 1; // first run seeds the session, rest continue it
-    const out = await runIteration(def, runFolder, cont, append);
+    const { out, tokens, cost } = await runIteration(def, runFolder, cont, append);
     if (ctrl.stop) return;
+    // tally what this turn burned so the budget guard + UI have fresh numbers
+    if (tokens || cost) {
+      const cur = S().runs[id];
+      S().setRun(id, { tokensUsed: (cur.tokensUsed ?? 0) + tokens, costUsed: (cur.costUsed ?? 0) + cost });
+    }
 
     // guard: no-progress / crash-loop
     const h = hash(out);

@@ -1,6 +1,6 @@
 /* ---- collapsible rail (edge hover-handle toggles it) ---- */
 .rail {
-  transition: width 0.16s var(--ease);
+  transition: width 0.18s var(--ease);
   padding-top: 6px;
 }
 /* collapsed = thin icon strip */
@@ -12,6 +12,10 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* clip labels/content during the width animation so it reads as a clean horizontal wipe instead
+     of overflowing/reflowing; reserve the scrollbar gutter so it can't flicker the layout width */
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 /* a chevron that rides the rail's right edge; fades in on hover (always shown when collapsed) */
 .rail-edge {
@@ -54,6 +58,11 @@
 .rail.collapsed .rail-count,
 .rail.collapsed .rail-clear,
 .rail.collapsed .rail-empty {
+  display: none;
+}
+/* hide the expanded sub-content instantly while collapsed — it stays mounted (no refetch), so
+   re-expanding the sidebar shows it again immediately from cache instead of reloading + popping */
+.rail.collapsed .rail-sub {
   display: none;
 }
 .rail.collapsed .rail-header {

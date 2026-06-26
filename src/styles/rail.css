@@ -304,6 +304,20 @@
   flex: 0 0 auto;
   width: 16px;
 }
+/* expand reveal: grid-rows 0fr→1fr animates open/close AND re-settles smoothly when the file tree
+   loads async (no Loading→pop), without fighting the sidebar width transition */
+.rail-sub {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.18s var(--ease);
+}
+.rail-sub.open {
+  grid-template-rows: 1fr;
+}
+.rail-sub-inner {
+  min-height: 0;
+  overflow: hidden;
+}
 .rail-sessions {
   display: flex;
   flex-direction: column;
