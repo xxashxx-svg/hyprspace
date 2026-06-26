@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.3 — 2026-06-26
+
+- Fixed a glitch where the focused terminal pane could lose its header or shift its content
+- Better multi-pane layouts: panes now split into balanced rows (7 becomes 4 + 3) instead of an unusable grid
+- Updates jump straight to the newest version in one step, even when you're several releases behind
+- A 'What's new' note now appears in notifications after the app updates
+
 ## 0.5.2 — 2026-06-26
 - New cube logo + app/installer icon, and website favicon
 - Smooth animations across the sidebar, file tree, Loops, and presets
