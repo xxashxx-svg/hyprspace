@@ -4,6 +4,12 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.7 — 2026-06-27
+
+- The launchpad now shows each tool's real logo (Claude, Gemini, Codex, WSL) instead of generic icons
+- Smoother sidebar: the file tree opens cleanly without the jumpy pop, and collapse/expand is more fluid
+- Loops: a live runs view, and your loops now appear in the sidebar with live status and progress
+
 ## 0.5.6 — 2026-06-27
 
 - New launchpad: the empty-space view is now a launch hub with app-style icons for Claude, Gemini, Codex, WSL and Terminal, a 'launch several agents' shortcut, and one-click saved presets
