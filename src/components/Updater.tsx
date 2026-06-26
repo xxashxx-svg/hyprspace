@@ -8,6 +8,7 @@ const FOCUS_THROTTLE_MS = 15 * 60 * 1000; // also re-check when you return, but 
 export function Updater() {
   const phase = useUpdater((s) => s.phase);
   const detail = useUpdater((s) => s.detail);
+  const pct = useUpdater((s) => s.pct);
   const update = useUpdater((s) => s.update);
   const install = useUpdater((s) => s.install);
   const dismiss = useUpdater((s) => s.dismiss);
@@ -33,23 +34,51 @@ export function Updater() {
   }, []);
 
   // the toast only surfaces when there's actually something to act on
-  if (phase !== "available" && phase !== "downloading") return null;
+  if (phase !== "available" && phase !== "downloading" && phase !== "error") return null;
   const busy = phase === "downloading";
+
+  if (phase === "error") {
+    return (
+      <div className="updater">
+        <span className="updater-dot err" />
+        <span className="updater-text">{detail || "Update failed"}</span>
+        <button className="updater-btn" onClick={() => void install()}>
+          Retry
+        </button>
+        <button className="updater-x" title="Dismiss" onClick={dismiss}>
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  if (busy) {
+    return (
+      <div className="updater busy">
+        <div className="updater-row">
+          <span className="updater-spin" />
+          <span className="updater-text">{detail || "Updating…"}</span>
+        </div>
+        <div className="updater-progress">
+          <div
+            className={`updater-bar${pct < 0 ? " indet" : ""}`}
+            style={pct >= 0 ? { width: `${pct}%` } : undefined}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="updater">
       <span className="updater-dot" />
-      <span className="updater-text">{busy ? detail : `Update ${update?.version} available`}</span>
-      {!busy && (
-        <>
-          <button className="updater-btn" onClick={() => void install()}>
-            Restart &amp; update
-          </button>
-          <button className="updater-x" title="Later" onClick={dismiss}>
-            <X size={13} />
-          </button>
-        </>
-      )}
+      <span className="updater-text">Update {update?.version} available</span>
+      <button className="updater-btn" onClick={() => void install()}>
+        Restart &amp; update
+      </button>
+      <button className="updater-x" title="Later" onClick={dismiss}>
+        <X size={13} />
+      </button>
     </div>
   );
 }
