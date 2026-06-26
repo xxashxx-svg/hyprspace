@@ -2,66 +2,10 @@ import { useCallback, useRef, useState } from "react";
 import type { PointerEvent as RPointerEvent } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { useProjectConfigs, folderKey } from "../stores/projectConfig";
-import { launchTask, maybeAutostart } from "../lib/startup";
-import { useServices, serviceId } from "../stores/services";
 import { TerminalPane } from "./TerminalPane";
+import { Launchpad } from "./Launchpad";
 import { Logo } from "./Logo";
-import { pickFolders } from "../api";
-import { closeSession, claudeCmd, geminiCmd, codexCmd } from "../actions";
-import { isWindows } from "../platform";
-import { Play, ScrollText } from "lucide-react";
-
-const WSL_CMD = "wsl";
-
-// configured services for the open project, as quick Run chips (so they're discoverable on open).
-// background services show a live dot + open their logs on click instead of spawning a pane.
-function EmptyServices({ wsId, folder }: { wsId: string; folder: string }) {
-  const cfg = useProjectConfigs((s) => s.configs[folderKey(folder)]);
-  const tasks = cfg?.startup ?? [];
-  const running = useServices((s) => s.running);
-  const known = useServices((s) => s.known);
-  if (tasks.length === 0) return null;
-  const openLogs = (t: { id: string; name: string }) =>
-    useUi.getState().openServiceLogs({ id: serviceId(t.id), name: t.name || "service" });
-  return (
-    <div className="empty-services">
-      <span className="empty-services-label">Services</span>
-      <div className="empty-services-row">
-        {tasks.map((t) => {
-          if (!t.background) {
-            return (
-              <button key={t.id} className="empty-svc-chip" onClick={() => launchTask(wsId, t)}>
-                <Play size={11} />
-                {t.name || "service"}
-              </button>
-            );
-          }
-          const sid = serviceId(t.id);
-          const on = !!running[sid];
-          const hasLogs = on || !!known[sid];
-          return (
-            <div className={`empty-svc-chip bg${on ? " on" : ""}`} key={t.id}>
-              <button
-                className="empty-svc-main"
-                title={on ? "Running in background — view logs" : "Run in background"}
-                onClick={() => (on ? openLogs(t) : launchTask(wsId, t))}
-              >
-                {on ? <span className="svc-dot on" /> : <Play size={11} />}
-                {t.name || "service"}
-              </button>
-              {hasLogs && (
-                <button className="empty-svc-logs" title="View logs" onClick={() => openLogs(t)}>
-                  <ScrollText size={11} />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+import { closeSession } from "../actions";
 
 // Balanced tiling: split N panes into ~√N rows, biggest rows first, and let each row fill the full
 // width evenly — so 7 → 4+3, 10 → 4+3+3, never a lonely full-width pane (the old "3+3+1"). Rows can
@@ -102,7 +46,6 @@ export function PaneGrid() {
   const setFocused = useWorkspaces((s) => s.setFocused);
   const reorder = useWorkspaces((s) => s.reorderSessions);
   const moveToWs = useWorkspaces((s) => s.moveSessionToWorkspace);
-  const addSession = useWorkspaces((s) => s.addSession);
 
   const maximizedId = useUi((s) => s.maximizedId);
   const toggleMaximized = useUi((s) => s.toggleMaximized);
@@ -119,17 +62,6 @@ export function PaneGrid() {
   const maxedHere = !!maximizedId && !!active && active.sessions.some((s) => s.id === maximizedId);
   const activeLayout = getLayout(active?.sessions.length ?? 0);
   const showGrid = !!active && active.sessions.length > 0;
-
-  const launch = async (command?: string) => {
-    if (!active) return;
-    if (active.kind === "open") {
-      const folders = await pickFolders();
-      folders.forEach((f) => addSession(active.id, command, f));
-    } else {
-      addSession(active.id, command);
-    }
-    maybeAutostart(active.id);
-  };
 
   // ONE stable reference per handler (store actions + setState setters are stable, drag is a ref),
   // so memoized TerminalPanes don't re-render when a sibling is focused or a drag updates overId.
@@ -201,39 +133,7 @@ export function PaneGrid() {
         </div>
       )}
       {active && active.sessions.length === 0 && (
-        <div className="pane-empty">
-          <div className="empty-logo">
-            <Logo size={28} />
-          </div>
-          <div className="empty-title">{active.name}</div>
-          <div className="empty-hint">
-            {active.kind === "open"
-              ? "Launch an AI assistant or a terminal in any folder — pick one or several"
-              : "Launch a terminal or an AI assistant to start working"}
-          </div>
-          <div className="empty-actions">
-            <button className="launch-btn launch-primary" onClick={() => launch(claudeCmd())}>
-              Claude
-            </button>
-            <button className="launch-btn" onClick={() => launch(geminiCmd())}>
-              Gemini
-            </button>
-            <button className="launch-btn" onClick={() => launch(codexCmd())}>
-              Codex
-            </button>
-            {isWindows && (
-              <button className="launch-btn" onClick={() => launch(WSL_CMD)}>
-                WSL
-              </button>
-            )}
-            <button className="launch-btn" onClick={() => launch()}>
-              Terminal
-            </button>
-          </div>
-          {active.kind !== "open" && active.cwd && (
-            <EmptyServices wsId={active.id} folder={active.cwd} />
-          )}
-        </div>
+        <Launchpad wsId={active.id} name={active.name} kind={active.kind} cwd={active.cwd ?? ""} />
       )}
 
       {/* ONE grid holds every space's panes; inactive ones are display:none so their PTYs stay

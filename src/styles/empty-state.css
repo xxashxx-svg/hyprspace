@@ -34,13 +34,6 @@
   text-align: center;
   line-height: 1.5;
 }
-.empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 22px;
-}
 .empty-services {
   margin-top: 24px;
   display: flex;
@@ -122,30 +115,4 @@
 .empty-svc-logs:hover {
   color: var(--text-1);
   background: var(--surface-2);
-}
-.launch-btn {
-  padding: 9px 18px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-1);
-  color: var(--text-1);
-  border-radius: var(--radius-1);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.13s var(--ease), border-color 0.13s var(--ease);
-}
-.launch-btn:hover {
-  background: var(--surface-3);
-  border-color: var(--border-2);
-}
-/* Claude is the default AI → subtle indigo-tinted primary */
-.launch-primary {
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
-  border-color: var(--accent);
-  font-weight: 600;
-}
-.launch-primary:hover {
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
-  border-color: var(--accent-hover);
 }
