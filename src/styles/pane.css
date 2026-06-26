@@ -40,10 +40,11 @@
   overflow: hidden;
   transition: border-color 0.12s var(--ease), box-shadow 0.16s var(--ease);
 }
+/* focus = just the accent border. NO box-shadow / z-index here: promoting the focused pane into its
+   own overflow-clipped compositing layer makes WebView2 mis-composite xterm's WebGL canvas (content
+   shifts, the header appears to vanish). The plain border is the safe, original indicator. */
 .terminal-pane.focused {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 8px 24px rgba(0, 0, 0, 0.28);
-  z-index: 1;
 }
 .terminal-pane.focused .pane-header {
   background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));

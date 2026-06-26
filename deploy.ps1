@@ -41,6 +41,20 @@ if ($bump -ne 'none') {
   Set-Version $cargoPath '(?m)^version\s*=\s*"[^"]+"' ('version = "' + $new + '"')
 }
 
+# changelog: record this release's notes (written at ship time) as a new dated section, so the
+# shipped bundle carries them for the in-app "What's new". `$notes` is the agent/user-supplied text.
+$changelogPath = Join-Path $root "CHANGELOG.md"
+if ((Test-Path $changelogPath) -and $bump -ne 'none' -and -not [string]::IsNullOrWhiteSpace($notes)) {
+  $cl = Get-Content $changelogPath -Raw
+  $date = (Get-Date).ToString("yyyy-MM-dd")
+  $section = "## $new" + " — " + "$date`r`n`r`n" + $notes.Trim() + "`r`n`r`n"
+  $m = [regex]::Match($cl, '(?m)^##\s')   # insert above the most recent existing version section
+  if ($m.Success) { $cl = $cl.Substring(0, $m.Index) + $section + $cl.Substring($m.Index) }
+  else { $cl = $cl.TrimEnd() + "`r`n`r`n" + $section }
+  [System.IO.File]::WriteAllText($changelogPath, $cl)
+  Write-Host "==> Changelog: recorded $new" -ForegroundColor Cyan
+}
+
 if (-not (Test-Path "$sigDir\hyprspace.key")) { throw "signing key not found at $sigDir\hyprspace.key" }
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content "$sigDir\hyprspace.key" -Raw).Trim()
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (Get-Content "$sigDir\password.txt" -Raw).Trim()

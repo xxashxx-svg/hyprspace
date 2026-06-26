@@ -35,9 +35,15 @@ AI chat that can operate the app. Neutral, T3-Code-inspired dark UI.
    `kill_all`) or ConPTY hosts (`OpenConsole.exe`) orphan and burn CPU.
 5. **Version numbers are managed by `deploy.ps1` only.** Never hand-edit the `version` in
    `tauri.conf.json` / `package.json` / `Cargo.toml`. See [docs/VERSIONING.md](./docs/VERSIONING.md).
-6. **Don't commit/push/deploy unless explicitly asked.** Work in dev mode (HMR). The default branch
-   is `main`; branch before committing if asked to commit.
-7. **Code style:** human/casual, minimal comments (comment only tricky logic, keep it short and
+6. **Never ship unless the user explicitly asks.** Do NOT run `deploy.ps1` / publish a release on
+   your own — multiple agents may be working at once, and a surprise release is hard to undo. Same
+   for commit/push: only when asked. Otherwise work in dev mode (HMR); `main` is default, branch
+   before committing if asked.
+7. **Release notes are written at ship time, not per task.** Don't keep a running changelog while you
+   work. When the user asks to ship, look at what changed since the last release
+   (`git log <lastTag>..HEAD`) and write a few short user-facing bullets — pass them as the
+   `deploy.ps1` notes; it records them in `CHANGELOG.md` and the in-app "What's new".
+8. **Code style:** human/casual, minimal comments (comment only tricky logic, keep it short and
    lowercase-casual). Match the surrounding code.
 
 ---

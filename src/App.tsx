@@ -25,6 +25,7 @@ import { HomePage } from "./components/HomePage";
 import { LoopsPage } from "./components/LoopsPage";
 import { StartupRunner } from "./components/StartupRunner";
 import { LoopRunner } from "./components/LoopRunner";
+import { WhatsNew } from "./components/WhatsNew";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { saveState, loadState, backupState, writePty } from "./api";
@@ -268,6 +269,7 @@ export default function App() {
       <Updater />
       <StartupRunner />
       <LoopRunner />
+      <WhatsNew />
       <CommandPalette />
       {settingsOpen && <Settings />}
       <CommitDialog />

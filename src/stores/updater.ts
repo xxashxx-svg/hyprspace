@@ -39,9 +39,23 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
   },
 
   install: async () => {
-    const u = get().update;
-    if (!u) return;
-    set({ phase: "downloading", detail: "starting…" });
+    if (get().phase === "downloading") return;
+    set({ phase: "downloading", detail: "checking…" });
+    // Re-check at the moment of install so an app behind by several releases jumps straight to the
+    // newest version in ONE hop. The endpoint always serves the latest release's manifest, so the
+    // cached toast (which may name an older version if more shipped since we last checked) never
+    // forces a two-step update. Fall back to the cached update only if the re-check can't reach the net.
+    let u = get().update;
+    try {
+      u = await check(); // fresh truth: the newest Update, or null if we're already current
+    } catch {
+      /* offline re-check — keep the cached update and try it */
+    }
+    if (!u) {
+      set({ phase: "uptodate", update: null, detail: "" });
+      return;
+    }
+    set({ update: u, detail: u.version });
     try {
       let total = 0;
       let got = 0;
