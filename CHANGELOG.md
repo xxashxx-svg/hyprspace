@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.5 — 2026-06-26
+
+- Maintenance release to verify the new in-app update experience (progress bar + clear Downloading/Installing/Restarting status)
+
 ## 0.5.4 — 2026-06-26
 
 - A cleaner update flow: a progress bar and clear status (Downloading, Installing, Restarting) while updating, instead of plain text
