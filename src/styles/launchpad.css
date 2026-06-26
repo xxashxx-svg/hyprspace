@@ -1,0 +1,205 @@
+/* ---- Launchpad (the launch view shown when a space has no panes) ---- */
+.launchpad {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  overflow: auto;
+  animation: lpIn 0.22s var(--ease);
+}
+@keyframes lpIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* hero */
+.lp-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.lp-mark {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-3);
+  color: var(--accent);
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-1);
+}
+.lp-name {
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+.lp-meta {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* the app-icon dock */
+.lp-dock {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4);
+  max-width: 560px;
+}
+.lp-app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 78px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+.lp-app-ico {
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-3);
+  color: var(--text-2);
+  transition:
+    transform 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    background 0.14s var(--ease),
+    color 0.14s var(--ease);
+}
+.lp-app:hover .lp-app-ico {
+  transform: translateY(-3px);
+  background: var(--surface-3);
+  border-color: var(--border-2);
+  color: var(--text-1);
+}
+.lp-app:active .lp-app-ico {
+  transform: translateY(-1px);
+}
+.lp-app-name {
+  font-size: 12px;
+  color: var(--text-3);
+  transition: color 0.14s var(--ease);
+}
+.lp-app:hover .lp-app-name {
+  color: var(--text-1);
+}
+/* Claude = the default, indigo-tinted as primary */
+.lp-app.primary .lp-app-ico {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.lp-app.primary:hover .lp-app-ico {
+  background: color-mix(in srgb, var(--accent) 26%, var(--surface-2));
+  border-color: var(--accent-hover);
+}
+.lp-app.primary .lp-app-name {
+  color: var(--text-2);
+}
+
+/* dock line: several-agents + saved presets, under a hairline */
+.lp-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(560px, 100%);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-1);
+}
+.lp-more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 13px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.lp-more-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-1);
+  background: var(--surface-3);
+}
+.lp-more-btn > svg {
+  color: var(--accent);
+}
+.lp-more-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-1);
+  margin: 0 2px;
+}
+.lp-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.lp-preset:hover {
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.lp-preset > svg {
+  color: var(--text-3);
+}
+.lp-preset-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--surface-3);
+  border-radius: 5px;
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
+/* services sit inside the launchpad's flex flow, so drop their own top margin */
+.launchpad .empty-services {
+  margin-top: 0;
+}

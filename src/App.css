@@ -11,6 +11,7 @@
 @import "./styles/layout.css";
 @import "./styles/pane.css";
 @import "./styles/empty-state.css";
+@import "./styles/launchpad.css";
 @import "./styles/home.css";
 @import "./styles/chat.css";
 @import "./styles/pane-drag.css";

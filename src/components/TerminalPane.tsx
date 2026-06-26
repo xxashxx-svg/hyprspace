@@ -46,6 +46,15 @@ const PROVIDER_ICONS = {
   terminal: TerminalIcon,
 } as const;
 
+// friendly name for the brief "Starting …" boot indicator
+const PROVIDER_LABEL = {
+  claude: "Claude",
+  gemini: "Gemini",
+  codex: "Codex",
+  wsl: "WSL",
+  terminal: "terminal",
+} as const;
+
 // Each claude pane owns its session id (= the pane's uuid), so on relaunch it resumes its OWN
 // conversation — not just "the folder's latest", which broke open spaces with several panes in
 // one folder. We claim the id with --session-id on first launch, then --resume <id> to return.
@@ -100,6 +109,7 @@ function TerminalPaneInner({
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const [alive, setAlive] = useState(true);
+  const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const themeId = useSettings((s) => s.theme);
   const fontSize = useSettings((s) => s.fontSize);
@@ -189,6 +199,21 @@ function TerminalPaneInner({
       }
     });
 
+    // show a brief "starting…" overlay only when the shell/agent is slow to print its first byte
+    // (cold launch). warm panes output within ~250ms and never flash it.
+    let gotOutput = false;
+    const markBooted = () => {
+      if (gotOutput) return;
+      gotOutput = true;
+      clearTimeout(bootShow);
+      clearTimeout(bootMax);
+      if (!disposed) setBooting(false);
+    };
+    const bootShow = setTimeout(() => {
+      if (!gotOutput && !disposed) setBooting(true);
+    }, 250);
+    const bootMax = setTimeout(markBooted, 20000); // never leave the overlay stuck
+
     const enc = new TextEncoder();
     const dec = new TextDecoder();
     const dataDisp = term.onData((d) => {
@@ -222,12 +247,14 @@ function TerminalPaneInner({
       {
         onData: (bytes) => {
           if (disposed) return;
+          markBooted();
           term.write(bytes);
           appendOutput(sessionId, dec.decode(bytes, { stream: true }));
           useActivity.getState().markOutput(sessionId);
         },
         onControl: (c) => {
           if (!disposed && c.type === "exit") {
+            markBooted();
             setAlive(false);
             useActivity.getState().markExit(sessionId);
             term.write(`\r\n\x1b[38;5;245m[process exited: ${c.code}]\x1b[0m\r\n`);
@@ -320,6 +347,8 @@ function TerminalPaneInner({
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
       clearTimeout(tSettled);
+      clearTimeout(bootShow);
+      clearTimeout(bootMax);
       ro.disconnect();
       el.removeEventListener("wheel", onWheel);
       document.removeEventListener("visibilitychange", onVis);
@@ -501,6 +530,12 @@ function TerminalPaneInner({
         />
       )}
       <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
+      {booting && (
+        <div className="pane-boot" aria-hidden>
+          <span className="pane-boot-spin" />
+          <span className="pane-boot-text">Starting {PROVIDER_LABEL[provider] ?? "session"}…</span>
+        </div>
+      )}
       {menu && (
         <>
           <div
