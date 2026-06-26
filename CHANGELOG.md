@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.6 — 2026-06-27
+
+- New launchpad: the empty-space view is now a launch hub with app-style icons for Claude, Gemini, Codex, WSL and Terminal, a 'launch several agents' shortcut, and one-click saved presets
+- Cold-launching panes show a 'Starting…' spinner while the shell or agent boots, instead of a blank black screen
+
 ## 0.5.5 — 2026-06-26
 
 - Maintenance release to verify the new in-app update experience (progress bar + clear Downloading/Installing/Restarting status)
