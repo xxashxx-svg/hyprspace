@@ -14,6 +14,7 @@ interface UpdaterState {
   phase: UpdatePhase;
   update: Update | null;
   detail: string; // version, progress text, or error message
+  pct: number; // download progress 0–100, or -1 for indeterminate
   checkNow: () => Promise<void>;
   install: () => Promise<void>;
   dismiss: () => void;
@@ -23,6 +24,7 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
   phase: "idle",
   update: null,
   detail: "",
+  pct: -1,
 
   checkNow: async () => {
     const p = get().phase;
@@ -34,13 +36,13 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
       else set({ phase: "uptodate", update: null, detail: "" });
     } catch (e) {
       console.error("update check failed:", e);
-      set({ phase: "error", detail: "couldn't reach the update server" });
+      set({ phase: "error", detail: "Couldn't reach the update server" });
     }
   },
 
   install: async () => {
     if (get().phase === "downloading") return;
-    set({ phase: "downloading", detail: "checking…" });
+    set({ phase: "downloading", detail: "Checking for the latest version…", pct: -1 });
     // Re-check at the moment of install so an app behind by several releases jumps straight to the
     // newest version in ONE hop. The endpoint always serves the latest release's manifest, so the
     // cached toast (which may name an older version if more shipped since we last checked) never
@@ -52,26 +54,33 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
       /* offline re-check — keep the cached update and try it */
     }
     if (!u) {
-      set({ phase: "uptodate", update: null, detail: "" });
+      set({ phase: "uptodate", update: null, detail: "", pct: -1 });
       return;
     }
-    set({ update: u, detail: u.version });
+    set({ detail: `Preparing v${u.version}…`, pct: -1 });
     try {
       let total = 0;
       let got = 0;
       await u.downloadAndInstall((e) => {
-        if (e.event === "Started") total = e.data.contentLength ?? 0;
-        else if (e.event === "Progress") {
+        if (e.event === "Started") {
+          total = e.data.contentLength ?? 0;
+          set({ detail: "Downloading…", pct: total ? 0 : -1 });
+        } else if (e.event === "Progress") {
           got += e.data.chunkLength;
-          set({ detail: total ? `downloading ${Math.round((got / total) * 100)}%` : "downloading…" });
-        } else if (e.event === "Finished") set({ detail: "installing…" });
+          const p = total ? Math.round((got / total) * 100) : -1;
+          set({ detail: total ? `Downloading ${p}%` : "Downloading…", pct: p });
+        } else if (e.event === "Finished") {
+          set({ detail: "Installing…", pct: -1 });
+        }
       });
+      set({ detail: "Restarting…", pct: -1 });
       await relaunch();
     } catch (e) {
       console.error("update failed:", e);
-      set({ phase: "error", detail: "update failed — try again" });
+      set({ phase: "error", detail: "Update failed — try again", pct: -1 });
     }
   },
 
-  dismiss: () => set((s) => (s.phase === "available" ? { ...s, phase: "idle" } : s)),
+  dismiss: () =>
+    set((s) => (s.phase === "available" || s.phase === "error" ? { ...s, phase: "idle" } : s)),
 }));
