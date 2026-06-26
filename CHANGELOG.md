@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.4 — 2026-06-26
+
+- A cleaner update flow: a progress bar and clear status (Downloading, Installing, Restarting) while updating, instead of plain text
+- If an update fails, it now shows the error with a Retry button
+
 ## 0.5.3 — 2026-06-26
 
 - Fixed a glitch where the focused terminal pane could lose its header or shift its content
