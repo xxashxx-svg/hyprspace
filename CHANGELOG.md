@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.10 — 2026-06-27
+
+- Redesigned the theme picker in Settings — each theme is now a card with a live mini-preview of the app rendered in that accent, plus a short hue description
+- Keyboard shortcut hints now use the proper Mac modifier keys (Command/Shift/Option) on macOS instead of Ctrl
+
 ## 0.5.9 — 2026-06-27
 
 - The multi-agent launcher is now a full-page launchpad instead of a cramped dialog — more room to set your folder, grid size, and agent mix

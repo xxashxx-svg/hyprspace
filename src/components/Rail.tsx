@@ -6,6 +6,7 @@ import { useLoops } from "../stores/loops";
 import { useActivity } from "../stores/activity";
 import { useAuth } from "../stores/auth";
 import { relTime } from "../lib/time";
+import { kbd } from "../platform";
 import { revealPath } from "../api";
 import { FileTree, loadDir } from "./FilesPanel";
 import {
@@ -314,7 +315,7 @@ export function Rail() {
       <button className="rail-search" onClick={() => useUi.getState().setPalette(true)}>
         <Search size={15} />
         <span className="rail-search-label">Search</span>
-        <span className="rail-search-kbd">Ctrl K</span>
+        <span className="rail-search-kbd">{kbd("Ctrl K")}</span>
       </button>
       <button
         className={`rail-nav${view === "loops" ? " active" : ""}`}

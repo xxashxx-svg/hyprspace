@@ -3,6 +3,7 @@
 export interface Theme {
   id: string;
   name: string;
+  blurb?: string; // short hue descriptor shown under the name in the picker
   vars: Record<string, string>;
 }
 
@@ -30,6 +31,7 @@ export const THEMES: Theme[] = [
   {
     id: "t3",
     name: "T3",
+    blurb: "Deep indigo",
     vars: {
       ...base,
       "--accent": "oklch(0.488 0.217 264)", // T3's exact --primary (deep indigo, used sparingly)
@@ -40,6 +42,7 @@ export const THEMES: Theme[] = [
   {
     id: "emerald",
     name: "Emerald",
+    blurb: "Cool green",
     vars: {
       ...base,
       "--accent": "oklch(0.696 0.16 162)",
@@ -50,6 +53,7 @@ export const THEMES: Theme[] = [
   {
     id: "amber",
     name: "Amber",
+    blurb: "Warm gold",
     vars: {
       ...base,
       "--accent": "oklch(0.79 0.15 73)",
@@ -60,6 +64,7 @@ export const THEMES: Theme[] = [
   {
     id: "rose",
     name: "Rose",
+    blurb: "Crimson",
     vars: {
       ...base,
       "--accent": "oklch(0.65 0.22 14)",
@@ -70,6 +75,7 @@ export const THEMES: Theme[] = [
   {
     id: "mono",
     name: "Mono",
+    blurb: "Grayscale",
     vars: {
       ...base,
       "--accent": "#e6e6e6",

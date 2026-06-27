@@ -4,6 +4,7 @@ import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useAuth } from "../stores/auth";
 import { pickFolder } from "../api";
+import { kbd } from "../platform";
 import { Folder, FolderPlus, LayoutGrid, ChevronRight, Rocket } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
 
@@ -136,13 +137,13 @@ export function HomePage() {
 
         <div className="home-tips">
           <span className="home-tip">
-            <kbd>Ctrl K</kbd> Search &amp; commands
+            <kbd>{kbd("Ctrl K")}</kbd> Search &amp; commands
           </span>
           <span className="home-tip">
-            <kbd>Ctrl ⇧ T</kbd> New terminal
+            <kbd>{kbd("Ctrl ⇧ T")}</kbd> New terminal
           </span>
           <span className="home-tip">
-            <kbd>Ctrl ⇧ G</kbd> Review dock
+            <kbd>{kbd("Ctrl ⇧ G")}</kbd> Review dock
           </span>
         </div>
       </div>

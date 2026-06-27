@@ -497,32 +497,63 @@ export function Settings() {
 
             {tab === "appearance" && (
               <>
-                <Group label="Theme" pad>
+                <div className="set-section">
+                  <div className="set-label">Theme</div>
                   <div className="theme-grid">
-                    {THEMES.map((t) => (
-                      <button
-                        key={t.id}
-                        className={`theme-swatch ${t.id === theme ? "active" : ""}`}
-                        onClick={() => setTheme(t.id)}
-                        style={
-                          {
-                            "--sw-bg": t.vars["--bg-base"],
-                            "--sw-surface": t.vars["--surface-2"],
-                            "--sw-accent": t.vars["--accent"],
-                            "--sw-text": t.vars["--text-2"],
-                          } as CSSProperties
-                        }
-                      >
-                        <div className="sw-preview">
-                          <div className="sw-bar accent" />
-                          <div className="sw-bar" />
-                          <div className="sw-bar short" />
-                        </div>
-                        <span className="sw-name">{t.name}</span>
-                      </button>
-                    ))}
+                    {THEMES.map((t) => {
+                      const active = t.id === theme;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className={`theme-card ${active ? "active" : ""}`}
+                          onClick={() => setTheme(t.id)}
+                          aria-pressed={active}
+                          style={
+                            {
+                              "--sw-accent": t.vars["--accent"],
+                              "--sw-on": t.vars["--on-accent"],
+                            } as CSSProperties
+                          }
+                        >
+                          {/* tiny mockup of the app so you see the accent in context */}
+                          <div className="theme-card-frame">
+                            <div className="tcp-bar">
+                              <span className="tcp-dot" />
+                              <span className="tcp-dot" />
+                              <span className="tcp-tab" />
+                              <span className="tcp-pill" />
+                            </div>
+                            <div className="tcp-body">
+                              <div className="tcp-rail">
+                                <span className="tcp-nav on" />
+                                <span className="tcp-nav" />
+                                <span className="tcp-nav" />
+                                <span className="tcp-nav" />
+                              </div>
+                              <div className="tcp-main">
+                                <span className="tcp-line lg" />
+                                <span className="tcp-line" />
+                                <span className="tcp-line sm" />
+                                <span className="tcp-btn" />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="theme-card-meta">
+                            <span className="theme-card-dot" />
+                            <span className="theme-card-text">
+                              <span className="theme-card-name">{t.name}</span>
+                              {t.blurb && <span className="theme-card-blurb">{t.blurb}</span>}
+                            </span>
+                            <span className="theme-card-check">
+                              <Check size={12} strokeWidth={3} />
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </Group>
+                </div>
 
                 <Group label="Font">
                   <Row label="Family" desc="Used across all terminals">
