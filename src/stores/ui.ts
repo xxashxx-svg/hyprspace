@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 interface UiState {
-  view: "home" | "space" | "loops"; // home dashboard, a workspace, or the loops/automations page
+  view: "home" | "space" | "loops" | "launch"; // home dashboard, a workspace, the loops page, or the multi-agent launcher
+  launchReturn: "home" | "space" | "loops"; // where the launcher's Cancel/Esc sends you back to
   openLoopId: string | null; // the loop selected in the Loops page master-detail
   loopsTab: "runs" | "manage"; // the live runs view vs the classic config manager
   railCollapsed: boolean;
@@ -11,7 +12,6 @@ interface UiState {
   settingsOpen: boolean; // in-app settings screen
   settingsTab: string;
   newProjectOpen: boolean; // the New Project wizard
-  launchOpen: boolean; // the multi-agent "Launch workspace" wizard
   servicesFor: { folder: string; wsId: string; name: string } | null; // the Services config modal
   serviceLogsFor: { id: string; name: string } | null; // the background-service log viewer
   paletteOpen: boolean;
@@ -53,6 +53,7 @@ interface UiState {
 
 export const useUi = create<UiState>()((set) => ({
   view: "home", // land on the dashboard
+  launchReturn: "home",
   openLoopId: null,
   loopsTab: "runs",
   railCollapsed: false,
@@ -62,7 +63,6 @@ export const useUi = create<UiState>()((set) => ({
   settingsOpen: false,
   settingsTab: "appearance",
   newProjectOpen: false,
-  launchOpen: false,
   servicesFor: null,
   serviceLogsFor: null,
   paletteOpen: false,
@@ -86,8 +86,9 @@ export const useUi = create<UiState>()((set) => ({
   setSettingsTab: (t) => set({ settingsTab: t }),
   openNewProject: () => set({ newProjectOpen: true }),
   closeNewProject: () => set({ newProjectOpen: false }),
-  openLaunch: () => set({ launchOpen: true }),
-  closeLaunch: () => set({ launchOpen: false }),
+  // open the full-page launcher, remembering the page to return to on Cancel/Esc
+  openLaunch: () => set((s) => (s.view === "launch" ? {} : { view: "launch", launchReturn: s.view })),
+  closeLaunch: () => set((s) => ({ view: s.launchReturn })),
   openServices: (t) => set({ servicesFor: t }),
   closeServices: () => set({ servicesFor: null }),
   openServiceLogs: (t) => set({ serviceLogsFor: t }),

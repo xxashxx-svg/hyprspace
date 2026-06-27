@@ -4,6 +4,12 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.9 — 2026-06-27
+
+- The multi-agent launcher is now a full-page launchpad instead of a cramped dialog — more room to set your folder, grid size, and agent mix
+- New live layout preview shows exactly how your terminals will tile, with each cell marked by the agent that will run there
+- Agents now show their real brand logos and a one-line description, alongside the same quick-fill, presets, and permission controls
+
 ## 0.5.8 — 2026-06-27
 
 - Refreshed terminal look: a softer T3-style color palette, a background that blends into the app, and crisp native text

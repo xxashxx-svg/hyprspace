@@ -262,6 +262,7 @@ export default function App() {
         <Rail />
         {view === "home" && <HomePage />}
         {view === "loops" && <LoopsPage />}
+        {view === "launch" && <LaunchWorkspace />}
         {/* kept mounted (PTYs stay alive) but hidden unless we're in a space */}
         <div className="workspace-view" style={{ display: view === "space" ? "flex" : "none" }}>
           <PaneGrid />
@@ -277,7 +278,6 @@ export default function App() {
       <CommitDialog />
       <ConfirmDialog />
       <NewProjectDialog />
-      <LaunchWorkspace />
       <ServicesDialog />
       <ServiceLogs />
       {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}
