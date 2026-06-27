@@ -4,7 +4,7 @@ import { useWorkspaces } from "../stores/workspace";
 import { useLoops, newLoop } from "../stores/loops";
 import { pauseLoop } from "../lib/loops";
 import { searchOutput } from "../terminal/buffers";
-import { isWindows } from "../platform";
+import { isWindows, kbd } from "../platform";
 import { Search } from "lucide-react";
 import {
   newClaude,
@@ -206,7 +206,7 @@ export function CommandPalette() {
                     <span className="cmdk-label">{c.label}</span>
                     {c.sub && <span className="cmdk-sub">{c.sub}</span>}
                   </span>
-                  {c.hint && <span className="cmdk-hint">{c.hint}</span>}
+                  {c.hint && <span className="cmdk-hint">{kbd(c.hint)}</span>}
                 </button>
               </Fragment>
             );

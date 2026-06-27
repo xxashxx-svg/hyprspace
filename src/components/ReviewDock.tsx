@@ -8,6 +8,7 @@ import { ServicesPanel } from "./ServicesPanel";
 import { FilesPanel } from "./FilesPanel";
 import { CodeEditor } from "./CodeEditor";
 import { confirmDialog } from "../stores/confirm";
+import { kbd } from "../platform";
 import { useNotifications } from "../stores/notifications";
 import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, Server, FolderTree, FileCode } from "lucide-react";
 
@@ -289,7 +290,7 @@ export function ReviewDock() {
             Editor
           </button>
         )}
-        <button className="dock-x" title="Hide dock (Ctrl+Shift+G)" onClick={() => useUi.getState().setDock(false)}>
+        <button className="dock-x" title={`Hide dock (${kbd("Ctrl+Shift+G")})`} onClick={() => useUi.getState().setDock(false)}>
           <ChevronRight size={16} />
         </button>
       </div>

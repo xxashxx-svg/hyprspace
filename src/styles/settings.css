@@ -701,3 +701,176 @@
   gap: 8px;
   margin-top: 4px;
 }
+
+/* ---- appearance: theme gallery (each card is a tiny mockup of the app) ---- */
+.theme-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.theme-card {
+  flex: 0 0 calc(33.333% - 8px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: border-color 0.14s var(--ease), transform 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.theme-card:hover {
+  border-color: var(--border-2);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-1);
+}
+.theme-card.active {
+  border-color: var(--sw-accent);
+  box-shadow: 0 0 0 1px var(--sw-accent),
+    0 10px 24px -14px color-mix(in srgb, var(--sw-accent) 70%, transparent);
+}
+
+/* the mini window */
+.theme-card-frame {
+  height: 100px;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border-1);
+  display: flex;
+  flex-direction: column;
+}
+.tcp-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 15px;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--border-1);
+}
+.tcp-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.tcp-tab {
+  width: 22px;
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  margin-left: 4px;
+}
+.tcp-pill {
+  margin-left: auto;
+  width: 16px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--sw-accent);
+}
+.tcp-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.tcp-rail {
+  width: 24px;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--border-1);
+  padding: 7px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tcp-nav {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.tcp-nav.on {
+  background: var(--sw-accent);
+}
+.tcp-main {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 9px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tcp-line {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.13);
+  width: 100%;
+}
+.tcp-line.lg {
+  width: 64%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.24);
+}
+.tcp-line.sm {
+  width: 44%;
+}
+.tcp-btn {
+  margin-top: auto;
+  width: 36px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--sw-accent);
+}
+
+/* footer meta: accent dot + name + selected check */
+.theme-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.theme-card-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sw-accent);
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sw-accent) 16%, transparent);
+}
+.theme-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.theme-card-name {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+.theme-card.active .theme-card-name {
+  color: var(--text-1);
+}
+.theme-card-blurb {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.theme-card-check {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--sw-accent);
+  color: var(--sw-on);
+  flex: 0 0 auto;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.14s var(--ease), transform 0.14s var(--ease);
+}
+.theme-card.active .theme-card-check {
+  opacity: 1;
+  transform: scale(1);
+}
