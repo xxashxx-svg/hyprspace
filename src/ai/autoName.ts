@@ -46,7 +46,7 @@ const NOISE = [
 ];
 
 // strip startup/plugin/shell chrome so naming reflects actual work, not the banner
-function stripChrome(text: string): string {
+export function stripChrome(text: string): string {
   const out: string[] = [];
   let skip = 0;
   for (const line of text.split("\n")) {

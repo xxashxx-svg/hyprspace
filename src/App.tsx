@@ -28,6 +28,7 @@ import { LoopRunner } from "./components/LoopRunner";
 import { WhatsNew } from "./components/WhatsNew";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
+import { useSessionNamer } from "./ai/autoNameSession";
 import { saveState, loadState, backupState, writePty } from "./api";
 import "./styles/tokens.css";
 import "./App.css";
@@ -64,6 +65,7 @@ let booted = false;
 export default function App() {
   const view = useUi((s) => s.view);
   const settingsOpen = useUi((s) => s.settingsOpen);
+  useSessionNamer(); // periodically task-names agent panes via Codex (single-flight, kill-switchable)
 
   // ---- hydrate on launch, carefully: a read hiccup must never clobber saved data ----
   useEffect(() => {

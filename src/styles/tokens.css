@@ -7,7 +7,7 @@
   --surface-1: #161616; /* chrome (titlebar / sidebar) sits flat on the bg, split only by borders */
   --surface-2: #1e1e1e; /* cards, inputs, raised fills */
   --surface-3: #282828; /* dropdowns, active / pressed */
-  --bg-terminal: #121212;
+  --bg-terminal: #161616; /* = --bg-base: the terminal blends into the app surface (T3-style) */
 
   --accent: oklch(0.488 0.217 264); /* T3 `--primary` exactly — a deep indigo, used only for the
                                        one primary CTA + focus ring. everything else stays neutral. */

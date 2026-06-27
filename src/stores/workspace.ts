@@ -41,6 +41,7 @@ interface WorkspaceState {
   setActive: (id: string) => void;
   reorderWorkspaces: (fromId: string, toId: string) => void;
   addSession: (wsId: string, command?: string, cwd?: string) => void;
+  renameSession: (sessionId: string, title: string) => void;
   removeSession: (wsId: string, sessionId: string) => void;
   markStarted: (sessionId: string) => void;
   setClaudeSessionId: (sessionId: string, claudeId: string) => void;
@@ -133,6 +134,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
   addSession: (wsId, command, cwd) =>
     set((s) => {
       const id = uid();
+      const effCwd = cwd ?? s.workspaces.find((w) => w.id === wsId)?.cwd ?? "";
       let provider: Session["provider"] = "terminal";
       let title = "Terminal";
       if (command?.includes("claude")) provider = "claude";
@@ -142,11 +144,13 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         provider = "wsl";
         title = "WSL";
       }
-      // agent panes get a short friendly name (the provider icon still shows what they are) so a
-      // grid of identical agents is tellable apart; terminals/wsl keep their plain label.
+      // agent panes default to their working-folder name (folder-based), so they're tellable apart;
+      // if that folder name is already taken (e.g. several agents in one folder) fall back to a short
+      // friendly name. the Codex namer (ai/autoNameSession) upgrades it to a task name once there's work.
       if (provider === "claude" || provider === "gemini" || provider === "codex") {
         const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
-        title = pickAgentName(used);
+        const folder = effCwd.split(/[\\/]/).filter(Boolean).pop();
+        title = folder && !used.has(folder) ? folder : pickAgentName(used);
       }
 
       const workspaces = s.workspaces.map((w) => {
@@ -166,6 +170,15 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       });
       return { workspaces, focusedSessionId: id };
     }),
+
+  // set a pane's title (used by the Codex task-namer to upgrade the folder placeholder)
+  renameSession: (sessionId, title) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => ({
+        ...w,
+        sessions: w.sessions.map((ss) => (ss.id === sessionId ? { ...ss, title } : ss)),
+      })),
+    })),
 
   removeSession: (wsId, sessionId) =>
     set((s) => ({

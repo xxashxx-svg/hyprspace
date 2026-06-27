@@ -4,6 +4,14 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.8 — 2026-06-27
+
+- Refreshed terminal look: a softer T3-style color palette, a background that blends into the app, and crisp native text
+- Ctrl+scroll now zooms terminals both in and out (it only zoomed one way before)
+- Terminal panes stay evenly sized after maximizing and restoring
+- Fixed a rare blank screen on launch where the app could hang while restoring your last session
+- Agent panes are named after their folder now, with optional AI task-naming you can turn on in Settings
+
 ## 0.5.7 — 2026-06-27
 
 - The launchpad now shows each tool's real logo (Claude, Gemini, Codex, WSL) instead of generic icons
