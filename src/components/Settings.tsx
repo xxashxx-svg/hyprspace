@@ -233,6 +233,8 @@ export function Settings() {
   const setCursorBlink = useSettings((s) => s.setCursorBlink);
   const copyOnSelect = useSettings((s) => s.copyOnSelect);
   const setCopyOnSelect = useSettings((s) => s.setCopyOnSelect);
+  const autoNameAgents = useSettings((s) => s.autoNameAgents);
+  const setAutoNameAgents = useSettings((s) => s.setAutoNameAgents);
   const claudePermission = useSettings((s) => s.claudePermission);
   const setClaudePermission = useSettings((s) => s.setClaudePermission);
   const geminiYolo = useSettings((s) => s.geminiYolo);
@@ -673,6 +675,18 @@ export function Settings() {
                       className={`toggle ${copyOnSelect ? "on" : ""}`}
                       onClick={() => setCopyOnSelect(!copyOnSelect)}
                       aria-pressed={copyOnSelect}
+                    >
+                      <span className="toggle-knob" />
+                    </button>
+                  </Row>
+                  <Row
+                    label="Auto-name agents"
+                    desc="Name agent panes after their task, using Codex (your free codex login). Falls back to the folder name."
+                  >
+                    <button
+                      className={`toggle ${autoNameAgents ? "on" : ""}`}
+                      onClick={() => setAutoNameAgents(!autoNameAgents)}
+                      aria-pressed={autoNameAgents}
                     >
                       <span className="toggle-knob" />
                     </button>

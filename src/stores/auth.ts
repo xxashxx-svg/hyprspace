@@ -52,8 +52,19 @@ export const useAuth = create<AuthState>()((set, get) => ({
         set({ session, user: session?.user ?? null });
       });
     }
-    const { data } = await supabase.auth.getSession();
-    set({ session: data.session, user: data.session?.user ?? null, ready: true });
+    try {
+      // never let a slow/hung/throwing session check (a wedged storage lock, a network blip) brick
+      // the app at the blank boot screen — time it out and fall through to the sign-in form.
+      const timeout = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("session check timed out")), 8000),
+      );
+      const { data } = await Promise.race([supabase.auth.getSession(), timeout]);
+      set({ session: data.session, user: data.session?.user ?? null });
+    } catch (e) {
+      console.error("auth init failed:", e);
+    } finally {
+      set({ ready: true }); // always become ready so the gate renders instead of a blank screen
+    }
   },
 
   signInWithGoogle: async () => {

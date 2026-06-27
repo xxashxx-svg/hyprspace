@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, memo } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -16,6 +15,7 @@ import { useNotifications } from "../stores/notifications";
 import { claudeCmd } from "../actions";
 import { createPty, writePty, resizePty, killPty, claudeResumeMode, revealPath, worktreeCreate } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
+import { noteUserInput, forgetSession } from "../ai/autoNameSession";
 import { useActivity } from "../stores/activity";
 import {
   Maximize2,
@@ -165,23 +165,10 @@ function TerminalPaneInner({
     });
 
     let disposed = false;
-    // WebGL renderer with auto-recovery: if the GPU context drops (sleep/wake, driver
-    // reset) re-attach instead of falling back to the slow DOM renderer for good.
-    let webglTries = 0;
-    const loadWebgl = () => {
-      if (disposed || webglTries++ > 3) return;
-      try {
-        const addon = new WebglAddon();
-        addon.onContextLoss(() => {
-          addon.dispose();
-          setTimeout(loadWebgl, 500);
-        });
-        term.loadAddon(addon);
-      } catch {
-        /* canvas/DOM fallback */
-      }
-    };
-    loadWebgl();
+    // DOM renderer (no WebGL): real text gets the OS's native subpixel antialiasing — ClearType on
+    // Windows — so glyphs are crisp like T3 Code (full-T3 look). trade-off: the DOM renderer's
+    // fractional line-height can clip the very last row in dense grids (e.g. Codex's status line);
+    // Claude panes don't use the last row so they're unaffected.
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -217,6 +204,7 @@ function TerminalPaneInner({
     const enc = new TextEncoder();
     const dec = new TextDecoder();
     const dataDisp = term.onData((d) => {
+      noteUserInput(sessionId, d); // capture the first prompt for the auto-namer (T3-style)
       void writePty(sessionId, enc.encode(d));
     });
     // copy-on-select (opt-in) — via the Tauri clipboard so it works inside the webview
@@ -313,14 +301,17 @@ function TerminalPaneInner({
     });
     ro.observe(el);
 
-    // Ctrl+scroll zooms the font (persisted, so every pane tracks the same size)
+    // Ctrl+scroll zooms the font (persisted, so every pane tracks the same size). capture phase +
+    // stopPropagation so xterm's scrollback viewport can't eat the scroll-up (that broke zoom-in:
+    // scrolling up had history to consume, scrolling down at the bottom didn't — hence the asymmetry).
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
+      e.stopPropagation();
       const cur = useSettings.getState().fontSize;
       useSettings.getState().setFontSize(cur + (e.deltaY > 0 ? -1 : 1));
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
 
     // after sleep/resume or refocus the WebGL atlas can go stale → ghost cursor; invalidate + repaint
     const redraw = () => {
@@ -350,7 +341,7 @@ function TerminalPaneInner({
       clearTimeout(bootShow);
       clearTimeout(bootMax);
       ro.disconnect();
-      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("wheel", onWheel, { capture: true });
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", redraw);
       dataDisp.dispose();
@@ -359,6 +350,7 @@ function TerminalPaneInner({
       search.dispose();
       searchRef.current = null;
       dropOutput(sessionId);
+      forgetSession(sessionId); // drop the auto-namer's capture state for this pane
       void killPty(sessionId);
       term.dispose();
       termRef.current = null;

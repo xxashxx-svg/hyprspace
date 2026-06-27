@@ -9,6 +9,11 @@
   position: absolute;
   inset: 0;
   display: grid;
+  /* every row is an equal fraction of the height (minmax(0,…) lets a pane shrink below its content
+     so terminals can't push a row taller). without this the implicit rows are content-sized `auto`,
+     so a maximize→restore left the grid lopsided ("one side gets big") until a reorder reflowed it. */
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: stretch;
   gap: 8px;
   padding: 8px;
 }
@@ -143,6 +148,10 @@
   flex: 1;
   min-height: 0;
   padding: 6px 8px;
+  /* native subpixel antialiasing (ClearType on Windows) for crisp, full-T3 text. trade-off: fringes
+     a touch on small/dense panes — but that softness is inherent to small font sizes anyway. */
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
 }
 /* brief boot indicator while a cold-launched shell/agent prints its first output */
 .pane-boot {

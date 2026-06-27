@@ -15,6 +15,7 @@ interface SettingsState {
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
   codexMode: CodexMode;
+  autoNameAgents: boolean; // task-name agent panes via Codex (kill switch for the auto-namer)
   projectsDir: string; // base folder for new projects; "" → ~/Documents/HyprSpace
   hydrated: boolean;
   setTheme: (id: string) => void;
@@ -26,6 +27,7 @@ interface SettingsState {
   setClaudePermission: (m: ClaudePermission) => void;
   setGeminiYolo: (b: boolean) => void;
   setCodexMode: (m: CodexMode) => void;
+  setAutoNameAgents: (b: boolean) => void;
   setProjectsDir: (p: string) => void;
   hydrate: (partial: Partial<SettingsState>) => void;
   markHydrated: () => void;
@@ -43,6 +45,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   claudePermission: "acceptEdits",
   geminiYolo: false,
   codexMode: "auto",
+  autoNameAgents: false, // off by default — opt in via Settings (uses your Codex free quota)
   projectsDir: "",
   hydrated: false,
 
@@ -58,6 +61,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   setClaudePermission: (m) => set({ claudePermission: m }),
   setGeminiYolo: (b) => set({ geminiYolo: b }),
   setCodexMode: (m) => set({ codexMode: m }),
+  setAutoNameAgents: (b) => set({ autoNameAgents: b }),
   setProjectsDir: (p) => set({ projectsDir: p.trim() }),
 
   hydrate: (partial) => {

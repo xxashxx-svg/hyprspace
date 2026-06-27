@@ -11,6 +11,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_N3_d6v34fPbNPm3BVaBxNA_OjreiDNH"; // p
 
 export const supabaseReady = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
+// supabase-js serializes auth calls through the navigator LockManager; some webview origins
+// (notably the http://localhost dev origin) can wedge on it, hanging getSession() forever. In dev
+// we're a single window with no concurrency, so just run the operation directly. Prod keeps the
+// real lock (it works there) so multi-call refreshes stay serialized.
+const passthroughLock = async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> =>
+  fn();
+
 export const supabase: SupabaseClient | null = supabaseReady
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
@@ -20,6 +27,7 @@ export const supabase: SupabaseClient | null = supabaseReady
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
+        ...(import.meta.env.DEV ? { lock: passthroughLock } : {}),
       },
     })
   : null;

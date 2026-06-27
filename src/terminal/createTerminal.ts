@@ -2,34 +2,35 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useSettings } from "../stores/settings";
 
-// terminal palette: bg/fg/cursor/selection come from the active theme's CSS vars;
-// the ANSI 16 are a shared, dark-tuned set so output colors stay consistent across themes.
+// terminal palette: bg/fg/cursor/selection come from the active theme's CSS vars (so the bg blends
+// with the app surface, T3-style); the ANSI 16 are T3 Code's muted set so output looks soft and
+// cohesive instead of harsh-default.
 export function termTheme(): ITheme {
   const css = getComputedStyle(document.documentElement);
   const v = (n: string, fb: string) => css.getPropertyValue(n).trim() || fb;
-  const bg = v("--bg-terminal", "#141318");
+  const bg = v("--bg-terminal", "#161616");
   return {
     background: bg,
-    foreground: v("--term-fg", "#e7e9ee"),
-    cursor: v("--term-cursor", "#a78bfa"),
+    foreground: v("--term-fg", "rgb(237, 241, 247)"),
+    cursor: v("--term-cursor", "rgb(180, 203, 255)"),
     cursorAccent: bg,
-    selectionBackground: v("--term-selection", "rgba(139,92,246,0.30)"),
-    black: "#1a1a2e",
-    red: "#f0708b",
-    green: "#8be9a1",
-    yellow: "#f5d88e",
-    blue: "#7dc4e8",
-    magenta: "#c49cf0",
-    cyan: "#7ed3c7",
-    white: "#d4daf0",
-    brightBlack: "#4a5068",
-    brightRed: "#f5899e",
-    brightGreen: "#a3f0b5",
-    brightYellow: "#f8e5a0",
-    brightBlue: "#96d0ef",
-    brightMagenta: "#d4b4f5",
-    brightCyan: "#96e0d6",
-    brightWhite: "#eef0f8",
+    selectionBackground: v("--term-selection", "rgba(180, 203, 255, 0.25)"),
+    black: "rgb(24, 30, 38)",
+    red: "rgb(255, 122, 142)",
+    green: "rgb(134, 231, 149)",
+    yellow: "rgb(244, 205, 114)",
+    blue: "rgb(137, 190, 255)",
+    magenta: "rgb(208, 176, 255)",
+    cyan: "rgb(124, 232, 237)",
+    white: "rgb(210, 218, 230)",
+    brightBlack: "rgb(110, 120, 136)",
+    brightRed: "rgb(255, 168, 180)",
+    brightGreen: "rgb(176, 245, 186)",
+    brightYellow: "rgb(255, 224, 149)",
+    brightBlue: "rgb(174, 210, 255)",
+    brightMagenta: "rgb(229, 203, 255)",
+    brightCyan: "rgb(167, 244, 247)",
+    brightWhite: "rgb(244, 247, 252)",
   };
 }
 

@@ -217,6 +217,7 @@
   font-size: 11px;
   color: var(--text-2);
   background: var(--bg-terminal);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-1);
   padding: 7px 9px;
   max-height: 220px;

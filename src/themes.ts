@@ -12,16 +12,18 @@ const base: Record<string, string> = {
   "--surface-1": "#161616",
   "--surface-2": "#1e1e1e",
   "--surface-3": "#282828",
-  "--bg-terminal": "#121212",
+  // terminal bg = the app base so the terminal blends into the surface (T3-style) instead of being
+  // a distinct darker box. cursor/selection are T3's soft blue.
+  "--bg-terminal": "#161616",
   "--accent-dim": "rgba(255,255,255,0.07)",
   "--text-1": "#f5f5f5",
   "--text-2": "#a1a1a1",
   "--text-3": "#767676",
   "--border-1": "rgba(255,255,255,0.06)",
   "--border-2": "rgba(255,255,255,0.10)",
-  "--term-fg": "#ececec",
-  "--term-cursor": "#e6e6e6",
-  "--term-selection": "rgba(255,255,255,0.16)",
+  "--term-fg": "rgb(237, 241, 247)",
+  "--term-cursor": "rgb(180, 203, 255)",
+  "--term-selection": "rgba(180, 203, 255, 0.25)",
 };
 
 export const THEMES: Theme[] = [

@@ -13,6 +13,7 @@ type Snap = {
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
   codexMode: CodexMode;
+  autoNameAgents: boolean;
   projectsDir: string;
 };
 
@@ -28,6 +29,7 @@ function snapshot(): Snap {
     claudePermission: s.claudePermission,
     geminiYolo: s.geminiYolo,
     codexMode: s.codexMode,
+    autoNameAgents: s.autoNameAgents,
     projectsDir: s.projectsDir,
   };
 }
