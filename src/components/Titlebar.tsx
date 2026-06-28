@@ -274,6 +274,17 @@ export function Titlebar() {
     go();
   };
 
+  // macOS won't move the window via data-tauri-drag-region when titleBarStyle is Overlay (tauri #9503),
+  // so we drive the drag ourselves. Skip clicks that land on a button/menu/input so they still work.
+  const onChrome = (e: ReactMouseEvent) =>
+    !(e.target as HTMLElement).closest("button, a, input, select, textarea, [role='menuitem']");
+  const onTbDown = (e: ReactMouseEvent) => {
+    if (e.button === 0 && onChrome(e)) void win.startDragging().catch(() => {});
+  };
+  const onTbDblClick = (e: ReactMouseEvent) => {
+    if (onChrome(e)) void win.toggleMaximize().catch(() => {});
+  };
+
   const newItems: MenuItem[] = [
     { label: "Launch workspace…", icon: <Rocket size={14} />, onClick: () => useUi.getState().openLaunch() },
     { label: "Claude", icon: <Sparkles size={14} />, onClick: () => { void newClaude(); go(); } },
@@ -354,7 +365,12 @@ export function Titlebar() {
   }, [repoCwd, repoTick]);
 
   return (
-    <div className={`titlebar${isMac ? " mac" : ""}`} data-tauri-drag-region>
+    <div
+      className={`titlebar${isMac ? " mac" : ""}`}
+      data-tauri-drag-region
+      onMouseDown={isMac ? onTbDown : undefined}
+      onDoubleClick={isMac ? onTbDblClick : undefined}
+    >
       <div className="tb-left" data-tauri-drag-region>
         <button className="tb-home" title="Home" onClick={() => useUi.getState().goHome()}>
           <span className="tb-logo">

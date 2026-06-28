@@ -10,14 +10,41 @@ import {
   type ScheduleCfg,
 } from "../stores/loops";
 import { useProjectConfigs } from "../stores/projectConfig";
-import { agentStart, agentStop, runCheck, worktreeCreate, gitIsRepo, revealPath, secretHas } from "../api";
+import {
+  agentStart,
+  agentStop,
+  runCheck,
+  worktreeCreate,
+  gitIsRepo,
+  revealPath,
+  secretHas,
+  prepareHookSettings,
+  cleanupHookRun,
+  readFile,
+  createPty,
+  writePty,
+  killPty,
+} from "../api";
 
 const EXIT = "\0__agent_exit__"; // matches the sentinel agent.rs emits when a turn ends
 const NOPROGRESS_LIMIT = 3; // consecutive unchanged/empty iterations → crash-loop stop
 const UNTIL_DELAY_MS = 1200; // breather between until-done iterations
+const GOAL_IDLE_MS = 45000; // claude-hooks /goal mode: no terminal output this long ⇒ assume goal met
 
-type Ctrl = { stop: boolean; paused: boolean; timer?: ReturnType<typeof setTimeout> };
+type Ctrl = {
+  stop: boolean;
+  paused: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+  budgetTimer?: ReturnType<typeof setTimeout>; // hooks-loop wall-clock cap
+  pollTimer?: ReturnType<typeof setInterval>; // hooks-loop iteration-counter poll
+};
 const ctrls = new Map<string, Ctrl>();
+// clear any timers a controller owns (the tick timer + the hooks-loop ones)
+function clearTimers(ctrl: Ctrl) {
+  if (ctrl.timer) clearTimeout(ctrl.timer);
+  if (ctrl.budgetTimer) clearTimeout(ctrl.budgetTimer);
+  if (ctrl.pollTimer) clearInterval(ctrl.pollTimer);
+}
 
 export const isLoopActive = (id: string) => ctrls.has(id);
 
@@ -274,9 +301,11 @@ export function startLoop(id: string) {
 
   const finish = (status: LoopStatus, note?: string) => {
     ctrl.stop = true;
-    if (ctrl.timer) clearTimeout(ctrl.timer);
+    clearTimers(ctrl);
     ctrls.delete(id);
     void agentStop(loopRunId(id)).catch(() => {});
+    void killPty(loopRunId(id)).catch(() => {}); // tears down the claude-hooks PTY; no-op otherwise
+    void cleanupHookRun(loopRunId(id)).catch(() => {}); // no-op for non-hooks loops
     S().setRun(id, { status, nextRunAt: undefined, ...(note ? { lastResult: note } : {}) });
     if (note) append(`— ${note} —`);
     // isolated runs leave their edits in the worktree for the user to review + merge
@@ -351,6 +380,155 @@ export function startLoop(id: string) {
     }
   };
 
+  // "Claude (hooks)" backend: run the REAL interactive `claude` in a hidden PTY on the user's
+  // SUBSCRIPTION (no API key — the sanctioned spawn-the-CLI path the panes use, NOT `claude -p`). A
+  // Stop hook drives the loop; since interactive Claude goes idle (doesn't exit) when done, the hook
+  // writes a "done" marker we poll for, then we tear the PTY down. /goal mode uses Claude's built-in
+  // goal loop and we detect completion by idle. The hook caps iterations → it can't run forever.
+  const runHooksLoop = async () => {
+    if (ctrl.stop) return;
+    const def = S().loops[id];
+    if (!def) return finish("stopped");
+    const rid = loopRunId(id);
+    const env = useProjectConfigs.getState().getConfig(def.folder).env;
+    const claudePm = claudePerm[def.permissionMode || "acceptEdits"] ?? "acceptEdits";
+    const max = Math.max(1, def.stop.maxIterations || 10);
+
+    S().setRun(id, { status: "running", iteration: 0, lastRunAt: Date.now() });
+    append(`\n— running on your subscription (interactive Claude) —`);
+
+    // custom-conditions mode → generate the Stop-hook settings + marker files
+    let counterFile = "";
+    let doneFile = "";
+    let settingsFile = "";
+    if (!def.goalMode) {
+      const reason = `Keep working until the task is complete: ${firstLine(def.prompt) || "the objective"}.`;
+      try {
+        const files = await prepareHookSettings(rid, max, def.stop.untilCheck, def.stop.sentinel, runFolder, reason);
+        settingsFile = files.settings;
+        counterFile = files.counter;
+        doneFile = files.done;
+      } catch (e) {
+        return finish("error", `couldn't set up the hook (${e})`);
+      }
+      if (ctrl.stop) return;
+    }
+
+    let ended = false;
+    let lastOutputAt = Date.now();
+    const done = (note: string) => {
+      if (ended) return;
+      ended = true;
+      finish("done", note); // finish() kills the PTY + clears timers + cleans up
+    };
+
+    // capture terminal output for the log: each line's final rendered state (after the last \r
+    // redraw), ANSI stripped, empties + consecutive dupes dropped. terminal-style, not structured.
+    const dec = new TextDecoder();
+    let buf = "";
+    let lastLine = "";
+    // strip terminal escape sequences + stray control chars from the captured TUI output
+    const ESC = String.fromCharCode(27);
+    const BEL = String.fromCharCode(7);
+    const stripAnsi = (s: string) => {
+      let out = "";
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (c === ESC) {
+          i++;
+          if (s[i] === "[") { i++; while (i < s.length && !/[@-~]/.test(s[i])) i++; }
+          else if (s[i] === "]") { while (i < s.length && s[i] !== BEL && s[i] !== ESC) i++; }
+          continue;
+        }
+        const code = s.charCodeAt(i);
+        if (code < 32 && c !== "\t") continue;
+        out += c;
+      }
+      return out;
+    };
+    const onData = (bytes: Uint8Array) => {
+      lastOutputAt = Date.now();
+      buf += dec.decode(bytes, { stream: true });
+      const parts = buf.split("\n");
+      buf = parts.pop() ?? "";
+      for (const raw of parts) {
+        const line = stripAnsi(raw.split("\r").pop() ?? "")
+          .replace(/[─-╿▀-▟]/g, "")
+          .trimEnd();
+        if (line.trim() && line !== lastLine) {
+          lastLine = line;
+          append(line.slice(0, 300));
+        }
+      }
+    };
+
+    // spawn an interactive claude in a hidden PTY: a bare shell, then TYPE the launch command (same
+    // as the panes, so the `.cmd` shim resolves on Windows).
+    try {
+      await createPty(
+        { id: rid, cwd: runFolder, args: [], env, cols: 120, rows: 40 },
+        { onData, onControl: (c) => { if (c.type === "exit") done("the terminal closed"); } },
+      );
+    } catch (e) {
+      return finish("error", `couldn't start the terminal (${e})`);
+    }
+    if (ctrl.stop) {
+      void killPty(rid).catch(() => {});
+      return;
+    }
+
+    const enc = new TextEncoder();
+    const type = (s: string) => void writePty(rid, enc.encode(s)).catch(() => {});
+    const modelArg = def.model ? ` --model ${def.model}` : "";
+    const launch = def.goalMode
+      ? `claude --permission-mode ${claudePm}${modelArg}`
+      : `claude --permission-mode ${claudePm}${modelArg} --settings "${settingsFile}"`;
+    type(launch + "\r");
+    // give claude a moment to boot, then send the prompt (or the /goal command)
+    setTimeout(() => {
+      if (ctrl.stop || ended) return;
+      if (def.goalMode) {
+        const obj = def.prompt.replace(/\s*\r?\n\s*/g, " ").trim();
+        type(`/goal ${obj} or stop after ${max} turns\r`);
+      } else {
+        // \n inserts a soft newline in the TUI; the trailing \r submits the whole prompt
+        type(def.prompt.replace(/\r\n/g, "\n") + "\r");
+      }
+      S().setRun(id, { iteration: 1 });
+    }, 2600);
+
+    // poll: live iteration count (custom mode) + completion (done marker, or idle for /goal)
+    ctrl.pollTimer = setInterval(() => {
+      if (ended) return;
+      if (counterFile) {
+        void readFile(counterFile)
+          .then((s) => {
+            const n = parseInt((s || "").trim(), 10);
+            if (Number.isFinite(n) && n > 0) S().setRun(id, { iteration: n });
+          })
+          .catch(() => {});
+      }
+      if (doneFile) {
+        void readFile(doneFile)
+          .then((s) => {
+            if (s && s.trim()) done(s.trim());
+          })
+          .catch(() => {}); // marker absent → still going
+      } else if (Date.now() - lastOutputAt > GOAL_IDLE_MS) {
+        done("goal reached"); // /goal mode: gone quiet after working ⇒ assume met
+      }
+    }, 1500);
+
+    // engine-side wall-clock cap (the hook owns the iteration cap)
+    if (def.stop.timeBudgetMin && def.stop.timeBudgetMin > 0) {
+      ctrl.budgetTimer = setTimeout(() => {
+        if (ended) return;
+        ended = true;
+        finish("stopped", "time budget reached");
+      }, def.stop.timeBudgetMin * 60000);
+    }
+  };
+
   const kickoff = () => {
     if (ctrl.stop) return;
     // cron waits for the first scheduled fire; the others start immediately
@@ -391,7 +569,8 @@ export function startLoop(id: string) {
       }
     }
     if (ctrl.stop) return;
-    kickoff();
+    if (def0.provider === "claude-hooks") void runHooksLoop();
+    else kickoff();
   })();
 }
 
@@ -405,10 +584,12 @@ export function stopLoop(id: string) {
   const ctrl = ctrls.get(id);
   if (ctrl) {
     ctrl.stop = true;
-    if (ctrl.timer) clearTimeout(ctrl.timer);
+    clearTimers(ctrl);
     ctrls.delete(id);
   }
   void agentStop(loopRunId(id)).catch(() => {});
+  void killPty(loopRunId(id)).catch(() => {});
+  void cleanupHookRun(loopRunId(id)).catch(() => {});
   useLoops.getState().setRun(id, { status: "stopped", nextRunAt: undefined });
 }
 
