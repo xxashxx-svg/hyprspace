@@ -12,6 +12,7 @@ import { FileTree, loadDir } from "./FilesPanel";
 import {
   GripVertical,
   Folder,
+  FolderOpen,
   LayoutGrid,
   Settings as SettingsIcon,
   Plus,
@@ -21,6 +22,9 @@ import {
   ChevronRight,
   Repeat,
   Loader2,
+  Copy,
+  Server,
+  Pencil,
 } from "lucide-react";
 
 const wsAt = (x: number, y: number): string | null => {
@@ -415,62 +419,70 @@ export function Rail() {
         </button>
       </div>
 
-      {menu && (
-        <>
-          <div
-            className="ctx-backdrop"
-            onClick={() => setMenu(null)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu(null);
-            }}
-          />
-          <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
-            {workspaces.find((w) => w.id === menu.id)?.cwd && (
-              <button
-                className="ctx-item"
-                onClick={() => {
-                  const w = workspaces.find((x) => x.id === menu.id);
-                  if (w?.cwd) void revealPath(w.cwd).catch(() => {});
+      {menu &&
+        (() => {
+          const w = workspaces.find((x) => x.id === menu.id);
+          const cwd = w?.cwd ?? "";
+          return (
+            <>
+              <div
+                className="ctx-backdrop"
+                onClick={() => setMenu(null)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
                   setMenu(null);
                 }}
-              >
-                Open folder
-              </button>
-            )}
-            {workspaces.find((w) => w.id === menu.id)?.cwd && (
-              <button
-                className="ctx-item"
-                onClick={() => {
-                  const w = workspaces.find((x) => x.id === menu.id);
-                  if (w?.cwd) useUi.getState().openServices({ folder: w.cwd, wsId: w.id, name: w.name });
-                  setMenu(null);
-                }}
-              >
-                Services
-              </button>
-            )}
-            <button
-              className="ctx-item"
-              onClick={() => {
-                setEditing(menu.id);
-                setMenu(null);
-              }}
-            >
-              Rename
-            </button>
-            <button
-              className="ctx-item danger"
-              onClick={() => {
-                removeWorkspace(menu.id);
-                setMenu(null);
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        </>
-      )}
+              />
+              <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+                {cwd && (
+                  <>
+                    <button
+                      className="ctx-item"
+                      onClick={() => {
+                        void revealPath(cwd).catch(() => {});
+                        setMenu(null);
+                      }}
+                    >
+                      <FolderOpen size={14} />
+                      <span>Open folder</span>
+                    </button>
+                    <button
+                      className="ctx-item"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(cwd).catch(() => {});
+                        setMenu(null);
+                      }}
+                    >
+                      <Copy size={14} />
+                      <span>Copy path</span>
+                    </button>
+                    <div className="ctx-sep" />
+                    <button
+                      className="ctx-item"
+                      onClick={() => {
+                        if (w) useUi.getState().openServices({ folder: cwd, wsId: w.id, name: w.name });
+                        setMenu(null);
+                      }}
+                    >
+                      <Server size={14} />
+                      <span>Services</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  className="ctx-item"
+                  onClick={() => {
+                    setEditing(menu.id);
+                    setMenu(null);
+                  }}
+                >
+                  <Pencil size={14} />
+                  <span>Rename</span>
+                </button>
+              </div>
+            </>
+          );
+        })()}
     </div>
   );
 }

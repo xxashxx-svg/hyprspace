@@ -27,6 +27,11 @@ import {
   LayoutGrid,
   ExternalLink,
   Rocket,
+  ScrollText,
+  RotateCw,
+  Play,
+  Copy,
+  Square,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { NotificationPanel } from "./NotificationPanel";
@@ -110,7 +115,8 @@ function ServiceCtxMenu({ menu, onClose }: { menu: { x: number; y: number; id: s
             onClose();
           }}
         >
-          View logs
+          <ScrollText size={14} />
+          <span>View logs</span>
         </button>
         <button
           className="ctx-item"
@@ -119,7 +125,8 @@ function ServiceCtxMenu({ menu, onClose }: { menu: { x: number; y: number; id: s
             onClose();
           }}
         >
-          {isRunning ? "Restart" : "Start"}
+          {isRunning ? <RotateCw size={14} /> : <Play size={14} />}
+          <span>{isRunning ? "Restart" : "Start"}</span>
         </button>
         {cwd && (
           <button
@@ -129,7 +136,8 @@ function ServiceCtxMenu({ menu, onClose }: { menu: { x: number; y: number; id: s
               onClose();
             }}
           >
-            Open folder
+            <FolderOpen size={14} />
+            <span>Open folder</span>
           </button>
         )}
         {command && (
@@ -140,19 +148,24 @@ function ServiceCtxMenu({ menu, onClose }: { menu: { x: number; y: number; id: s
               onClose();
             }}
           >
-            Copy command
+            <Copy size={14} />
+            <span>Copy command</span>
           </button>
         )}
         {isRunning && (
-          <button
-            className="ctx-item danger"
-            onClick={() => {
-              useServices.getState().stop(menu.id);
-              onClose();
-            }}
-          >
-            Stop
-          </button>
+          <>
+            <div className="ctx-sep" />
+            <button
+              className="ctx-item danger"
+              onClick={() => {
+                useServices.getState().stop(menu.id);
+                onClose();
+              }}
+            >
+              <Square size={14} />
+              <span>Stop</span>
+            </button>
+          </>
         )}
       </div>
     </>

@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Titlebar } from "./components/Titlebar";
 import { Rail } from "./components/Rail";
@@ -73,12 +72,12 @@ export default function App() {
     booted = true;
     let cancelled = false;
     (async () => {
-      const seedHome = async (enableSaving: boolean) => {
-        if (useWorkspaces.getState().workspaces.length === 0) {
-          const home = await invoke<string>("get_home_dir").catch(() => "");
-          if (cancelled) return;
-          useWorkspaces.getState().addWorkspace("Home", home || "");
-        }
+      // we no longer seed a default "Home" workspace — the sidebar starts empty and the user adds
+      // their own projects / open spaces. drop an unused "Home" left over from an older build too.
+      type SavedWs = { id: string; name: string; kind: string; sessions: unknown[] };
+      const isSeedHome = (w: SavedWs) =>
+        w.name === "Home" && w.kind !== "open" && Array.isArray(w.sessions) && w.sessions.length === 0;
+      const finishBoot = (enableSaving: boolean) => {
         if (enableSaving) useWorkspaces.getState().markHydrated();
       };
 
@@ -87,7 +86,7 @@ export default function App() {
         raw = await loadState("workspaces");
       } catch (e) {
         console.error("workspaces load failed; running without persistence this session:", e);
-        await seedHome(false);
+        finishBoot(false);
         return;
       }
       if (cancelled) return;
@@ -95,17 +94,19 @@ export default function App() {
       if (raw != null) {
         try {
           const parsed = JSON.parse(raw);
-          if (parsed && Array.isArray(parsed.workspaces) && parsed.workspaces.length) {
-            useWorkspaces
-              .getState()
-              .hydrate(parsed.workspaces, parsed.activeId ?? parsed.workspaces[0].id);
-            return;
+          if (parsed && Array.isArray(parsed.workspaces)) {
+            const ws = parsed.workspaces.filter((w: SavedWs) => !isSeedHome(w));
+            if (ws.length) {
+              const activeId = ws.some((w: SavedWs) => w.id === parsed.activeId) ? parsed.activeId : ws[0].id;
+              useWorkspaces.getState().hydrate(ws, activeId);
+              return;
+            }
           }
         } catch {
           await backupState("workspaces").catch(() => {});
         }
       }
-      await seedHome(true);
+      finishBoot(true);
     })();
     return () => {
       cancelled = true;
