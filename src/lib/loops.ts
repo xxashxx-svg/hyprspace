@@ -10,6 +10,7 @@ import {
   type ScheduleCfg,
 } from "../stores/loops";
 import { useProjectConfigs } from "../stores/projectConfig";
+import { isWindows } from "../platform";
 import {
   agentStart,
   agentStop,
@@ -391,7 +392,6 @@ export function startLoop(id: string) {
     if (!def) return finish("stopped");
     const rid = loopRunId(id);
     const env = useProjectConfigs.getState().getConfig(def.folder).env;
-    const claudePm = claudePerm[def.permissionMode || "acceptEdits"] ?? "acceptEdits";
     const max = Math.max(1, def.stop.maxIterations || 10);
 
     S().setRun(id, { status: "running", iteration: 0, lastRunAt: Date.now() });
@@ -422,80 +422,47 @@ export function startLoop(id: string) {
       finish("done", note); // finish() kills the PTY + clears timers + cleans up
     };
 
-    // capture terminal output for the log: each line's final rendered state (after the last \r
-    // redraw), ANSI stripped, empties + consecutive dupes dropped. terminal-style, not structured.
-    const dec = new TextDecoder();
-    let buf = "";
-    let lastLine = "";
-    // strip terminal escape sequences + stray control chars from the captured TUI output
-    const ESC = String.fromCharCode(27);
-    const BEL = String.fromCharCode(7);
-    const stripAnsi = (s: string) => {
-      let out = "";
-      for (let i = 0; i < s.length; i++) {
-        const c = s[i];
-        if (c === ESC) {
-          i++;
-          if (s[i] === "[") { i++; while (i < s.length && !/[@-~]/.test(s[i])) i++; }
-          else if (s[i] === "]") { while (i < s.length && s[i] !== BEL && s[i] !== ESC) i++; }
-          continue;
-        }
-        const code = s.charCodeAt(i);
-        if (code < 32 && c !== "\t") continue;
-        out += c;
-      }
-      return out;
-    };
-    const onData = (bytes: Uint8Array) => {
+    // we deliberately DON'T pump the TUI stream into the store — the interactive redraw output is
+    // a firehose that would swamp React. just note activity (for /goal idle-detection); real
+    // progress comes from the hook's counter file. no per-chunk setState ⇒ no UI flood.
+    const onData = () => {
       lastOutputAt = Date.now();
-      buf += dec.decode(bytes, { stream: true });
-      const parts = buf.split("\n");
-      buf = parts.pop() ?? "";
-      for (const raw of parts) {
-        const line = stripAnsi(raw.split("\r").pop() ?? "")
-          .replace(/[─-╿▀-▟]/g, "")
-          .trimEnd();
-        if (line.trim() && line !== lastLine) {
-          lastLine = line;
-          append(line.slice(0, 300));
-        }
-      }
     };
 
-    // spawn an interactive claude in a hidden PTY: a bare shell, then TYPE the launch command (same
-    // as the panes, so the `.cmd` shim resolves on Windows).
+    // launch claude DIRECTLY (no shell-prompt race): on Windows it's a `.cmd` shim so go via
+    // `cmd /c claude`; elsewhere spawn `claude`. The PTY gives it a real TTY ⇒ interactive.
+    // `--dangerously-skip-permissions` makes it autonomous: skips the folder-trust dialog AND every
+    // permission pause (a loop has no human to approve), so it can self-loop unattended. autoRespond
+    // answers the TUI's terminal queries so it doesn't hang on boot (there's no xterm here).
+    const claudeArgs = ["--dangerously-skip-permissions"];
+    if (def.model) claudeArgs.push("--model", def.model);
+    if (!def.goalMode) claudeArgs.push("--settings", settingsFile);
+    const shell = isWindows ? "cmd.exe" : "claude";
+    const spawnArgs = isWindows ? ["/c", "claude", ...claudeArgs] : claudeArgs;
     try {
       await createPty(
-        { id: rid, cwd: runFolder, args: [], env, cols: 120, rows: 40 },
-        { onData, onControl: (c) => { if (c.type === "exit") done("the terminal closed"); } },
+        { id: rid, cwd: runFolder, shell, args: spawnArgs, env, cols: 120, rows: 40, autoRespond: true },
+        { onData, onControl: (c) => { if (c.type === "exit") done("the session ended"); } },
       );
     } catch (e) {
-      return finish("error", `couldn't start the terminal (${e})`);
+      return finish("error", `couldn't start Claude (${e})`);
     }
     if (ctrl.stop) {
       void killPty(rid).catch(() => {});
       return;
     }
 
+    // once claude has booted, type the prompt (or the /goal command) into its stdin
     const enc = new TextEncoder();
-    const type = (s: string) => void writePty(rid, enc.encode(s)).catch(() => {});
-    const modelArg = def.model ? ` --model ${def.model}` : "";
-    const launch = def.goalMode
-      ? `claude --permission-mode ${claudePm}${modelArg}`
-      : `claude --permission-mode ${claudePm}${modelArg} --settings "${settingsFile}"`;
-    type(launch + "\r");
-    // give claude a moment to boot, then send the prompt (or the /goal command)
     setTimeout(() => {
       if (ctrl.stop || ended) return;
-      if (def.goalMode) {
-        const obj = def.prompt.replace(/\s*\r?\n\s*/g, " ").trim();
-        type(`/goal ${obj} or stop after ${max} turns\r`);
-      } else {
-        // \n inserts a soft newline in the TUI; the trailing \r submits the whole prompt
-        type(def.prompt.replace(/\r\n/g, "\n") + "\r");
-      }
+      const body = def.goalMode
+        ? `/goal ${def.prompt.replace(/\s*\r?\n\s*/g, " ").trim()} or stop after ${max} turns`
+        : def.prompt.replace(/\r\n/g, "\n");
+      void writePty(rid, enc.encode(body + "\r")).catch(() => {});
+      append("sent the prompt to Claude — working…");
       S().setRun(id, { iteration: 1 });
-    }, 2600);
+    }, 12000); // claude's TUI needs time to boot (plugins/MCP/skills) before it accepts input
 
     // poll: live iteration count (custom mode) + completion (done marker, or idle for /goal)
     ctrl.pollTimer = setInterval(() => {

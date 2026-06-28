@@ -38,6 +38,7 @@ export async function createPty(opts: CreatePtyOpts, handlers: PtyHandlers): Pro
     cols: opts.cols,
     rows: opts.rows,
     onEvent: channel,
+    autoRespond: opts.autoRespond ?? false,
   });
 }
 
