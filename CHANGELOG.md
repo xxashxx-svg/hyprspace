@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.14 — 2026-06-29
+
+- "Claude (hooks)" loops now wait until Claude has finished booting before sending the prompt (the old fixed delay was too short on heavier Claude setups, which left the loop stuck on iteration 1), and the loop log now shows Claude's live terminal output so you can see what it's doing.
+
 ## 0.5.13 — 2026-06-28
 
 - The "Claude (hooks)" Loops backend now works end to end: it drives a real interactive Claude session on your subscription (no API key) and loops until your until-check passes, the sentinel appears, or it hits max iterations. (It was hanging on startup before — the headless terminal now answers Claude's TUI queries and skips the trust/permission prompts.)

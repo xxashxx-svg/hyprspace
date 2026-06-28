@@ -422,12 +422,18 @@ export function startLoop(id: string) {
       finish("done", note); // finish() kills the PTY + clears timers + cleans up
     };
 
-    // we deliberately DON'T pump the TUI stream into the store — the interactive redraw output is
-    // a firehose that would swamp React. just note activity (for /goal idle-detection); real
-    // progress comes from the hook's counter file. no per-chunk setState ⇒ no UI flood.
-    const onData = () => {
+    // accumulate claude's terminal output in a capped buffer. we flush a cleaned snapshot from the
+    // poll (never per-chunk) so the TUI redraw firehose can't swamp React, and we use "output went
+    // quiet" as the signal that claude finished booting and is ready for the prompt.
+    const dec = new TextDecoder();
+    let outBuf = "";
+    const onData = (bytes: Uint8Array) => {
       lastOutputAt = Date.now();
+      outBuf += dec.decode(bytes, { stream: true });
+      if (outBuf.length > 32768) outBuf = outBuf.slice(-32768);
     };
+    let promptSent = false;
+    const launchAt = Date.now();
 
     // launch claude DIRECTLY (no shell-prompt race): on Windows it's a `.cmd` shim so go via
     // `cmd /c claude`; elsewhere spawn `claude`. The PTY gives it a real TTY ⇒ interactive.
@@ -452,21 +458,62 @@ export function startLoop(id: string) {
       return;
     }
 
-    // once claude has booted, type the prompt (or the /goal command) into its stdin
+    append("starting Claude — booting its terminal (a few seconds)…");
     const enc = new TextEncoder();
-    setTimeout(() => {
-      if (ctrl.stop || ended) return;
+    const sendPrompt = () => {
+      if (promptSent || ctrl.stop || ended) return;
+      promptSent = true;
       const body = def.goalMode
         ? `/goal ${def.prompt.replace(/\s*\r?\n\s*/g, " ").trim()} or stop after ${max} turns`
         : def.prompt.replace(/\r\n/g, "\n");
       void writePty(rid, enc.encode(body + "\r")).catch(() => {});
-      append("sent the prompt to Claude — working…");
+      append("Claude is ready — sent the prompt, working…");
       S().setRun(id, { iteration: 1 });
-    }, 12000); // claude's TUI needs time to boot (plugins/MCP/skills) before it accepts input
+    };
 
-    // poll: live iteration count (custom mode) + completion (done marker, or idle for /goal)
+    // strip ANSI escapes + control/box chars from a TUI dump → readable-ish lines (char scan)
+    const ESC = String.fromCharCode(27);
+    const cleanLines = (s: string): string[] => {
+      let out = "";
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (c === ESC) {
+          i++;
+          if (s[i] === "[") {
+            i++;
+            while (i < s.length && !/[@-~]/.test(s[i])) i++;
+          } else if (s[i] === "]") {
+            while (i < s.length && s.charCodeAt(i) !== 7 && s[i] !== ESC) i++;
+          }
+          continue;
+        }
+        const code = s.charCodeAt(i);
+        if (code === 10 || code === 13) {
+          out += "\n";
+          continue;
+        }
+        if (code < 32 || code === 127 || (code >= 0x2500 && code <= 0x259f)) continue;
+        out += c;
+      }
+      return out.split("\n").map((l) => l.trim()).filter((l) => l.length > 1);
+    };
+    let lastShown = "";
+
+    // poll: readiness (send the prompt once booted), visibility, iteration count, completion
     ctrl.pollTimer = setInterval(() => {
       if (ended) return;
+      const elapsed = Date.now() - launchAt;
+      const quietFor = Date.now() - lastOutputAt;
+      // readiness: send the prompt once claude settles after booting (quiet ≥ 2.5s, min 4s); 35s hard
+      // fallback covers a TUI that keeps redrawing while idle.
+      if (!promptSent && ((elapsed > 6000 && quietFor > 3000) || elapsed > 40000)) sendPrompt();
+      // visibility: surface the latest meaningful line claude rendered (deduped, throttled to 1/poll)
+      const lines = cleanLines(outBuf);
+      const tail = lines[lines.length - 1] ?? "";
+      if (tail && tail !== lastShown) {
+        lastShown = tail;
+        append(tail.slice(0, 200));
+      }
       if (counterFile) {
         void readFile(counterFile)
           .then((s) => {
@@ -481,7 +528,7 @@ export function startLoop(id: string) {
             if (s && s.trim()) done(s.trim());
           })
           .catch(() => {}); // marker absent → still going
-      } else if (Date.now() - lastOutputAt > GOAL_IDLE_MS) {
+      } else if (promptSent && quietFor > GOAL_IDLE_MS) {
         done("goal reached"); // /goal mode: gone quiet after working ⇒ assume met
       }
     }, 1500);
