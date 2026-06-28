@@ -216,6 +216,29 @@ export function runCheck(cwd: string, command: string): Promise<number> {
   return invoke("run_check", { cwd, command });
 }
 
+// Loops "Claude (hooks)" backend: write a scoped Claude settings file (with a Stop hook that
+// enforces max-iterations / until-check / sentinel) and get its path back, for `claude --settings`.
+export function prepareHookSettings(
+  runId: string,
+  maxIterations: number,
+  untilCheck: string | undefined,
+  sentinel: string | undefined,
+  cwd: string,
+  reason: string,
+): Promise<{ settings: string; counter: string; done: string }> {
+  return invoke("prepare_hook_settings", {
+    runId,
+    maxIterations,
+    untilCheck: untilCheck || null,
+    sentinel: sentinel || null,
+    cwd,
+    reason,
+  });
+}
+export function cleanupHookRun(runId: string): Promise<void> {
+  return invoke("cleanup_hook_run", { runId });
+}
+
 // git write ops for the topbar "Commit & push" menu + the Source Control panel
 export function gitCommit(
   cwd: string,

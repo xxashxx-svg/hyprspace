@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.12 — 2026-06-28
+
+- New "Claude (hooks)" Loops backend: run a loop on your Claude subscription with no API key. It drives a real interactive Claude session via a Stop hook that keeps going until your until-check passes, the sentinel shows up, or it hits max iterations — plus an optional /goal mode that uses Claude's built-in goal loop.
+- macOS: you can now drag the title bar to move the window and double-click it to maximize (fixes a Tauri overlay-titlebar quirk).
+
 ## 0.5.11 — 2026-06-28
 
 - Right-click a project or open space in the sidebar for a context menu — rename, open its folder, copy its path, or remove it

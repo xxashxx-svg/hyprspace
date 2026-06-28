@@ -3,6 +3,7 @@ mod ai;
 mod chat;
 mod devtools;
 mod license;
+mod loophook;
 mod oauth;
 mod persist;
 mod pty;
@@ -270,6 +271,14 @@ fn backup_state(store: State<Store>, name: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Stop-hook helper: when a "Claude (hooks)" loop fires its Stop hook, Claude re-invokes THIS
+    // binary as `loop-hook <config>`. Handle it and exit before any Tauri/window setup.
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(String::as_str) == Some("loop-hook") {
+        loophook::run_loop_hook(argv.get(2).cloned());
+        return; // unreachable — run_loop_hook exits the process
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
@@ -336,7 +345,9 @@ pub fn run() {
             devtools::worktree_remove,
             devtools::worktree_list,
             ai::ai_name_space,
-            oauth::oauth_listen
+            oauth::oauth_listen,
+            loophook::prepare_hook_settings,
+            loophook::cleanup_hook_run
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

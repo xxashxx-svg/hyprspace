@@ -243,10 +243,24 @@ export function LoopsManager() {
                 <span>Backend</span>
                 <select className="set-select" value={def.provider} onChange={(e) => update(id, { provider: e.target.value as LoopDef["provider"] })}>
                   <option value="claude">Claude (API key)</option>
+                  <option value="claude-hooks">Claude (hooks · subscription)</option>
                   <option value="codex">Codex</option>
                   <option value="gemini">Gemini</option>
                 </select>
               </label>
+              {def.provider === "claude-hooks" && (
+                <label className="loop-field">
+                  <span>Stop check</span>
+                  <select
+                    className="set-select"
+                    value={def.goalMode ? "goal" : "conditions"}
+                    onChange={(e) => update(id, { goalMode: e.target.value === "goal" })}
+                  >
+                    <option value="conditions">Your conditions</option>
+                    <option value="goal">Claude /goal</option>
+                  </select>
+                </label>
+              )}
               <label className="loop-field">
                 <span>Mode</span>
                 <select className="set-select" value={def.mode} onChange={(e) => update(id, { mode: e.target.value as LoopDef["mode"] })}>
@@ -320,6 +334,16 @@ export function LoopsManager() {
                 </select>
               </label>
             </div>
+
+            {def.provider === "claude-hooks" && (
+              <div className="svc-hint loop-sub-note">
+                Runs on your subscription — no API key. One self-looping Claude session that{" "}
+                {def.goalMode
+                  ? "stops when Claude’s /goal decides the goal is met"
+                  : "keeps going until your until-check passes, the sentinel appears, or it hits max iterations"}
+                . Best with “Until done”.
+              </div>
+            )}
 
             <div className="loop-stops">
               <label className="loop-field">

@@ -29,7 +29,10 @@ export interface LoopDef {
   name: string;
   enabled: boolean;
   folder: string; // cwd the loop runs in
-  provider: "claude" | "gemini" | "codex";
+  // "claude" = headless on an Anthropic API key; "claude-hooks" = on your subscription, one
+  // self-looping `claude -p` session driven by a Stop hook (no key). gemini/codex are headless too.
+  provider: "claude" | "claude-hooks" | "gemini" | "codex";
+  goalMode?: boolean; // claude-hooks only: use Claude's built-in /goal (fuzzy) instead of our stop-condition hook
   model?: string; // model override
   prompt: string; // the instruction sent each iteration
   mode: LoopMode;
