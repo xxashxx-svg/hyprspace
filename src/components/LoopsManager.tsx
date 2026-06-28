@@ -337,11 +337,13 @@ export function LoopsManager() {
 
             {def.provider === "claude-hooks" && (
               <div className="svc-hint loop-sub-note">
-                Runs on your subscription — no API key. One self-looping Claude session that{" "}
+                Runs on your subscription — no API key. Drives a hidden, autonomous Claude session
+                (permissions are bypassed so it never pauses — turn on “Isolate edits (worktree)”
+                below). It{" "}
                 {def.goalMode
                   ? "stops when Claude’s /goal decides the goal is met"
                   : "keeps going until your until-check passes, the sentinel appears, or it hits max iterations"}
-                . Best with “Until done”.
+                . Takes ~15s to spin up; best with “Until done”.
               </div>
             )}
 

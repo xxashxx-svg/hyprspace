@@ -17,6 +17,7 @@ export interface CreatePtyOpts {
   env?: Record<string, string>;
   cols: number;
   rows: number;
+  autoRespond?: boolean; // headless mode: the PTY answers TUI terminal queries itself (no xterm)
 }
 
 export interface PtyHandlers {

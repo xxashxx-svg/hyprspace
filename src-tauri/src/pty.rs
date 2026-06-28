@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -34,10 +34,43 @@ fn send_ctrl(ch: &Channel<InvokeResponseBody>, c: &Control) {
     }
 }
 
+type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
+
 struct Session {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    writer: SharedWriter, // shared so the reader thread can answer terminal queries (headless mode)
     killer: Box<dyn ChildKiller + Send + Sync>,
+}
+
+// Headless PTY mode (no xterm): a TUI like claude's emits terminal queries on startup — cursor
+// position (`ESC[6n`), device attributes (`ESC[c` / `ESC[>c`), status (`ESC[5n`) — and HANGS waiting
+// for the reply that a real terminal emulator would send. We answer them here so it can boot. We
+// also auto-confirm the one-time folder-trust prompt as a fallback (--dangerously-skip-permissions
+// normally skips it). `trust_sent` is per-session so we only confirm once.
+fn answer_terminal_queries(chunk: &[u8], writer: &SharedWriter, trust_sent: &mut bool) {
+    let s = String::from_utf8_lossy(chunk);
+    let mut resp: Vec<u8> = Vec::new();
+    if s.contains("\x1b[6n") {
+        resp.extend_from_slice(b"\x1b[1;1R");
+    }
+    if s.contains("\x1b[5n") {
+        resp.extend_from_slice(b"\x1b[0n");
+    }
+    if s.contains("\x1b[>c") || s.contains("\x1b[>0c") {
+        resp.extend_from_slice(b"\x1b[>0;10;1c");
+    } else if s.contains("\x1b[c") || s.contains("\x1b[0c") {
+        resp.extend_from_slice(b"\x1b[?1;2c");
+    }
+    if !*trust_sent && (s.contains("trust this folder") || s.contains("Is this a project")) {
+        *trust_sent = true;
+        resp.extend_from_slice(b"\r");
+    }
+    if !resp.is_empty() {
+        if let Ok(mut w) = writer.lock() {
+            let _ = w.write_all(&resp);
+            let _ = w.flush();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -63,6 +96,7 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         on_event: Channel<InvokeResponseBody>,
+        auto_respond: bool, // headless callers (the Loops claude-hooks PTY) answer TUI queries themselves
     ) -> Result<(), String> {
         let sys = native_pty_system();
         let pair = sys
@@ -90,18 +124,23 @@ impl PtyManager {
         drop(pair.slave);
 
         let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(|e| e.to_string())?));
         let killer = child.clone_killer();
 
         // reader thread -> bounded channel (blocking = real backpressure, no byte drops) -> coalescer
         let (tx, rx) = sync_channel::<Vec<u8>>(256);
+        let resp_writer = if auto_respond { Some(writer.clone()) } else { None };
         thread::spawn(move || {
             let mut reader = reader;
             let mut buf = [0u8; READ_BUF];
+            let mut trust_sent = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break, // EOF
                     Ok(n) => {
+                        if let Some(w) = &resp_writer {
+                            answer_terminal_queries(&buf[..n], w, &mut trust_sent);
+                        }
                         if tx.send(buf[..n].to_vec()).is_err() {
                             break;
                         }
@@ -162,10 +201,15 @@ impl PtyManager {
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
-        let mut g = self.sessions();
-        let s = g.get_mut(id).ok_or("no such session")?;
-        s.writer.write_all(data).map_err(|e| e.to_string())?;
-        s.writer.flush().map_err(|e| e.to_string())
+        // clone the Arc and drop the sessions lock before writing, so a slow write never blocks
+        // other PTY ops (and the reader thread can answer queries concurrently).
+        let writer = {
+            let g = self.sessions();
+            g.get(id).ok_or("no such session")?.writer.clone()
+        };
+        let mut w = writer.lock().map_err(|_| "writer lock poisoned".to_string())?;
+        w.write_all(data).map_err(|e| e.to_string())?;
+        w.flush().map_err(|e| e.to_string())
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
@@ -179,6 +223,10 @@ impl PtyManager {
     pub fn kill(&self, id: &str) -> Result<(), String> {
         if let Some(mut s) = self.sessions().remove(id) {
             let _ = s.killer.kill();
+            // dropping the Session drops its master PTY → ClosePseudoConsole, which can BLOCK until
+            // the attached process tree detaches. kill_pty runs on the UI thread, so do the drop
+            // off-thread or a slow-to-exit child (e.g. an interactive claude) freezes the app.
+            std::thread::spawn(move || drop(s));
         }
         Ok(())
     }

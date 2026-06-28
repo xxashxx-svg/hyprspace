@@ -32,8 +32,9 @@ fn create_pty(
     cols: u16,
     rows: u16,
     on_event: Channel<InvokeResponseBody>,
+    auto_respond: bool,
 ) -> Result<(), String> {
-    state.create(id, cwd, shell, args, env, cols, rows, on_event)
+    state.create(id, cwd, shell, args, env, cols, rows, on_event, auto_respond)
 }
 
 #[tauri::command]
