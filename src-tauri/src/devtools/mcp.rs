@@ -19,6 +19,19 @@ fn claude_json_path() -> std::path::PathBuf {
     home_dir().join(".claude.json")
 }
 
+// write JSON to `path` atomically (temp file in the same dir + rename) so a crash mid-write or a
+// concurrent reader never sees a half-written ~/.claude.json.
+fn write_json_atomic(path: &Path, root: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
+    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or(".claude.json");
+    let tmp = path.with_file_name(format!("{fname}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
 #[tauri::command]
 pub async fn mcp_list() -> Vec<McpEntry> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -49,11 +62,23 @@ pub async fn mcp_set(name: String, config: Value, prev_name: Option<String>) -> 
             return Err("Server needs a name.".to_string());
         }
         let path = claude_json_path();
-        let mut root = read_json(path.clone()).unwrap_or_else(|| serde_json::json!({}));
-        if !root.is_object() {
-            root = serde_json::json!({});
-        }
-        let obj = root.as_object_mut().unwrap();
+        // Read carefully: a MISSING file is a real first run (start fresh), but an existing file we
+        // can't read or parse must NOT be clobbered — ~/.claude.json holds the user's auth + every
+        // project's history. serde is strict, so a concurrent half-write by a spawned `claude` won't
+        // parse; bailing there beats wiping the file (mcp_remove already bails the same way).
+        let mut root = match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                let v: Value = serde_json::from_str(&text)
+                    .map_err(|e| format!("~/.claude.json isn't valid JSON ({e}) — not overwriting it."))?;
+                if !v.is_object() {
+                    return Err("~/.claude.json isn't a JSON object — not overwriting it.".to_string());
+                }
+                v
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+            Err(e) => return Err(format!("Couldn't read ~/.claude.json: {e}")),
+        };
+        let obj = root.as_object_mut().unwrap(); // guaranteed an object by the checks above
         let servers = obj.entry("mcpServers").or_insert_with(|| serde_json::json!({}));
         if !servers.is_object() {
             *servers = serde_json::json!({});
@@ -65,9 +90,7 @@ pub async fn mcp_set(name: String, config: Value, prev_name: Option<String>) -> 
             }
         }
         smap.insert(name, config);
-        let text = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-        std::fs::write(&path, text).map_err(|e| e.to_string())?;
-        Ok(())
+        write_json_atomic(&path, &root)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -85,9 +108,7 @@ pub async fn mcp_remove(name: String) -> Result<(), String> {
         if let Some(smap) = root.get_mut("mcpServers").and_then(|m| m.as_object_mut()) {
             smap.remove(&name);
         }
-        let text = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-        std::fs::write(&path, text).map_err(|e| e.to_string())?;
-        Ok(())
+        write_json_atomic(&path, &root)
     })
     .await
     .map_err(|e| e.to_string())?

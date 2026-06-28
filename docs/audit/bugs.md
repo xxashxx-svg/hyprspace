@@ -35,3 +35,13 @@ Disposition: **[FIXED]** done this pass · **[DOC]** documented / lower priority
 
 ## B10 — `taskkill /T /F` by PID is best-effort, no fallback  ·  severity: LOW  ·  [DOC]
 `src-tauri/src/chat.rs`. Kills by PID without a `try_wait` first (tiny PID-reuse window) and ignores `taskkill` failure with no `child.kill()` fallback. Low likelihood. **Recommendation:** `try_wait()` before `taskkill`, fall back to `child.kill()`. Not fixed (low risk, current behavior works).
+
+---
+
+## Second pass — 2026-06-28 (B11+)
+
+## B11 — `mcp_set` could wipe the entire `~/.claude.json`  ·  severity: HIGH  ·  [FIXED]
+`src-tauri/src/devtools/mcp.rs`. `read_json` returns `None` on a missing **or** unparseable file; `mcp_set` did `unwrap_or_else(|| json!({}))` and wrote back only `{mcpServers:…}`, discarding `oauthAccount`, `projects` history, `userID`, etc. Trigger: editing an MCP server while a spawned `claude` is mid-rewrite of the file (strict serde → a partial read won't parse), or a hand-edit syntax error. Write was also non-atomic. **Fixed** — read the file directly and distinguish: missing → start fresh; exists-but-unreadable/unparseable/non-object → return an error and leave it untouched (mirrors `mcp_remove`); both `mcp_set`/`mcp_remove` now write via temp-file + atomic rename.
+
+## B12 — Restarting a background service marked the now-running service as "stopped"  ·  severity: MEDIUM  ·  [FIXED]
+`src/stores/services.ts`. `restart` re-`start`s without stopping; the frontend sets `running[id]=new` synchronously, then Rust `reap`s the old process, whose late `EXIT` arrives on its **old** channel and runs `delete running[id]` — removing the freshly-started entry (green dot off, "process exited" in logs, though the process is actually live). No generation guard tied an EXIT to the instance that produced it. **Fixed** — per-id generation token bumped on every `start`/`stop`; the on-event and spawn-failure callbacks ignore any event whose generation no longer matches, so a reaped process can't clobber its successor's state.

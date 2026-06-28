@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.11 — 2026-06-28
+
+- Right-click a project or open space in the sidebar for a context menu — rename, open its folder, copy its path, or remove it
+- The sidebar no longer starts with a default "Home" project; it begins empty so you add your own projects and spaces
+- Fixed: adding or editing an MCP server could wipe ~/.claude.json if the file was mid-write or invalid — it's now read safely and written atomically
+- Fixed: restarting a background service no longer shows it as stopped while it's actually still running
+
 ## 0.5.10 — 2026-06-27
 
 - Redesigned the theme picker in Settings — each theme is now a card with a live mini-preview of the app rendered in that accent, plus a short hue description
