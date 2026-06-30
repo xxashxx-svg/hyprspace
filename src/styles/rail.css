@@ -167,6 +167,11 @@
   background: var(--accent);
   color: var(--surface-0);
 }
+/* idle: just the loop count, neutral rather than the live accent */
+.rail-nav-badge.muted {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
 .rail.collapsed .rail-nav {
   justify-content: center;
   padding: 9px 0;
@@ -186,90 +191,50 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
   padding: 7px 8px 8px;
   border-top: 1px solid var(--border-1);
 }
-.rail-acct {
+.rail-settings {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 5px 6px;
+  padding: 8px 9px;
   border: none;
   background: transparent;
-  color: var(--text-1);
+  color: var(--text-2);
   border-radius: var(--radius-1);
   cursor: pointer;
   font: inherit;
-  text-align: left;
-}
-.rail-acct:hover {
-  background: var(--surface-2);
-}
-.rail-acct-ava {
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-.rail-acct-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-3);
-  color: var(--text-1);
-  font-size: 12px;
-  font-weight: 600;
-}
-.rail-acct-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.rail-acct-name {
   font-size: 12.5px;
-  color: var(--text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: left;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
 }
-.rail-acct-sub {
-  font-size: 10.5px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rail-foot-btn {
+.rail-settings svg {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  background: transparent;
   color: var(--text-3);
-  border-radius: var(--radius-1);
-  cursor: pointer;
 }
-.rail-foot-btn:hover {
+.rail-settings:hover {
   background: var(--surface-2);
   color: var(--text-1);
+}
+.rail-settings:hover svg {
+  color: var(--text-2);
+}
+.rail-settings-label {
+  flex: 1;
 }
 .rail.collapsed .rail-foot {
-  flex-direction: column;
-  gap: 4px;
   padding: 6px 0 8px;
 }
-.rail.collapsed .rail-acct {
+.rail.collapsed .rail-settings {
   justify-content: center;
-  padding: 4px 0;
+  padding: 9px 0;
 }
-.rail.collapsed .rail-acct-meta {
+.rail.collapsed .rail-settings-label {
   display: none;
 }
 /* expandable space → sessions hierarchy (T3-style) */

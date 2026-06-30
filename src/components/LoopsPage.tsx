@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { Repeat, Plus, Play, Square, Pause, Settings2, FolderGit2, Loader2 } from "lucide-react";
-import { useLoops, newLoop } from "../stores/loops";
+import {
+  Repeat,
+  Plus,
+  Play,
+  Square,
+  Pause,
+  Settings2,
+  FolderGit2,
+  Loader2,
+  Pencil,
+  Copy,
+  Trash2,
+} from "lucide-react";
+import { useLoops, newLoop, loopRunId } from "../stores/loops";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
 import { secretHas } from "../api";
 import { LoopRunView } from "./LoopRunView";
+import { LoopTerminal } from "./LoopTerminal";
 import { LoopsManager } from "./LoopsManager";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -28,6 +41,8 @@ export function LoopsPage() {
   const openLoopId = useUi((s) => s.openLoopId);
   const ids = Object.keys(loops);
   const [listRef] = useAutoAnimate();
+  const [loopMenu, setLoopMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [hasKey, setHasKey] = useState(true);
   useEffect(() => {
@@ -114,12 +129,40 @@ export function LoopsPage() {
               {list.map((d) => {
                 const r = runs[d.id];
                 const st = r?.status ?? "idle";
+                if (editingId === d.id) {
+                  return (
+                    <div key={d.id} className="loops-master-item editing">
+                      <span className={`loop-dot s-${st}`} />
+                      <input
+                        className="rail-rename"
+                        autoFocus
+                        defaultValue={d.name}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => {
+                          const v = e.currentTarget.value.trim();
+                          if (v) useLoops.getState().upsert({ ...d, name: v });
+                          setEditingId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.currentTarget.blur();
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                      />
+                    </div>
+                  );
+                }
                 return (
                   <button
                     key={d.id}
                     className={`loops-master-item${sel === d.id ? " active" : ""}`}
                     title={d.name || "Untitled loop"}
                     onClick={() => useUi.getState().focusLoop(d.id)}
+                    onDoubleClick={() => setEditingId(d.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLoopMenu({ x: e.clientX, y: e.clientY, id: d.id });
+                    }}
                   >
                     <span className={`loop-dot s-${st}`} />
                     <span className="loops-master-name">{d.name || "Untitled loop"}</span>
@@ -145,13 +188,15 @@ export function LoopsPage() {
                     <div className="loops-detail-actions">
                       {active ? (
                         <>
-                          <button
-                            className="svc-run"
-                            title={status === "paused" ? "Resume" : "Pause"}
-                            onClick={() => pauseLoop(sel, status !== "paused")}
-                          >
-                            <Pause size={13} />
-                          </button>
+                          {def.run !== "pane" && (
+                            <button
+                              className="svc-run"
+                              title={status === "paused" ? "Resume" : "Pause"}
+                              onClick={() => pauseLoop(sel, status !== "paused")}
+                            >
+                              <Pause size={13} />
+                            </button>
+                          )}
                           <button className="svc-stop" title="Stop" onClick={() => stopLoop(sel)}>
                             <Square size={13} />
                           </button>
@@ -179,7 +224,17 @@ export function LoopsPage() {
                       </button>
                     </div>
                   </div>
-                  <LoopRunView id={sel} />
+                  {def.run === "pane" ? (
+                    active ? (
+                      <LoopTerminal id={loopRunId(sel)} />
+                    ) : (
+                      <div className="loop-run-empty">
+                        Interactive terminal loop — press ▶ to launch the Claude session here.
+                      </div>
+                    )
+                  ) : (
+                    <LoopRunView id={sel} />
+                  )}
                 </>
               ) : (
                 <div className="loop-run-empty">Select a loop to see its activity.</div>
@@ -188,6 +243,89 @@ export function LoopsPage() {
           </div>
         )}
       </div>
+
+      {loopMenu &&
+        (() => {
+          const d = loops[loopMenu.id];
+          if (!d) return null;
+          const st = runs[loopMenu.id]?.status;
+          const isActive = st === "running" || st === "paused";
+          const close = () => setLoopMenu(null);
+          return (
+            <>
+              <div
+                className="ctx-backdrop"
+                onClick={close}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  close();
+                }}
+              />
+              <div className="ctx-menu" style={{ left: loopMenu.x, top: loopMenu.y }}>
+                {isActive ? (
+                  <button className="ctx-item" onClick={() => { stopLoop(loopMenu.id); close(); }}>
+                    <Square size={14} />
+                    <span>Stop loop</span>
+                  </button>
+                ) : (
+                  <button
+                    className="ctx-item"
+                    onClick={() => {
+                      startLoop(loopMenu.id);
+                      useUi.getState().focusLoop(loopMenu.id);
+                      close();
+                    }}
+                  >
+                    <Play size={14} />
+                    <span>Run loop</span>
+                  </button>
+                )}
+                <button
+                  className="ctx-item"
+                  onClick={() => {
+                    useUi.getState().focusLoop(loopMenu.id);
+                    useUi.getState().setLoopsTab("manage");
+                    close();
+                  }}
+                >
+                  <Settings2 size={14} />
+                  <span>Edit settings</span>
+                </button>
+                <button className="ctx-item" onClick={() => { setEditingId(loopMenu.id); close(); }}>
+                  <Pencil size={14} />
+                  <span>Rename</span>
+                </button>
+                <button
+                  className="ctx-item"
+                  onClick={() => {
+                    useLoops.getState().upsert({
+                      ...d,
+                      id: crypto.randomUUID(),
+                      name: `${d.name || "Untitled loop"} copy`,
+                      enabled: false,
+                    });
+                    close();
+                  }}
+                >
+                  <Copy size={14} />
+                  <span>Duplicate</span>
+                </button>
+                <div className="ctx-sep" />
+                <button
+                  className="ctx-item danger"
+                  onClick={() => {
+                    if (isActive) stopLoop(loopMenu.id);
+                    useLoops.getState().remove(loopMenu.id);
+                    close();
+                  }}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </>
+          );
+        })()}
     </div>
   );
 }

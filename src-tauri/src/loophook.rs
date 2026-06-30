@@ -26,6 +26,7 @@ pub struct HookFiles {
     settings: String, // pass to `claude --settings <path>`
     counter: String, // the engine polls this for the live iteration count
     done: String, // the hook writes the stop reason here when done; the engine polls it to tear down
+    output: String, // the hook writes Claude's real responses (JSON array) here; the engine shows them
 }
 
 // Build the scoped settings file (+ its sidecar config + counter) for one hook-driven run and return
@@ -45,13 +46,16 @@ pub fn prepare_hook_settings(
     let config = dir.join("config.json");
     let settings = dir.join("settings.json");
     let done = dir.join("done");
+    let output = dir.join("output.json");
 
     let _ = fs::write(&counter, "0"); // fresh count for this run
     let _ = fs::remove_file(&done); // no stale "done" from a prior run
+    let _ = fs::write(&output, "[]"); // fresh transcript snapshot
 
     let cfg = json!({
         "counter": counter.to_string_lossy(),
         "done": done.to_string_lossy(),
+        "output": output.to_string_lossy(),
         "max": max_iterations,
         "check": until_check,
         "sentinel": sentinel,
@@ -77,13 +81,108 @@ pub fn prepare_hook_settings(
         settings: settings.to_string_lossy().to_string(),
         counter: counter.to_string_lossy().to_string(),
         done: done.to_string_lossy().to_string(),
+        output: output.to_string_lossy().to_string(),
     })
+}
+
+// Pull Claude's real responses out of a transcript JSONL, in order. Each line is one JSON object;
+// assistant turns have message.role == "assistant" and a content[] of typed blocks — we keep the
+// "text" blocks (the actual answer) and skip thinking/tool_use. Tolerant: bad lines are skipped.
+fn extract_assistant_texts(transcript_path: &str) -> Vec<String> {
+    let Ok(text) = fs::read_to_string(transcript_path) else {
+        return vec![];
+    };
+    let mut out = vec![];
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let Some(msg) = v.get("message") else { continue };
+        if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+            continue;
+        }
+        let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
+            continue;
+        };
+        let mut buf = String::new();
+        for b in blocks {
+            if b.get("type").and_then(|t| t.as_str()) == Some("text") {
+                if let Some(tx) = b.get("text").and_then(|t| t.as_str()) {
+                    if !buf.is_empty() {
+                        buf.push('\n');
+                    }
+                    buf.push_str(tx);
+                }
+            }
+        }
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
 }
 
 // best-effort cleanup of a run's temp files when the loop stops
 #[tauri::command]
 pub fn cleanup_hook_run(run_id: String) {
     let _ = fs::remove_dir_all(loops_tmp_dir(&run_id));
+}
+
+#[derive(Serialize)]
+pub struct NotifyFiles {
+    settings: String, // pass to `claude --settings <path>`
+    marker: String, // the hook appends a line per notification; the engine polls this to ping the user
+}
+
+// Build a settings file with a Notification hook for an INTERACTIVE-terminal loop. Claude fires the
+// Notification hook when it needs the user (a permission request, or input idle), so we re-invoke this
+// binary as `loop-notify <marker>` to record the message; the loop engine polls the marker and raises
+// a HyprSpace notification so the user knows to go answer the terminal.
+#[tauri::command]
+pub fn prepare_notify_settings(run_id: String) -> Result<NotifyFiles, String> {
+    let dir = loops_tmp_dir(&run_id);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let settings = dir.join("notify-settings.json");
+    let marker = dir.join("notify");
+    let _ = fs::remove_file(&marker); // no stale notifications from a prior run
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let hook_cmd = format!(
+        "\"{}\" loop-notify \"{}\"",
+        exe.to_string_lossy(),
+        marker.to_string_lossy()
+    );
+    let stg = json!({
+        "hooks": { "Notification": [ { "hooks": [ { "type": "command", "command": hook_cmd } ] } ] }
+    });
+    fs::write(&settings, serde_json::to_string_pretty(&stg).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+
+    Ok(NotifyFiles {
+        settings: settings.to_string_lossy().to_string(),
+        marker: marker.to_string_lossy().to_string(),
+    })
+}
+
+// Notification-hook entry point (binary invoked as `loop-notify <marker>`). Reads the hook's stdin
+// JSON for the `message` and appends it as a line to the marker file the engine polls.
+pub fn run_loop_notify(marker_path: Option<String>) {
+    if let Some(marker) = marker_path {
+        let mut input = String::new();
+        let _ = std::io::stdin().read_to_string(&mut input);
+        let v: Value = serde_json::from_str(&input).unwrap_or_else(|_| json!({}));
+        let msg = v
+            .get("message")
+            .and_then(|m| m.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("Claude needs your input");
+        use std::io::Write as _;
+        if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&marker) {
+            let _ = writeln!(f, "{}", msg.replace(['\n', '\r'], " "));
+        }
+    }
+    std::process::exit(0);
 }
 
 fn run_shell(cmd: &str, cwd: &str) -> i32 {
@@ -134,6 +233,13 @@ fn decide(config_path: Option<String>) -> i32 {
     let _ = std::io::stdin().read_to_string(&mut input);
     let stdin_json: Value = serde_json::from_str(&input).unwrap_or_else(|_| json!({}));
     let transcript = stdin_json.get("transcript_path").and_then(|v| v.as_str());
+
+    // snapshot Claude's real responses for the engine (this is what the Runs tab shows). Do it before
+    // the max-iteration return so the final turn's answer is captured too.
+    if let (Some(tp), Some(out)) = (transcript, cfg.get("output").and_then(|v| v.as_str())) {
+        let facts = extract_assistant_texts(tp);
+        let _ = fs::write(out, serde_json::to_string(&facts).unwrap_or_else(|_| "[]".into()));
+    }
 
     // hard cap: bump the counter, stop once we hit max iterations
     let counter = cfg.get("counter").and_then(|v| v.as_str()).unwrap_or("");

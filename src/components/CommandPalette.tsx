@@ -10,6 +10,7 @@ import {
   newClaude,
   newGemini,
   newCodex,
+  newOpencode,
   newWsl,
   newTerminal,
   newClaudeInWorktree,
@@ -46,6 +47,7 @@ export function CommandPalette() {
       { id: "claude", label: "New Claude session", run: () => void newClaude() },
       { id: "gemini", label: "New Gemini session", run: () => void newGemini() },
       { id: "codex", label: "New Codex session", run: () => void newCodex() },
+      { id: "opencode", label: "New OpenCode session", run: () => void newOpencode() },
       ...(isWindows
         ? [{ id: "wsl", label: "New WSL (Linux) session", run: () => void newWsl() }]
         : []),

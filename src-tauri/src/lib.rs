@@ -279,6 +279,10 @@ pub fn run() {
         loophook::run_loop_hook(argv.get(2).cloned());
         return; // unreachable — run_loop_hook exits the process
     }
+    if argv.get(1).map(String::as_str) == Some("loop-notify") {
+        loophook::run_loop_notify(argv.get(2).cloned());
+        return; // unreachable — run_loop_notify exits the process
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -325,8 +329,10 @@ pub fn run() {
             devtools::git_commit,
             devtools::git_push,
             devtools::git_create_pr,
+            devtools::git_pr_defaults,
             devtools::git_is_repo,
             devtools::git_init,
+            devtools::git_init_repo,
             devtools::git_branch_info,
             devtools::git_file_op,
             devtools::create_project_dir,
@@ -348,7 +354,8 @@ pub fn run() {
             ai::ai_name_space,
             oauth::oauth_listen,
             loophook::prepare_hook_settings,
-            loophook::cleanup_hook_run
+            loophook::cleanup_hook_run,
+            loophook::prepare_notify_settings
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

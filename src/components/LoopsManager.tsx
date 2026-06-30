@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useLoops, newLoop, type LoopDef, type LoopStop } from "../stores/loops";
+import { useUi } from "../stores/ui";
 import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
 import { LOOP_TEMPLATES, type LoopTemplate } from "../lib/loopTemplates";
 import { useWorkspaces } from "../stores/workspace";
@@ -22,7 +23,25 @@ import {
   RefreshCw,
   BookText,
   ScanEye,
+  ChevronRight,
 } from "lucide-react";
+
+// compact labels for the collapsed-card summary line
+const PROVIDER_SHORT: Record<string, string> = {
+  claude: "Claude (API key)",
+  "claude-sub": "Claude (sub)",
+  "claude-hooks": "Claude (sub)",
+  codex: "Codex",
+  gemini: "Gemini",
+  opencode: "OpenCode",
+};
+const RUN_LABEL: Record<string, string> = { headless: "Headless", pane: "Interactive" };
+const MODE_LABEL: Record<string, string> = {
+  "until-done": "Until done",
+  interval: "Interval",
+  cron: "Schedule",
+  manual: "Manual",
+};
 
 // template icon key → element (size is constant, so a lookup map is simplest)
 const TPL_ICON: Record<string, ReactNode> = {
@@ -59,6 +78,12 @@ export function LoopsManager() {
   const ids = Object.keys(loops);
   const [logsFor, setLogsFor] = useState<string | null>(null);
   const [listRef] = useAutoAnimate(); // smooth add/remove of loop cards
+  // one expanded card at a time keeps the list scannable; open the loop you came here to edit
+  const focused = useUi((s) => s.openLoopId);
+  const [openId, setOpenId] = useState<string | null>(() => useUi.getState().openLoopId);
+  useEffect(() => {
+    if (focused && useLoops.getState().loops[focused]) setOpenId(focused);
+  }, [focused]);
 
   // Anthropic API key lives in the OS keychain; we only ever know whether it's set, never its value.
   const [hasKey, setHasKey] = useState(false);
@@ -90,9 +115,12 @@ export function LoopsManager() {
     const def = newLoop(activeCwd || "");
     def.name = "New loop";
     useLoops.getState().upsert(def);
+    setOpenId(def.id); // expand the fresh loop so it's ready to fill in
   };
   const addTemplate = (t: LoopTemplate) => {
-    useLoops.getState().upsert(t.build(activeCwd || ""));
+    const d = t.build(activeCwd || "");
+    useLoops.getState().upsert(d);
+    setOpenId(d.id);
   };
   const update = (id: string, patch: Partial<LoopDef>) => {
     const def = useLoops.getState().loops[id];
@@ -184,14 +212,28 @@ export function LoopsManager() {
         const active = status === "running" || status === "paused";
         return (
           <div className={`loop-card${active ? " on" : ""}`} key={id}>
-            <div className="loop-top">
+            <div className="loop-card-head" onClick={() => setOpenId(openId === id ? null : id)}>
+              <span className="loop-card-twist" aria-hidden>
+                <ChevronRight size={14} />
+              </span>
               <span className={`loop-dot s-${status}`} />
               <input
-                className="svc-in loop-name"
+                className="loop-name-in"
                 placeholder="Loop name"
                 value={def.name}
+                onClick={(e) => e.stopPropagation()}
                 onChange={(e) => update(id, { name: e.target.value })}
               />
+              {openId !== id && (
+                <span className="loop-card-summary">
+                  {PROVIDER_SHORT[def.provider] ?? def.provider} · {RUN_LABEL[def.run] ?? def.run} ·{" "}
+                  {MODE_LABEL[def.mode] ?? def.mode}
+                </span>
+              )}
+              <span className={`loop-status-badge s-${status} loop-head-badge`}>
+                {STATUS_LABEL[status] ?? status}
+              </span>
+              <span className="loop-card-actions" onClick={(e) => e.stopPropagation()}>
               {active ? (
                 <>
                   <button className="svc-stop" title="Stop" onClick={() => stopLoop(id)}>
@@ -208,8 +250,8 @@ export function LoopsManager() {
               ) : (
                 <button
                   className="svc-run"
-                  title={def.provider === "claude" && !hasKey ? "Add an Anthropic API key first" : "Run"}
-                  disabled={!def.prompt.trim() || !def.folder || (def.provider === "claude" && !hasKey)}
+                  title={def.provider === "claude" && def.run !== "pane" && !hasKey ? "Add an Anthropic API key first" : "Run"}
+                  disabled={!def.prompt.trim() || !def.folder || (def.provider === "claude" && def.run !== "pane" && !hasKey)}
                   onClick={() => startLoop(id)}
                 >
                   <Play size={13} />
@@ -228,8 +270,12 @@ export function LoopsManager() {
               >
                 <Trash2 size={13} />
               </button>
+              </span>
             </div>
 
+            {openId === id && (
+            <div className="loop-card-body">
+            <label className="loop-section-label">Task</label>
             <textarea
               className="svc-in loop-prompt"
               placeholder="What should the agent do each iteration?"
@@ -238,29 +284,50 @@ export function LoopsManager() {
               onChange={(e) => update(id, { prompt: e.target.value })}
             />
 
+            {active && (
+              <div className="loop-live-hint">
+                <RefreshCw size={12} />
+                <span>
+                  Running — edits apply on the <strong>next iteration</strong>. Backend, run mode and
+                  folder are locked until you stop it.
+                </span>
+              </div>
+            )}
+
+            <div className="loop-section">
+            <div className="loop-section-head">How it runs</div>
             <div className="loop-grid">
               <label className="loop-field">
                 <span>Backend</span>
-                <select className="set-select" value={def.provider} onChange={(e) => update(id, { provider: e.target.value as LoopDef["provider"] })}>
+                <select
+                  className="set-select"
+                  value={def.provider}
+                  disabled={active}
+                  title={active ? "Stop the loop to change its backend" : undefined}
+                  onChange={(e) => update(id, { provider: e.target.value as LoopDef["provider"] })}
+                >
                   <option value="claude">Claude (API key)</option>
-                  <option value="claude-hooks">Claude (hooks · subscription)</option>
+                  <option value="claude-sub">Claude (subscription)</option>
                   <option value="codex">Codex</option>
                   <option value="gemini">Gemini</option>
+                  <option value="opencode">OpenCode</option>
                 </select>
               </label>
-              {def.provider === "claude-hooks" && (
-                <label className="loop-field">
-                  <span>Stop check</span>
-                  <select
-                    className="set-select"
-                    value={def.goalMode ? "goal" : "conditions"}
-                    onChange={(e) => update(id, { goalMode: e.target.value === "goal" })}
-                  >
-                    <option value="conditions">Your conditions</option>
-                    <option value="goal">Claude /goal</option>
-                  </select>
-                </label>
-              )}
+              <label className="loop-field">
+                <span>Run</span>
+                <select
+                  className="set-select"
+                  value={def.run}
+                  disabled={active}
+                  title={active ? "Stop the loop to change how it runs" : undefined}
+                  onChange={(e) => update(id, { run: e.target.value as LoopDef["run"] })}
+                >
+                  <option value="headless">Headless</option>
+                  {(def.provider === "claude" || def.provider === "claude-sub") && (
+                    <option value="pane">Interactive terminal</option>
+                  )}
+                </select>
+              </label>
               <label className="loop-field">
                 <span>Mode</span>
                 <select className="set-select" value={def.mode} onChange={(e) => update(id, { mode: e.target.value as LoopDef["mode"] })}>
@@ -335,18 +402,26 @@ export function LoopsManager() {
               </label>
             </div>
 
-            {def.provider === "claude-hooks" && (
+            {def.run === "pane" ? (
               <div className="svc-hint loop-sub-note">
-                Runs on your subscription — no API key. Drives a hidden, autonomous Claude session
-                (permissions are bypassed so it never pauses — turn on “Isolate edits (worktree)”
-                below). It{" "}
-                {def.goalMode
-                  ? "stops when Claude’s /goal decides the goal is met"
-                  : "keeps going until your until-check passes, the sentinel appears, or it hits max iterations"}
-                . Takes ~15s to spin up; best with “Until done”.
+                Launches a real Claude session in a terminal here on the Runs tab, on your
+                subscription. It runs <code>/goal</code> so it works until the goal is met (or it hits
+                max iterations) — and because it's a live session, it can ask you questions or for
+                approval, which you answer <strong>right in the terminal</strong>. HyprSpace notifies
+                you whenever it needs your input.
               </div>
-            )}
+            ) : def.provider === "claude-sub" ? (
+              <div className="svc-hint loop-sub-note">
+                Runs headless <code>claude -p</code> on your logged-in subscription — no API key, the
+                same CLI the terminal panes use. Each iteration is one turn; it keeps going until your
+                until-check passes, the sentinel appears, or it hits max iterations. Turn on “Isolate
+                edits (worktree)” below so its changes land in a reviewable branch.
+              </div>
+            ) : null}
+            </div>
 
+            <div className="loop-section">
+            <div className="loop-section-head">When it stops</div>
             <div className="loop-stops">
               <label className="loop-field">
                 <span>Max iterations</span>
@@ -405,6 +480,12 @@ export function LoopsManager() {
                 <input type="checkbox" checked={def.stop.noProgress} onChange={(e) => updateStop(id, { noProgress: e.target.checked })} />
                 Stop if it stalls
               </label>
+            </div>
+            </div>
+
+            <div className="loop-section">
+            <div className="loop-section-head">Options</div>
+            <div className="loop-flags">
               <label className="svc-auto">
                 <input type="checkbox" checked={def.worktree} onChange={(e) => update(id, { worktree: e.target.checked })} />
                 Isolate edits (worktree)
@@ -415,10 +496,16 @@ export function LoopsManager() {
               </label>
             </div>
 
-            <button className="loop-folder" onClick={() => void browseFolder(id)} title={def.folder || "Pick a folder"}>
+            <button
+              className="loop-folder"
+              disabled={active}
+              onClick={() => void browseFolder(id)}
+              title={active ? "Stop the loop to change its folder" : def.folder || "Pick a folder"}
+            >
               <FolderOpen size={13} />
               <span>{def.folder || "Pick a folder…"}</span>
             </button>
+            </div>
 
             <div className="loop-status">
               <span className={`loop-status-badge s-${status}`}>{STATUS_LABEL[status] ?? status}</span>
@@ -449,6 +536,8 @@ export function LoopsManager() {
                   ))
                 )}
               </div>
+            )}
+            </div>
             )}
           </div>
         );

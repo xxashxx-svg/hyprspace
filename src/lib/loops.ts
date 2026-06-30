@@ -10,6 +10,7 @@ import {
   type ScheduleCfg,
 } from "../stores/loops";
 import { useProjectConfigs } from "../stores/projectConfig";
+import { useNotifications } from "../stores/notifications";
 import { isWindows } from "../platform";
 import {
   agentStart,
@@ -19,31 +20,25 @@ import {
   gitIsRepo,
   revealPath,
   secretHas,
-  prepareHookSettings,
-  cleanupHookRun,
+  prepareNotifySettings,
   readFile,
-  createPty,
-  writePty,
-  killPty,
 } from "../api";
+import { startLoopTerm, stopLoopTerm } from "../terminal/loopTerm";
 
 const EXIT = "\0__agent_exit__"; // matches the sentinel agent.rs emits when a turn ends
 const NOPROGRESS_LIMIT = 3; // consecutive unchanged/empty iterations → crash-loop stop
 const UNTIL_DELAY_MS = 1200; // breather between until-done iterations
-const GOAL_IDLE_MS = 45000; // claude-hooks /goal mode: no terminal output this long ⇒ assume goal met
 
 type Ctrl = {
   stop: boolean;
   paused: boolean;
   timer?: ReturnType<typeof setTimeout>;
-  budgetTimer?: ReturnType<typeof setTimeout>; // hooks-loop wall-clock cap
-  pollTimer?: ReturnType<typeof setInterval>; // hooks-loop iteration-counter poll
+  pollTimer?: ReturnType<typeof setInterval>; // interactive-loop notify-marker poll
 };
 const ctrls = new Map<string, Ctrl>();
-// clear any timers a controller owns (the tick timer + the hooks-loop ones)
+// clear the controller's timers (tick + the interactive-loop poll)
 function clearTimers(ctrl: Ctrl) {
   if (ctrl.timer) clearTimeout(ctrl.timer);
-  if (ctrl.budgetTimer) clearTimeout(ctrl.budgetTimer);
   if (ctrl.pollTimer) clearInterval(ctrl.pollTimer);
 }
 
@@ -71,11 +66,17 @@ const geminiApproval: Record<string, string> = {
 // the provider argv for one iteration. The prompt always arrives on stdin (see agent.rs), so argv
 // only flips the CLI into headless mode + sets model/permissions. `cont` = continue the prior
 // session (only on iterations after the first, when session mode is "continue").
+// both Claude backends are headless `claude -p`; they differ only in auth (see secretsFor):
+// "claude" → an Anthropic API key, "claude-sub" → the logged-in subscription.
+function isClaudeStream(p: string): boolean {
+  return p === "claude" || p === "claude-sub" || p === "claude-hooks";
+}
+
 function buildArgs(def: LoopDef, cont: boolean): string[] {
   const pm = def.permissionMode || "acceptEdits";
-  if (def.provider === "claude") {
-    // runs on the API key injected via secretsFor() — never the subscription.
-    // stream-json (requires --verbose) emits one event per step so the log shows live progress.
+  if (isClaudeStream(def.provider)) {
+    // headless `claude -p`. stream-json (requires --verbose) emits one event per step so the Runs
+    // tab shows live structured progress. NO --bare: that flag disables the subscription OAuth login.
     const a = ["claude", "-p", "--output-format", "stream-json", "--verbose"];
     if (def.model) a.push("--model", def.model);
     a.push("--permission-mode", claudePerm[pm] ?? "acceptEdits");
@@ -93,6 +94,15 @@ function buildArgs(def: LoopDef, cont: boolean): string[] {
     a.push("--skip-git-repo-check");
     return a;
   }
+  if (def.provider === "opencode") {
+    // opencode headless: `run` reads the prompt on stdin (agent.rs feeds it). uses opencode's own
+    // configured provider/model + auth; -m sets a "provider/model"; --continue keeps one session.
+    const a = ["opencode", "run"];
+    if (def.model) a.push("-m", def.model);
+    if (pm === "bypass") a.push("--dangerously-skip-permissions");
+    if (cont) a.push("--continue");
+    return a;
+  }
   // gemini — `-p` flips to headless; empty value so only the stdin prompt counts. best-effort.
   const a = ["gemini"];
   if (def.model) a.push("-m", def.model);
@@ -101,8 +111,9 @@ function buildArgs(def: LoopDef, cont: boolean): string[] {
   return a;
 }
 
-// keychain secrets injected as env for this backend. Claude loops run on your Anthropic API key
-// (never the subscription token); Codex/Gemini use their own CLI login, so no key is injected.
+// keychain secrets injected as env for this backend. Only "claude" (the API-key backend) injects a
+// key; "claude-sub" runs on the logged-in subscription and Codex/Gemini use their own CLI login, so
+// none of them get a key — `claude -p` then authenticates exactly like the terminal panes do.
 function secretsFor(def: LoopDef): Record<string, string> {
   return def.provider === "claude" ? { ANTHROPIC_API_KEY: "anthropic" } : {};
 }
@@ -268,8 +279,8 @@ function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line
         finish();
         return;
       }
-      // claude streams JSON events → structured transcript; other backends are plain text
-      if (def.provider === "claude") {
+      // both claude backends stream JSON events → structured transcript; others are plain text
+      if (isClaudeStream(def.provider)) {
         handleClaudeLine(loopId, iter, line, toolMap, (r, t, c) => {
           result = r;
           tokens = t;
@@ -305,8 +316,7 @@ export function startLoop(id: string) {
     clearTimers(ctrl);
     ctrls.delete(id);
     void agentStop(loopRunId(id)).catch(() => {});
-    void killPty(loopRunId(id)).catch(() => {}); // tears down the claude-hooks PTY; no-op otherwise
-    void cleanupHookRun(loopRunId(id)).catch(() => {}); // no-op for non-hooks loops
+    stopLoopTerm(loopRunId(id)); // tears down an interactive-loop PTY; no-op for headless loops
     S().setRun(id, { status, nextRunAt: undefined, ...(note ? { lastResult: note } : {}) });
     if (note) append(`— ${note} —`);
     // isolated runs leave their edits in the worktree for the user to review + merge
@@ -381,12 +391,11 @@ export function startLoop(id: string) {
     }
   };
 
-  // "Claude (hooks)" backend: run the REAL interactive `claude` in a hidden PTY on the user's
-  // SUBSCRIPTION (no API key — the sanctioned spawn-the-CLI path the panes use, NOT `claude -p`). A
-  // Stop hook drives the loop; since interactive Claude goes idle (doesn't exit) when done, the hook
-  // writes a "done" marker we poll for, then we tear the PTY down. /goal mode uses Claude's built-in
-  // goal loop and we detect completion by idle. The hook caps iterations → it can't run forever.
-  const runHooksLoop = async () => {
+  // "Interactive terminal" run mode: launch a REAL claude session in a PTY (engine-owned, see
+  // loopTerm.ts) and auto-submit the task with /goal so it runs until the goal is met (or N turns).
+  // It's interactive — the agent can ask / request approval and the user answers right in the
+  // terminal — and a Notification hook pings HyprSpace whenever it needs the user.
+  const runInteractive = async () => {
     if (ctrl.stop) return;
     const def = S().loops[id];
     if (!def) return finish("stopped");
@@ -394,151 +403,70 @@ export function startLoop(id: string) {
     const env = useProjectConfigs.getState().getConfig(def.folder).env;
     const max = Math.max(1, def.stop.maxIterations || 10);
 
-    S().setRun(id, { status: "running", iteration: 0, lastRunAt: Date.now() });
-    append(`\n— running on your subscription (interactive Claude) —`);
-
-    // custom-conditions mode → generate the Stop-hook settings + marker files
-    let counterFile = "";
-    let doneFile = "";
-    let settingsFile = "";
-    if (!def.goalMode) {
-      const reason = `Keep working until the task is complete: ${firstLine(def.prompt) || "the objective"}.`;
-      try {
-        const files = await prepareHookSettings(rid, max, def.stop.untilCheck, def.stop.sentinel, runFolder, reason);
-        settingsFile = files.settings;
-        counterFile = files.counter;
-        doneFile = files.done;
-      } catch (e) {
-        return finish("error", `couldn't set up the hook (${e})`);
-      }
-      if (ctrl.stop) return;
+    // Notification hook → marker file the engine polls to ping the user when claude needs them
+    let notifySettings = "";
+    let notifyMarker = "";
+    try {
+      const f = await prepareNotifySettings(rid);
+      notifySettings = f.settings;
+      notifyMarker = f.marker;
+    } catch {
+      /* run without the notify hook if it couldn't be set up */
     }
+    if (ctrl.stop) return;
+
+    // build the launch command typed into the shell. /goal makes claude self-loop until the
+    // condition holds; "or stop after N turns" is the hard backstop. single-quote everything that
+    // carries user text / paths so the target shell treats it literally (PowerShell expands $ and `
+    // inside double quotes, so single quotes are the safe wrap on both Windows and *nix).
+    const q = (s: string) =>
+      isWindows ? `'${s.replace(/'/g, "''")}'` : `'${s.replace(/'/g, "'\\''")}'`;
+    const pm = claudePerm[def.permissionMode || "acceptEdits"] ?? "acceptEdits";
+    const goal = def.prompt.replace(/\s+/g, " ").trim();
+    const parts = ["claude", q(`/goal ${goal} or stop after ${max} turns`)];
+    if (pm !== "default") parts.push("--permission-mode", pm);
+    if (def.model) parts.push("--model", q(def.model));
+    if (notifySettings) parts.push("--settings", q(notifySettings));
+    const launchCmd = parts.join(" ");
 
     let ended = false;
-    let lastOutputAt = Date.now();
     const done = (note: string) => {
       if (ended) return;
       ended = true;
-      finish("done", note); // finish() kills the PTY + clears timers + cleans up
+      finish("done", note);
     };
 
-    // accumulate claude's terminal output in a capped buffer. we flush a cleaned snapshot from the
-    // poll (never per-chunk) so the TUI redraw firehose can't swamp React, and we use "output went
-    // quiet" as the signal that claude finished booting and is ready for the prompt.
-    const dec = new TextDecoder();
-    let outBuf = "";
-    const onData = (bytes: Uint8Array) => {
-      lastOutputAt = Date.now();
-      outBuf += dec.decode(bytes, { stream: true });
-      if (outBuf.length > 32768) outBuf = outBuf.slice(-32768);
-    };
-    let promptSent = false;
-    const launchAt = Date.now();
-
-    // launch claude DIRECTLY (no shell-prompt race): on Windows it's a `.cmd` shim so go via
-    // `cmd /c claude`; elsewhere spawn `claude`. The PTY gives it a real TTY ⇒ interactive.
-    // `--dangerously-skip-permissions` makes it autonomous: skips the folder-trust dialog AND every
-    // permission pause (a loop has no human to approve), so it can self-loop unattended. autoRespond
-    // answers the TUI's terminal queries so it doesn't hang on boot (there's no xterm here).
-    const claudeArgs = ["--dangerously-skip-permissions"];
-    if (def.model) claudeArgs.push("--model", def.model);
-    if (!def.goalMode) claudeArgs.push("--settings", settingsFile);
-    const shell = isWindows ? "cmd.exe" : "claude";
-    const spawnArgs = isWindows ? ["/c", "claude", ...claudeArgs] : claudeArgs;
+    S().setRun(id, { status: "running", iteration: 0, startedAt: Date.now(), lastRunAt: Date.now() });
+    append("interactive Claude session — answer it in the terminal when it asks for input");
     try {
-      await createPty(
-        { id: rid, cwd: runFolder, shell, args: spawnArgs, env, cols: 120, rows: 40, autoRespond: true },
-        { onData, onControl: (c) => { if (c.type === "exit") done("the session ended"); } },
-      );
+      await startLoopTerm(rid, runFolder, env, launchCmd, () => done("the session ended"));
     } catch (e) {
       return finish("error", `couldn't start Claude (${e})`);
     }
-    if (ctrl.stop) {
-      void killPty(rid).catch(() => {});
-      return;
-    }
+    if (ctrl.stop) return;
 
-    append("starting Claude — booting its terminal (a few seconds)…");
-    const enc = new TextEncoder();
-    const sendPrompt = () => {
-      if (promptSent || ctrl.stop || ended) return;
-      promptSent = true;
-      const body = def.goalMode
-        ? `/goal ${def.prompt.replace(/\s*\r?\n\s*/g, " ").trim()} or stop after ${max} turns`
-        : def.prompt.replace(/\r\n/g, "\n");
-      void writePty(rid, enc.encode(body + "\r")).catch(() => {});
-      append("Claude is ready — sent the prompt, working…");
-      S().setRun(id, { iteration: 1 });
-    };
-
-    // strip ANSI escapes + control/box chars from a TUI dump → readable-ish lines (char scan)
-    const ESC = String.fromCharCode(27);
-    const cleanLines = (s: string): string[] => {
-      let out = "";
-      for (let i = 0; i < s.length; i++) {
-        const c = s[i];
-        if (c === ESC) {
-          i++;
-          if (s[i] === "[") {
-            i++;
-            while (i < s.length && !/[@-~]/.test(s[i])) i++;
-          } else if (s[i] === "]") {
-            while (i < s.length && s.charCodeAt(i) !== 7 && s[i] !== ESC) i++;
-          }
-          continue;
-        }
-        const code = s.charCodeAt(i);
-        if (code === 10 || code === 13) {
-          out += "\n";
-          continue;
-        }
-        if (code < 32 || code === 127 || (code >= 0x2500 && code <= 0x259f)) continue;
-        out += c;
-      }
-      return out.split("\n").map((l) => l.trim()).filter((l) => l.length > 1);
-    };
-    let lastShown = "";
-
-    // poll: readiness (send the prompt once booted), visibility, iteration count, completion
+    // poll the notify marker → raise a HyprSpace notification each time claude needs the user
+    let seenNotif = 0;
     ctrl.pollTimer = setInterval(() => {
-      if (ended) return;
-      const elapsed = Date.now() - launchAt;
-      const quietFor = Date.now() - lastOutputAt;
-      // readiness: send the prompt once claude settles after booting (quiet ≥ 2.5s, min 4s); 35s hard
-      // fallback covers a TUI that keeps redrawing while idle.
-      if (!promptSent && ((elapsed > 6000 && quietFor > 3000) || elapsed > 40000)) sendPrompt();
-      // visibility: surface the latest meaningful line claude rendered (deduped, throttled to 1/poll)
-      const lines = cleanLines(outBuf);
-      const tail = lines[lines.length - 1] ?? "";
-      if (tail && tail !== lastShown) {
-        lastShown = tail;
-        append(tail.slice(0, 200));
-      }
-      if (counterFile) {
-        void readFile(counterFile)
-          .then((s) => {
-            const n = parseInt((s || "").trim(), 10);
-            if (Number.isFinite(n) && n > 0) S().setRun(id, { iteration: n });
-          })
-          .catch(() => {});
-      }
-      if (doneFile) {
-        void readFile(doneFile)
-          .then((s) => {
-            if (s && s.trim()) done(s.trim());
-          })
-          .catch(() => {}); // marker absent → still going
-      } else if (promptSent && quietFor > GOAL_IDLE_MS) {
-        done("goal reached"); // /goal mode: gone quiet after working ⇒ assume met
-      }
+      if (ended || !notifyMarker) return;
+      void readFile(notifyMarker)
+        .then((s) => {
+          const lines = (s || "").split("\n").filter((l) => l.trim());
+          for (let i = seenNotif; i < lines.length; i++) {
+            const msg = lines[i].slice(0, 200);
+            useNotifications.getState().add({ title: `${def.name || "Loop"} needs you`, body: msg, kind: "info" });
+            append(`needs you: ${msg}`);
+            S().setRun(id, { lastResult: msg });
+          }
+          seenNotif = Math.max(seenNotif, lines.length);
+        })
+        .catch(() => {});
     }, 1500);
 
-    // engine-side wall-clock cap (the hook owns the iteration cap)
+    // engine-side wall-clock cap (the /goal "stop after N turns" owns the turn cap)
     if (def.stop.timeBudgetMin && def.stop.timeBudgetMin > 0) {
-      ctrl.budgetTimer = setTimeout(() => {
-        if (ended) return;
-        ended = true;
-        finish("stopped", "time budget reached");
+      ctrl.timer = setTimeout(() => {
+        if (!ended) finish("stopped", "time budget reached");
       }, def.stop.timeBudgetMin * 60000);
     }
   };
@@ -556,11 +484,12 @@ export function startLoop(id: string) {
   };
 
   void (async () => {
-    // compliance guard: a Claude loop must run on a separate Anthropic API key, never the
-    // logged-in subscription. with no key set, `claude -p` would silently use the subscription —
-    // so refuse to start until one is stored.
-    if (def0.provider === "claude" && !(await secretHas("anthropic").catch(() => false))) {
-      return finish("error", "add an Anthropic API key in Loops settings first");
+    // compliance guard: the "claude" (API-key) backend needs a separate Anthropic API key. Without
+    // one set, `claude -p` would silently fall back to the subscription — which is what "claude-sub"
+    // is for explicitly, so refuse here and point the user at it (or at adding a key). Interactive
+    // (pane) loops run the logged-in CLI directly on the subscription, so they never need a key.
+    if (def0.provider === "claude" && def0.run !== "pane" && !(await secretHas("anthropic").catch(() => false))) {
+      return finish("error", "add an Anthropic API key, or switch this loop to Claude (subscription)");
     }
     if (ctrl.stop) return;
 
@@ -583,7 +512,8 @@ export function startLoop(id: string) {
       }
     }
     if (ctrl.stop) return;
-    if (def0.provider === "claude-hooks") void runHooksLoop();
+    // interactive-terminal claude loops run a real session in a PTY; everything else is headless
+    if (def0.run === "pane" && isClaudeStream(def0.provider)) void runInteractive();
     else kickoff();
   })();
 }
@@ -602,8 +532,7 @@ export function stopLoop(id: string) {
     ctrls.delete(id);
   }
   void agentStop(loopRunId(id)).catch(() => {});
-  void killPty(loopRunId(id)).catch(() => {});
-  void cleanupHookRun(loopRunId(id)).catch(() => {});
+  stopLoopTerm(loopRunId(id));
   useLoops.getState().setRun(id, { status: "stopped", nextRunAt: undefined });
 }
 
