@@ -11,6 +11,8 @@ import { useSettings } from "./stores/settings";
 import { initSettingsSync } from "./stores/settingsSync";
 import { Settings } from "./components/Settings";
 import { CommitDialog } from "./components/CommitDialog";
+import { PrDialog } from "./components/PrDialog";
+import { InitRepoDialog } from "./components/InitRepoDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { LaunchWorkspace } from "./components/LaunchWorkspace";
@@ -277,6 +279,8 @@ export default function App() {
       <CommandPalette />
       {settingsOpen && <Settings />}
       <CommitDialog />
+      <PrDialog />
+      <InitRepoDialog />
       <ConfirmDialog />
       <NewProjectDialog />
       <ServicesDialog />

@@ -73,6 +73,100 @@
 .tb-action-caret {
   color: var(--text-3);
 }
+/* pane layout picker (titlebar button + thumbnail popover) */
+.tb-layout {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tb-layout-btn {
+  padding: 0;
+  width: 30px;
+  justify-content: center;
+}
+.tb-layout-btn.open {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+  color: var(--text-1);
+}
+.tb-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+}
+.tb-layout-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  width: 224px;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  animation: fdoIn 0.12s var(--ease);
+}
+.tb-layout-head {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 2px 4px 8px;
+}
+.tb-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.tb-layout-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background 0.1s var(--ease),
+    border-color 0.1s var(--ease),
+    color 0.1s var(--ease);
+}
+.tb-layout-opt:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.tb-layout-opt.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-2));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  color: var(--text-1);
+}
+.tb-layout-thumb {
+  display: grid;
+  width: 100%;
+  height: 40px;
+  gap: 3px;
+}
+.tb-layout-cell {
+  background: var(--text-3);
+  border-radius: 2px;
+  opacity: 0.5;
+}
+.tb-layout-opt:hover .tb-layout-cell,
+.tb-layout-opt.active .tb-layout-cell {
+  background: var(--accent);
+  opacity: 0.9;
+}
+.tb-layout-label {
+  font-size: 10.5px;
+  text-align: center;
+  line-height: 1.2;
+}
 /* live background-service pill in the topbar */
 .tb-svc {
   position: relative;
@@ -113,19 +207,66 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* loops pill: a dimmer dot when paused, a slow ring spin while iterating */
-.tb-svc-btn.paused .tb-svc-dot {
-  background: var(--text-3);
-  animation: none;
-}
-.tb-svc-dot.spin {
-  background: var(--accent);
-  animation: svcPulse 1.4s var(--ease) infinite;
-}
 .tb-svc-pop {
   left: auto;
   right: 0;
   min-width: 180px;
+}
+
+/* running-loops indicator — a neutral pill that reads as a sibling of the New/Open buttons
+   (no status-green tint), with one small accent dot that gently breathes while iterating. */
+.tb-loop {
+  position: relative;
+  margin-right: 4px;
+}
+.tb-loop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  max-width: 180px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.tb-loop-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+  color: var(--text-1);
+}
+.tb-loop-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-3); /* paused/idle: muted, static */
+}
+.tb-loop-dot.live {
+  background: var(--accent);
+  animation: loopBreath 1.8s var(--ease) infinite;
+}
+.tb-loop-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes loopBreath {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 @keyframes svcPulse {
   0% {
@@ -245,6 +386,100 @@
 .cd-actions {
   display: flex;
   gap: 8px;
+}
+/* create-PR dialog — pre-filled, editable fields */
+.cd-pr {
+  width: 560px;
+}
+.cd-count code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.cd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cd-field > span {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cd-field .svc-in,
+.cd-field .set-select {
+  width: 100%;
+}
+.cd-pr-body {
+  min-height: 120px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.cd-pr-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+.cd-pr-row .cd-field {
+  flex: 1;
+  min-width: 0;
+}
+.cd-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding-bottom: 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cd-pr-loading {
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 18px 2px;
+}
+.cd-pr-warn {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--status-busy) 85%, var(--text-1));
+  background: color-mix(in srgb, var(--status-busy) 10%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--status-busy) 24%, var(--border-1));
+  border-radius: var(--radius-1);
+  padding: 9px 11px;
+}
+.cd-pr-warn code,
+.cd-hint code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+/* init-repo dialog extras */
+.cd-field-sm {
+  flex: 0 0 140px;
+}
+.cd-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cd-inline-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.cd-inline input[type="checkbox"] {
+  flex: 0 0 auto;
+}
+.cd-grow {
+  flex: 1;
+  min-width: 0;
+}
+.cd-indent {
+  padding-left: 24px;
 }
 /* in-app confirm dialog (replaces the native OS ask()) */
 .confirm-overlay {

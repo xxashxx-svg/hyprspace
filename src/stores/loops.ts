@@ -29,10 +29,10 @@ export interface LoopDef {
   name: string;
   enabled: boolean;
   folder: string; // cwd the loop runs in
-  // "claude" = headless on an Anthropic API key; "claude-hooks" = on your subscription, one
-  // self-looping `claude -p` session driven by a Stop hook (no key). gemini/codex are headless too.
-  provider: "claude" | "claude-hooks" | "gemini" | "codex";
-  goalMode?: boolean; // claude-hooks only: use Claude's built-in /goal (fuzzy) instead of our stop-condition hook
+  // "claude" = headless `claude -p` on an Anthropic API key; "claude-sub" = the same headless
+  // `claude -p` but on your logged-in subscription (no key — the spawn-the-CLI path the panes use).
+  // gemini/codex are headless too. ("claude-hooks" is a legacy value, migrated to "claude-sub".)
+  provider: "claude" | "claude-sub" | "claude-hooks" | "gemini" | "codex" | "opencode";
   model?: string; // model override
   prompt: string; // the instruction sent each iteration
   mode: LoopMode;
@@ -134,7 +134,14 @@ export const useLoops = create<LoopState>()((set, get) => {
       if (raw) {
         try {
           const c = JSON.parse(raw);
-          if (c && typeof c === "object") set({ loops: c as Record<string, LoopDef> });
+          if (c && typeof c === "object") {
+            // migrate the retired interactive-TUI backend onto the clean headless one
+            for (const d of Object.values(c as Record<string, LoopDef & { goalMode?: boolean }>)) {
+              if (d && (d.provider as string) === "claude-hooks") d.provider = "claude-sub";
+              if (d) delete d.goalMode;
+            }
+            set({ loops: c as Record<string, LoopDef> });
+          }
         } catch {
           /* ignore a bad blob */
         }

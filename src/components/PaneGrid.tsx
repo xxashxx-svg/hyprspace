@@ -6,7 +6,7 @@ import { TerminalPane } from "./TerminalPane";
 import { Launchpad } from "./Launchpad";
 import { Logo } from "./Logo";
 import { closeSession } from "../actions";
-import { getLayout } from "../lib/grid";
+import { resolveLayout } from "../lib/grid";
 
 function cellSidAt(x: number, y: number): string | null {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
@@ -40,7 +40,8 @@ export function PaneGrid() {
 
   const active = workspaces.find((w) => w.id === activeId) ?? null;
   const maxedHere = !!maximizedId && !!active && active.sessions.some((s) => s.id === maximizedId);
-  const activeLayout = getLayout(active?.sessions.length ?? 0);
+  const activeCount = active?.sessions.length ?? 0;
+  const activeLayout = resolveLayout(activeCount, active?.layouts?.[activeCount]);
   const showGrid = !!active && active.sessions.length > 0;
 
   // ONE stable reference per handler (store actions + setState setters are stable, drag is a ref),
@@ -124,11 +125,12 @@ export function PaneGrid() {
         style={{
           display: showGrid ? "grid" : "none",
           gridTemplateColumns: maxedHere ? "1fr" : activeLayout.cols,
+          gridTemplateRows: maxedHere ? undefined : activeLayout.rows,
         }}
       >
         {workspaces.flatMap((w) => {
           const isActiveWs = w.id === activeId;
-          const layout = getLayout(w.sessions.length);
+          const layout = resolveLayout(w.sessions.length, w.layouts?.[w.sessions.length]);
           return w.sessions.map((sess, i) => {
             const hiddenByMax = maxedHere && sess.id !== maximizedId;
             const visible = isActiveWs && !hiddenByMax;
@@ -142,7 +144,8 @@ export function PaneGrid() {
                 className={`pane-cell${dragId === sess.id ? " dragging" : ""}${overId === sess.id ? " drop-over" : ""}`}
                 style={{
                   display: visible ? undefined : "none",
-                  gridColumn: visible && !maxedHere ? layout.span(i) : undefined,
+                  gridColumn: visible && !maxedHere ? layout.place(i).gridColumn : undefined,
+                  gridRow: visible && !maxedHere ? layout.place(i).gridRow : undefined,
                 }}
               >
                 <TerminalPane

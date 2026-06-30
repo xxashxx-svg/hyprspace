@@ -29,6 +29,7 @@ import {
   Sparkles,
   Gem,
   Bot,
+  SquareCode,
   RefreshCw,
   Plug,
   Check,
@@ -192,7 +193,7 @@ function Provider({
   icon: ReactNode;
   name: string;
   status?: ProviderStatus | "loading";
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const line = status ? statusLine(status) : null;
   return (
@@ -210,7 +211,7 @@ function Provider({
           <span className="provider-status-text">{line.node}</span>
         </div>
       )}
-      <div className="set-group">{children}</div>
+      {children && <div className="set-group">{children}</div>}
     </div>
   );
 }
@@ -264,7 +265,7 @@ export function Settings() {
   const [statuses, setStatuses] = useState<Record<string, ProviderStatus | "loading">>({});
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const refreshStatuses = () => {
-    const ids = ["claude", "gemini", "codex"];
+    const ids = ["claude", "gemini", "codex", "opencode"];
     setStatuses(Object.fromEntries(ids.map((id) => [id, "loading" as const])));
     setCheckedAt(Date.now());
     ids.forEach((id) =>
@@ -662,6 +663,12 @@ export function Settings() {
                       <option value="auto">Auto (sandboxed)</option>
                       <option value="bypass">Full access (bypass)</option>
                     </select>
+                  </Row>
+                </Provider>
+
+                <Provider icon={<SquareCode size={16} />} name="OpenCode" status={statuses.opencode}>
+                  <Row label="Model & providers" desc="OpenCode is bring-your-own-model — manage them with `opencode auth`">
+                    <span className="set-hint">configured in OpenCode</span>
                   </Row>
                 </Provider>
 

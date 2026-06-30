@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.5.15 — 2026-06-30
+
+- Loops: new "Claude (subscription)" backend — run loops on your logged-in Claude, no API key needed.
+- Loops: new "Interactive terminal" mode — a real Claude /goal session you can answer in, with a notification when it needs you; the Runs tab now shows the agent's actual responses.
+- OpenCode added as a provider — launch opencode panes, use it as a headless Loops backend, and see it in Settings → Providers.
+- Pane layout picker — a titlebar button to rearrange panes (columns, rows, 2-top-1-bottom, 1-left, ...), remembered per space.
+- Create PR and Initialize repository are now full editable dialogs (title/body/base/draft; repo name, branch, .gitignore, README, optional GitHub create + push).
+- Loops Manage redesigned into collapsible, sectioned cards; calmer status badges + running-loop card; settings lock while a loop runs.
+- Sidebar tidy-up: loops moved into the Loops page (count on the nav); footer is just Settings.
+
 ## 0.5.14 — 2026-06-29
 
 - "Claude (hooks)" loops now wait until Claude has finished booting before sending the prompt (the old fixed delay was too short on heavier Claude setups, which left the loop stuck on iteration 1), and the loop log now shows Claude's live terminal output so you can see what it's doing.

@@ -78,7 +78,7 @@ fn provider_status_blocking(id: &str) -> ProviderStatus {
         ..Default::default()
     };
     let cli = match id {
-        "claude" | "gemini" | "codex" => id,
+        "claude" | "gemini" | "codex" | "opencode" => id,
         _ => return st,
     };
     st.version = cli_version(cli);
@@ -129,6 +129,37 @@ fn provider_status_blocking(id: &str) -> ProviderStatus {
             }
             if st.account.is_none() {
                 st.detail = Some("Not signed in".into());
+            }
+        }
+        "opencode" => {
+            // BYO-model: auth.json holds one entry per configured model provider
+            let mut names: Vec<String> = vec![];
+            if let Some(v) = read_json(
+                home.join(".local").join("share").join("opencode").join("auth.json"),
+            ) {
+                if let Some(obj) = v.as_object() {
+                    for k in obj.keys() {
+                        names.push(match k.as_str() {
+                            "opencode" => "OpenCode Zen".to_string(),
+                            "openai" => "OpenAI".to_string(),
+                            "gmicloud" => "GMI Cloud".to_string(),
+                            "anthropic" => "Anthropic".to_string(),
+                            "google" | "gemini" => "Google".to_string(),
+                            "openrouter" => "OpenRouter".to_string(),
+                            other => title_case(other),
+                        });
+                    }
+                }
+            }
+            if names.is_empty() {
+                st.detail = Some("No model providers — run `opencode auth login`".into());
+            } else {
+                st.detail = Some(format!(
+                    "{} model provider{}: {}",
+                    names.len(),
+                    if names.len() == 1 { "" } else { "s" },
+                    names.join(", ")
+                ));
             }
         }
         _ => {}

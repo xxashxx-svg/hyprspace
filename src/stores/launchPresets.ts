@@ -9,7 +9,7 @@ export interface LaunchPreset {
   name: string;
   folder: string;
   count: number;
-  agents: { claude: number; codex: number; gemini: number; terminal: number };
+  agents: { claude: number; codex: number; gemini: number; opencode: number; terminal: number };
   claudeMode: ClaudePermission;
 }
 

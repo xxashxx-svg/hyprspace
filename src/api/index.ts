@@ -226,7 +226,7 @@ export function prepareHookSettings(
   sentinel: string | undefined,
   cwd: string,
   reason: string,
-): Promise<{ settings: string; counter: string; done: string }> {
+): Promise<{ settings: string; counter: string; done: string; output: string }> {
   return invoke("prepare_hook_settings", {
     runId,
     maxIterations,
@@ -238,6 +238,10 @@ export function prepareHookSettings(
 }
 export function cleanupHookRun(runId: string): Promise<void> {
   return invoke("cleanup_hook_run", { runId });
+}
+// settings file with a Notification hook for an interactive-terminal loop (pings when Claude needs you)
+export function prepareNotifySettings(runId: string): Promise<{ settings: string; marker: string }> {
+  return invoke("prepare_notify_settings", { runId });
 }
 
 // git write ops for the topbar "Commit & push" menu + the Source Control panel
@@ -265,14 +269,47 @@ export function gitFileOp(cwd: string, op: "stage" | "unstage" | "discard", path
 export function gitPush(cwd: string): Promise<string> {
   return invoke("git_push", { cwd });
 }
-export function gitCreatePr(cwd: string): Promise<string> {
-  return invoke("git_create_pr", { cwd });
+export interface PrDefaults {
+  head: string;
+  base: string;
+  title: string;
+  body: string;
+  branches: string[];
+  pushed: boolean;
+  onDefault: boolean;
+}
+export function gitPrDefaults(cwd: string): Promise<PrDefaults> {
+  return invoke("git_pr_defaults", { cwd });
+}
+export function gitCreatePr(opts: {
+  cwd: string;
+  title: string;
+  body: string;
+  base: string;
+  draft: boolean;
+  push: boolean;
+}): Promise<string> {
+  return invoke("git_create_pr", opts);
 }
 export function gitIsRepo(cwd: string): Promise<boolean> {
   return invoke("git_is_repo", { cwd });
 }
 export function gitInit(cwd: string): Promise<string> {
   return invoke("git_init", { cwd });
+}
+export function gitInitRepo(opts: {
+  cwd: string;
+  name: string;
+  branch: string;
+  gitignore: string;
+  readme: boolean;
+  commit: boolean;
+  commitMsg: string;
+  github: boolean;
+  private: boolean;
+  description: string;
+}): Promise<string> {
+  return invoke("git_init_repo", opts);
 }
 // create/reuse a project folder, optionally seeding README.md and .gitignore
 export function createProjectDir(

@@ -153,16 +153,112 @@ pub async fn git_push(cwd: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
-// open a GitHub PR via the gh CLI (fills title/body from commits); returns the PR URL
+// suggested defaults to pre-fill the "Create PR" dialog (branches, a title + body from the commits)
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrDefaults {
+    head: String,     // current branch
+    base: String,     // default target branch
+    title: String,    // suggested title
+    body: String,     // suggested body
+    branches: Vec<String>, // choices for the base picker
+    pushed: bool,     // does the current branch have an upstream?
+    on_default: bool, // head == base → no PR possible
+}
 
 #[tauri::command]
-pub async fn git_create_pr(cwd: String) -> Result<String, String> {
+pub async fn git_pr_defaults(cwd: String) -> Result<PrDefaults, String> {
     tauri::async_runtime::spawn_blocking(move || {
         if cwd.is_empty() {
             return Err("No folder.".to_string());
         }
+        let head = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default().trim().to_string();
+        // default base = the remote's HEAD branch, else main, else master
+        let base = git(&cwd, &["rev-parse", "--abbrev-ref", "origin/HEAD"])
+            .ok()
+            .map(|s| s.trim().trim_start_matches("origin/").to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                if git(&cwd, &["rev-parse", "--verify", "main"]).is_ok() {
+                    "main".to_string()
+                } else if git(&cwd, &["rev-parse", "--verify", "master"]).is_ok() {
+                    "master".to_string()
+                } else {
+                    "main".to_string()
+                }
+            });
+        // title: the latest commit subject, else the branch name made readable
+        let subj = git(&cwd, &["log", "-1", "--pretty=%s"]).unwrap_or_default().trim().to_string();
+        let title = if !subj.is_empty() { subj } else { head.replace(['-', '_'], " ") };
+        // body: the commit subjects on head but not base, as a bullet list (best-effort)
+        let body = git(&cwd, &["log", "--pretty=- %s", &format!("{base}..{head}")])
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        // branch list for the base picker (local + remote, deduped, no HEAD)
+        let mut branches: Vec<String> = vec![];
+        if let Ok(out) = git(&cwd, &["branch", "--format=%(refname:short)"]) {
+            for l in out.lines() {
+                let b = l.trim();
+                if !b.is_empty() && !branches.iter().any(|x| x == b) {
+                    branches.push(b.to_string());
+                }
+            }
+        }
+        if let Ok(out) = git(&cwd, &["branch", "-r", "--format=%(refname:short)"]) {
+            for l in out.lines() {
+                let b = l.trim().trim_start_matches("origin/");
+                if !b.is_empty() && b != "HEAD" && !branches.iter().any(|x| x == b) {
+                    branches.push(b.to_string());
+                }
+            }
+        }
+        let pushed = git(&cwd, &["rev-parse", "--abbrev-ref", &format!("{head}@{{upstream}}")]).is_ok();
+        let on_default = head == base;
+        Ok(PrDefaults { head, base, title, body, branches, pushed, on_default })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// open a GitHub PR via the gh CLI with explicit title/body/base; pushes the branch first if asked
+// (so gh never tries to prompt about where to push). returns the PR URL.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn git_create_pr(
+    cwd: String,
+    title: String,
+    body: String,
+    base: String,
+    draft: bool,
+    push: bool,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if cwd.is_empty() {
+            return Err("No folder.".to_string());
+        }
+        if push {
+            let head = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default().trim().to_string();
+            if !head.is_empty() {
+                let mut p = Command::new("git");
+                p.current_dir(&cwd).args(["push", "-u", "origin", &head]);
+                #[cfg(windows)]
+                p.creation_flags(0x08000000);
+                let _ = p.output(); // best-effort; gh reports a clear error if the branch still isn't there
+            }
+        }
         let mut cmd = Command::new("gh");
-        cmd.current_dir(&cwd).args(["pr", "create", "--fill"]);
+        cmd.current_dir(&cwd).args(["pr", "create"]);
+        if !title.trim().is_empty() {
+            cmd.args(["--title", &title]);
+        }
+        cmd.args(["--body", &body]);
+        if !base.trim().is_empty() {
+            cmd.args(["--base", &base]);
+        }
+        if draft {
+            cmd.arg("--draft");
+        }
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
         let out = cmd
@@ -204,6 +300,104 @@ pub async fn git_init(cwd: String) -> Result<String, String> {
         }
         git(&cwd, &["init"])?;
         Ok("Initialized a git repository.".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// Full "initialize repository" flow driven by the dialog: init + default branch, optional
+// .gitignore / README (never clobbers an existing file), optional first commit, and optionally
+// create the repo on GitHub via `gh` and push. Returns a summary, or the repo URL when on GitHub.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn git_init_repo(
+    cwd: String,
+    name: String,
+    branch: String,
+    gitignore: String, // file contents; empty = don't add
+    readme: bool,
+    commit: bool,
+    commit_msg: String,
+    github: bool,
+    private: bool,
+    description: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if cwd.is_empty() {
+            return Err("No folder.".to_string());
+        }
+        // 1. init + name the (unborn) default branch — symbolic-ref works before any commit exists
+        git(&cwd, &["init"])?;
+        let branch = branch.trim();
+        if !branch.is_empty() {
+            let _ = git(&cwd, &["symbolic-ref", "HEAD", &format!("refs/heads/{branch}")]);
+        }
+        // 2. .gitignore + README — only write if absent, so we never overwrite the user's files
+        if !gitignore.trim().is_empty() {
+            let p = Path::new(&cwd).join(".gitignore");
+            if !p.exists() {
+                let _ = std::fs::write(&p, gitignore);
+            }
+        }
+        if readme {
+            let p = Path::new(&cwd).join("README.md");
+            if !p.exists() {
+                let title = if name.trim().is_empty() { "Project" } else { name.trim() };
+                let _ = std::fs::write(&p, format!("# {title}\n"));
+            }
+        }
+        // 3. initial commit — forced when creating on GitHub, since `gh ... --push` needs a commit
+        if commit || github {
+            git(&cwd, &["add", "-A"])?;
+            let msg = if commit_msg.trim().is_empty() { "Initial commit" } else { commit_msg.trim() };
+            let mut c = Command::new("git");
+            c.current_dir(&cwd).args(["commit", "-m", msg]);
+            #[cfg(windows)]
+            c.creation_flags(0x08000000);
+            let out = c.output().map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                // an empty folder has nothing to commit — that's fine; anything else bubbles up
+                if !err.contains("nothing to commit") {
+                    return Err(if err.is_empty() {
+                        "Couldn't create the initial commit (is git user.name/email configured?).".to_string()
+                    } else {
+                        err
+                    });
+                }
+            }
+        }
+        // 4. create the repo on GitHub + push
+        if github {
+            let repo = if name.trim().is_empty() {
+                Path::new(&cwd).file_name().and_then(|s| s.to_str()).unwrap_or("repo").to_string()
+            } else {
+                name.trim().to_string()
+            };
+            let mut g = Command::new("gh");
+            g.current_dir(&cwd).args(["repo", "create", &repo]);
+            g.arg(if private { "--private" } else { "--public" });
+            if !description.trim().is_empty() {
+                g.args(["--description", description.trim()]);
+            }
+            g.arg("--source=.").args(["--remote", "origin"]).arg("--push");
+            #[cfg(windows)]
+            g.creation_flags(0x08000000);
+            let out = g
+                .output()
+                .map_err(|_| "GitHub CLI (gh) not found — install it from cli.github.com.".to_string())?;
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                return Err(if err.is_empty() { "Couldn't create the GitHub repo.".to_string() } else { err });
+            }
+            let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            return Ok(if url.is_empty() {
+                String::from_utf8_lossy(&out.stderr).trim().to_string()
+            } else {
+                url
+            });
+        }
+        Ok("Initialized the repository.".to_string())
     })
     .await
     .map_err(|e| e.to_string())?

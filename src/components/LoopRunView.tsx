@@ -126,6 +126,9 @@ export function LoopRunView({ id }: { id: string }) {
   const status = run?.status ?? "idle";
   const active = status === "running" || status === "paused";
   const paused = status === "paused";
+  const maxIter = def.stop.maxIterations || 1;
+  const iter = run?.iteration ?? 0;
+  const pct = Math.max(3, Math.min(100, (iter / maxIter) * 100)); // sliver visible even at iter 0
 
   return (
     <div className="loop-run">
@@ -138,29 +141,40 @@ export function LoopRunView({ id }: { id: string }) {
       </div>
 
       {active && (
-        <div className="loop-run-card">
-          <span className="loop-run-card-ico">
-            {paused ? <Pause size={16} /> : <Loader2 size={16} className="spin" />}
-          </span>
-          <div className="loop-run-card-text">
-            <div className="loop-run-card-title">{paused ? "Loop paused" : "Loop agent running"}</div>
-            <div className="loop-run-card-sub">
-              {def.name || "Loop"} — iteration {run?.iteration ?? 0} / {def.stop.maxIterations}
-              {run?.costUsed ? ` · $${run.costUsed.toFixed(3)}` : ""}
-              {run?.tokensUsed ? ` · ${fmtTokens(run.tokensUsed)} tok` : ""}
-              {def.stop.tokenBudget ? ` / ${fmtTokens(def.stop.tokenBudget)} budget` : ""}
+        <div className={`loop-run-card${paused ? " paused" : ""}`}>
+          <div className="loop-run-card-row">
+            <span className="loop-run-card-ico">
+              {paused ? <Pause size={15} /> : <Loader2 size={15} className="spin" />}
+            </span>
+            <div className="loop-run-card-text">
+              <div className="loop-run-card-title">{paused ? "Loop paused" : "Loop agent running"}</div>
+              <div className="loop-run-card-sub">
+                <span className="loop-run-card-name">{def.name || "Loop"}</span>
+                <span className="loop-run-sep">iteration {iter} / {maxIter}</span>
+                {run?.costUsed ? <span className="loop-run-sep">${run.costUsed.toFixed(3)}</span> : null}
+                {run?.tokensUsed ? (
+                  <span className="loop-run-sep">
+                    {fmtTokens(run.tokensUsed)}
+                    {def.stop.tokenBudget ? ` / ${fmtTokens(def.stop.tokenBudget)}` : ""} tok
+                  </span>
+                ) : null}
+              </div>
             </div>
+            <button
+              className="loop-run-btn loop-run-btn-icon"
+              title={paused ? "Resume" : "Pause"}
+              onClick={() => pauseLoop(id, !paused)}
+            >
+              {paused ? <Play size={14} /> : <Pause size={14} />}
+            </button>
+            <button className="loop-run-btn loop-run-stop" title="Stop loop" onClick={() => stopLoop(id)}>
+              <Square size={10} fill="currentColor" strokeWidth={0} />
+              Stop loop
+            </button>
           </div>
-          <button
-            className="loop-run-resume"
-            title={paused ? "Resume" : "Pause"}
-            onClick={() => pauseLoop(id, !paused)}
-          >
-            {paused ? <Play size={13} /> : <Pause size={13} />}
-          </button>
-          <button className="loop-run-stop" onClick={() => stopLoop(id)}>
-            <Square size={13} /> Stop loop
-          </button>
+          <div className="loop-run-progress">
+            <div className="loop-run-progress-fill" style={{ width: `${pct}%` }} />
+          </div>
         </div>
       )}
     </div>

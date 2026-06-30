@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { NotificationPanel } from "./NotificationPanel";
+import { LayoutPicker } from "./LayoutPicker";
 
 const win = getCurrentWindow();
 
@@ -251,14 +252,14 @@ function LoopsIndicator() {
   const label = only ? `${only.name || "loop"}${iter ? ` · ${iter}` : ""}` : `${active.length} loops`;
   const running = active.some((id) => runs[id]?.status === "running");
   return (
-    <div className="tb-svc">
+    <div className="tb-loop">
       <button
-        className={`tb-svc-btn${running ? "" : " paused"}`}
+        className={`tb-loop-btn${running ? "" : " paused"}`}
         title={`${active.length} loop${active.length > 1 ? "s" : ""} active — click to manage`}
         onClick={() => useUi.getState().goLoops()}
       >
-        <span className={`tb-svc-dot${running ? " spin" : ""}`} />
-        <span className="tb-svc-label">{label}</span>
+        <span className={`tb-loop-dot${running ? " live" : ""}`} />
+        <span className="tb-loop-label">{label}</span>
       </button>
     </div>
   );
@@ -340,7 +341,7 @@ export function Titlebar() {
     { label: "Commit & push…", icon: <Upload size={14} />, onClick: () => useGit.getState().openCommit(true) },
     { label: "Commit…", icon: <GitCommitVertical size={14} />, onClick: () => useGit.getState().openCommit(false) },
     { label: "Push", icon: <ArrowUp size={14} />, onClick: () => void useGit.getState().push() },
-    { label: "Create PR", icon: <GitPullRequest size={14} />, onClick: () => void useGit.getState().createPr() },
+    { label: "Create PR…", icon: <GitPullRequest size={14} />, onClick: () => void useGit.getState().openPr() },
   ];
 
   // is the active folder actually a git repo? gates the button (re-checks after a git init)
@@ -394,13 +395,14 @@ export function Titlebar() {
                 lead={<GitBranch size={14} />}
                 items={[
                   {
-                    label: "Initialize git repository",
+                    label: "Initialize git repository…",
                     icon: <GitBranch size={14} />,
-                    onClick: () => void useGit.getState().init(),
+                    onClick: () => useGit.getState().openInitRepo(),
                   },
                 ]}
               />
             ))}
+          <LayoutPicker />
         </div>
         <LoopsIndicator />
         <ServicesIndicator />

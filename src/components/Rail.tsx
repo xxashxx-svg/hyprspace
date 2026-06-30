@@ -4,7 +4,6 @@ import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useLoops } from "../stores/loops";
 import { useActivity } from "../stores/activity";
-import { useAuth } from "../stores/auth";
 import { relTime } from "../lib/time";
 import { kbd } from "../platform";
 import { revealPath } from "../api";
@@ -21,7 +20,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Repeat,
-  Loader2,
   Copy,
   Server,
   Pencil,
@@ -57,30 +55,17 @@ export function Rail() {
   const paneDragOverWs = useUi((s) => s.paneDragOverWs);
   const view = useUi((s) => s.view);
   const goSpace = useUi((s) => s.goSpace);
-  const openLoopId = useUi((s) => s.openLoopId);
-  const loops = useLoops((s) => s.loops);
+  // loops live entirely on the Loops page now — the rail only surfaces a count on the nav item:
+  // how many are running (highlighted) or, when idle, how many exist (muted)
   const loopRuns = useLoops((s) => s.runs);
+  const loopCount = useLoops((s) => Object.keys(s.loops).length);
   const activeLoops = Object.values(loopRuns).filter(
     (r) => r.status === "running" || r.status === "paused",
   ).length;
-  // running/paused loops float to the top of the rail list so the live ones are always in view
-  const loopList = Object.values(loops).sort((a, b) => {
-    const rank = (id: string) => {
-      const st = loopRuns[id]?.status;
-      return st === "running" || st === "paused" ? 0 : 1;
-    };
-    return rank(a.id) - rank(b.id);
-  });
   const setFocused = useWorkspaces((s) => s.setFocused);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const exited = useActivity((s) => s.exited);
   const lastOut = useActivity((s) => s.lastOut);
-  const user = useAuth((s) => s.user);
-  const avatar =
-    typeof user?.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
-  const acctName =
-    ((user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Account").trim();
-  const acctInitial = (acctName || "?")[0]?.toUpperCase() ?? "?";
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [, tick] = useReducer((x) => x + 1, 0);
@@ -328,40 +313,14 @@ export function Rail() {
       >
         <Repeat size={15} />
         <span className="rail-nav-label">Loops</span>
-        {activeLoops > 0 && <span className="rail-nav-badge">{activeLoops}</span>}
+        {activeLoops > 0 ? (
+          <span className="rail-nav-badge" title={`${activeLoops} running`}>{activeLoops}</span>
+        ) : loopCount > 0 ? (
+          <span className="rail-nav-badge muted" title={`${loopCount} loop${loopCount > 1 ? "s" : ""}`}>
+            {loopCount}
+          </span>
+        ) : null}
       </button>
-
-      {!collapsed && loopList.length > 0 && (
-        <div className="rail-loops">
-          <div className="rail-header">
-            <span className="rail-title">LOOPS</span>
-            <button className="rail-add" title="Manage loops" onClick={() => useUi.getState().goLoops()}>
-              <Plus size={15} />
-            </button>
-          </div>
-          {loopList.map((def) => {
-            const run = loopRuns[def.id];
-            const status = run?.status ?? "idle";
-            const running = status === "running";
-            const active = view === "loops" && openLoopId === def.id;
-            return (
-              <button
-                key={def.id}
-                className={`rail-loop${active ? " active" : ""}`}
-                title={def.name || "Untitled loop"}
-                onClick={() => useUi.getState().focusLoop(def.id)}
-              >
-                <span className={`loop-dot s-${status}`} />
-                <span className="rail-loop-name">{def.name || "Untitled loop"}</span>
-                {running && <Loader2 className="rail-loop-spin" size={12} />}
-                <span className="rail-loop-count">
-                  {run?.iteration ?? 0}/{def.stop.maxIterations}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       <div className="rail-header">
         <span className="rail-title">PROJECTS</span>
@@ -396,26 +355,12 @@ export function Rail() {
 
       <div className="rail-foot">
         <button
-          className="rail-acct"
-          title={user?.email ?? "Account"}
-          onClick={() => useUi.getState().openSettings("account")}
-        >
-          {avatar ? (
-            <img className="rail-acct-ava" src={avatar} alt="" referrerPolicy="no-referrer" />
-          ) : (
-            <span className="rail-acct-ava rail-acct-fallback">{acctInitial}</span>
-          )}
-          <span className="rail-acct-meta">
-            <span className="rail-acct-name">{acctName}</span>
-            <span className="rail-acct-sub">{user?.email ?? "Signed in"}</span>
-          </span>
-        </button>
-        <button
-          className="rail-foot-btn"
+          className="rail-settings"
           title="Settings"
           onClick={() => useUi.getState().openSettings()}
         >
           <SettingsIcon size={16} strokeWidth={1.75} />
+          <span className="rail-settings-label">Settings</span>
         </button>
       </div>
 

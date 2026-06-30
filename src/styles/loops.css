@@ -148,23 +148,97 @@
   background: var(--surface-1);
   border: 1px solid var(--border-1);
   border-radius: var(--radius-2);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: border-color 0.12s var(--ease);
 }
 .loop-card.on {
-  border-color: color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
+  border-color: color-mix(in srgb, var(--status-ok) 28%, var(--border-1));
 }
-.loop-top {
+.loop-card.open {
+  border-color: var(--border-2);
+}
+/* clickable summary header — collapses / expands the editor body */
+.loop-card-head {
   display: flex;
   align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+.loop-card-head:hover {
+  background: var(--surface-2);
+}
+.loop-card-twist {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: transform 0.15s var(--ease);
+}
+.loop-card.open .loop-card-twist {
+  transform: rotate(90deg);
+}
+.loop-name-in {
+  flex: 1 1 140px;
+  min-width: 80px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 2px 4px;
+  border-radius: var(--radius-1);
+}
+.loop-name-in:hover,
+.loop-name-in:focus {
+  background: var(--surface-2);
+}
+.loop-card.open .loop-name-in:hover,
+.loop-card.open .loop-name-in:focus {
+  background: var(--surface-3);
+}
+.loop-card-summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.loop-head-badge {
+  flex: 0 0 auto;
+}
+.loop-card-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+}
+/* collapsible editor body, grouped into labelled sections */
+.loop-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px 12px 14px;
+  border-top: 1px solid var(--border-1);
+}
+.loop-section {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
-.loop-name {
-  flex: 1;
-  font-weight: 500;
+.loop-section-head,
+.loop-section-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 .loop-dot {
   width: 8px;
@@ -238,9 +312,36 @@
   white-space: nowrap;
   font-family: var(--font-mono);
 }
-.loop-folder:hover {
+.loop-folder:hover:not(:disabled) {
   color: var(--text-1);
   border-color: var(--border-2);
+}
+/* a running loop can't change folder/backend — show them as locked, not interactive */
+.loop-folder:disabled,
+.loop-grid .set-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* "edits apply next iteration" notice shown while a loop is running */
+.loop-live-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border-1));
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.loop-live-hint svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.loop-live-hint strong {
+  color: var(--text-1);
+  font-weight: 600;
 }
 .loop-status {
   display: flex;
@@ -250,26 +351,37 @@
   color: var(--text-3);
   flex-wrap: wrap;
 }
+/* soft, on-theme status pill — a quiet tinted chip, not a neon mono HUD badge */
 .loop-status-badge {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+  padding: 2px 9px;
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--surface-3);
   border: 1px solid var(--border-1);
   color: var(--text-2);
 }
 .loop-status-badge.s-running {
-  color: var(--status-awaiting);
+  color: color-mix(in srgb, var(--status-awaiting) 80%, var(--text-1));
+  background: color-mix(in srgb, var(--status-awaiting) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-awaiting) 24%, var(--border-1));
+}
+.loop-status-badge.s-paused {
+  color: color-mix(in srgb, var(--status-busy) 80%, var(--text-1));
+  background: color-mix(in srgb, var(--status-busy) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-busy) 24%, var(--border-1));
 }
 .loop-status-badge.s-done {
-  color: var(--status-ok);
+  color: color-mix(in srgb, var(--status-ok) 80%, var(--text-1));
+  background: color-mix(in srgb, var(--status-ok) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-ok) 24%, var(--border-1));
 }
 .loop-status-badge.s-error,
 .loop-status-badge.s-crashloop {
-  color: var(--status-error);
+  color: color-mix(in srgb, var(--status-error) 80%, var(--text-1));
+  background: color-mix(in srgb, var(--status-error) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-error) 24%, var(--border-1));
 }
 .loop-last {
   overflow: hidden;
@@ -336,41 +448,7 @@
 .loop-run .spin {
   animation: loop-spin 0.9s linear infinite;
 }
-
-/* ---- rail: per-loop quick list ---- */
-.rail-loops {
-  margin: 2px 0 4px;
-}
-.rail-loop {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  padding: 5px 10px 5px 12px;
-  background: none;
-  border: none;
-  border-left: 2px solid transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.rail-loop:hover {
-  background: var(--surface-1);
-}
-.rail-loop.active {
-  background: var(--surface-2);
-  border-left-color: var(--accent);
-  color: var(--text-1);
-}
-.rail-loop-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* shared by the Loops-page master list (spinner + iteration count on each loop row) */
 .rail-loop-spin {
   flex: 0 0 auto;
   color: var(--status-awaiting);
@@ -467,6 +545,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* inline-rename row (double-click / right-click → Rename) keeps the dot + input aligned */
+.loops-master-item.editing .rail-rename {
+  flex: 1;
+  min-width: 0;
+}
 .loops-master-add {
   display: flex;
   align-items: center;
@@ -532,6 +615,19 @@
   color: var(--text-3);
   font-size: 13px;
   padding: 24px 8px;
+}
+/* embedded live terminal for an interactive-terminal loop (fills the Runs detail) */
+.loop-term {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 8px 2px 2px;
+  overflow: hidden;
+}
+.loop-term .xterm,
+.loop-term .xterm-viewport,
+.loop-term .xterm-screen {
+  height: 100% !important;
 }
 .loop-ev {
   display: flex;
@@ -660,18 +756,26 @@
 /* ---- docked "Loop agent running" card ---- */
 .loop-run-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 11px;
   margin-top: 10px;
   padding: 12px 14px;
   background: var(--surface-2);
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-1));
+  border: 1px solid var(--border-2);
   border-radius: var(--radius-2);
+}
+.loop-run-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .loop-run-card-ico {
   flex: 0 0 auto;
   display: inline-flex;
   color: var(--accent);
+}
+.loop-run-card.paused .loop-run-card-ico {
+  color: var(--text-3);
 }
 .loop-run-card-text {
   flex: 1;
@@ -683,39 +787,83 @@
   color: var(--text-1);
 }
 .loop-run-card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   font-size: 11.5px;
   color: var(--text-3);
-  margin-top: 1px;
+  margin-top: 2px;
 }
-.loop-run-resume {
+.loop-run-card-name {
+  color: var(--text-2);
+  font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* dot-separated metadata chips */
+.loop-run-sep::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--text-3);
+  opacity: 0.7;
+}
+/* shared button base for the card's pause/stop controls */
+.loop-run-btn {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  padding: 6px;
-  background: var(--surface-1);
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--surface-3);
   border: 1px solid var(--border-1);
   border-radius: var(--radius-1);
   color: var(--text-2);
-  cursor: pointer;
-}
-.loop-run-resume:hover {
-  color: var(--text-1);
-  border-color: var(--border-2);
-}
-.loop-run-stop {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  font: inherit;
   font-size: 12px;
   font-weight: 500;
-  border-radius: var(--radius-1);
-  background: color-mix(in srgb, var(--status-error) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--status-error) 40%, transparent);
-  color: var(--status-error);
   cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.loop-run-btn:hover {
+  background: color-mix(in srgb, #fff 8%, var(--surface-3));
+  border-color: var(--border-2);
+  color: var(--text-1);
+}
+.loop-run-btn-icon {
+  width: 30px;
+  padding: 0; /* square icon-only pause/resume */
+}
+.loop-run-stop {
+  background: color-mix(in srgb, var(--status-error) 13%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-error) 32%, transparent);
+  color: var(--status-error);
 }
 .loop-run-stop:hover {
-  background: color-mix(in srgb, var(--status-error) 26%, transparent);
+  background: color-mix(in srgb, var(--status-error) 22%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--status-error) 48%, transparent);
+  color: var(--status-error);
+}
+/* thin progress toward max iterations — the only accent on the card */
+.loop-run-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-1);
+  overflow: hidden;
+}
+.loop-run-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s var(--ease);
+}
+.loop-run-card.paused .loop-run-progress-fill {
+  background: var(--text-3);
 }

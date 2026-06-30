@@ -6,7 +6,7 @@ export interface Session {
   title: string;
   command?: string;
   cwd?: string;
-  provider: "claude" | "gemini" | "codex" | "wsl" | "terminal";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "wsl" | "terminal";
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
   // the claude conversation this pane is currently on — starts as `id`, but follows a manual
@@ -23,6 +23,7 @@ export interface Workspace {
   sessions: Session[];
   renamed?: boolean; // user renamed it → never auto-rename again
   aiNamed?: boolean; // AI already titled it → don't re-title (a manual rename still wins)
+  layouts?: Record<number, string>; // chosen pane-layout preset id per pane-count (else auto/default)
 }
 
 const COLORS = ["#3fb6e0", "#46c98a", "#e0a23f", "#b06ae0", "#e5484d", "#7dc4e8"];
@@ -39,6 +40,7 @@ interface WorkspaceState {
   renameWorkspace: (id: string, name: string) => void;
   autoNameWorkspace: (id: string, name: string) => void;
   setActive: (id: string) => void;
+  setLayout: (id: string, count: number, presetId: string) => void;
   reorderWorkspaces: (fromId: string, toId: string) => void;
   addSession: (wsId: string, command?: string, cwd?: string) => void;
   renameSession: (sessionId: string, title: string) => void;
@@ -117,6 +119,14 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
 
   setActive: (id) => set({ activeId: id }),
 
+  // remember the chosen pane-layout preset for this space at this pane-count
+  setLayout: (id, count, presetId) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === id ? { ...w, layouts: { ...(w.layouts ?? {}), [count]: presetId } } : w,
+      ),
+    })),
+
   // move one rail item to another's slot (drag-to-reorder; sections stay intact since
   // you can only drop onto a sibling that's visible in the same group)
   reorderWorkspaces: (fromId, toId) =>
@@ -137,7 +147,8 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       const effCwd = cwd ?? s.workspaces.find((w) => w.id === wsId)?.cwd ?? "";
       let provider: Session["provider"] = "terminal";
       let title = "Terminal";
-      if (command?.includes("claude")) provider = "claude";
+      if (command?.includes("opencode")) provider = "opencode";
+      else if (command?.includes("claude")) provider = "claude";
       else if (command?.includes("gemini")) provider = "gemini";
       else if (command?.includes("codex")) provider = "codex";
       else if (command === "wsl") {
@@ -147,7 +158,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       // agent panes default to their working-folder name (folder-based), so they're tellable apart;
       // if that folder name is already taken (e.g. several agents in one folder) fall back to a short
       // friendly name. the Codex namer (ai/autoNameSession) upgrades it to a task name once there's work.
-      if (provider === "claude" || provider === "gemini" || provider === "codex") {
+      if (provider === "claude" || provider === "gemini" || provider === "codex" || provider === "opencode") {
         const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
         const folder = effCwd.split(/[\\/]/).filter(Boolean).pop();
         title = folder && !used.has(folder) ? folder : pickAgentName(used);
@@ -258,7 +269,8 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       sessions: w.sessions.map((s) => {
         if (s.provider) return s;
         let provider: Session["provider"] = "terminal";
-        if (s.command?.includes("claude")) provider = "claude";
+        if (s.command?.includes("opencode")) provider = "opencode";
+        else if (s.command?.includes("claude")) provider = "claude";
         else if (s.command?.includes("gemini")) provider = "gemini";
         else if (s.command?.includes("codex")) provider = "codex";
         else if (s.command === "wsl") provider = "wsl";

@@ -30,6 +30,11 @@ export function codexCmd(mode?: CodexMode): string {
   if (m === "auto") return "codex --sandbox workspace-write --ask-for-approval on-request";
   return "codex";
 }
+// opencode (sst) — open-source terminal agent, BYO-model. interactive TUI is just `opencode`;
+// auth + model are configured in opencode itself (opencode auth / its config).
+export function opencodeCmd(): string {
+  return "opencode";
+}
 
 function activeWs() {
   const { workspaces, activeId } = useWorkspaces.getState();
@@ -53,6 +58,7 @@ async function launchInActive(command?: string) {
 export const newClaude = () => launchInActive(claudeCmd());
 export const newGemini = () => launchInActive(geminiCmd());
 export const newCodex = () => launchInActive(codexCmd());
+export const newOpencode = () => launchInActive(opencodeCmd());
 export const newWsl = () => launchInActive(WSL_CMD);
 export const newTerminal = () => launchInActive();
 
