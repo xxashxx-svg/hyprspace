@@ -225,6 +225,12 @@ function TerminalPaneInner({
       .workspaces.find((w) => w.sessions.some((s) => s.id === sessionId));
     const cfg = ownerWs ? useProjectConfigs.getState().getConfig(ownerWs.cwd) : null;
     const projEnv = cfg && Object.keys(cfg.env).length ? cfg.env : undefined;
+    // Interactive Claude panes: force a full alt-screen repaint every frame so a resize can't leave
+    // stale/duplicated rows or a mid-screen status line. Claude only auto-enables this for
+    // background/agent-view sessions on Windows, so interactive panes have to opt in themselves.
+    const env = isClaude
+      ? { ...(projEnv ?? {}), CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT: "1" }
+      : projEnv;
     createPty(
       {
         id: sessionId,
@@ -232,7 +238,7 @@ function TerminalPaneInner({
         args: [],
         cols: term.cols,
         rows: term.rows,
-        ...(projEnv ? { env: projEnv } : {}),
+        ...(env ? { env } : {}),
         ...(cfg?.defaultShell ? { shell: cfg.defaultShell } : {}),
       },
       {
@@ -292,14 +298,22 @@ function TerminalPaneInner({
       }
     };
 
+    // Resize: fit + resize the PTY on a light throttle, never every frame. Hammering ConPTY (and
+    // SIGWINCH → the TUI) on every drag frame is what smeared/duplicated Claude mid-resize. ~16/s
+    // keeps the reflow live without the storm; a "settle" fit ~140ms after the drag stops locks the
+    // exact final size. (Claude also full-repaints via CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT — no smear.)
+    let lastFit = 0;
+    const LIVE_MS = 60;
     const ro = new ResizeObserver(() => {
+      clearTimeout(tSettled);
+      tSettled = setTimeout(syncFit, 140); // authoritative final fit once the drag settles
       if (raf) return;
+      const now = Date.now();
+      if (now - lastFit < LIVE_MS) return; // throttle live fits; the settle catches the final size
+      lastFit = now;
       raf = requestAnimationFrame(() => {
         raf = 0;
         syncFit();
-        // grid layouts can have a 100-150ms "spring" or transition; ensure we capture the end.
-        clearTimeout(tSettled);
-        tSettled = setTimeout(syncFit, 150);
       });
     });
     ro.observe(el);

@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.6.2 — 2026-07-01
+
+- macOS: fixed Claude, Gemini, Codex, and OpenCode showing as "not installed or not on PATH" — HyprSpace now adopts your real login-shell PATH, so provider detection, the home chat, and Loops all find the CLIs.
+- Terminal: smoother resizing for Claude panes — throttled live reflow plus a full alt-screen repaint, so dragging no longer leaves smeared or duplicated rows.
+
 ## 0.6.1 — 2026-07-01
 
 - **Sharper terminal text** by default — the crisp DOM/ClearType renderer, a cleaner default font (JetBrains Mono), and a solid block cursor.
