@@ -5,6 +5,9 @@ import { useWorkspaces } from "../stores/workspace";
 import { useGit } from "../stores/git";
 import { useServices } from "../stores/services";
 import { useLoops } from "../stores/loops";
+import { useProjectConfigs, folderKey, type Action } from "../stores/projectConfig";
+import { useActionEditor } from "../stores/actionEditor";
+import { runAction } from "../lib/startup";
 import { isMac, isWindows } from "../platform";
 import { pickFolder, gitIsRepo, revealPath } from "../api";
 import { newClaude, newGemini, newCodex, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
@@ -32,7 +35,13 @@ import {
   Play,
   Copy,
   Square,
+  Zap,
+  Loader2,
+  Check,
+  X,
 } from "lucide-react";
+
+const EMPTY_ACTIONS: Action[] = [];
 import { Logo } from "./Logo";
 import { NotificationPanel } from "./NotificationPanel";
 import { LayoutPicker } from "./LayoutPicker";
@@ -337,6 +346,25 @@ export function Titlebar() {
   const activeWs = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId));
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
   const repoCwd = activeWs?.sessions.find((s) => s.id === focusedId)?.cwd || activeWs?.cwd || "";
+  // project-scoped actions for the active project's folder (on-demand commands)
+  const projFolder = activeWs && activeWs.kind !== "open" ? activeWs.cwd : "";
+  const projActions = useProjectConfigs((s) =>
+    projFolder ? s.configs[folderKey(projFolder)]?.startup ?? EMPTY_ACTIONS : EMPTY_ACTIONS,
+  );
+  const actionItems: MenuItem[] = [
+    ...projActions.map((a) => ({
+      label: a.name || a.command || "action",
+      icon: <Play size={13} />,
+      onClick: () => activeWs && runAction(activeWs.id, a),
+    })),
+    {
+      label: "Add action…",
+      icon: <Plus size={14} />,
+      onClick: () =>
+        projFolder && useActionEditor.getState().openEditor(projFolder, { wsId: activeWs?.id }),
+    },
+  ];
+
   const gitItems: MenuItem[] = [
     { label: "Commit & push…", icon: <Upload size={14} />, onClick: () => useGit.getState().openCommit(true) },
     { label: "Commit…", icon: <GitCommitVertical size={14} />, onClick: () => useGit.getState().openCommit(false) },
@@ -346,6 +374,7 @@ export function Titlebar() {
 
   // is the active folder actually a git repo? gates the button (re-checks after a git init)
   const repoTick = useGit((s) => s.repoTick);
+  const gitAct = useGit((s) => s.activity); // live "Pushing… / Pushed" status on the git button
   const [isRepo, setIsRepo] = useState(false);
   useEffect(() => {
     if (!repoCwd) {
@@ -385,23 +414,38 @@ export function Titlebar() {
         <div className="tb-actions">
           <ActionMenu label="New" lead={<Plus size={14} />} items={newItems} />
           <ActionMenu label="Open" lead={<FolderOpen size={14} />} items={openItems} />
-          {view === "space" &&
-            repoCwd &&
-            (isRepo ? (
-              <ActionMenu label="Commit & push" lead={<GitBranch size={14} />} items={gitItems} />
-            ) : (
-              <ActionMenu
-                label="Init repo"
-                lead={<GitBranch size={14} />}
-                items={[
-                  {
-                    label: "Initialize git repository…",
-                    icon: <GitBranch size={14} />,
-                    onClick: () => useGit.getState().openInitRepo(),
-                  },
-                ]}
-              />
-            ))}
+          {view === "space" && repoCwd && (
+            <ActionMenu
+              label={gitAct ? gitAct.label : isRepo ? "Commit & push" : "Init repo"}
+              lead={
+                gitAct ? (
+                  gitAct.kind === "busy" ? (
+                    <Loader2 size={14} className="tb-spin" />
+                  ) : gitAct.kind === "ok" ? (
+                    <Check size={14} className="tb-git-ok" />
+                  ) : (
+                    <X size={14} className="tb-git-err" />
+                  )
+                ) : (
+                  <GitBranch size={14} />
+                )
+              }
+              items={
+                isRepo
+                  ? gitItems
+                  : [
+                      {
+                        label: "Initialize git repository…",
+                        icon: <GitBranch size={14} />,
+                        onClick: () => useGit.getState().openInitRepo(),
+                      },
+                    ]
+              }
+            />
+          )}
+          {view === "space" && projFolder && (
+            <ActionMenu label="Actions" lead={<Zap size={14} />} items={actionItems} />
+          )}
           <LayoutPicker />
         </div>
         <LoopsIndicator />

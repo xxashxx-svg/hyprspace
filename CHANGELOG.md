@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.6.0 — 2026-07-01
+
+- **Actions** — the old Startup tab is now Actions: project-scoped commands you run on demand from the top-bar Actions menu, the command palette, or a keybinding. Auto-run when a project opens or a worktree is created is now opt-in per action (no more surprise re-runs).
+- **Embedded preview** — give an action a Preview URL and it opens a docked in-app browser, so you can watch your dev server come up without leaving HyprSpace.
+- **Layout picker** — choose how panes tile from a new titlebar button.
+- **OpenCode** is now available in Settings → Providers.
+- **Live git status** — Push / Commit / Create PR now show progress right on the button (Pushing… → Pushed) instead of finishing silently.
+- **Fixes** — the sidebar project/space close (✕) button no longer jumps on hover; terminal block-art (the Claude logo, progress bars) renders cleanly without gaps.
+
 ## 0.5.15 — 2026-06-30
 
 - Loops: new "Claude (subscription)" backend — run loops on your logged-in Claude, no API key needed.

@@ -13,6 +13,8 @@ import { Settings } from "./components/Settings";
 import { CommitDialog } from "./components/CommitDialog";
 import { PrDialog } from "./components/PrDialog";
 import { InitRepoDialog } from "./components/InitRepoDialog";
+import { ActionDialog } from "./components/ActionDialog";
+import { PreviewPanel } from "./components/PreviewPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { LaunchWorkspace } from "./components/LaunchWorkspace";
@@ -278,9 +280,11 @@ export default function App() {
       <WhatsNew />
       <CommandPalette />
       {settingsOpen && <Settings />}
+      <PreviewPanel />
       <CommitDialog />
       <PrDialog />
       <InitRepoDialog />
+      <ActionDialog />
       <ConfirmDialog />
       <NewProjectDialog />
       <ServicesDialog />

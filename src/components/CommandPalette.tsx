@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { useLoops, newLoop } from "../stores/loops";
+import { useProjectConfigs, folderKey } from "../stores/projectConfig";
+import { runAction } from "../lib/startup";
 import { pauseLoop } from "../lib/loops";
 import { searchOutput } from "../terminal/buffers";
 import { isWindows, kbd } from "../platform";
@@ -31,6 +33,8 @@ interface Item {
 export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen);
   const workspaces = useWorkspaces((s) => s.workspaces);
+  const activeId = useWorkspaces((s) => s.activeId);
+  const configs = useProjectConfigs((s) => s.configs);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -98,14 +102,25 @@ export function CommandPalette() {
       },
       { id: "settings", label: "Open settings", run: () => useUi.getState().openSettings() },
     ];
+    // the active project's actions (run on demand)
+    const aws = workspaces.find((w) => w.id === activeId);
+    const folder = aws && aws.kind !== "open" ? aws.cwd : "";
+    const actions: Item[] = folder
+      ? (configs[folderKey(folder)]?.startup ?? []).map((a) => ({
+          id: "action-" + a.id,
+          label: `Run action: ${a.name || a.command}`,
+          hint: a.keybinding,
+          run: () => aws && runAction(aws.id, a),
+        }))
+      : [];
     const spaces: Item[] = workspaces.map((w, i) => ({
       id: "ws-" + w.id,
       label: `Switch to ${w.name}`,
       hint: i < 9 ? `Ctrl+${i + 1}` : undefined,
       run: () => switchSpaceByIndex(i),
     }));
-    return [...base, ...spaces];
-  }, [workspaces]);
+    return [...base, ...actions, ...spaces];
+  }, [workspaces, activeId, configs]);
 
   const filteredCommands = useMemo(() => {
     const s = q.trim().toLowerCase();

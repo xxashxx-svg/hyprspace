@@ -385,6 +385,7 @@
   font-style: italic;
 }
 .rail-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -464,6 +465,10 @@
   padding: 1px 7px;
 }
 .rail-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -477,14 +482,16 @@
   border-radius: 4px;
   font-size: 15px;
   line-height: 1;
-  flex: 0 0 auto;
   opacity: 0;
+  pointer-events: none;
 }
 .rail-item:hover .rail-clear {
   opacity: 1;
+  pointer-events: auto;
 }
+/* keep the count's space reserved (visibility, not display) so hovering never reflows the row */
 .rail-item:hover .rail-count {
-  display: none;
+  visibility: hidden;
 }
 .rail-clear:hover {
   background: var(--surface-3);

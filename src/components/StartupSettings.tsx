@@ -53,7 +53,7 @@ export function StartupSettings() {
 
       {list.length === 0 ? (
         <div className="svc-hint">
-          No folders configured. Add one to set up the services that run when you open a project there.
+          No folders configured. Add one to set up the actions you can run in a project there.
         </div>
       ) : (
         <div className="su-list">

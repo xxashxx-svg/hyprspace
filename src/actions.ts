@@ -7,6 +7,7 @@ import { useUi } from "./stores/ui";
 import { pickFolders, worktreeCreate } from "./api";
 import { useSettings, type ClaudePermission, type CodexMode } from "./stores/settings";
 import { useProjectConfigs } from "./stores/projectConfig";
+import { usePreview } from "./stores/preview";
 import { maybeAutostart } from "./lib/startup";
 
 export const WSL_CMD = "wsl";
@@ -77,6 +78,12 @@ export async function newClaudeInWorktree() {
   try {
     const path = await worktreeCreate(ws.cwd, name);
     useWorkspaces.getState().addSession(ws.id, claudeCmd(), path);
+    // fire any of the project's actions flagged to run when a worktree is created, in the worktree
+    for (const a of useProjectConfigs.getState().getConfig(ws.cwd).startup) {
+      if (!a.runOnWorktree) continue;
+      useWorkspaces.getState().addSession(ws.id, a.command || undefined, path);
+      if (a.openPreview && a.previewUrl?.trim()) usePreview.getState().openUrl(a.previewUrl.trim());
+    }
   } catch (e) {
     useNotifications.getState().add({ title: "Couldn't create worktree", body: String(e) });
   }

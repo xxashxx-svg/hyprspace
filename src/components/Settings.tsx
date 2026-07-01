@@ -84,7 +84,7 @@ const TABS: { id: Tab; label: string; desc: string }[] = [
   { id: "account", label: "Account", desc: "Your profile and sign-in" },
   { id: "appearance", label: "Appearance", desc: "Theme, colors and fonts" },
   { id: "workspace", label: "Workspace", desc: "Where projects are created" },
-  { id: "startup", label: "Startup", desc: "Services that run per folder" },
+  { id: "startup", label: "Actions", desc: "Project commands you run on demand or on open" },
   { id: "providers", label: "Providers", desc: "How each AI tool launches" },
   { id: "mcp", label: "MCP", desc: "Model Context Protocol servers" },
   { id: "skills", label: "Skills", desc: "Snippets and Claude skills" },

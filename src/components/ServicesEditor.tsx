@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { useProjectConfigs, folderKey, type StartupTask } from "../stores/projectConfig";
+import { useProjectConfigs, folderKey, type Action } from "../stores/projectConfig";
+import { useActionEditor } from "../stores/actionEditor";
 import { useWorkspaces, type Session } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useServices, serviceId } from "../stores/services";
-import { launchTask, startServices, taskFromFile } from "../lib/startup";
+import { runAction, startServices, taskFromFile } from "../lib/startup";
 import { closeSession } from "../actions";
 import { pickFile } from "../api";
-import { Play, Plus, X, Trash2, Upload, Square, ScrollText } from "lucide-react";
+import { Play, Plus, X, Trash2, Upload, Square, ScrollText, Keyboard } from "lucide-react";
 
 const uid = () => crypto.randomUUID();
 const EMPTY_SESSIONS: Session[] = [];
@@ -28,11 +29,11 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folder]); // reload when the folder changes
 
-  const apply = (patch: Partial<{ startup: StartupTask[]; env: Record<string, string>; defaultShell?: string }>) =>
+  const apply = (patch: Partial<{ startup: Action[]; env: Record<string, string>; defaultShell?: string }>) =>
     useProjectConfigs.getState().setConfig(folder, patch);
-  const setTasks = (next: StartupTask[]) => apply({ startup: next });
-  const updateTask = (id: string, patch: Partial<StartupTask>) =>
-    setTasks(startup.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const setTasks = (next: Action[]) => apply({ startup: next });
+  const editAction = (action?: Action) =>
+    useActionEditor.getState().openEditor(folder, { wsId, action });
 
   const commitEnv = (rows: { id: string; k: string; v: string }[]) => {
     setEnvRows(rows);
@@ -52,7 +53,7 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
   const sessions = useWorkspaces((s) => s.workspaces.find((w) => w.id === wsId)?.sessions ?? EMPTY_SESSIONS);
   const bgRunning = useServices((s) => s.running);
   const bgKnown = useServices((s) => s.known);
-  const runState = (t: StartupTask): Run | null => {
+  const runState = (t: Action): Run | null => {
     if (t.background) {
       const sid = serviceId(t.id);
       if (bgRunning[sid]) return { bg: true, key: sid, running: true };
@@ -62,7 +63,7 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
     const sess = wsId ? sessions.find((s) => (s.command ?? "") === (t.command ?? "")) : undefined;
     return sess ? { bg: false, key: sess.id, running: true } : null;
   };
-  const viewLogs = (run: Run, t: StartupTask) => {
+  const viewLogs = (run: Run, t: Action) => {
     if (run.bg) {
       useUi.getState().openServiceLogs({ id: run.key, name: t.name || "service" });
       return;
@@ -92,89 +93,58 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
       </div>
 
       <div className="svc-section">
-        <div className="svc-label">Startup tasks</div>
+        <div className="svc-label">Actions</div>
         <button className="svc-drop" data-folder={folder} onClick={() => void browseFile()}>
           <Upload size={15} />
           <span>
-            Drop a <b>.bat</b> / script / <b>.exe</b> here, or click to browse
+            Drop a <b>.bat</b> / script / <b>.exe</b> to add it, or click to browse
           </span>
         </button>
-        {startup.map((t) => {
-          const run = runState(t);
+        {startup.map((a) => {
+          const run = runState(a);
           return (
-            <div className={`svc-task${run?.running ? " running" : ""}`} key={t.id}>
-              <div className="svc-task-row">
-                {run?.running && <span className="svc-dot on" title="Running" />}
-                <input
-                  className="svc-in svc-name"
-                  placeholder="Name"
-                  value={t.name}
-                  onChange={(e) => updateTask(t.id, { name: e.target.value })}
-                />
-                {wsId && (
-                  <>
-                    {run && (run.bg || run.running) && (
-                      <button className="svc-run on" title="View logs" onClick={() => viewLogs(run, t)}>
-                        <ScrollText size={13} />
-                      </button>
-                    )}
-                    {run?.running ? (
-                      <button className="svc-stop" title="Stop" onClick={() => stopRun(run)}>
-                        <Square size={13} />
-                      </button>
-                    ) : (
-                      <button className="svc-run" title="Run" onClick={() => launchTask(wsId, t)}>
-                        <Play size={13} />
-                      </button>
-                    )}
-                  </>
+            <div className={`act-card${run?.running ? " running" : ""}`} key={a.id}>
+              <button className="act-card-main" title="Edit action" onClick={() => editAction(a)}>
+                <span className={`act-card-dot${run?.running ? " on" : ""}`} />
+                <span className="act-card-text">
+                  <span className="act-card-name">{a.name || "Untitled action"}</span>
+                  <span className="act-card-cmd">{a.command || "(no command)"}</span>
+                </span>
+                {a.keybinding && (
+                  <span className="act-card-key" title="Keybinding">
+                    <Keyboard size={11} /> {a.keybinding}
+                  </span>
                 )}
+              </button>
+              <div className="act-card-btns">
+                {wsId && run && (run.bg || run.running) && (
+                  <button className="svc-run on" title="View logs" onClick={() => viewLogs(run, a)}>
+                    <ScrollText size={13} />
+                  </button>
+                )}
+                {wsId &&
+                  (run?.running ? (
+                    <button className="svc-stop" title="Stop" onClick={() => stopRun(run)}>
+                      <Square size={13} />
+                    </button>
+                  ) : (
+                    <button className="svc-run" title="Run" onClick={() => runAction(wsId, a)}>
+                      <Play size={13} />
+                    </button>
+                  ))}
                 <button
                   className="svc-del"
                   title="Remove"
-                  onClick={() => setTasks(startup.filter((x) => x.id !== t.id))}
+                  onClick={() => setTasks(startup.filter((x) => x.id !== a.id))}
                 >
                   <Trash2 size={13} />
                 </button>
               </div>
-              <input
-                className="svc-in svc-cmd"
-                placeholder="Command (e.g. npm run dev)"
-                value={t.command}
-                onChange={(e) => updateTask(t.id, { command: e.target.value })}
-              />
-              <input
-                className="svc-in svc-folder"
-                placeholder="Subfolder (optional)"
-                value={t.folder ?? ""}
-                onChange={(e) => updateTask(t.id, { folder: e.target.value || undefined })}
-              />
-              <div className="svc-task-row svc-flags">
-                <label className="svc-auto">
-                  <input
-                    type="checkbox"
-                    checked={t.autostart}
-                    onChange={(e) => updateTask(t.id, { autostart: e.target.checked })}
-                  />
-                  Autostart
-                </label>
-                <label className="svc-auto">
-                  <input
-                    type="checkbox"
-                    checked={!!t.background}
-                    onChange={(e) => updateTask(t.id, { background: e.target.checked })}
-                  />
-                  Background
-                </label>
-              </div>
             </div>
           );
         })}
-        <button
-          className="svc-add"
-          onClick={() => setTasks([...startup, { id: uid(), name: "", command: "", autostart: false }])}
-        >
-          <Plus size={13} /> Add command
+        <button className="svc-add" onClick={() => editAction()}>
+          <Plus size={13} /> Add action
         </button>
       </div>
 
@@ -216,9 +186,9 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
       </div>
 
       <div className="svc-hint">
-        Autostart tasks launch when you open a project — or a terminal — in this folder. <b>Background</b>{" "}
-        tasks run headless with no pane; click the log icon to watch their output. Otherwise a task gets
-        its own terminal pane.
+        Actions are commands you run on demand — from the top-bar <b>Actions</b> menu, the command
+        palette, or a keybinding. Turn on <b>Run on open / worktree</b> in an action to auto-run it.
+        <b> Background</b> actions run headless (watch their logs); otherwise they get a terminal pane.
       </div>
     </div>
   );
