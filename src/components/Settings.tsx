@@ -234,6 +234,10 @@ export function Settings() {
   const setCursorBlink = useSettings((s) => s.setCursorBlink);
   const copyOnSelect = useSettings((s) => s.copyOnSelect);
   const setCopyOnSelect = useSettings((s) => s.setCopyOnSelect);
+  const lineHeight = useSettings((s) => s.lineHeight);
+  const setLineHeight = useSettings((s) => s.setLineHeight);
+  const gpuRender = useSettings((s) => s.gpuRender);
+  const setGpuRender = useSettings((s) => s.setGpuRender);
   const autoNameAgents = useSettings((s) => s.autoNameAgents);
   const setAutoNameAgents = useSettings((s) => s.setAutoNameAgents);
   const claudePermission = useSettings((s) => s.claudePermission);
@@ -577,6 +581,13 @@ export function Settings() {
                       <button onClick={() => setFontSize(fontSize + 1)}>+</button>
                     </div>
                   </Row>
+                  <Row label="Line height" desc="Row spacing — lower is tighter, higher is airier (applies live)">
+                    <div className="stepper">
+                      <button onClick={() => setLineHeight((lineHeight ?? 1.1) - 0.05)}>−</button>
+                      <span className="stepper-val">{(lineHeight ?? 1.1).toFixed(2)}</span>
+                      <button onClick={() => setLineHeight((lineHeight ?? 1.1) + 0.05)}>+</button>
+                    </div>
+                  </Row>
                 </Group>
               </>
             )}
@@ -701,6 +712,18 @@ export function Settings() {
                       className={`toggle ${cursorBlink ? "on" : ""}`}
                       onClick={() => setCursorBlink(!cursorBlink)}
                       aria-pressed={cursorBlink}
+                    >
+                      <span className="toggle-knob" />
+                    </button>
+                  </Row>
+                  <Row
+                    label="GPU rendering"
+                    desc="WebGL — draws block art (logos, progress bars, box-drawing) seamlessly like Alacritty. Off = the DOM renderer with crisp ClearType text. Reopen panes to apply."
+                  >
+                    <button
+                      className={`toggle ${gpuRender ? "on" : ""}`}
+                      onClick={() => setGpuRender(!gpuRender)}
+                      aria-pressed={gpuRender}
                     >
                       <span className="toggle-knob" />
                     </button>

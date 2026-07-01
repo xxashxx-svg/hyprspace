@@ -6,7 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { makeTerminal, termTheme } from "../terminal/createTerminal";
+import { makeTerminal, termTheme, attachGpuRenderer } from "../terminal/createTerminal";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { useProjectConfigs } from "../stores/projectConfig";
@@ -117,6 +117,7 @@ function TerminalPaneInner({
   const themeId = useSettings((s) => s.theme);
   const fontSize = useSettings((s) => s.fontSize);
   const fontFamily = useSettings((s) => s.fontFamily);
+  const lineHeight = useSettings((s) => s.lineHeight);
   const cursorStyle = useSettings((s) => s.cursorStyle);
   const cursorBlink = useSettings((s) => s.cursorBlink);
 
@@ -139,6 +140,7 @@ function TerminalPaneInner({
     term.loadAddon(links);
     searchRef.current = search;
     term.open(el);
+    attachGpuRenderer(term); // GPU (WebGL) renderer if enabled — must come after open()
 
     // Ctrl+Shift+F search · Ctrl+C copies selection (else SIGINT) · Ctrl+V / Ctrl+Shift+V paste
     term.attachCustomKeyEventHandler((e) => {
@@ -168,10 +170,8 @@ function TerminalPaneInner({
     });
 
     let disposed = false;
-    // DOM renderer (no WebGL): real text gets the OS's native subpixel antialiasing — ClearType on
-    // Windows — so glyphs are crisp like T3 Code (full-T3 look). trade-off: the DOM renderer's
-    // fractional line-height can clip the very last row in dense grids (e.g. Codex's status line);
-    // Claude panes don't use the last row so they're unaffected.
+    // Renderer is a setting (Settings → Terminal): GPU/WebGL (default) draws block art seamlessly
+    // like Alacritty; DOM gives crisp ClearType text but needs line-height 1.0 for clean blocks.
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -404,13 +404,14 @@ function TerminalPaneInner({
     if (!t) return;
     t.options.fontFamily = fontFamily;
     t.options.fontSize = fontSize;
+    t.options.lineHeight = lineHeight ?? 1.1;
     try {
       f?.fit();
       void resizePty(sessionId, t.cols, t.rows);
     } catch {
       /* not ready */
     }
-  }, [fontFamily, fontSize, sessionId]);
+  }, [fontFamily, fontSize, lineHeight, sessionId]);
 
   // live cursor change
   useEffect(() => {

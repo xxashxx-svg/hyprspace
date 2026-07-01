@@ -1,4 +1,5 @@
 import { Terminal, type ITheme } from "@xterm/xterm";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { useSettings } from "../stores/settings";
 
@@ -48,10 +49,9 @@ export function makeTerminal(isClaude: boolean): Terminal {
     cursorBlink: isClaude ? false : s.cursorBlink,
     fontFamily: s.fontFamily,
     fontSize: s.fontSize,
-    // 1.0 so block-element glyphs (the Claude logo, box-art, progress bars) tile seamlessly —
-    // any line-height > 1 leaves a gap above each row and the filled art looks striped/broken.
-    // 1.0 also sidesteps the DOM renderer's fractional-line-height last-row clipping.
-    lineHeight: 1.0,
+    // user-tunable (Settings → Terminal). Note: on the DOM renderer, > 1.0 gives filled block-art
+    // (logo/progress bars) a faint per-row gap; WebGL draws blocks as quads so it's seamless anywhere.
+    lineHeight: s.lineHeight ?? 1.1,
     scrollback: 10000,
     smoothScrollDuration: 80,
     fastScrollSensitivity: 5,
@@ -60,4 +60,19 @@ export function makeTerminal(isClaude: boolean): Terminal {
     windowsPty,
     theme: termTheme(),
   });
+}
+
+// Attach the GPU (WebGL) renderer when it's enabled — same atlas-and-quads model as Alacritty's
+// OpenGL renderer, so block art (the Claude logo, progress bars, box-drawing) tiles seamlessly.
+// MUST be called after term.open(). No-ops on the DOM setting; on GPU context loss it disposes the
+// addon, which reverts xterm to the DOM renderer, so a lost context self-heals instead of blanking.
+export function attachGpuRenderer(term: Terminal): void {
+  if (!useSettings.getState().gpuRender) return;
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch (err) {
+    console.warn("WebGL renderer unavailable; staying on the DOM renderer", err);
+  }
 }

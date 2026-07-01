@@ -12,6 +12,8 @@ interface SettingsState {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   copyOnSelect: boolean;
+  lineHeight: number; // terminal row spacing (1.0 = tight, 1.2 = airy)
+  gpuRender: boolean; // WebGL renderer (GPU, seamless block art) vs the DOM renderer (ClearType text)
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
   codexMode: CodexMode;
@@ -24,6 +26,8 @@ interface SettingsState {
   setCursorStyle: (c: CursorStyle) => void;
   setCursorBlink: (b: boolean) => void;
   setCopyOnSelect: (b: boolean) => void;
+  setLineHeight: (n: number) => void;
+  setGpuRender: (b: boolean) => void;
   setClaudePermission: (m: ClaudePermission) => void;
   setGeminiYolo: (b: boolean) => void;
   setCodexMode: (m: CodexMode) => void;
@@ -38,10 +42,12 @@ export const DEFAULT_FONT = '"Cascadia Code", "JetBrains Mono", "Consolas", mono
 export const useSettings = create<SettingsState>()((set) => ({
   theme: "t3",
   fontSize: 13,
-  fontFamily: DEFAULT_FONT,
-  cursorStyle: "bar",
+  fontFamily: '"JetBrains Mono", "Cascadia Code", monospace',
+  cursorStyle: "block",
   cursorBlink: true,
   copyOnSelect: false,
+  lineHeight: 1.1, // comfortable middle — 1.0 felt congested, 1.2 felt airy
+  gpuRender: false, // DOM renderer by default = crisp ClearType text (WebGL is softer; opt in for it)
   claudePermission: "acceptEdits",
   geminiYolo: false,
   codexMode: "auto",
@@ -58,6 +64,8 @@ export const useSettings = create<SettingsState>()((set) => ({
   setCursorStyle: (c) => set({ cursorStyle: c }),
   setCursorBlink: (b) => set({ cursorBlink: b }),
   setCopyOnSelect: (b) => set({ copyOnSelect: b }),
+  setLineHeight: (n) => set({ lineHeight: Math.min(1.8, Math.max(1.0, Math.round(n * 100) / 100)) }),
+  setGpuRender: (b) => set({ gpuRender: b }),
   setClaudePermission: (m) => set({ claudePermission: m }),
   setGeminiYolo: (b) => set({ geminiYolo: b }),
   setCodexMode: (m) => set({ codexMode: m }),

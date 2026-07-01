@@ -147,7 +147,7 @@
 .pane-term {
   flex: 1;
   min-height: 0;
-  padding: 6px 8px;
+  padding: 8px 16px;
   /* native subpixel antialiasing (ClearType on Windows) for crisp, full-T3 text. trade-off: fringes
      a touch on small/dense panes — but that softness is inherent to small font sizes anyway. */
   -webkit-font-smoothing: subpixel-antialiased;

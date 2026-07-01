@@ -4,6 +4,14 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.6.1 — 2026-07-01
+
+- **Sharper terminal text** by default — the crisp DOM/ClearType renderer, a cleaner default font (JetBrains Mono), and a solid block cursor.
+- New **Line height** dial (Settings → Terminal) to tune row spacing live.
+- Optional **GPU rendering** toggle (Settings → Terminal) — WebGL draws block art (logos, progress bars) seamlessly, at a slight cost to text sharpness. Off by default.
+- More breathing room — extra horizontal padding so terminal text isn't flush against the pane edges.
+- **Smoother under heavy output** — moved the scrollback search-indexer off the hot render path so firehose output doesn't drop frames.
+
 ## 0.6.0 — 2026-07-01
 
 - **Actions** — the old Startup tab is now Actions: project-scoped commands you run on demand from the top-bar Actions menu, the command palette, or a keybinding. Auto-run when a project opens or a worktree is created is now opt-in per action (no more surprise re-runs).
