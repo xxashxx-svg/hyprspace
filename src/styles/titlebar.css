@@ -73,6 +73,21 @@
 .tb-action-caret {
   color: var(--text-3);
 }
+/* live git-action status on the topbar button (Pushing… → Pushed) */
+.tb-spin {
+  animation: tbspin 0.8s linear infinite;
+}
+@keyframes tbspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tb-git-ok {
+  color: var(--status-ok);
+}
+.tb-git-err {
+  color: var(--status-error);
+}
 /* pane layout picker (titlebar button + thumbnail popover) */
 .tb-layout {
   position: relative;
@@ -480,6 +495,209 @@
 }
 .cd-indent {
   padding-left: 24px;
+}
+/* action dialog: name row with a run button, keybinding capture */
+.ad-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ad-name-row .svc-in {
+  flex: 1;
+  min-width: 0;
+}
+.ad-run {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--surface-3);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ad-run:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--border-2);
+}
+.ad-run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ad-keys {
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+/* action cards (Settings → Actions) */
+.act-card {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--surface-2);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.act-card.running {
+  border-color: color-mix(in srgb, var(--status-ok) 35%, var(--border-1));
+}
+.act-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.act-card-main:hover {
+  background: var(--surface-3);
+}
+.act-card-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.act-card-dot.on {
+  background: var(--status-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-ok) 22%, transparent);
+}
+.act-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.act-card-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.act-card-cmd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.act-card-key {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.act-card-btns {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+}
+
+/* embedded browser preview panel (docked right) */
+.prev {
+  position: fixed;
+  top: 36px;
+  right: 0;
+  bottom: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-2);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.28);
+}
+.prev-grip {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 1;
+}
+.prev-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-1);
+  background: var(--surface-2);
+}
+.prev-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.prev-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.prev-url {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.prev-url:focus {
+  border-color: var(--accent);
+}
+.prev-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+.prev-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 20px;
+  text-align: center;
 }
 /* in-app confirm dialog (replaces the native OS ask()) */
 .confirm-overlay {

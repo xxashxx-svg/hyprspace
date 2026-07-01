@@ -2,12 +2,13 @@
 // Config is keyed by folder, so opening the same folder in several projects shares one config —
 // and we dedup by command across every workspace at that folder, so a server never runs twice.
 import { useWorkspaces } from "../stores/workspace";
-import { useProjectConfigs, folderKey, type StartupTask } from "../stores/projectConfig";
+import { useProjectConfigs, folderKey, type Action } from "../stores/projectConfig";
 import { useServices, serviceId } from "../stores/services";
+import { usePreview } from "../stores/preview";
 import { isWindows } from "../platform";
 
-// turn a dropped/picked file (a .bat / .ps1 / .sh / .exe / …) into a startup task that runs it
-export function taskFromFile(path: string): StartupTask {
+// turn a dropped/picked file (a .bat / .ps1 / .sh / .exe / …) into an action that runs it
+export function taskFromFile(path: string): Action {
   const name = path.split(/[\\/]/).pop() || "Task";
   const ext = name.split(".").pop()?.toLowerCase();
   let command: string;
@@ -19,7 +20,7 @@ export function taskFromFile(path: string): StartupTask {
   } else {
     command = ext === "sh" ? `bash "${path}"` : `"${path}"`;
   }
-  return { id: crypto.randomUUID(), name, command, autostart: false };
+  return { id: crypto.randomUUID(), name, command };
 }
 
 // folders we've already autostarted this app session — so opening the same folder again (or a
@@ -33,8 +34,8 @@ function taskCwd(wsCwd: string, folder?: string): string {
   return `${wsCwd}${sep}${folder}`;
 }
 
-// launch one task: a background service (headless, logs captured) or a normal terminal pane
-export function launchTask(wsId: string, task: StartupTask) {
+// launch one action: a background service (headless, logs captured) or a normal terminal pane
+export function launchTask(wsId: string, task: Action) {
   const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
   if (!ws) return;
   const cwd = taskCwd(ws.cwd, task.folder);
@@ -46,6 +47,22 @@ export function launchTask(wsId: string, task: StartupTask) {
   } else {
     useWorkspaces.getState().addSession(wsId, task.command || undefined, cwd);
   }
+}
+
+// run an action on demand: launch it, and open its preview URL in the embedded preview if asked
+export function runAction(wsId: string, action: Action) {
+  launchTask(wsId, action);
+  if (action.openPreview && action.previewUrl?.trim()) {
+    usePreview.getState().openUrl(action.previewUrl.trim());
+  }
+}
+
+// run the folder's actions flagged to auto-run when a worktree is created for it
+export function runWorktreeActions(wsId: string) {
+  const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
+  if (!ws || !ws.cwd) return;
+  const cfg = useProjectConfigs.getState().getConfig(ws.cwd);
+  for (const a of cfg.startup) if (a.runOnWorktree) runAction(wsId, a);
 }
 
 // launch a folder's services into a workspace. dedups by command across ALL workspaces at the same
@@ -63,7 +80,7 @@ export function startServices(wsId: string, opts?: { force?: boolean }) {
       .flatMap((w) => w.sessions.map((s) => s.command ?? "")),
   );
   for (const t of cfg.startup) {
-    if (!opts?.force && !t.autostart) continue;
+    if (!opts?.force && !t.runOnOpen) continue;
     if (t.background) {
       if (useServices.getState().running[serviceId(t.id)]) continue; // already running headless
     } else {
@@ -82,7 +99,7 @@ export function maybeAutostart(wsId: string) {
   const key = folderKey(ws.cwd);
   if (autostartedFolders.has(key)) return;
   const cfg = useProjectConfigs.getState().getConfig(ws.cwd);
-  if (!cfg.startup.some((t) => t.autostart)) return;
+  if (!cfg.startup.some((t) => t.runOnOpen)) return;
   autostartedFolders.add(key);
   startServices(wsId);
 }

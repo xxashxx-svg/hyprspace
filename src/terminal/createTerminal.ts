@@ -48,7 +48,10 @@ export function makeTerminal(isClaude: boolean): Terminal {
     cursorBlink: isClaude ? false : s.cursorBlink,
     fontFamily: s.fontFamily,
     fontSize: s.fontSize,
-    lineHeight: 1.2,
+    // 1.0 so block-element glyphs (the Claude logo, box-art, progress bars) tile seamlessly —
+    // any line-height > 1 leaves a gap above each row and the filled art looks striped/broken.
+    // 1.0 also sidesteps the DOM renderer's fractional-line-height last-row clipping.
+    lineHeight: 1.0,
     scrollback: 10000,
     smoothScrollDuration: 80,
     fastScrollSensitivity: 5,
