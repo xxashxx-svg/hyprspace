@@ -5,7 +5,7 @@ import { useUi } from "../stores/ui";
 import { listDir, revealPath, type DirEntry } from "../api";
 import { joinPath } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
-import { claudeCmd, geminiCmd, codexCmd } from "../actions";
+import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { isWindows } from "../platform";
 import { ChevronRight, Folder, File as FileIcon, RefreshCw } from "lucide-react";
 
@@ -105,6 +105,8 @@ function TreeNode({
     { label: "Open Claude here", cmd: claudeCmd() },
     { label: "Open Gemini here", cmd: geminiCmd() },
     { label: "Open Codex here", cmd: codexCmd() },
+    { label: "Open OpenCode here", cmd: opencodeCmd() },
+    { label: "Open Grok here", cmd: grokCmd() },
     ...(isWindows ? [{ label: "Open WSL here", cmd: WSL_CMD }] : []),
     { label: "Open terminal here", cmd: undefined },
   ];

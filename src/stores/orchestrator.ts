@@ -4,7 +4,7 @@
 import { useWorkspaces } from "./workspace";
 import { createProjectDir, getHomeDir } from "../api";
 import { projectsBaseDir, joinPath } from "../lib/projects";
-import { claudeCmd, geminiCmd, codexCmd, WSL_CMD } from "../actions";
+import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd, WSL_CMD } from "../actions";
 
 export const ORCHESTRATOR_PREAMBLE = `You are the operator of HyprSpace, a multi-agent terminal workspace. In addition to answering normally, you can control the workspace. When the user asks you to create a project or open space, or to spawn agents/terminals, DO IT by emitting a fenced command block:
 
@@ -60,6 +60,8 @@ const PROVIDER_CMD: Record<string, () => string | undefined> = {
   claude: () => claudeCmd(),
   gemini: () => geminiCmd(),
   codex: () => codexCmd(),
+  opencode: () => opencodeCmd(),
+  grok: () => grokCmd(),
   wsl: () => WSL_CMD,
   terminal: () => undefined,
 };

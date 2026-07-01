@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.7.1 — 2026-07-01
+
+- Grok and OpenCode now appear in every launch surface — the titlebar "New" menu, the right-click "Open … here" menu, and the home-chat agent spawner. They were reachable but missing from a few of these menus in 0.7.0.
+
 ## 0.7.0 — 2026-07-01
 
 - Added Grok (xAI's Grok Build CLI) as a first-class provider — launch it in terminal panes and the multi-agent launcher, run it in Loops, and see it in Providers & Usage. Uses your own `grok` login or XAI_API_KEY.

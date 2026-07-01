@@ -10,7 +10,7 @@ import { useActionEditor } from "../stores/actionEditor";
 import { runAction } from "../lib/startup";
 import { isMac, isWindows } from "../platform";
 import { pickFolder, gitIsRepo, revealPath } from "../api";
-import { newClaude, newGemini, newCodex, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
+import { newClaude, newGemini, newCodex, newOpencode, newGrok, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
 import {
   PanelRight,
   Plus,
@@ -18,6 +18,8 @@ import {
   Sparkles,
   Gem,
   Bot,
+  SquareCode,
+  Atom,
   Terminal,
   SquareTerminal,
   GitBranch,
@@ -300,6 +302,8 @@ export function Titlebar() {
     { label: "Claude", icon: <Sparkles size={14} />, onClick: () => { void newClaude(); go(); } },
     { label: "Gemini", icon: <Gem size={14} />, onClick: () => { void newGemini(); go(); } },
     { label: "Codex", icon: <Bot size={14} />, onClick: () => { void newCodex(); go(); } },
+    { label: "OpenCode", icon: <SquareCode size={14} />, onClick: () => { void newOpencode(); go(); } },
+    { label: "Grok", icon: <Atom size={14} />, onClick: () => { void newGrok(); go(); } },
     ...(isWindows
       ? [{ label: "WSL (Linux)", icon: <SquareTerminal size={14} />, onClick: () => { void newWsl(); go(); } }]
       : []),
