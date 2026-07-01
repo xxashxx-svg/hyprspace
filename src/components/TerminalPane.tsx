@@ -27,6 +27,7 @@ import {
   Bot,
   SquareTerminal,
   SquareCode,
+  Atom,
   Terminal as TerminalIcon,
   MoreHorizontal,
   Copy,
@@ -44,6 +45,7 @@ const PROVIDER_ICONS = {
   gemini: Gem,
   codex: Bot,
   opencode: SquareCode,
+  grok: Atom,
   wsl: SquareTerminal,
   terminal: TerminalIcon,
 } as const;
@@ -54,6 +56,7 @@ const PROVIDER_LABEL = {
   gemini: "Gemini",
   codex: "Codex",
   opencode: "OpenCode",
+  grok: "Grok",
   wsl: "WSL",
   terminal: "terminal",
 } as const;
@@ -72,7 +75,7 @@ interface Props {
   cwd: string;
   guest?: boolean;
   command?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "wsl" | "terminal";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal";
   title?: string;
   started?: boolean;
   active: boolean;

@@ -78,7 +78,7 @@ fn provider_status_blocking(id: &str) -> ProviderStatus {
         ..Default::default()
     };
     let cli = match id {
-        "claude" | "gemini" | "codex" | "opencode" => id,
+        "claude" | "gemini" | "codex" | "opencode" | "grok" => id,
         _ => return st,
     };
     st.version = cli_version(cli);
@@ -160,6 +160,16 @@ fn provider_status_blocking(id: &str) -> ProviderStatus {
                     if names.len() == 1 { "" } else { "s" },
                     names.join(", ")
                 ));
+            }
+        }
+        "grok" => {
+            // grok Build CLI: browser OAuth cached under ~/.grok, or an XAI_API_KEY in the env.
+            if std::env::var("XAI_API_KEY").is_ok() {
+                st.detail = Some("Authenticated via XAI_API_KEY".into());
+            } else if home.join(".grok").exists() {
+                st.detail = Some("Signed in".into());
+            } else {
+                st.detail = Some("Not signed in — run `grok` or set XAI_API_KEY".into());
             }
         }
         _ => {}

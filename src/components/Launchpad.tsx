@@ -6,7 +6,7 @@ import { useServices, serviceId } from "../stores/services";
 import { useLaunchPresets, type LaunchPreset } from "../stores/launchPresets";
 import { launchTask, maybeAutostart } from "../lib/startup";
 import { pickFolders } from "../api";
-import { claudeCmd, geminiCmd, codexCmd, opencodeCmd } from "../actions";
+import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { isWindows } from "../platform";
 import { Logo } from "./Logo";
 import { Terminal as TerminalIcon, Play, ScrollText, Layers, Bookmark } from "lucide-react";
@@ -14,6 +14,7 @@ import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
 import opencodeLogo from "../assets/brand/opencode.svg";
+import grokLogo from "../assets/brand/grok.svg";
 import linuxLogo from "../assets/brand/linux.svg";
 
 // the tools you can drop into a space, shown as app-style icons in the dock. the AI providers
@@ -33,6 +34,7 @@ const TOOLS: Tool[] = [
   { key: "gemini", name: "Gemini", desc: "Google's Gemini CLI", iconSrc: geminiLogo, cmd: () => geminiCmd() },
   { key: "codex", name: "Codex", desc: "OpenAI's Codex CLI", iconSrc: openaiLogo, cmd: () => codexCmd() },
   { key: "opencode", name: "OpenCode", desc: "SST's open-source agent", iconSrc: opencodeLogo, cmd: () => opencodeCmd() },
+  { key: "grok", name: "Grok", desc: "xAI's Grok Build CLI", iconSrc: grokLogo, cmd: () => grokCmd() },
   { key: "wsl", name: "WSL", desc: "Linux shell", iconSrc: linuxLogo, cmd: () => "wsl", winOnly: true },
   { key: "terminal", name: "Terminal", desc: "Plain shell", Icon: TerminalIcon, cmd: () => undefined },
 ];
@@ -72,6 +74,7 @@ export function Launchpad({ wsId, name, kind, cwd }: Props) {
     for (let i = 0; i < p.agents.codex; i++) cmds.push(codexCmd());
     for (let i = 0; i < p.agents.gemini; i++) cmds.push(geminiCmd());
     for (let i = 0; i < (p.agents.opencode ?? 0); i++) cmds.push(opencodeCmd());
+    for (let i = 0; i < (p.agents.grok ?? 0); i++) cmds.push(grokCmd());
     for (let i = 0; i < p.agents.terminal; i++) cmds.push(undefined);
     while (cmds.length < p.count) cmds.push(undefined);
     cmds.forEach((c) => ws.addSession(id, c, p.folder));

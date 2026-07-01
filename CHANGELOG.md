@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.7.0 — 2026-07-01
+
+- Added Grok (xAI's Grok Build CLI) as a first-class provider — launch it in terminal panes and the multi-agent launcher, run it in Loops, and see it in Providers & Usage. Uses your own `grok` login or XAI_API_KEY.
+- New Usage panel in Settings: per-provider tokens, sessions, and rate limits with a token in/out/cache breakdown and a cleaner activity view — all read from each tool's local files, nothing leaves your machine.
+
 ## 0.6.2 — 2026-07-01
 
 - macOS: fixed Claude, Gemini, Codex, and OpenCode showing as "not installed or not on PATH" — HyprSpace now adopts your real login-shell PATH, so provider detection, the home chat, and Loops all find the CLIs.

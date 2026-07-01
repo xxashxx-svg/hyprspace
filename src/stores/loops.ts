@@ -32,7 +32,7 @@ export interface LoopDef {
   // "claude" = headless `claude -p` on an Anthropic API key; "claude-sub" = the same headless
   // `claude -p` but on your logged-in subscription (no key — the spawn-the-CLI path the panes use).
   // gemini/codex are headless too. ("claude-hooks" is a legacy value, migrated to "claude-sub".)
-  provider: "claude" | "claude-sub" | "claude-hooks" | "gemini" | "codex" | "opencode";
+  provider: "claude" | "claude-sub" | "claude-hooks" | "gemini" | "codex" | "opencode" | "grok";
   model?: string; // model override
   prompt: string; // the instruction sent each iteration
   mode: LoopMode;

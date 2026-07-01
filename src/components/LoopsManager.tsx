@@ -34,6 +34,7 @@ const PROVIDER_SHORT: Record<string, string> = {
   codex: "Codex",
   gemini: "Gemini",
   opencode: "OpenCode",
+  grok: "Grok",
 };
 const RUN_LABEL: Record<string, string> = { headless: "Headless", pane: "Interactive" };
 const MODE_LABEL: Record<string, string> = {
@@ -311,6 +312,7 @@ export function LoopsManager() {
                   <option value="codex">Codex</option>
                   <option value="gemini">Gemini</option>
                   <option value="opencode">OpenCode</option>
+                  <option value="grok">Grok</option>
                 </select>
               </label>
               <label className="loop-field">

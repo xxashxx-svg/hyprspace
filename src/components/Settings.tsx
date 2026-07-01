@@ -15,6 +15,7 @@ import { providerStatus, pickFolder, getHomeDir, type ProviderStatus } from "../
 import { relTime } from "../lib/time";
 import { McpServers } from "./McpServers";
 import { SkillsManager } from "./SkillsManager";
+import { UsagePanel } from "./UsagePanel";
 import { StartupSettings } from "./StartupSettings";
 import { useWorkspaces } from "../stores/workspace";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -22,6 +23,7 @@ import {
   User,
   Palette,
   Boxes,
+  Gauge,
   SquareTerminal,
   ArrowDownToLine,
   Info,
@@ -38,6 +40,7 @@ import {
   FolderCog,
   LayoutGrid,
   Zap,
+  Atom,
   Rocket,
   ArrowLeft,
 } from "lucide-react";
@@ -61,6 +64,7 @@ type Tab =
   | "workspace"
   | "startup"
   | "providers"
+  | "usage"
   | "mcp"
   | "skills"
   | "terminal"
@@ -73,6 +77,7 @@ const ICONS: Record<Tab, ReactNode> = {
   workspace: <FolderCog strokeWidth={1.75} />,
   startup: <Rocket strokeWidth={1.75} />,
   providers: <Boxes strokeWidth={1.75} />,
+  usage: <Gauge strokeWidth={1.75} />,
   mcp: <Plug strokeWidth={1.75} />,
   skills: <Zap strokeWidth={1.75} />,
   terminal: <SquareTerminal strokeWidth={1.75} />,
@@ -86,6 +91,7 @@ const TABS: { id: Tab; label: string; desc: string }[] = [
   { id: "workspace", label: "Workspace", desc: "Where projects are created" },
   { id: "startup", label: "Actions", desc: "Project commands you run on demand or on open" },
   { id: "providers", label: "Providers", desc: "How each AI tool launches" },
+  { id: "usage", label: "Usage", desc: "Tokens, sessions and limits per provider" },
   { id: "mcp", label: "MCP", desc: "Model Context Protocol servers" },
   { id: "skills", label: "Skills", desc: "Snippets and Claude skills" },
   { id: "terminal", label: "Terminal", desc: "Cursor style and behavior" },
@@ -269,7 +275,7 @@ export function Settings() {
   const [statuses, setStatuses] = useState<Record<string, ProviderStatus | "loading">>({});
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const refreshStatuses = () => {
-    const ids = ["claude", "gemini", "codex", "opencode"];
+    const ids = ["claude", "gemini", "codex", "opencode", "grok"];
     setStatuses(Object.fromEntries(ids.map((id) => [id, "loading" as const])));
     setCheckedAt(Date.now());
     ids.forEach((id) =>
@@ -683,9 +689,17 @@ export function Settings() {
                   </Row>
                 </Provider>
 
+                <Provider icon={<Atom size={16} />} name="Grok" status={statuses.grok}>
+                  <Row label="Sign in & model" desc="Grok uses your `grok` login (or XAI_API_KEY) and its own default model">
+                    <span className="set-hint">configured in Grok</span>
+                  </Row>
+                </Provider>
+
                 <div className="set-hint">Terminal and WSL open plain shells — no agent options.</div>
               </>
             )}
+
+            {tab === "usage" && <UsagePanel />}
 
             {tab === "mcp" && <McpServers />}
 
