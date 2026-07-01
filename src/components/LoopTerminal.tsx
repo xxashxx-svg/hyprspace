@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { makeTerminal } from "../terminal/createTerminal";
+import { makeTerminal, attachGpuRenderer } from "../terminal/createTerminal";
 import { attachLoopTerm } from "../terminal/loopTerm";
 import { writePty, resizePty } from "../api";
 
@@ -27,6 +27,7 @@ export function LoopTerminal({ id }: { id: string }) {
     });
     term.loadAddon(links);
     term.open(el);
+    attachGpuRenderer(term);
     termRef.current = term;
     try {
       fit.fit();

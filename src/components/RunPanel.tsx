@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { makeTerminal } from "../terminal/createTerminal";
+import { makeTerminal, attachGpuRenderer } from "../terminal/createTerminal";
 import { createPty, writePty, killPty, detectRunCmd } from "../api";
 
 // finds the dev-server URL the framework prints (vite/next/etc.)
@@ -23,6 +23,7 @@ export function RunPanel({ wsId, cwd }: { wsId: string; cwd: string }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
+    attachGpuRenderer(term);
     try {
       fit.fit();
     } catch {
