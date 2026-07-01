@@ -393,6 +393,7 @@ pub fn run() {
             devtools::read_file,
             devtools::write_file,
             devtools::provider_status,
+            devtools::provider_usage,
             devtools::mcp_list,
             devtools::mcp_set,
             devtools::mcp_remove,

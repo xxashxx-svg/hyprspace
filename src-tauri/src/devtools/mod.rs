@@ -10,6 +10,7 @@ mod worktree;
 mod project;
 mod fs;
 mod providers;
+mod usage;
 mod mcp;
 mod skills;
 
@@ -18,6 +19,7 @@ pub use worktree::*;
 pub use project::*;
 pub use fs::*;
 pub use providers::*;
+pub use usage::*;
 pub use mcp::*;
 pub use skills::*;
 

@@ -25,7 +25,7 @@ const CTRL = new RegExp("[" + NUL + "-" + String.fromCharCode(31) + "]", "g");
 const TITLE_RE = new RegExp('"title"\\s*:\\s*"([^"]{2,60})"');
 const strip = (s: string) => s.replace(ANSI, "").split(CR).join("");
 
-const AGENT = new Set(["claude", "gemini", "codex", "opencode"]);
+const AGENT = new Set(["claude", "gemini", "codex", "opencode", "grok"]);
 
 const typing = new Map<string, string>(); // sessionId -> accumulating first-line keystrokes
 const pending = new Map<string, string>(); // sessionId -> captured first prompt, awaiting a name

@@ -5,28 +5,30 @@ import { useWorkspaces } from "../stores/workspace";
 import { useSettings, type ClaudePermission } from "../stores/settings";
 import { useLaunchPresets, type LaunchPreset } from "../stores/launchPresets";
 import { pickFolder, getHomeDir } from "../api";
-import { claudeCmd, geminiCmd, codexCmd, opencodeCmd } from "../actions";
+import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { getLayout } from "../lib/grid";
 import { Terminal as TerminalIcon, Folder, Minus, Plus, Rocket, Bookmark, X, Layers } from "lucide-react";
 import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
 import opencodeLogo from "../assets/brand/opencode.svg";
+import grokLogo from "../assets/brand/grok.svg";
 
-type AgentKey = "claude" | "codex" | "gemini" | "opencode" | "terminal";
+type AgentKey = "claude" | "codex" | "gemini" | "opencode" | "grok" | "terminal";
 // agents wear their real brand marks (svg); plain terminal keeps a lucide glyph
 const AGENTS: { key: AgentKey; name: string; desc: string; iconSrc?: string; Icon?: ComponentType<{ size?: number }> }[] = [
   { key: "claude", name: "Claude", desc: "Anthropic's coding agent", iconSrc: claudeLogo },
   { key: "codex", name: "Codex", desc: "OpenAI's Codex CLI", iconSrc: openaiLogo },
   { key: "gemini", name: "Gemini", desc: "Google's Gemini CLI", iconSrc: geminiLogo },
   { key: "opencode", name: "OpenCode", desc: "SST's open-source agent", iconSrc: opencodeLogo },
+  { key: "grok", name: "Grok", desc: "xAI's Grok Build CLI", iconSrc: grokLogo },
   { key: "terminal", name: "Terminal", desc: "Plain shell", Icon: TerminalIcon },
 ];
 const byKey = (k: AgentKey) => AGENTS.find((a) => a.key === k)!;
 
 const TILES = [1, 2, 4, 6, 8, 10, 12];
 const GRID: Record<number, string> = { 1: "1×1", 2: "2×1", 4: "2×2", 6: "3×2", 8: "4×2", 10: "5×2", 12: "4×3" };
-const zero = (): Record<AgentKey, number> => ({ claude: 0, codex: 0, gemini: 0, opencode: 0, terminal: 0 });
+const zero = (): Record<AgentKey, number> => ({ claude: 0, codex: 0, gemini: 0, opencode: 0, grok: 0, terminal: 0 });
 
 // Launch a whole workspace at once: pick a folder, choose how many terminals, fan them out across
 // agents. The fast path to "many Claude instances working in parallel" instead of waiting on one.
@@ -38,7 +40,7 @@ export function LaunchWorkspace() {
 
   const [folder, setFolder] = useState("");
   const [count, setCount] = useState(4);
-  const [agents, setAgents] = useState<Record<AgentKey, number>>({ claude: 4, codex: 0, gemini: 0, opencode: 0, terminal: 0 });
+  const [agents, setAgents] = useState<Record<AgentKey, number>>({ claude: 4, codex: 0, gemini: 0, opencode: 0, grok: 0, terminal: 0 });
   const [claudeMode, setClaudeMode] = useState<ClaudePermission>("acceptEdits");
 
   // fresh start every time the page opens (it mounts/unmounts with the view)
@@ -76,7 +78,7 @@ export function LaunchWorkspace() {
   };
   const splitEvenly = () => {
     const a = zero();
-    const ai: AgentKey[] = ["claude", "codex", "gemini", "opencode"];
+    const ai: AgentKey[] = ["claude", "codex", "gemini", "opencode", "grok"];
     for (let i = 0; i < count; i++) a[ai[i % ai.length]]++;
     setAgents(a);
   };
@@ -85,7 +87,7 @@ export function LaunchWorkspace() {
   const applyPreset = (p: LaunchPreset) => {
     setFolder(p.folder);
     setCount(p.count);
-    setAgents({ ...p.agents });
+    setAgents({ ...zero(), ...p.agents });
     setClaudeMode(p.claudeMode);
   };
   const savePreset = () => {
@@ -99,6 +101,7 @@ export function LaunchWorkspace() {
   for (let i = 0; i < agents.codex; i++) slots.push("codex");
   for (let i = 0; i < agents.gemini; i++) slots.push("gemini");
   for (let i = 0; i < agents.opencode; i++) slots.push("opencode");
+  for (let i = 0; i < agents.grok; i++) slots.push("grok");
   for (let i = 0; i < agents.terminal; i++) slots.push("terminal");
   while (slots.length < count) slots.push("terminal"); // leftover slots become plain terminals
   const preview = getLayout(count);
@@ -111,6 +114,7 @@ export function LaunchWorkspace() {
     for (let i = 0; i < agents.codex; i++) cmds.push(codexCmd());
     for (let i = 0; i < agents.gemini; i++) cmds.push(geminiCmd());
     for (let i = 0; i < agents.opencode; i++) cmds.push(opencodeCmd());
+    for (let i = 0; i < agents.grok; i++) cmds.push(grokCmd());
     for (let i = 0; i < agents.terminal; i++) cmds.push(undefined);
     // any slots left over from the chosen count become plain terminals
     while (cmds.length < count) cmds.push(undefined);

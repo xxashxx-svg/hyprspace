@@ -5,7 +5,7 @@ import { useSettings, type ClaudePermission, type CodexMode } from "../stores/se
 import { useNotifications } from "../stores/notifications";
 import { pickFolder, createProjectDir, gitInit, gitIsRepo } from "../api";
 import { projectsBaseDir } from "../lib/projects";
-import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, WSL_CMD } from "../actions";
+import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd, WSL_CMD } from "../actions";
 import { isWindows } from "../platform";
 import {
   Sparkles,
@@ -13,6 +13,7 @@ import {
   Bot,
   SquareCode,
   SquareTerminal,
+  Atom,
   Terminal as TerminalIcon,
   Folder,
   Minus,
@@ -36,12 +37,13 @@ __pycache__/
 .DS_Store
 `;
 
-type ProvKey = "claude" | "gemini" | "codex" | "opencode" | "wsl" | "terminal";
+type ProvKey = "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal";
 const PROVIDERS: { key: ProvKey; name: string; icon: ReactNode }[] = [
   { key: "claude", name: "Claude", icon: <Sparkles size={15} /> },
   { key: "gemini", name: "Gemini", icon: <Gem size={15} /> },
   { key: "codex", name: "Codex", icon: <Bot size={15} /> },
   { key: "opencode", name: "OpenCode", icon: <SquareCode size={15} /> },
+  { key: "grok", name: "Grok", icon: <Atom size={15} /> },
   ...(isWindows ? [{ key: "wsl" as ProvKey, name: "WSL", icon: <SquareTerminal size={15} /> }] : []),
   { key: "terminal", name: "Terminal", icon: <TerminalIcon size={15} /> },
 ];
@@ -71,6 +73,7 @@ export function NewProjectDialog() {
     gemini: 0,
     codex: 0,
     opencode: 0,
+    grok: 0,
     wsl: 0,
     terminal: 0,
   });
@@ -89,7 +92,7 @@ export function NewProjectDialog() {
     setMode("existing");
     setBaseDir("");
     setFolderName("");
-    setCounts({ claude: 1, gemini: 0, codex: 0, opencode: 0, wsl: 0, terminal: 0 });
+    setCounts({ claude: 1, gemini: 0, codex: 0, opencode: 0, grok: 0, wsl: 0, terminal: 0 });
     setClaudeMode(useSettings.getState().claudePermission);
     setCodexMode(useSettings.getState().codexMode);
     setInitGit(true);
@@ -160,6 +163,7 @@ export function NewProjectDialog() {
       for (let i = 0; i < counts.gemini; i++) launches.push(geminiCmd());
       for (let i = 0; i < counts.codex; i++) launches.push(codexCmd(codexMode));
       for (let i = 0; i < counts.opencode; i++) launches.push(opencodeCmd());
+      for (let i = 0; i < counts.grok; i++) launches.push(grokCmd());
       for (let i = 0; i < counts.wsl; i++) launches.push(WSL_CMD);
       for (let i = 0; i < counts.terminal; i++) launches.push(undefined);
       launches.forEach((cmd) => useWorkspaces.getState().addSession(id, cmd, folder));

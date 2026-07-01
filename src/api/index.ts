@@ -333,6 +333,41 @@ export function providerStatus(id: string): Promise<ProviderStatus> {
   return invoke("provider_status", { id });
 }
 
+// per-provider usage, read display-only from the CLIs' own local files (never an API call)
+export interface UsageWindow {
+  usedPercent: number;
+  windowMinutes: number;
+  resetsAt: number; // unix seconds
+}
+export interface UsageDay {
+  date: string;
+  value: number;
+}
+export interface ProviderUsage {
+  id: string;
+  label: string;
+  signedIn: boolean;
+  account: string | null;
+  plan: string | null;
+  tier: string | null;
+  sessions: number;
+  messages: number;
+  toolCalls: number;
+  activeDays: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheTokens: number;
+  totalTokens: number;
+  tokensWindow: string | null;
+  primary: UsageWindow | null;
+  secondary: UsageWindow | null;
+  daily: UsageDay[];
+  note: string | null;
+}
+export function providerUsage(): Promise<ProviderUsage[]> {
+  return invoke("provider_usage");
+}
+
 // MCP servers configured for Claude (~/.claude.json "mcpServers")
 export interface McpEntry {
   name: string;

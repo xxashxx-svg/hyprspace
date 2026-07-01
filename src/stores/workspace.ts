@@ -6,7 +6,7 @@ export interface Session {
   title: string;
   command?: string;
   cwd?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "wsl" | "terminal";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal";
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
   // the claude conversation this pane is currently on — starts as `id`, but follows a manual
@@ -151,6 +151,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       else if (command?.includes("claude")) provider = "claude";
       else if (command?.includes("gemini")) provider = "gemini";
       else if (command?.includes("codex")) provider = "codex";
+      else if (command?.includes("grok")) provider = "grok";
       else if (command === "wsl") {
         provider = "wsl";
         title = "WSL";
@@ -158,7 +159,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       // agent panes default to their working-folder name (folder-based), so they're tellable apart;
       // if that folder name is already taken (e.g. several agents in one folder) fall back to a short
       // friendly name. the Codex namer (ai/autoNameSession) upgrades it to a task name once there's work.
-      if (provider === "claude" || provider === "gemini" || provider === "codex" || provider === "opencode") {
+      if (provider === "claude" || provider === "gemini" || provider === "codex" || provider === "opencode" || provider === "grok") {
         const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
         const folder = effCwd.split(/[\\/]/).filter(Boolean).pop();
         title = folder && !used.has(folder) ? folder : pickAgentName(used);
@@ -273,6 +274,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         else if (s.command?.includes("claude")) provider = "claude";
         else if (s.command?.includes("gemini")) provider = "gemini";
         else if (s.command?.includes("codex")) provider = "codex";
+        else if (s.command?.includes("grok")) provider = "grok";
         else if (s.command === "wsl") provider = "wsl";
         return { ...s, provider };
       }),

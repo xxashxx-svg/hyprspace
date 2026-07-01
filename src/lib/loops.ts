@@ -103,6 +103,16 @@ function buildArgs(def: LoopDef, cont: boolean): string[] {
     if (cont) a.push("--continue");
     return a;
   }
+  if (def.provider === "grok") {
+    // grok (xAI) headless takes the prompt as an ARGV (`grok -p …`) — unlike the others it doesn't
+    // read stdin — and emits plain text we handle like codex/gemini. runs on grok's own login
+    // (browser token in ~/.grok or XAI_API_KEY); --always-approve so headless isn't stuck on a prompt.
+    const a = ["grok", "-p", def.prompt];
+    if (def.model) a.push("-m", def.model);
+    if (pm !== "plan") a.push("--always-approve");
+    if (cont) a.push("-c");
+    return a;
+  }
   // gemini — `-p` flips to headless; empty value so only the stdin prompt counts. best-effort.
   const a = ["gemini"];
   if (def.model) a.push("-m", def.model);

@@ -36,6 +36,11 @@ export function codexCmd(mode?: CodexMode): string {
 export function opencodeCmd(): string {
   return "opencode";
 }
+// grok (xAI's Grok Build CLI) — interactive TUI is just `grok`; it signs in with your grok login
+// (browser token in ~/.grok) or an XAI_API_KEY, and picks its own default model.
+export function grokCmd(): string {
+  return "grok";
+}
 
 function activeWs() {
   const { workspaces, activeId } = useWorkspaces.getState();
@@ -60,6 +65,7 @@ export const newClaude = () => launchInActive(claudeCmd());
 export const newGemini = () => launchInActive(geminiCmd());
 export const newCodex = () => launchInActive(codexCmd());
 export const newOpencode = () => launchInActive(opencodeCmd());
+export const newGrok = () => launchInActive(grokCmd());
 export const newWsl = () => launchInActive(WSL_CMD);
 export const newTerminal = () => launchInActive();
 
@@ -95,7 +101,7 @@ export async function closeSession(wsId: string, sessionId: string) {
   const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
   const sess = ws?.sessions.find((s) => s.id === sessionId);
   if (!ws || !sess) return;
-  const isAi = sess.provider === "claude" || sess.provider === "gemini";
+  const isAi = sess.provider === "claude" || sess.provider === "gemini" || sess.provider === "grok";
   // a pane whose command matches a configured startup task is a running service — confirm before killing
   const isService =
     !!ws.cwd &&
