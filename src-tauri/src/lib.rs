@@ -270,6 +270,55 @@ fn backup_state(store: State<Store>, name: String) -> Result<(), String> {
     store.backup(&name)
 }
 
+// macOS/Linux GUI launches (Finder/Dock) hand the app a minimal PATH with no Homebrew, npm
+// globals, nvm, etc. — so `claude`/`gemini`/`codex` look "not installed" even when they're there,
+// and the home chat + loops can't spawn them. Resolve the user's real login-shell PATH once and
+// adopt it, so every child process we spawn inherits it. No-op on Windows.
+#[cfg(not(windows))]
+fn fix_path_env() {
+    use std::process::Command;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        // -ilc so both the login file (.zprofile → brew) and the interactive rc (.zshrc → nvm) get
+        // sourced. the markers fence our value off from any banner the rc files might print.
+        let out = Command::new(&shell)
+            .args(["-ilc", "printf '__HP__%s__HP__' \"$PATH\""])
+            .output();
+        let _ = tx.send(out);
+    });
+    // a slow or wedged rc file shouldn't stall launch — give up after a few seconds
+    let out = match rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(o)) => o,
+        _ => return,
+    };
+    let s = String::from_utf8_lossy(&out.stdout);
+    let resolved = match (s.find("__HP__"), s.rfind("__HP__")) {
+        (Some(a), Some(b)) if b > a => s[a + 6..b].trim(),
+        _ => return,
+    };
+    if resolved.is_empty() {
+        return;
+    }
+    // keep whatever we already had too, in case the shell PATH somehow drops a system dir
+    let cur = std::env::var("PATH").unwrap_or_default();
+    let mut seen: std::collections::HashSet<&str> = resolved.split(':').collect();
+    let mut merged = resolved.to_string();
+    for p in cur.split(':') {
+        if !p.is_empty() && seen.insert(p) {
+            merged.push(':');
+            merged.push_str(p);
+        }
+    }
+    std::env::set_var("PATH", merged);
+}
+
+#[cfg(windows)]
+fn fix_path_env() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Stop-hook helper: when a "Claude (hooks)" loop fires its Stop hook, Claude re-invokes THIS
@@ -283,6 +332,9 @@ pub fn run() {
         loophook::run_loop_notify(argv.get(2).cloned());
         return; // unreachable — run_loop_notify exits the process
     }
+
+    // adopt the user's real shell PATH so a GUI launch on macOS/Linux can find the provider CLIs
+    fix_path_env();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
