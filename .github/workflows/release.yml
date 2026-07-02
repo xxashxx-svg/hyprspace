@@ -59,6 +59,8 @@ jobs:
           tag="${{ inputs.tag }}"
           mkdir -p dist existing
           find src-tauri/target -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.app.tar.gz.sig" \) -exec cp {} dist/ \;
+          # stable-named copy so the website's Download link always resolves to the newest build
+          cp dist/HyprSpace_*.dmg dist/HyprSpace-macos-aarch64.dmg
           echo "built:"; ls -la dist
           # pull the existing manifest (deploy.ps1 publishes the Windows half first); ok if absent
           gh release download "$tag" --repo "$RELEASES_REPO" --pattern latest.json --dir existing 2>/dev/null || true
