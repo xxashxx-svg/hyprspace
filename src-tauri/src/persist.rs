@@ -21,15 +21,18 @@ impl Store {
         Store { lock: Mutex::new(()), dir }
     }
 
-    fn path(&self, name: &str) -> PathBuf {
-        // keep the name a single safe token so it can't traverse out of the state dir
-        // (a "../x" or absolute name would otherwise escape via Path::join)
+    // keep the name a single safe token so it can't traverse out of the state dir
+    // (a "../x" or absolute name would otherwise escape via Path::join)
+    fn safe_name(name: &str) -> String {
         let safe: String = name
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
             .collect();
-        let safe = if safe.is_empty() { "_".to_string() } else { safe };
-        self.dir.join(format!("{safe}.json"))
+        if safe.is_empty() { "_".to_string() } else { safe }
+    }
+
+    fn path(&self, name: &str) -> PathBuf {
+        self.dir.join(format!("{}.json", Self::safe_name(name)))
     }
 
     // the protected data is just (), so recovering a poisoned lock is always safe —
@@ -73,7 +76,10 @@ impl Store {
     // move a present-but-corrupt file aside so a fresh seed won't destroy recoverable data
     pub fn backup(&self, name: &str) -> Result<(), String> {
         let _g = self.guard();
-        let path = self.path(name);
+        // sanitize once, then build both source + dest from the safe token so a "..\.." name
+        // can't escape the store dir on the backup path (path() already does this for the source)
+        let safe = Self::safe_name(name);
+        let path = self.dir.join(format!("{safe}.json"));
         if !path.exists() {
             return Ok(());
         }
@@ -81,7 +87,7 @@ impl Store {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let dest = self.dir.join(format!("{name}.corrupt-{ts}.json"));
+        let dest = self.dir.join(format!("{safe}.corrupt-{ts}.json"));
         fs::rename(&path, &dest).map_err(|e| e.to_string())
     }
 }

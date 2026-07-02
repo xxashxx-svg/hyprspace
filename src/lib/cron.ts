@@ -60,8 +60,9 @@ export function parseCron(expr: string): CronSpec | null {
     dom: sets[2],
     mon: sets[3],
     dow: sets[4],
-    domAny: fields[2] === "*",
-    dowAny: fields[4] === "*",
+    // vixie treats "*/n" like "*" for the dom/dow OR rule, so match on the star prefix
+    domAny: fields[2].startsWith("*"),
+    dowAny: fields[4].startsWith("*"),
   };
 }
 
@@ -69,6 +70,8 @@ export const cronValid = (expr: string) => parseCron(expr) !== null;
 
 // next fire time strictly after `from` (ms), scanning minute-by-minute up to a year out.
 // null = bad expression or nothing matches (e.g. feb 30).
+// known limit: a job scheduled inside the spring-forward DST gap (e.g. 02:30 on the jump night)
+// slides to the next day instead of running right after the jump — rare enough to live with.
 export function nextCron(expr: string, from = Date.now()): number | null {
   const spec = parseCron(expr);
   if (!spec) return null;
@@ -79,9 +82,9 @@ export function nextCron(expr: string, from = Date.now()): number | null {
     if (spec.min.has(d.getMinutes()) && spec.hour.has(d.getHours()) && spec.mon.has(d.getMonth() + 1)) {
       const domOk = spec.dom.has(d.getDate());
       const dowOk = spec.dow.has(d.getDay());
-      // vixie: both restricted → OR; otherwise the restricted one decides
-      const dayOk =
-        !spec.domAny && !spec.dowAny ? domOk || dowOk : (spec.domAny || domOk) && (spec.dowAny || dowOk);
+      // vixie: the star flags only pick OR vs AND — the sets themselves always apply
+      // (a plain "*" set contains every value, so the AND path is naturally satisfied)
+      const dayOk = !spec.domAny && !spec.dowAny ? domOk || dowOk : domOk && dowOk;
       if (dayOk) return d.getTime();
     }
     // skip fast when the hour/day can't match

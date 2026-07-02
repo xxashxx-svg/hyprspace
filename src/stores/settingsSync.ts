@@ -18,6 +18,7 @@ type Snap = {
   autoNameAgents: boolean;
   projectsDir: string;
   dismissedConfirms: string[];
+  onboarded: boolean;
 };
 
 function snapshot(): Snap {
@@ -37,6 +38,7 @@ function snapshot(): Snap {
     autoNameAgents: s.autoNameAgents,
     projectsDir: s.projectsDir,
     dismissedConfirms: s.dismissedConfirms,
+    onboarded: s.onboarded,
   };
 }
 
@@ -49,13 +51,21 @@ export function initSettingsSync(): () => void {
   let lastSig = JSON.stringify(snapshot());
   let applyingRemote = false;
 
+  // debounce disk writes + broadcasts — ctrl+scroll font zoom fires a change per wheel tick,
+  // and each one used to be a full crash-safe JSON write
+  let flushTimer: ReturnType<typeof setTimeout> | undefined;
   const unsub = useSettings.subscribe((s) => {
     if (!s.hydrated || applyingRemote) return;
     const sig = JSON.stringify(snapshot());
     if (sig === lastSig) return;
     lastSig = sig;
-    void saveState("settings", sig).catch((e) => console.error("settings save failed:", e));
-    void emit("settings:changed", { source: me, snap: JSON.parse(sig) as Snap });
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(() => {
+      const latest = JSON.stringify(snapshot());
+      lastSig = latest;
+      void saveState("settings", latest).catch((e) => console.error("settings save failed:", e));
+      void emit("settings:changed", { source: me, snap: JSON.parse(latest) as Snap });
+    }, 300);
   });
 
   const unlistenP = listen<{ source: string; snap: Snap }>("settings:changed", (e) => {

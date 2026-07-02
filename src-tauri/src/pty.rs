@@ -73,9 +73,9 @@ fn answer_terminal_queries(chunk: &[u8], writer: &SharedWriter, trust_sent: &mut
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PtyManager {
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: Arc<Mutex<HashMap<String, Session>>>,
 }
 
 impl PtyManager {

@@ -22,6 +22,7 @@ fn loops_tmp_dir(run_id: &str) -> PathBuf {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)] // deregistered command; kept for the binary's loop-hook entry point + history
 pub struct HookFiles {
     settings: String, // pass to `claude --settings <path>`
     counter: String, // the engine polls this for the live iteration count
@@ -32,6 +33,7 @@ pub struct HookFiles {
 // Build the scoped settings file (+ its sidecar config + counter) for one hook-driven run and return
 // the file paths. The loop engine passes `settings` to `claude --settings <path>`.
 #[tauri::command]
+#[allow(dead_code)] // no longer registered (claude-hooks backend retired); left intact intentionally
 pub fn prepare_hook_settings(
     run_id: String,
     max_iterations: u32,

@@ -217,25 +217,7 @@ export function runCheck(cwd: string, command: string): Promise<number> {
   return invoke("run_check", { cwd, command });
 }
 
-// Loops "Claude (hooks)" backend: write a scoped Claude settings file (with a Stop hook that
-// enforces max-iterations / until-check / sentinel) and get its path back, for `claude --settings`.
-export function prepareHookSettings(
-  runId: string,
-  maxIterations: number,
-  untilCheck: string | undefined,
-  sentinel: string | undefined,
-  cwd: string,
-  reason: string,
-): Promise<{ settings: string; counter: string; done: string; output: string }> {
-  return invoke("prepare_hook_settings", {
-    runId,
-    maxIterations,
-    untilCheck: untilCheck || null,
-    sentinel: sentinel || null,
-    cwd,
-    reason,
-  });
-}
+// drop an automation run's temp hook/notify files (settings, markers) once it ends
 export function cleanupHookRun(runId: string): Promise<void> {
   return invoke("cleanup_hook_run", { runId });
 }
@@ -372,9 +354,6 @@ export interface ProviderUsage {
   dailyUnit: string | null; // "tokens" | "msgs" | "sessions"
   models: UsageModel[];
   note: string | null;
-}
-export function providerUsage(): Promise<ProviderUsage[]> {
-  return invoke("provider_usage");
 }
 // single provider — lets the usage panel stream cards in as each scan finishes
 export function providerUsageOne(id: string): Promise<ProviderUsage | null> {

@@ -6,7 +6,6 @@ import { useAuth } from "../stores/auth";
 import { pickFolder } from "../api";
 import { kbd } from "../platform";
 import { Folder, FolderPlus, LayoutGrid, ChevronRight, Rocket } from "lucide-react";
-import { ChatPanel } from "./ChatPanel";
 import { Blurred } from "./Blurred";
 
 export function HomePage() {
@@ -149,7 +148,7 @@ export function HomePage() {
         </div>
       </div>
       </div>
-      <ChatPanel />
+      {/* home chat is parked for now — re-add <ChatPanel /> (./ChatPanel) to bring it back */}
       <footer className="home-foot">
         <span>HyprSpace{version ? ` v${version}` : ""}</span>
         {user?.email && (

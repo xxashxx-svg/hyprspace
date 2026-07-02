@@ -20,7 +20,9 @@ export function ConfirmDialog() {
     if (!req) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") done(false);
-      if (e.key === "Enter") done(true);
+      // Enter must NOT force-confirm when a button is focused — tabbing to Cancel and pressing
+      // Enter would otherwise run the destructive action. Let the focused button handle it.
+      if (e.key === "Enter" && !(document.activeElement instanceof HTMLButtonElement)) done(true);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

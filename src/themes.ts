@@ -29,8 +29,9 @@ const base: Record<string, string> = {
 
 export const THEMES: Theme[] = [
   {
+    // id stays "t3" — it's the persisted default in everyone's saved settings
     id: "t3",
-    name: "T3",
+    name: "Midnight",
     blurb: "Deep indigo",
     vars: {
       ...base,

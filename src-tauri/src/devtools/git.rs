@@ -49,16 +49,22 @@ fn git_changes_blocking(cwd: String) -> Result<Vec<FileChange>, String> {
         }
     }
 
-    let status = git(&cwd, &["status", "--porcelain=v1", "--untracked-files=all"])?;
+    // -z gives NUL-separated records with NO quoting/escaping, so odd paths survive intact. Each
+    // record is "XY <path>"; a rename/copy (R or C in either status column) is followed by an EXTRA
+    // NUL-terminated field holding the original path — we take the new path and skip that field.
+    let status = git(&cwd, &["status", "--porcelain=v1", "-z", "--untracked-files=all"])?;
     let mut files = vec![];
-    for line in status.lines() {
-        if line.len() < 4 {
-            continue;
+    let mut parts = status.split('\0');
+    while let Some(entry) = parts.next() {
+        if entry.len() < 4 {
+            continue; // trailing empty field, or a malformed short record
         }
-        let code = line[..2].to_string(); // raw XY porcelain code (X=staged, Y=unstaged)
-        let raw = &line[3..];
-        // renames look like "old -> new"; key off the new path
-        let path = raw.split(" -> ").last().unwrap_or(raw).trim_matches('"').to_string();
+        let code = entry[..2].to_string(); // raw XY porcelain code (X=staged, Y=unstaged)
+        let path = entry[3..].to_string(); // new path, unquoted in -z mode
+        let b = code.as_bytes();
+        if b[0] == b'R' || b[0] == b'C' || b[1] == b'R' || b[1] == b'C' {
+            let _ = parts.next(); // consume the original-path field so it isn't read as a record
+        }
         let (added, removed) = counts.get(&path).copied().unwrap_or((0, 0));
         files.push(FileChange { path, status: code, added, removed });
     }

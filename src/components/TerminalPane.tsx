@@ -393,13 +393,12 @@ function TerminalPaneInner({
     if (!term) return;
     const want = active && gpuRender;
     if (want && !glRef.current) {
-      const gl = attachGpuRenderer(term);
-      if (gl) {
-        gl.onContextLoss(() => {
-          glRef.current = null; // addon self-disposes; next activation re-attaches
-        });
-        glRef.current = gl;
-      }
+      // the onLoss callback runs before the addon disposes itself — registering it after would
+      // never fire (the emitter cancels remaining listeners mid-dispose)
+      const gl = attachGpuRenderer(term, () => {
+        glRef.current = null; // next activation re-attaches
+      });
+      if (gl) glRef.current = gl;
     } else if (!want && glRef.current) {
       try {
         glRef.current.dispose();

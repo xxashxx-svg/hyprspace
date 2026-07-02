@@ -13,6 +13,7 @@ import {
   Check,
   X,
   Loader2,
+  Clock,
   ChevronRight,
   Brain,
   Square,
@@ -102,6 +103,16 @@ function EventRow({ ev }: { ev: LoopEvent }) {
 }
 
 // The live agentic transcript for one loop: tool calls with durations, thinking, results, plus the
+// "next run today 14:30" / "next run Fri, Jul 3 03:00"
+function fmtWhen(t: number): string {
+  const d = new Date(t);
+  const today = new Date().toDateString() === d.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return today
+    ? `today ${time}`
+    : `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} ${time}`;
+}
+
 // docked "Loop agent running" card while it's active. Reads structured events the engine emits.
 export function LoopRunView({ id }: { id: string }) {
   const def = useLoops((s) => s.loops[id]);
@@ -129,12 +140,21 @@ export function LoopRunView({ id }: { id: string }) {
   const maxIter = def.stop.maxIterations || 1;
   const iter = run?.iteration ?? 0;
   const pct = Math.max(3, Math.min(100, (iter / maxIter) * 100)); // sliver visible even at iter 0
+  // armed-and-waiting (scheduled fire in the future) must NOT look like a hung run
+  const nextAt = run?.nextRunAt;
+  const waiting = active && !paused && !!nextAt && nextAt > Date.now();
 
   return (
     <div className="loop-run">
       <div className="loop-run-scroll" ref={scrollRef} onScroll={onScroll}>
         {events.length === 0 ? (
-          <div className="loop-run-empty">No activity yet. Start the loop to watch it work.</div>
+          <div className="loop-run-empty">
+            {waiting && nextAt
+              ? `Scheduled — next run ${fmtWhen(nextAt)}. It fires automatically while HyprSpace is open.`
+              : active
+                ? "Warming up — activity will stream in here."
+                : "No activity yet. Start the automation to watch it work."}
+          </div>
         ) : (
           events.map((ev) => <EventRow key={ev.id} ev={ev} />)
         )}
@@ -144,13 +164,19 @@ export function LoopRunView({ id }: { id: string }) {
         <div className={`loop-run-card${paused ? " paused" : ""}`}>
           <div className="loop-run-card-row">
             <span className="loop-run-card-ico">
-              {paused ? <Pause size={15} /> : <Loader2 size={15} className="spin" />}
+              {paused ? <Pause size={15} /> : waiting ? <Clock size={15} /> : <Loader2 size={15} className="spin" />}
             </span>
             <div className="loop-run-card-text">
-              <div className="loop-run-card-title">{paused ? "Automation paused" : "Automation running"}</div>
+              <div className="loop-run-card-title">
+                {paused ? "Automation paused" : waiting ? "Scheduled" : "Automation running"}
+              </div>
               <div className="loop-run-card-sub">
                 <span className="loop-run-card-name">{def.name || "Automation"}</span>
-                <span className="loop-run-sep">iteration {iter} / {maxIter}</span>
+                {waiting && nextAt ? (
+                  <span className="loop-run-sep">next run {fmtWhen(nextAt)}</span>
+                ) : (
+                  <span className="loop-run-sep">iteration {iter} / {maxIter}</span>
+                )}
                 {run?.costUsed ? <span className="loop-run-sep">${run.costUsed.toFixed(3)}</span> : null}
                 {run?.tokensUsed ? (
                   <span className="loop-run-sep">

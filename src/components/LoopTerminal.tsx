@@ -65,7 +65,7 @@ export function LoopTerminal({ id }: { id: string }) {
       if (el.clientWidth < 40 || el.clientHeight < 20) return;
       try {
         fit.fit();
-        void resizePty(id, term.cols, term.rows);
+        void resizePty(id, term.cols, term.rows).catch(() => {}); // pty may not exist yet
       } catch {
         /* not ready */
       }

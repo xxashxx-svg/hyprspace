@@ -102,13 +102,15 @@ export async function closeSession(wsId: string, sessionId: string) {
   const sess = ws?.sessions.find((s) => s.id === sessionId);
   if (!ws || !sess) return;
   const isAi = sess.provider === "claude" || sess.provider === "gemini" || sess.provider === "grok";
-  // a pane whose command matches a configured startup task is a running service — confirm before killing
+  // a pane whose command matches a configured startup task is a running service — confirm before
+  // killing. empty commands are plain terminals on both sides, never a service match.
   const isService =
     !!ws.cwd &&
+    !!sess.command &&
     useProjectConfigs
       .getState()
       .getConfig(ws.cwd)
-      .startup.some((t) => (t.command ?? "") === (sess.command ?? ""));
+      .startup.some((t) => !!t.command && t.command === sess.command);
   if ((isAi && sess.started) || isService) {
     const ok = await confirmDialog({
       title: isService ? "Stop service" : "Close pane",

@@ -126,10 +126,12 @@ export function LoopsPage() {
   const run = sel ? runs[sel] : undefined;
   const status = run?.status ?? "idle";
   const active = status === "running" || status === "paused";
-  const canStart = !!def && !!def.prompt.trim() && !!def.folder && !(def.provider === "claude" && !hasKey);
+  // interactive (pane) claude runs on the logged-in CLI — no API key needed (matches the engine)
+  const needsKey = !!def && def.provider === "claude" && def.run !== "pane" && !hasKey;
+  const canStart = !!def && !!def.prompt.trim() && !!def.folder && !needsKey;
   const startHint = !def
     ? ""
-    : def.provider === "claude" && !hasKey
+    : needsKey
       ? "Add an Anthropic API key in Manage first"
       : !def.prompt.trim() || !def.folder
         ? "Set a prompt and folder in Manage first"
@@ -272,7 +274,14 @@ export function LoopsPage() {
                   </div>
                   {def.run === "pane" ? (
                     active ? (
-                      <LoopTerminal id={loopRunId(sel)} />
+                      run?.nextRunAt ? (
+                        <div className="loop-run-empty">
+                          Scheduled — the interactive session launches at the next fire (while
+                          HyprSpace is open).
+                        </div>
+                      ) : (
+                        <LoopTerminal id={loopRunId(sel)} />
+                      )
                     ) : (
                       <div className="loop-run-empty">
                         Interactive terminal automation — press ▶ to launch the session here.

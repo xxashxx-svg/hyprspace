@@ -4,6 +4,17 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.10.0 — 2026-07-02
+
+- **First-run onboarding**: new installs get a short setup wizard that checks which agent CLIs are installed (with copyable install commands), sets the Claude permission mode and theme, and opens your first workspace. Replay it anytime from Settings, About.
+- **New app icon**: the isometric cube on a dark tile, now consistent across the app, taskbar, shortcuts, and the website.
+- **Automations reliability batch**: stopping an interactive automation no longer double-records history or fires a bogus "finished" notification; monthly+ cron schedules fire at the right time instead of immediately; scheduled automations now show "Scheduled, next run ..." instead of looking stuck; Codex sessions keep their sandbox and model settings across iterations; deleting a running automation cleans up properly; diff summaries only count what the run actually changed.
+- **The editor never silently loses work**: unsaved changes are flushed to disk when you switch files, tabs, or views, unless you explicitly chose Discard.
+- **Confirm dialogs are keyboard-safe**: Enter no longer triggers the destructive action while Cancel is focused, and plain terminals are no longer mistaken for running services when closing.
+- **Usage numbers now match Claude's own /usage**: token headlines count input + output (cache re-reads shown separately), and the By-model list ranks by real usage.
+- **Under the hood**: hardened process cleanup, safer OAuth callback reads, rename-safe git status parsing, size caps on large file scans, and pipe writes moved off the UI thread so a wedged agent can't freeze the window.
+- The home-screen chat is retired, theme cards are simpler (default theme is now called Midnight), and copy has been cleaned up across Settings.
+
 ## 0.9.0 — 2026-07-02
 
 - **Loops are now Automations** — same engine, clearer name, everywhere in the app.

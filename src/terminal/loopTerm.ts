@@ -29,7 +29,9 @@ export async function startLoopTerm(
       },
       onControl: (c) => {
         if (c.type === "exit") {
-          liveIds.delete(id);
+          // stopLoopTerm removes the id BEFORE killing — if it's already gone, this exit was
+          // engine-initiated and onExit must not fire (it would double-finish the loop)
+          if (!liveIds.delete(id)) return;
           onExit();
         }
       },

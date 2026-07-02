@@ -35,9 +35,30 @@ fn listen_blocking() -> Result<String, String> {
     stream.set_nonblocking(false).ok();
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
-    let req = String::from_utf8_lossy(&buf[..n]);
+    // read until we've got the whole header block (\r\n\r\n), or hit a 64KB cap / EOF. a single
+    // read can truncate the request; the 5s read timeout above still bounds each read so a stalled
+    // client can't pin us here.
+    let mut data: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => break, // EOF
+            Ok(n) => {
+                data.extend_from_slice(&chunk[..n]);
+                if data.windows(4).any(|w| w == b"\r\n\r\n") || data.len() >= 64 * 1024 {
+                    break;
+                }
+            }
+            // timeout/other: bail with what we have, or surface the error if we got nothing
+            Err(e) => {
+                if data.is_empty() {
+                    return Err(e.to_string());
+                }
+                break;
+            }
+        }
+    }
+    let req = String::from_utf8_lossy(&data);
     // request line: "GET /?code=...&state=... HTTP/1.1" — take the target (2nd token)
     let target = req
         .lines()
