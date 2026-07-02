@@ -308,15 +308,15 @@ export function Rail() {
       </button>
       <button
         className={`rail-nav${view === "loops" ? " active" : ""}`}
-        title="Loops & automations"
+        title="Automations"
         onClick={() => useUi.getState().goLoops()}
       >
         <Repeat size={15} />
-        <span className="rail-nav-label">Loops</span>
+        <span className="rail-nav-label">Automations</span>
         {activeLoops > 0 ? (
           <span className="rail-nav-badge" title={`${activeLoops} running`}>{activeLoops}</span>
         ) : loopCount > 0 ? (
-          <span className="rail-nav-badge muted" title={`${loopCount} loop${loopCount > 1 ? "s" : ""}`}>
+          <span className="rail-nav-badge muted" title={`${loopCount} automation${loopCount > 1 ? "s" : ""}`}>
             {loopCount}
           </span>
         ) : null}

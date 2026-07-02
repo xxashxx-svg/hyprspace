@@ -17,10 +17,56 @@ import { useLoops, newLoop, loopRunId } from "../stores/loops";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
-import { secretHas } from "../api";
+import { secretHas, revealPath } from "../api";
+import { relTime } from "../lib/time";
 import { LoopRunView } from "./LoopRunView";
 import { LoopTerminal } from "./LoopTerminal";
 import { LoopsManager } from "./LoopsManager";
+
+// "1m 30s" / "45s" / "2h 05m"
+function fmtDur(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+// past runs for one automation — persisted, so it survives restarts
+function LoopHistory({ id }: { id: string }) {
+  const hist = useLoops((s) => s.history[id]);
+  if (!hist?.length) return null;
+  return (
+    <div className="loop-history">
+      <div className="loop-history-head">Past runs</div>
+      {hist.slice(0, 15).map((h) => (
+        <div key={h.id} className="loop-history-row" title={h.lastResult || undefined}>
+          <span className={`loop-dot s-${h.status}`} />
+          <span className="loop-history-when">{relTime(h.endedAt)}</span>
+          <span className="loop-history-meta">
+            {h.iterations} iter · {fmtDur(h.endedAt - h.startedAt)}
+            {h.costUsed ? ` · $${h.costUsed.toFixed(2)}` : ""}
+          </span>
+          {h.filesChanged ? (
+            <span className="loop-history-diff">
+              {h.filesChanged} file{h.filesChanged === 1 ? "" : "s"} · +{h.additions} −{h.deletions}
+            </span>
+          ) : null}
+          <span className="loop-history-note">{h.note || h.lastResult || ""}</span>
+          {h.worktreePath && (
+            <button
+              className="loop-history-open"
+              title={`Open the run's worktree:\n${h.worktreePath}`}
+              onClick={() => void revealPath(h.worktreePath!).catch(() => {})}
+            >
+              <FolderGit2 size={11} />
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const STATUS_LABEL: Record<string, string> = {
   idle: "idle",
@@ -70,7 +116,7 @@ export function LoopsPage() {
 
   const addLoop = () => {
     const def = newLoop(activeCwd || "");
-    def.name = "New loop";
+    def.name = "New automation";
     useLoops.getState().upsert(def);
     useUi.getState().focusLoop(def.id);
     useUi.getState().setLoopsTab("manage"); // drop into config to fill it in
@@ -95,7 +141,7 @@ export function LoopsPage() {
         <div className="loops-page-head">
           <Repeat size={20} strokeWidth={1.75} />
           <div>
-            <h1>Loops &amp; Automations</h1>
+            <h1>Automations</h1>
             <p>Agents that run on a schedule, on an interval, or until the job's done.</p>
           </div>
           <div className="loops-tabs">
@@ -118,9 +164,9 @@ export function LoopsPage() {
           <LoopsManager />
         ) : ids.length === 0 ? (
           <div className="loops-empty-runs">
-            <p>No loops yet — create one to start automating.</p>
+            <p>No automations yet — create one to start automating.</p>
             <button className="btn" onClick={() => useUi.getState().setLoopsTab("manage")}>
-              <Plus size={14} /> Create a loop
+              <Plus size={14} /> Create an automation
             </button>
           </div>
         ) : (
@@ -174,7 +220,7 @@ export function LoopsPage() {
                 );
               })}
               <button className="loops-master-add" onClick={addLoop}>
-                <Plus size={14} /> New loop
+                <Plus size={14} /> New automation
               </button>
             </div>
 
@@ -229,12 +275,13 @@ export function LoopsPage() {
                       <LoopTerminal id={loopRunId(sel)} />
                     ) : (
                       <div className="loop-run-empty">
-                        Interactive terminal loop — press ▶ to launch the Claude session here.
+                        Interactive terminal automation — press ▶ to launch the session here.
                       </div>
                     )
                   ) : (
                     <LoopRunView id={sel} />
                   )}
+                  <LoopHistory id={sel} />
                 </>
               ) : (
                 <div className="loop-run-empty">Select a loop to see its activity.</div>

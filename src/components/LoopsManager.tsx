@@ -2,8 +2,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useLoops, newLoop, type LoopDef, type LoopStop } from "../stores/loops";
 import { useUi } from "../stores/ui";
-import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
+import { startLoop, stopLoop, pauseLoop, revealLoopWorktree, paneCapable } from "../lib/loops";
+import { cronValid, nextCron } from "../lib/cron";
 import { LOOP_TEMPLATES, type LoopTemplate } from "../lib/loopTemplates";
+import claudeLogo from "../assets/brand/claude.svg";
+import geminiLogo from "../assets/brand/gemini.svg";
+import openaiLogo from "../assets/brand/openai.svg";
+import opencodeLogo from "../assets/brand/opencode.svg";
+import grokLogo from "../assets/brand/grok.svg";
 import { useWorkspaces } from "../stores/workspace";
 import { pickFolder, secretSet, secretHas, secretClear } from "../api";
 import {
@@ -72,6 +78,98 @@ function fmtTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+// backend picker chips — same brand marks the launcher / usage panel use
+const BACKENDS: { id: LoopDef["provider"]; label: string; sub?: string; logo: string }[] = [
+  { id: "claude-sub", label: "Claude", sub: "subscription", logo: claudeLogo },
+  { id: "claude", label: "Claude", sub: "API key", logo: claudeLogo },
+  { id: "codex", label: "Codex", logo: openaiLogo },
+  { id: "gemini", label: "Gemini", logo: geminiLogo },
+  { id: "opencode", label: "OpenCode", logo: opencodeLogo },
+  { id: "grok", label: "Grok", logo: grokLogo },
+];
+// backends whose CLIs report token usage — the token budget is honest only for these
+const BUDGET_BACKENDS = new Set(["claude", "claude-sub", "claude-hooks", "codex"]);
+
+function Seg<T extends string>({
+  value,
+  opts,
+  onChange,
+  disabled,
+}: {
+  value: T;
+  opts: { v: T; label: string; hint?: string; off?: boolean }[];
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="loop-seg">
+      {opts.map((o) => (
+        <button
+          key={o.v}
+          className={`loop-seg-btn${value === o.v ? " on" : ""}`}
+          disabled={disabled || o.off}
+          title={o.hint}
+          onClick={() => onChange(o.v)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToggleRow({
+  label,
+  desc,
+  on,
+  onChange,
+}: {
+  label: string;
+  desc?: string;
+  on: boolean;
+  onChange: (b: boolean) => void;
+}) {
+  return (
+    <div className="loop-toggle-row">
+      <div className="loop-toggle-info">
+        <span>{label}</span>
+        {desc && <em>{desc}</em>}
+      </div>
+      <button className={`toggle ${on ? "on" : ""}`} onClick={() => onChange(!on)} aria-pressed={on}>
+        <span className="toggle-knob" />
+      </button>
+    </div>
+  );
+}
+
+function fmtWhen(t: number): string {
+  const d = new Date(t);
+  const today = new Date().toDateString() === d.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return today
+    ? `today ${time}`
+    : `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} ${time}`;
+}
+
+// human preview of the next fire, mirroring the engine's priority (cron → everyMin → dailyAt)
+function nextFirePreview(s?: LoopDef["schedule"]): string {
+  const now = Date.now();
+  if (s?.cron?.trim()) {
+    if (!cronValid(s.cron)) return "invalid cron — using the simple fields instead";
+    const t = nextCron(s.cron, now);
+    return t ? `next run ${fmtWhen(t)}` : "cron never fires";
+  }
+  if (s?.everyMin && s.everyMin > 0) return `next run ${fmtWhen(now + s.everyMin * 60000)}`;
+  if (s?.dailyAt && /^\d{1,2}:\d{2}$/.test(s.dailyAt)) {
+    const [h, m] = s.dailyAt.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+    return `next run ${fmtWhen(d.getTime())}`;
+  }
+  return "no schedule set — defaults to hourly";
+}
+
 // Settings → Loops. Create/edit loops and drive them live (start/stop/pause, iteration count, logs).
 export function LoopsManager() {
   const loops = useLoops((s) => s.loops);
@@ -114,7 +212,7 @@ export function LoopsManager() {
 
   const add = () => {
     const def = newLoop(activeCwd || "");
-    def.name = "New loop";
+    def.name = "New automation";
     useLoops.getState().upsert(def);
     setOpenId(def.id); // expand the fresh loop so it's ready to fill in
   };
@@ -143,14 +241,14 @@ export function LoopsManager() {
   return (
     <div className="loops">
       <div className="loops-bar">
-        <span className="set-label">Loops</span>
+        <span className="set-label">Automations</span>
         <button className="btn" onClick={add}>
-          <Plus size={14} /> New loop
+          <Plus size={14} /> New automation
         </button>
       </div>
       <div className="svc-hint" style={{ marginBottom: 14 }}>
-        Run an agent on a schedule, on an interval, or until a goal is met. Every loop needs a stop
-        limit, so it can never run forever. Loops run while HyprSpace is open.
+        Run an agent on a schedule, on an interval, or until a goal is met. Every automation needs a
+        stop limit, so it can never run forever. Automations run while HyprSpace is open.
       </div>
 
       <div className="loop-key">
@@ -183,7 +281,7 @@ export function LoopsManager() {
             </span>
             <button className="btn" onClick={() => setEditingKey(true)}>{hasKey ? "Update" : "Set key"}</button>
             {hasKey && <button className="btn" onClick={() => void clearKey()}>Clear</button>}
-            <span className="loop-key-note">used only by Claude loops; never your subscription</span>
+            <span className="loop-key-note">used only by Claude automations; never your subscription</span>
           </>
         )}
       </div>
@@ -220,7 +318,7 @@ export function LoopsManager() {
               <span className={`loop-dot s-${status}`} />
               <input
                 className="loop-name-in"
-                placeholder="Loop name"
+                placeholder="Automation name"
                 value={def.name}
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => update(id, { name: e.target.value })}
@@ -263,7 +361,7 @@ export function LoopsManager() {
               </button>
               <button
                 className="svc-del"
-                title="Delete loop"
+                title="Delete automation"
                 onClick={() => {
                   stopLoop(id);
                   useLoops.getState().remove(id);
@@ -276,14 +374,16 @@ export function LoopsManager() {
 
             {openId === id && (
             <div className="loop-card-body">
-            <label className="loop-section-label">Task</label>
+            <div className="loop-section">
+            <div className="loop-section-head">Task</div>
             <textarea
               className="svc-in loop-prompt"
               placeholder="What should the agent do each iteration?"
-              rows={2}
+              rows={3}
               value={def.prompt}
               onChange={(e) => update(id, { prompt: e.target.value })}
             />
+            </div>
 
             {active && (
               <div className="loop-live-hint">
@@ -296,51 +396,72 @@ export function LoopsManager() {
             )}
 
             <div className="loop-section">
+            <div className="loop-section-head">Backend</div>
+            <div className="loop-chips">
+              {BACKENDS.map((b) => {
+                const on = def.provider === b.id || (def.provider === "claude-hooks" && b.id === "claude-sub");
+                return (
+                  <button
+                    key={b.id}
+                    className={`loop-chip${on ? " on" : ""}`}
+                    disabled={active}
+                    title={active ? "Stop the automation to change its backend" : undefined}
+                    onClick={() => {
+                      const patch: Partial<LoopDef> = { provider: b.id };
+                      if (!paneCapable(b.id) && def.run === "pane") patch.run = "headless";
+                      update(id, patch);
+                    }}
+                  >
+                    <img src={b.logo} alt="" />
+                    <span className="loop-chip-name">
+                      {b.label}
+                      {b.sub && <em>{b.sub}</em>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            </div>
+
+            <div className="loop-section">
             <div className="loop-section-head">How it runs</div>
-            <div className="loop-grid">
-              <label className="loop-field">
-                <span>Backend</span>
-                <select
-                  className="set-select"
-                  value={def.provider}
-                  disabled={active}
-                  title={active ? "Stop the loop to change its backend" : undefined}
-                  onChange={(e) => update(id, { provider: e.target.value as LoopDef["provider"] })}
-                >
-                  <option value="claude">Claude (API key)</option>
-                  <option value="claude-sub">Claude (subscription)</option>
-                  <option value="codex">Codex</option>
-                  <option value="gemini">Gemini</option>
-                  <option value="opencode">OpenCode</option>
-                  <option value="grok">Grok</option>
-                </select>
-              </label>
-              <label className="loop-field">
-                <span>Run</span>
-                <select
-                  className="set-select"
+            <div className="loop-seg-row">
+              <div className="loop-seg-group">
+                <span className="loop-field-label">Run as</span>
+                <Seg
                   value={def.run}
                   disabled={active}
-                  title={active ? "Stop the loop to change how it runs" : undefined}
-                  onChange={(e) => update(id, { run: e.target.value as LoopDef["run"] })}
-                >
-                  <option value="headless">Headless</option>
-                  {(def.provider === "claude" || def.provider === "claude-sub") && (
-                    <option value="pane">Interactive terminal</option>
-                  )}
-                </select>
-              </label>
-              <label className="loop-field">
-                <span>Mode</span>
-                <select className="set-select" value={def.mode} onChange={(e) => update(id, { mode: e.target.value as LoopDef["mode"] })}>
-                  <option value="until-done">Until done</option>
-                  <option value="interval">Interval</option>
-                  <option value="cron">Schedule</option>
-                  <option value="manual">Manual only</option>
-                </select>
-              </label>
+                  onChange={(v) => update(id, { run: v })}
+                  opts={[
+                    { v: "headless", label: "Headless" },
+                    {
+                      v: "pane",
+                      label: "In a terminal",
+                      off: !paneCapable(def.provider),
+                      hint: !paneCapable(def.provider)
+                        ? "This backend has no interactive session mode"
+                        : undefined,
+                    },
+                  ]}
+                />
+              </div>
+              <div className="loop-seg-group">
+                <span className="loop-field-label">When</span>
+                <Seg
+                  value={def.mode}
+                  onChange={(v) => update(id, { mode: v })}
+                  opts={[
+                    { v: "until-done", label: "Until done" },
+                    { v: "interval", label: "Interval" },
+                    { v: "cron", label: "Schedule" },
+                    { v: "manual", label: "Once" },
+                  ]}
+                />
+              </div>
+            </div>
 
-              {def.mode === "interval" && (
+            {def.mode === "interval" && (
+              <div className="loop-grid">
                 <label className="loop-field">
                   <span>Every (seconds)</span>
                   <input
@@ -351,11 +472,22 @@ export function LoopsManager() {
                     onChange={(e) => update(id, { intervalSec: Math.max(5, +e.target.value || 60) })}
                   />
                 </label>
-              )}
-              {def.mode === "cron" && (
-                <>
+              </div>
+            )}
+            {def.mode === "cron" && (
+              <>
+                <div className="loop-grid">
                   <label className="loop-field">
-                    <span>Every (minutes)</span>
+                    <span>Cron expression</span>
+                    <input
+                      className="svc-in"
+                      placeholder="*/30 9-18 * * 1-5"
+                      value={def.schedule?.cron ?? ""}
+                      onChange={(e) => updateSched(id, { cron: e.target.value || undefined })}
+                    />
+                  </label>
+                  <label className="loop-field">
+                    <span>…or every (minutes)</span>
                     <input
                       className="svc-in"
                       type="number"
@@ -366,7 +498,7 @@ export function LoopsManager() {
                     />
                   </label>
                   <label className="loop-field">
-                    <span>Or daily at</span>
+                    <span>…or daily at</span>
                     <input
                       className="svc-in"
                       placeholder="HH:MM"
@@ -374,9 +506,12 @@ export function LoopsManager() {
                       onChange={(e) => updateSched(id, { dailyAt: e.target.value || undefined })}
                     />
                   </label>
-                </>
-              )}
+                </div>
+                <div className="loop-next-fire">{nextFirePreview(def.schedule)}</div>
+              </>
+            )}
 
+            <div className="loop-grid">
               <label className="loop-field">
                 <span>Model</span>
                 <input
@@ -406,24 +541,24 @@ export function LoopsManager() {
 
             {def.run === "pane" ? (
               <div className="svc-hint loop-sub-note">
-                Launches a real Claude session in a terminal here on the Runs tab, on your
-                subscription. It runs <code>/goal</code> so it works until the goal is met (or it hits
-                max iterations) — and because it's a live session, it can ask you questions or for
-                approval, which you answer <strong>right in the terminal</strong>. HyprSpace notifies
-                you whenever it needs your input.
+                Launches a real interactive session in a terminal on the Runs tab, seeded with your
+                task — it can ask you questions or for approval, which you answer{" "}
+                <strong>right in the terminal</strong>. Claude self-loops via <code>/goal</code> and
+                pings you when it needs input; Codex and Gemini run as a live seeded session.
               </div>
             ) : def.provider === "claude-sub" ? (
               <div className="svc-hint loop-sub-note">
                 Runs headless <code>claude -p</code> on your logged-in subscription — no API key, the
                 same CLI the terminal panes use. Each iteration is one turn; it keeps going until your
-                until-check passes, the sentinel appears, or it hits max iterations. Turn on “Isolate
-                edits (worktree)” below so its changes land in a reviewable branch.
+                until-check passes, the sentinel appears, or it hits max iterations.
               </div>
             ) : null}
             </div>
 
             <div className="loop-section">
-            <div className="loop-section-head">When it stops</div>
+            <div className="loop-section-head">
+              When it stops <span className="loop-section-sub">at least one hard limit — it can never run forever</span>
+            </div>
             <div className="loop-stops">
               <label className="loop-field">
                 <span>Max iterations</span>
@@ -455,13 +590,17 @@ export function LoopsManager() {
                   onChange={(e) => updateStop(id, { timeBudgetMin: e.target.value ? +e.target.value : undefined })}
                 />
               </label>
-              <label className="loop-field">
+              <label
+                className="loop-field"
+                title={BUDGET_BACKENDS.has(def.provider) ? undefined : "Only Claude and Codex report token usage"}
+              >
                 <span>Token budget</span>
                 <input
                   className="svc-in"
                   type="number"
                   min={0}
-                  placeholder="none"
+                  placeholder={BUDGET_BACKENDS.has(def.provider) ? "none" : "n/a for this backend"}
+                  disabled={!BUDGET_BACKENDS.has(def.provider)}
                   value={def.stop.tokenBudget ?? ""}
                   onChange={(e) => updateStop(id, { tokenBudget: e.target.value ? +e.target.value : undefined })}
                 />
@@ -476,33 +615,33 @@ export function LoopsManager() {
                 />
               </label>
             </div>
-
-            <div className="loop-flags">
-              <label className="svc-auto">
-                <input type="checkbox" checked={def.stop.noProgress} onChange={(e) => updateStop(id, { noProgress: e.target.checked })} />
-                Stop if it stalls
-              </label>
-            </div>
+            <ToggleRow
+              label="Stop if it stalls"
+              desc="3 iterations with no new output ends the run"
+              on={def.stop.noProgress}
+              onChange={(b) => updateStop(id, { noProgress: b })}
+            />
             </div>
 
             <div className="loop-section">
             <div className="loop-section-head">Options</div>
-            <div className="loop-flags">
-              <label className="svc-auto">
-                <input type="checkbox" checked={def.worktree} onChange={(e) => update(id, { worktree: e.target.checked })} />
-                Isolate edits (worktree)
-              </label>
-              <label className="svc-auto">
-                <input type="checkbox" checked={def.enabled} onChange={(e) => update(id, { enabled: e.target.checked })} />
-                Auto-start on open
-              </label>
-            </div>
-
+            <ToggleRow
+              label="Isolate edits (worktree)"
+              desc="run in a throwaway branch — review the diff before it touches your tree"
+              on={def.worktree}
+              onChange={(b) => update(id, { worktree: b })}
+            />
+            <ToggleRow
+              label="Auto-start on open"
+              desc="kick off whenever HyprSpace launches"
+              on={def.enabled}
+              onChange={(b) => update(id, { enabled: b })}
+            />
             <button
               className="loop-folder"
               disabled={active}
               onClick={() => void browseFolder(id)}
-              title={active ? "Stop the loop to change its folder" : def.folder || "Pick a folder"}
+              title={active ? "Stop the automation to change its folder" : def.folder || "Pick a folder"}
             >
               <FolderOpen size={13} />
               <span>{def.folder || "Pick a folder…"}</span>
@@ -516,6 +655,11 @@ export function LoopsManager() {
                 <span className="loop-usage" title="cost · tokens this run">
                   {run.costUsed ? `$${run.costUsed.toFixed(3)}` : ""}
                   {run.tokensUsed ? `${run.costUsed ? " · " : ""}${fmtTokens(run.tokensUsed)} tok` : ""}
+                </span>
+              ) : null}
+              {run?.filesChanged ? (
+                <span className="loop-diff" title="files this run changed">
+                  {run.filesChanged} file{run.filesChanged === 1 ? "" : "s"} · +{run.additions} −{run.deletions}
                 </span>
               ) : null}
               {run?.lastResult && <span className="loop-last" title={run.lastResult}>{run.lastResult}</span>}
