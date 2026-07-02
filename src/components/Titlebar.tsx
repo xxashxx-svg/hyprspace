@@ -249,7 +249,7 @@ function ServicesIndicator() {
   );
 }
 
-// Live indicator for running loops. Hidden when none are active; click jumps to Settings → Loops.
+// Live indicator for running automations. Hidden when none are active; click jumps to the Automations page.
 function LoopsIndicator() {
   const runs = useLoops((s) => s.runs);
   const loops = useLoops((s) => s.loops);

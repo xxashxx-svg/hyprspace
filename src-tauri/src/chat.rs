@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -24,12 +24,20 @@ struct Proc {
 fn kill_proc(proc: Proc) {
     let Proc { mut child, stdin } = proc;
     drop(stdin); // EOF on stdin → claude winds down
+    // already gone? just reap it — dodges taskkill racing a reused PID
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
     #[cfg(windows)]
     {
         let mut tk = Command::new("taskkill");
         tk.args(["/PID", &child.id().to_string(), "/T", "/F"]);
         tk.creation_flags(0x08000000);
-        let _ = tk.output();
+        let ok = tk.output().map(|o| o.status.success()).unwrap_or(false);
+        // taskkill failed or it's somehow still alive → fall back to a direct kill
+        if !ok || matches!(child.try_wait(), Ok(None)) {
+            let _ = child.kill();
+        }
     }
     #[cfg(not(windows))]
     {
@@ -38,9 +46,9 @@ fn kill_proc(proc: Proc) {
     let _ = child.wait();
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ChatManager {
-    procs: Mutex<HashMap<String, Proc>>,
+    procs: Arc<Mutex<HashMap<String, Proc>>>,
 }
 
 impl ChatManager {

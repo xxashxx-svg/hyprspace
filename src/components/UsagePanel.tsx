@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   providerUsageOne,
   type ProviderUsage,
@@ -70,7 +70,9 @@ function LimitBar({ w }: { w: UsageWindow }) {
   );
 }
 
-// tokens = the headline metric per provider: total + how it splits across input / output / cache
+// tokens = the headline metric per provider. The headline counts input + output only — the same
+// definition Claude's own /usage stats use — since cache re-reads dwarf real work by ~100x and
+// would make the number meaningless. The bar + legend still show the full split including cache.
 function Tokens({ u }: { u: ProviderUsage }) {
   const total = Math.max(1, u.totalTokens);
   const parts = [
@@ -82,7 +84,7 @@ function Tokens({ u }: { u: ProviderUsage }) {
     <div className="usage-tokens">
       <div className="usage-tokens-top">
         <span className="usage-tokens-val">
-          {fmt(u.totalTokens)} <em>tokens</em>
+          {fmt(u.inputTokens + u.outputTokens)} <em>tokens</em>
         </span>
         {u.tokensWindow && <span className="usage-tokens-win">{u.tokensWindow}</span>}
       </div>
@@ -141,23 +143,29 @@ function Sparkline({ days, unit }: { days: UsageDay[]; unit: string }) {
   );
 }
 
-// "claude-opus-4-8" -> "Opus 4.8", "claude-haiku-4-5-20251001" -> "Haiku 4.5"
+// "claude-opus-4-8" -> "Opus 4.8", "claude-haiku-4-5-20251001" -> "Haiku 4.5",
+// and legacy version-first ids too: "claude-3-5-sonnet-20241022" -> "Sonnet 3.5".
+// non-claude ids (e.g. "<synthetic>") pass through raw.
 function prettyModel(id: string): string {
+  if (!id.startsWith("claude-")) return id;
   const parts = id.replace(/^claude-/, "").replace(/-\d{8}$/, "").split("-");
-  const name = parts.shift() ?? id;
-  const label = name.charAt(0).toUpperCase() + name.slice(1);
-  return parts.length ? `${label} ${parts.join(".")}` : label;
+  const words = parts.filter((p) => !/^\d+$/.test(p));
+  const nums = parts.filter((p) => /^\d+$/.test(p));
+  const name = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || id;
+  return nums.length ? `${name} ${nums.join(".")}` : name;
 }
 
-// lifetime magnitude per model — single hue, direct value labels
+// lifetime magnitude per model — single hue, direct value labels. in + out only (Claude's own
+// /usage definition); the full split incl. cache lives in each row's tooltip.
 function Models({ models }: { models: UsageModel[] }) {
-  const shown = models.slice(0, 6);
-  const max = Math.max(1, ...shown.map((m) => m.totalTokens));
+  const real = (m: UsageModel) => m.inputTokens + m.outputTokens;
+  const shown = [...models].sort((a, b) => real(b) - real(a)).slice(0, 6);
+  const max = Math.max(1, ...shown.map(real));
   return (
     <div className="usage-models">
       <div className="usage-activity-top">
         <span>By model</span>
-        <span className="usage-activity-peak">all time</span>
+        <span className="usage-activity-peak">all time · in+out</span>
       </div>
       {shown.map((m) => (
         <div
@@ -167,9 +175,9 @@ function Models({ models }: { models: UsageModel[] }) {
         >
           <span className="usage-model-name">{prettyModel(m.model)}</span>
           <span className="usage-model-track">
-            <i style={{ width: `${(m.totalTokens / max) * 100}%` }} />
+            <i style={{ width: `${(real(m) / max) * 100}%` }} />
           </span>
-          <span className="usage-model-val">{fmt(m.totalTokens)}</span>
+          <span className="usage-model-val">{fmt(real(m))}</span>
         </div>
       ))}
     </div>
@@ -188,7 +196,8 @@ function hotWindows(data: ProviderUsage[]): { p: ProviderUsage; w: UsageWindow }
 
 function Overview({ data }: { data: ProviderUsage[] }) {
   const on = data.filter((p) => p.signedIn);
-  const tokens = on.reduce((n, p) => n + p.totalTokens, 0);
+  // in + out only, matching the per-card headline (cache re-reads would swamp it)
+  const tokens = on.reduce((n, p) => n + p.inputTokens + p.outputTokens, 0);
   const sessions = on.reduce((n, p) => n + p.sessions, 0);
   const hot = hotWindows(data)[0];
   return (
@@ -332,21 +341,26 @@ export function UsagePanel() {
   const [cards, setCards] = useState<Record<string, ProviderUsage>>({});
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [, setTick] = useState(0);
+  const genRef = useRef(0); // load generation — stale in-flight scans must not clobber newer ones
 
   // fire all five scans at once and let each card land on its own
   const load = () => {
+    const gen = ++genRef.current;
     setPending(new Set(PROVIDERS.map((p) => p.id)));
     for (const p of PROVIDERS) {
       providerUsageOne(p.id)
-        .then((u) => u && setCards((c) => ({ ...c, [p.id]: u })))
+        .then((u) => {
+          if (genRef.current === gen && u) setCards((c) => ({ ...c, [p.id]: u }));
+        })
         .catch(() => {})
-        .finally(() =>
+        .finally(() => {
+          if (genRef.current !== gen) return; // a newer load owns the pending set now
           setPending((s) => {
             const next = new Set(s);
             next.delete(p.id);
             return next;
-          }),
-        );
+          });
+        });
     }
   };
   useEffect(load, []);
@@ -378,7 +392,9 @@ export function UsagePanel() {
         </button>
       </div>
 
-      {data.length === PROVIDERS.length || (!loading && data.length > 0) ? (
+      {data.length > 0 ? (
+        // never regress from data back to a skeleton — a provider that failed once would
+        // otherwise flicker the whole strip on every refresh
         <>
           <Alerts data={data} />
           <Overview data={data} />
@@ -399,7 +415,7 @@ export function UsagePanel() {
 
       {data.length > 0 && (
         <div className="usage-foot">
-          Everything here is read from each tool's own files on this machine — no network calls, no
+          Everything here is read from each tool's own files on this machine. No network calls, no
           tokens used.
         </div>
       )}

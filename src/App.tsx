@@ -29,6 +29,7 @@ import { LoopsPage } from "./components/LoopsPage";
 import { StartupRunner } from "./components/StartupRunner";
 import { LoopRunner } from "./components/LoopRunner";
 import { WhatsNew } from "./components/WhatsNew";
+import { Onboarding } from "./components/Onboarding";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { useSessionNamer } from "./ai/autoNameSession";
@@ -278,6 +279,7 @@ export default function App() {
       <StartupRunner />
       <LoopRunner />
       <WhatsNew />
+      <Onboarding />
       <CommandPalette />
       {settingsOpen && <Settings />}
       <PreviewPanel />

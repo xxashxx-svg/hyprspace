@@ -69,13 +69,18 @@ export function makeTerminal(isClaude: boolean): Terminal {
 // OpenGL renderer, so block art (the Claude logo, progress bars, box-drawing) tiles seamlessly.
 // MUST be called after term.open(). Returns the addon so callers can detach it again — panes drop
 // GPU while their space is hidden, since browsers cap WebGL contexts (~16 per page) and every
-// space's panes stay mounted. Null on the DOM setting or if WebGL is unavailable; on context loss
-// it self-disposes, reverting xterm to the DOM renderer instead of blanking.
-export function attachGpuRenderer(term: Terminal): WebglAddon | null {
+// space's panes stay mounted. Null on the DOM setting or if WebGL is unavailable.
+// On context loss the addon self-disposes (reverting xterm to the DOM renderer). `onLoss` runs
+// FIRST — the addon's dispose tears down its emitter mid-fire, so a callback registered after the
+// dispose handler would never run.
+export function attachGpuRenderer(term: Terminal, onLoss?: () => void): WebglAddon | null {
   if (!useSettings.getState().gpuRender) return null;
   try {
     const webgl = new WebglAddon();
-    webgl.onContextLoss(() => webgl.dispose());
+    webgl.onContextLoss(() => {
+      onLoss?.();
+      webgl.dispose();
+    });
     term.loadAddon(webgl);
     return webgl;
   } catch (err) {

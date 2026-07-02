@@ -13,7 +13,7 @@ import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { readFile, writeFile } from "../api";
 import { useUi } from "../stores/ui";
-import { confirmDialog } from "../stores/confirm";
+import { confirmDialog, useConfirm } from "../stores/confirm";
 import { Save, AlertCircle, FileCode, Maximize2, Minimize2, X } from "lucide-react";
 
 // language support by file extension (the few that cover most of what people edit here)
@@ -63,27 +63,41 @@ export function CodeEditor({ path }: { path: string }) {
   const autosaveRef = useRef(autosave);
   autosaveRef.current = autosave;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // dirty as a ref too, so the unmount cleanup can see it; discardRef marks an explicit
+  // "Discard" choice so the unmount flush doesn't resurrect what the user just threw away
+  const dirtyRef = useRef(false);
+  const discardRef = useRef(false);
 
   const name = path.split(/[\\/]/).pop() ?? path;
 
   const close = async () => {
+    // a pending autosave mustn't fire mid-dialog — that would save what the user then "discards"
+    clearTimeout(saveTimer.current);
     if (dirty) {
-      const ok = await confirmDialog({
-        title: "Discard changes?",
-        message: `${name} has unsaved changes.`,
-        confirmLabel: "Discard",
-        danger: true,
-      });
-      if (!ok) return;
+      if (autosave) {
+        // autosave is on: the user already opted into persistence — flush instead of asking
+        await save.current();
+      } else {
+        const ok = await confirmDialog({
+          title: "Discard changes?",
+          message: `${name} has unsaved changes.`,
+          confirmLabel: "Discard",
+          danger: true,
+        });
+        if (!ok) return;
+        discardRef.current = true;
+      }
     }
     useUi.getState().closeFile();
   };
 
-  // Esc drops out of full screen (but never closes the file)
+  // Esc drops out of full screen (but never closes the file, and never steals a dialog's Esc)
   useEffect(() => {
     if (!editorMax) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") toggleEditorMax();
+      if (e.key !== "Escape") return;
+      if (useConfirm.getState().req) return; // a confirm dialog owns this Esc
+      toggleEditorMax();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -98,6 +112,7 @@ export function CodeEditor({ path }: { path: string }) {
     try {
       await writeFile(path, view.state.doc.toString());
       setDirty(false);
+      dirtyRef.current = false;
     } catch (e) {
       setErr(String(e));
     }
@@ -126,6 +141,7 @@ export function CodeEditor({ path }: { path: string }) {
             EditorView.updateListener.of((u) => {
               if (!u.docChanged) return;
               setDirty(true);
+              dirtyRef.current = true;
               if (autosaveRef.current) {
                 clearTimeout(saveTimer.current);
                 saveTimer.current = setTimeout(() => void save.current(), 800);
@@ -141,6 +157,15 @@ export function CodeEditor({ path }: { path: string }) {
     return () => {
       disposed = true;
       clearTimeout(saveTimer.current);
+      // the editor can unmount from MANY paths (another file opened, dock tab switched, dock
+      // hidden, Home) — never silently drop unsaved work: flush it, unless the user explicitly
+      // chose Discard in the close dialog.
+      if (dirtyRef.current && !discardRef.current && viewRef.current) {
+        const doc = viewRef.current.state.doc.toString();
+        void writeFile(path, doc).catch(() => {});
+      }
+      dirtyRef.current = false;
+      discardRef.current = false;
       viewRef.current?.destroy();
       viewRef.current = null;
     };

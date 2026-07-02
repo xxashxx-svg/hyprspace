@@ -50,6 +50,9 @@ interface UiState {
   openInEditor: (path: string) => void;
   closeFile: () => void;
   toggleEditorMax: () => void;
+  onboardingOpen: boolean;
+  openOnboarding: () => void;
+  closeOnboarding: () => void;
   setPaneDrag: (on: boolean) => void;
   setPaneDragOverWs: (id: string | null) => void;
 }
@@ -106,6 +109,9 @@ export const useUi = create<UiState>()((set) => ({
   // closing lands you back on the file tree, since the editor tab disappears with the file
   closeFile: () => set({ openFile: null, editorMax: false, dockTab: "files" }),
   toggleEditorMax: () => set((s) => ({ editorMax: !s.editorMax })),
+  onboardingOpen: false,
+  openOnboarding: () => set({ onboardingOpen: true, settingsOpen: false }),
+  closeOnboarding: () => set({ onboardingOpen: false }),
   setPaneDrag: (on) =>
     set(on ? { paneDragging: true } : { paneDragging: false, paneDragOverWs: null }),
   setPaneDragOverWs: (id) => set({ paneDragOverWs: id }),

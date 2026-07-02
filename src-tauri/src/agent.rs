@@ -25,12 +25,20 @@ impl AgentManager {
     }
 
     fn kill(&self, mut child: Child) {
+        // already exited? just reap it — dodges the PID-reuse window before taskkill runs
+        if let Ok(Some(_)) = child.try_wait() {
+            return;
+        }
         #[cfg(windows)]
         {
             let mut tk = Command::new("taskkill");
             tk.args(["/PID", &child.id().to_string(), "/T", "/F"]);
             tk.creation_flags(0x08000000);
-            let _ = tk.output();
+            let ok = tk.output().map(|o| o.status.success()).unwrap_or(false);
+            // taskkill failed or it's somehow still alive → fall back to a direct kill
+            if !ok || matches!(child.try_wait(), Ok(None)) {
+                let _ = child.kill();
+            }
         }
         #[cfg(not(windows))]
         {

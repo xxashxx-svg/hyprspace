@@ -563,7 +563,6 @@ export function Settings() {
                             <span className="theme-card-dot" />
                             <span className="theme-card-text">
                               <span className="theme-card-name">{t.name}</span>
-                              {t.blurb && <span className="theme-card-blurb">{t.blurb}</span>}
                             </span>
                             <span className="theme-card-check">
                               <Check size={12} strokeWidth={3} />
@@ -596,7 +595,7 @@ export function Settings() {
                       <button onClick={() => setFontSize(fontSize + 1)}>+</button>
                     </div>
                   </Row>
-                  <Row label="Line height" desc="Row spacing — lower is tighter, higher is airier (applies live)">
+                  <Row label="Line height" desc="Row spacing, lower is tighter and higher is airier (applies live)">
                     <div className="stepper">
                       <button onClick={() => setLineHeight((lineHeight ?? 1.1) - 0.05)}>−</button>
                       <span className="stepper-val">{(lineHeight ?? 1.1).toFixed(2)}</span>
@@ -611,7 +610,7 @@ export function Settings() {
               <Group label="Projects">
                 <Row
                   label="Projects folder"
-                  desc="Where new projects are created — including ones the chat makes for you"
+                  desc="Where new projects are created, including ones agents make for you"
                 >
                   <div className="set-path">
                     <code className="set-path-val" title={projectsDir || defaultProjectsDir}>
@@ -705,7 +704,7 @@ export function Settings() {
                 </Provider>
 
                 <Provider icon={<SquareCode size={16} />} name="OpenCode" status={statuses.opencode}>
-                  <Row label="Model & providers" desc="OpenCode is bring-your-own-model — manage them with `opencode auth`">
+                  <Row label="Model & providers" desc="OpenCode is bring-your-own-model. Manage them with `opencode auth`">
                     <span className="set-hint">configured in OpenCode</span>
                   </Row>
                 </Provider>
@@ -716,7 +715,7 @@ export function Settings() {
                   </Row>
                 </Provider>
 
-                <div className="set-hint">Terminal and WSL open plain shells — no agent options.</div>
+                <div className="set-hint">Terminal and WSL open plain shells, no agent options.</div>
               </>
             )}
 
@@ -753,7 +752,7 @@ export function Settings() {
                   </Row>
                   <Row
                     label="GPU rendering"
-                    desc="WebGL — draws block art (logos, progress bars, box-drawing) seamlessly like Alacritty. Off = the DOM renderer with ClearType text, which can leave row gaps in block art. Applies immediately."
+                    desc="WebGL draws block art (logos, progress bars, box-drawing) seamlessly, like Alacritty. Off = the DOM renderer with ClearType text, which can leave row gaps in block art. Applies immediately."
                   >
                     <button
                       className={`toggle ${gpuRender ? "on" : ""}`}
@@ -822,9 +821,16 @@ export function Settings() {
                 <div className="about-name">HyprSpace</div>
                 <div className="about-ver">Version {version || "…"}</div>
                 <div className="about-blurb">
-                  A multi-terminal AI workspace — tile Claude Code and shells across projects, with
+                  A multi-terminal AI workspace. Tile Claude Code and shells across projects, with
                   isolated agents, a command palette, and live review.
                 </div>
+                <button
+                  className="btn"
+                  style={{ marginTop: 14 }}
+                  onClick={() => useUi.getState().openOnboarding()}
+                >
+                  Replay the intro
+                </button>
               </div>
             )}
           </div>

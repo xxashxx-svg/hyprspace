@@ -69,15 +69,6 @@ pub struct ProviderUsage {
     note: Option<String>,
 }
 
-#[tauri::command]
-pub async fn provider_usage() -> Vec<ProviderUsage> {
-    tauri::async_runtime::spawn_blocking(|| {
-        vec![claude_usage(), codex_usage(), gemini_usage(), opencode_usage(), grok_usage()]
-    })
-    .await
-    .unwrap_or_default()
-}
-
 // one provider at a time, so the panel can render cards as each scan finishes
 // (claude's transcript scan dwarfs the others — no reason to make codex wait on it)
 #[tauri::command]
@@ -197,9 +188,9 @@ fn claude_usage() -> ProviderUsage {
         if let Some(days) = v["dailyActivity"].as_array() {
             u.active_days = days.len() as u64;
             for d in days {
-                u.messages += d["messageCount"].as_u64().unwrap_or(0);
-                u.sessions += d["sessionCount"].as_u64().unwrap_or(0);
-                u.tool_calls += d["toolCallCount"].as_u64().unwrap_or(0);
+                u.messages = u.messages.saturating_add(d["messageCount"].as_u64().unwrap_or(0));
+                u.sessions = u.sessions.saturating_add(d["sessionCount"].as_u64().unwrap_or(0));
+                u.tool_calls = u.tool_calls.saturating_add(d["toolCallCount"].as_u64().unwrap_or(0));
             }
             let n = days.len();
             for d in days.iter().skip(n.saturating_sub(30)) {
@@ -231,7 +222,7 @@ fn claude_usage() -> ProviderUsage {
                     date: d["date"].as_str().unwrap_or("").to_string(),
                     value: d["tokensByModel"]
                         .as_object()
-                        .map(|m| m.values().filter_map(|x| x.as_u64()).sum())
+                        .map(|m| m.values().filter_map(|x| x.as_u64()).fold(0u64, |a, b| a.saturating_add(b)))
                         .unwrap_or(0),
                 })
                 .collect();
@@ -247,8 +238,9 @@ fn claude_usage() -> ProviderUsage {
                 let i = m["inputTokens"].as_u64().unwrap_or(0);
                 let o = m["outputTokens"].as_u64().unwrap_or(0);
                 let c = m["cacheReadInputTokens"].as_u64().unwrap_or(0)
-                    + m["cacheCreationInputTokens"].as_u64().unwrap_or(0);
-                if i + o + c == 0 {
+                    .saturating_add(m["cacheCreationInputTokens"].as_u64().unwrap_or(0));
+                let total = i.saturating_add(o).saturating_add(c);
+                if total == 0 {
                     continue;
                 }
                 u.models.push(ModelUsage {
@@ -256,7 +248,7 @@ fn claude_usage() -> ProviderUsage {
                     input_tokens: i,
                     output_tokens: o,
                     cache_tokens: c,
-                    total_tokens: i + o + c,
+                    total_tokens: total,
                 });
             }
             u.models.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
@@ -269,7 +261,7 @@ fn claude_usage() -> ProviderUsage {
     u.input_tokens = i;
     u.output_tokens = o;
     u.cache_tokens = c;
-    u.total_tokens = i + o + c;
+    u.total_tokens = i.saturating_add(o).saturating_add(c);
     if u.total_tokens > 0 {
         u.tokens_window = Some(format!("last {RECENT_DAYS} days"));
     }
@@ -300,10 +292,10 @@ fn sum_claude_tokens(projects: &Path) -> (u64, u64, u64) {
                 &v["usage"]
             };
             if usage.is_object() {
-                i += usage["input_tokens"].as_u64().unwrap_or(0);
-                o += usage["output_tokens"].as_u64().unwrap_or(0);
-                c += usage["cache_creation_input_tokens"].as_u64().unwrap_or(0)
-                    + usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
+                i = i.saturating_add(usage["input_tokens"].as_u64().unwrap_or(0));
+                o = o.saturating_add(usage["output_tokens"].as_u64().unwrap_or(0));
+                c = c.saturating_add(usage["cache_creation_input_tokens"].as_u64().unwrap_or(0))
+                    .saturating_add(usage["cache_read_input_tokens"].as_u64().unwrap_or(0));
             }
         }
     }
@@ -336,7 +328,11 @@ fn codex_usage() -> ProviderUsage {
 
     // session rollouts carry token_count events with the live rate-limit windows
     let files = recent_jsonl(&cdir.join("sessions"));
-    u.sessions = files.len() as u64;
+    // only rollout-*.jsonl are real sessions; other jsonls in the tree would over-count
+    u.sessions = files
+        .iter()
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with("rollout-")).unwrap_or(false))
+        .count() as u64;
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
     let mut by_day: std::collections::BTreeMap<String, u64> = Default::default();
     for (idx, f) in files.iter().enumerate() {
@@ -344,9 +340,9 @@ fn codex_usage() -> ProviderUsage {
             continue;
         };
         let ttu = &tc["info"]["total_token_usage"];
-        i += ttu["input_tokens"].as_u64().unwrap_or(0);
-        o += ttu["output_tokens"].as_u64().unwrap_or(0);
-        c += ttu["cached_input_tokens"].as_u64().unwrap_or(0);
+        i = i.saturating_add(ttu["input_tokens"].as_u64().unwrap_or(0));
+        o = o.saturating_add(ttu["output_tokens"].as_u64().unwrap_or(0));
+        c = c.saturating_add(ttu["cached_input_tokens"].as_u64().unwrap_or(0));
         // rollout filenames embed the session date: rollout-YYYY-MM-DD...
         if let Some(d) = f
             .file_name()
@@ -354,8 +350,8 @@ fn codex_usage() -> ProviderUsage {
             .and_then(|n| n.strip_prefix("rollout-"))
             .and_then(|n| n.get(..10))
         {
-            *by_day.entry(d.to_string()).or_insert(0) +=
-                ttu["total_tokens"].as_u64().unwrap_or(0);
+            let e = by_day.entry(d.to_string()).or_insert(0);
+            *e = e.saturating_add(ttu["total_tokens"].as_u64().unwrap_or(0));
         }
         if idx == 0 {
             let rl = &tc["rate_limits"];
@@ -371,7 +367,7 @@ fn codex_usage() -> ProviderUsage {
     u.input_tokens = i;
     u.output_tokens = o;
     u.cache_tokens = c;
-    u.total_tokens = i + o + c;
+    u.total_tokens = i.saturating_add(o).saturating_add(c);
     if u.total_tokens > 0 {
         u.tokens_window = Some("recent sessions".into());
     }
@@ -387,6 +383,9 @@ fn codex_usage() -> ProviderUsage {
 
 // scan a rollout from the end for the last token_count event (has the current rate limits)
 fn last_token_count(file: &Path) -> Option<Value> {
+    if std::fs::metadata(file).map(|m| m.len() > MAX_FILE_BYTES).unwrap_or(false) {
+        return None;
+    }
     let text = std::fs::read_to_string(file).ok()?;
     for line in text.lines().rev() {
         if line.contains("\"token_count\"") && line.contains("\"rate_limits\"") {
@@ -412,7 +411,7 @@ fn gemini_usage() -> ProviderUsage {
         u.account = v["active"].as_str().map(String::from);
     }
     u.signed_in = g.join("oauth_creds.json").exists() || u.account.is_some();
-    u.note = Some("Gemini CLI doesn't record token usage locally — only the signed-in account is shown.".into());
+    u.note = Some("Gemini CLI doesn't record token usage locally, so only the signed-in account is shown.".into());
     u
 }
 
@@ -443,7 +442,7 @@ fn opencode_usage() -> ProviderUsage {
         }
     }
     if u.note.is_none() {
-        u.note = Some("BYO-model — usage lives in OpenCode's own local database.".into());
+        u.note = Some("BYO-model. Usage lives in OpenCode's own local database.".into());
     }
     u
 }
@@ -458,11 +457,14 @@ fn grok_usage() -> ProviderUsage {
     let g = home_dir().join(".grok");
     u.signed_in = g.exists() || std::env::var("XAI_API_KEY").is_ok();
     // a grok session = one folder holding a chat_history.jsonl (it also writes events/prompt
-    // jsonls alongside, which would triple-count)
-    u.sessions = recent_jsonl(&g.join("sessions"))
-        .iter()
-        .filter(|p| p.file_name().map(|n| n == "chat_history.jsonl").unwrap_or(false))
-        .count() as u64;
-    u.note = Some("Grok Build CLI — token usage & rate limits live in your xAI console.".into());
+    // jsonls alongside, which would triple-count). filter to chat_history.jsonl BEFORE the file
+    // cap, or the sibling jsonls could crowd the real sessions out of the top-160 window.
+    let cutoff = now_secs().saturating_sub(RECENT_DAYS * 86_400);
+    let mut sess: Vec<(u64, PathBuf)> = vec![];
+    collect_jsonl(&g.join("sessions"), &mut sess, 0);
+    sess.retain(|(m, p)| *m >= cutoff && p.file_name().map(|n| n == "chat_history.jsonl").unwrap_or(false));
+    sess.truncate(MAX_FILES);
+    u.sessions = sess.len() as u64;
+    u.note = Some("Grok Build CLI. Token usage & rate limits live in your xAI console.".into());
     u
 }

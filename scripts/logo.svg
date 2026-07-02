@@ -1,9 +1,10 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <!-- HyprSpace mark: an isometric cube ("a space"). Indigo tile + white-shaded cube.
-       This is the canonical icon source — regenerate icons with:
+  <!-- HyprSpace mark: an isometric cube ("a space") on a dark tile — indigo top, light left,
+       gray right, matching the in-app Logo and the website. This is the canonical icon source;
+       regenerate icons with:
          node scripts/gen-icon.mjs && npx tauri icon scripts/logo-1024.png -->
-  <rect width="1024" height="1024" rx="176" fill="#3d54e8"/>
-  <path d="M512 213 L789 376 L512 538 L235 376 Z" fill="#ffffff"/>
-  <path d="M235 376 L512 538 L512 811 L235 649 Z" fill="#d8ddf5"/>
-  <path d="M789 376 L789 649 L512 811 L512 538 Z" fill="#b4bcec"/>
+  <rect width="1024" height="1024" rx="176" fill="#161616"/>
+  <path d="M512 213 L789 376 L512 538 L235 376 Z" fill="#3d54e8"/>
+  <path d="M235 376 L512 538 L512 811 L235 649 Z" fill="#f5f5f5"/>
+  <path d="M789 376 L789 649 L512 811 L512 538 Z" fill="#767676"/>
 </svg>

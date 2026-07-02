@@ -22,6 +22,7 @@ import {
   revealPath,
   secretHas,
   prepareNotifySettings,
+  cleanupHookRun,
   readFile,
 } from "../api";
 import { nextCron, cronValid } from "./cron";
@@ -32,6 +33,19 @@ const NOPROGRESS_LIMIT = 3; // consecutive unchanged/empty iterations → crash-
 const UNTIL_DELAY_MS = 1200; // breather between until-done iterations
 const FAIL_LIMIT = 3; // consecutive failed iterations → stop + alert instead of burning quota
 const RETRY_BASE_MS = 5000; // failed-iteration backoff: 5s, 10s, 20s
+
+// setTimeout wraps at 2^31-1 ms (~24.8 days) and fires IMMEDIATELY on overflow — a monthly cron
+// would run back-to-back until max iterations. chain shorter sleeps for far-off fires.
+const MAX_TIMEOUT_MS = 2_147_000_000;
+function armAt(ctrl: Ctrl, at: number, fn: () => void) {
+  const delay = at - Date.now();
+  if (delay > MAX_TIMEOUT_MS) ctrl.timer = setTimeout(() => armAt(ctrl, at, fn), MAX_TIMEOUT_MS);
+  else ctrl.timer = setTimeout(fn, Math.max(1000, delay));
+}
+
+// pre-run git state per loop id, so the end-of-run diff only counts what THIS run changed —
+// not pre-existing uncommitted edits or a reused worktree's leftovers
+const baselines = new Map<string, Map<string, { a: number; r: number }>>();
 
 type Ctrl = {
   stop: boolean;
@@ -94,14 +108,16 @@ function buildArgs(def: LoopDef, cont: boolean): string[] {
   }
   if (def.provider === "codex") {
     // codex headless — uses your `codex login` auth. fresh `exec` reads the prompt from stdin;
-    // `resume --last -` continues the last session, the trailing `-` makes it read stdin.
+    // `resume --last` continues the last session, the trailing `-` makes it read stdin.
     // --json gives structured events (agent text, commands, token usage) for the live transcript.
-    if (cont) return ["codex", "exec", "resume", "--last", "--json", "-"];
-    const a = ["codex", "exec", "--json"];
+    // resume must carry the SAME model/sandbox flags — codex doesn't remember them per session,
+    // so dropping them silently reverts iteration 2+ to the user's config defaults.
+    const a = cont ? ["codex", "exec", "resume", "--last", "--json"] : ["codex", "exec", "--json"];
     if (def.model) a.push("-m", def.model);
     if (pm === "bypass") a.push("--dangerously-bypass-approvals-and-sandbox");
     else a.push("-s", codexSandbox[pm] ?? "workspace-write");
     a.push("--skip-git-repo-check");
+    if (cont) a.push("-");
     return a;
   }
   if (def.provider === "opencode") {
@@ -408,15 +424,30 @@ function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line
 }
 
 // a run just ended: compute what it changed, write the persisted history entry, and (unless the
-// user stopped it themselves) raise a notification with the outcome.
-async function recordRunEnd(id: string, status: LoopStatus, note: string | undefined, notify: boolean) {
+// user stopped it themselves) raise a notification with the outcome. `lastResult` is the final
+// agent output captured BEFORE finish() overwrote it with the stop note.
+async function recordRunEnd(
+  id: string,
+  status: LoopStatus,
+  note: string | undefined,
+  notify: boolean,
+  lastResult?: string,
+) {
   const S = useLoops.getState;
   const def = S().loops[id];
   const run = S().runs[id];
-  if (!def || !run?.startedAt) return;
+  // no lastRunAt = the run never actually did work (an armed cron waiting for its first fire) —
+  // recording "0 iterations, stopped" would just be noise
+  if (!def || !run?.startedAt || !run.lastRunAt) return;
   const name = def.name || "Automation";
+  const gen = run.startedAt; // generation marker — a restart resets startedAt via resetRun
 
-  // diff summary — the worktree if isolated, else the folder itself
+  // grab the baseline before the first await, so a restarted run's fresh baseline is never consumed
+  const base = baselines.get(id) ?? new Map<string, { a: number; r: number }>();
+  baselines.delete(id);
+
+  // diff summary — the worktree if isolated, else the folder itself, as a DELTA against the
+  // baseline so pre-existing edits (or a reused worktree's leftovers) aren't blamed on this run
   let filesChanged: number | undefined;
   let additions: number | undefined;
   let deletions: number | undefined;
@@ -424,26 +455,38 @@ async function recordRunEnd(id: string, status: LoopStatus, note: string | undef
     const dir = run.worktreePath || def.folder;
     if (dir) {
       const ch = await gitChanges(dir);
-      if (ch.length) {
-        filesChanged = ch.length;
-        additions = ch.reduce((n, c) => n + c.added, 0);
-        deletions = ch.reduce((n, c) => n + c.removed, 0);
-        S().setRun(id, { filesChanged, additions, deletions });
-        S().appendLog(id, `${filesChanged} file${filesChanged === 1 ? "" : "s"} changed · +${additions} −${deletions}`);
+      const changed = ch.filter((c) => {
+        const b = base.get(c.path);
+        return !b || b.a !== c.added || b.r !== c.removed;
+      });
+      if (changed.length) {
+        filesChanged = changed.length;
+        additions = changed.reduce((n, c) => n + Math.max(0, c.added - (base.get(c.path)?.a ?? 0)), 0);
+        deletions = changed.reduce((n, c) => n + Math.max(0, c.removed - (base.get(c.path)?.r ?? 0)), 0);
       }
     }
   } catch {
     /* not a repo / folder gone — no diff to report */
   }
 
-  S().addHistory(id, {
+  // we awaited — the loop may have been deleted or restarted since. Never resurrect a removed
+  // run's state, and never stamp the OLD run's numbers onto a freshly started run.
+  const still = useLoops.getState();
+  if (!still.loops[id]) return; // deleted while we diffed — drop everything
+  const sameRun = still.runs[id]?.startedAt === gen;
+  if (filesChanged && sameRun) {
+    still.setRun(id, { filesChanged, additions, deletions });
+    still.appendLog(id, `${filesChanged} file${filesChanged === 1 ? "" : "s"} changed · +${additions} −${deletions}`);
+  }
+
+  still.addHistory(id, {
     id: crypto.randomUUID(),
     startedAt: run.startedAt,
     endedAt: Date.now(),
     status,
     iterations: run.iteration,
     note,
-    lastResult: run.lastResult,
+    lastResult: lastResult ?? run.lastResult,
     tokensUsed: run.tokensUsed,
     costUsed: run.costUsed,
     worktreePath: run.worktreePath,
@@ -478,23 +521,33 @@ export function startLoop(id: string) {
   S().resetRun(id);
   S().setRun(id, { status: "running", startedAt: Date.now(), iteration: 0, stale: 0 });
   const append = (line: string) => S().appendLog(id, line);
+  // iteration output only — swallowed once the run is over, so late buffered lines from a killed
+  // agent can't pollute a stopped run's log
+  const streamAppend = (line: string) => {
+    if (!ctrl.stop) append(line);
+  };
   let lastHash = "";
   let fails = 0; // consecutive failed iterations (drives retry backoff + the fail-stop)
+  let finished = false; // reentry guard — a PTY exit event can race the stop path
   let runFolder = def0.folder; // where iterations actually run — a worktree if isolation is on
 
   const finish = (status: LoopStatus, note?: string) => {
+    if (finished) return;
+    finished = true;
     ctrl.stop = true;
     clearTimers(ctrl);
     ctrls.delete(id);
     void agentStop(loopRunId(id)).catch(() => {});
     stopLoopTerm(loopRunId(id)); // tears down an interactive-loop PTY; no-op for headless loops
+    void cleanupHookRun(loopRunId(id)).catch(() => {}); // drop the run's temp hook/notify files
+    const prevResult = S().runs[id]?.lastResult; // the agent's actual final output, pre-note
     S().setRun(id, { status, nextRunAt: undefined, ...(note ? { lastResult: note } : {}) });
     if (note) append(`— ${note} —`);
     // isolated runs leave their edits in the worktree for the user to review + merge
     const wt = S().runs[id]?.worktreePath;
     if (wt && (status === "done" || status === "crashloop" || status === "stopped"))
       append(`changes are isolated in ${wt} — review and merge when ready`);
-    void recordRunEnd(id, status, note, true); // history + outcome notification
+    void recordRunEnd(id, status, note, true, prevResult); // history + outcome notification
   };
 
   const tick = async () => {
@@ -505,11 +558,24 @@ export function startLoop(id: string) {
     }
     const def = S().loops[id];
     if (!def) return finish("stopped");
-    const run = S().runs[id];
+    let run = S().runs[id];
 
-    // guard: mandatory max iterations
+    // a scheduled loop can wait hours before its first fire — measure the time budget (and the
+    // history duration) from first WORK, not from arming
+    if (run.iteration === 0 && def.mode === "cron") {
+      S().setRun(id, { startedAt: Date.now() });
+      run = S().runs[id];
+    }
+
+    // guard: mandatory max iterations. If the tail of the run was failures, say so — "done"
+    // would mask an error state.
     if (run.iteration >= def.stop.maxIterations)
-      return finish("done", `reached ${def.stop.maxIterations} iterations`);
+      return finish(
+        fails > 0 ? "error" : "done",
+        fails > 0
+          ? `reached ${def.stop.maxIterations} iterations (last ${fails} failed)`
+          : `reached ${def.stop.maxIterations} iterations`,
+      );
     // guard: time budget
     if (def.stop.timeBudgetMin && run.startedAt && Date.now() - run.startedAt > def.stop.timeBudgetMin * 60000)
       return finish("stopped", "time budget reached");
@@ -522,7 +588,7 @@ export function startLoop(id: string) {
     append(`\n— iteration ${iter} —`);
     S().pushEvent(id, newLoopEvent(iter, { kind: "iteration" }));
     const cont = def.session === "continue" && iter > 1; // first run seeds the session, rest continue it
-    const { out, tokens, cost, failed } = await runIteration(def, runFolder, cont, append);
+    const { out, tokens, cost, failed } = await runIteration(def, runFolder, cont, streamAppend);
     if (ctrl.stop) return;
     // tally what this turn burned so the budget guard + UI have fresh numbers
     if (tokens || cost) {
@@ -571,7 +637,7 @@ export function startLoop(id: string) {
     } else if (def.mode === "cron") {
       const next = nextFire(def.schedule);
       S().setRun(id, { nextRunAt: next });
-      ctrl.timer = setTimeout(tick, Math.max(1000, next - Date.now()));
+      armAt(ctrl, next, () => void tick());
     }
   };
 
@@ -630,7 +696,9 @@ export function startLoop(id: string) {
       if (def.model) parts.push("-m", q(def.model));
       parts.push("--approval-mode", geminiApproval[pmKey] ?? "default");
     }
-    const launchCmd = parts.join(" ");
+    // "; exit" closes the shell when the CLI exits, so the PTY exit event fires and the run
+    // actually completes — otherwise the loop shows "running" forever at a dead shell prompt
+    const launchCmd = parts.join(" ") + "; exit";
 
     let ended = false;
     const done = (note: string) => {
@@ -680,7 +748,7 @@ export function startLoop(id: string) {
     if (def0.mode === "cron") {
       const next = nextFire(def0.schedule);
       S().setRun(id, { status: "running", nextRunAt: next });
-      ctrl.timer = setTimeout(tick, Math.max(1000, next - Date.now()));
+      armAt(ctrl, next, () => void tick());
     } else {
       void tick();
     }
@@ -703,9 +771,10 @@ export function startLoop(id: string) {
       try {
         if (await gitIsRepo(def0.folder)) {
           const wt = await worktreeCreate(def0.folder, `loop-${id.slice(0, 8)}`);
-          if (ctrl.stop) return;
+          // record the worktree even if a stop raced the create, so it's surfaced, not orphaned
           runFolder = wt;
           S().setRun(id, { worktreePath: wt });
+          if (ctrl.stop) return;
           append(`working in isolated worktree: ${wt}`);
         } else {
           append("not a git repo — running in place (no worktree isolation)");
@@ -715,9 +784,30 @@ export function startLoop(id: string) {
       }
     }
     if (ctrl.stop) return;
-    // interactive-terminal automations run a real session in a PTY; everything else is headless
-    if (def0.run === "pane" && paneCapable(def0.provider)) void runInteractive();
-    else kickoff();
+
+    // baseline of pre-existing uncommitted changes, so the end-of-run diff is a true delta
+    try {
+      const pre = await gitChanges(runFolder);
+      baselines.set(id, new Map(pre.map((c) => [c.path, { a: c.added, r: c.removed }])));
+    } catch {
+      baselines.set(id, new Map());
+    }
+    if (ctrl.stop) return;
+
+    // interactive-terminal automations run a real session in a PTY; everything else is headless.
+    // a SCHEDULED interactive automation arms for its next fire instead of launching immediately.
+    if (def0.run === "pane" && paneCapable(def0.provider)) {
+      if (def0.mode === "cron") {
+        const next = nextFire(def0.schedule);
+        S().setRun(id, { status: "running", nextRunAt: next });
+        armAt(ctrl, next, () => {
+          S().setRun(id, { nextRunAt: undefined });
+          void runInteractive();
+        });
+      } else {
+        void runInteractive();
+      }
+    } else kickoff();
   })();
 }
 
@@ -737,9 +827,12 @@ export function stopLoop(id: string) {
   }
   void agentStop(loopRunId(id)).catch(() => {});
   stopLoopTerm(loopRunId(id));
+  void cleanupHookRun(loopRunId(id)).catch(() => {});
+  const prevResult = useLoops.getState().runs[id]?.lastResult;
   useLoops.getState().setRun(id, { status: "stopped", nextRunAt: undefined });
-  // the user hit stop themselves — record it in history, but no notification needed
-  if (wasActive) void recordRunEnd(id, "stopped", "stopped manually", false);
+  // the user hit stop themselves — record it in history, but no notification needed.
+  // (recordRunEnd itself skips runs that never fired, so stopping an armed cron is silent.)
+  if (wasActive) void recordRunEnd(id, "stopped", "stopped manually", false, prevResult);
 }
 
 export function pauseLoop(id: string, paused: boolean) {

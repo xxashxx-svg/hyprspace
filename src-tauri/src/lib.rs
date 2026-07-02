@@ -37,9 +37,13 @@ fn create_pty(
     state.create(id, cwd, shell, args, env, cols, rows, on_event, auto_respond)
 }
 
+// async + spawn_blocking so a write that blocks (child not draining stdin) never stalls the UI thread
 #[tauri::command]
-fn write_pty(state: State<PtyManager>, id: String, data: Vec<u8>) -> Result<(), String> {
-    state.write(&id, &data)
+async fn write_pty(state: State<'_, PtyManager>, id: String, data: Vec<u8>) -> Result<(), String> {
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.write(&id, &data))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -63,9 +67,13 @@ fn chat_start(
     state.start(id, cwd, args, on_event)
 }
 
+// async + spawn_blocking so a pipe write that blocks (child stopped reading stdin) can't hang the window
 #[tauri::command]
-fn chat_turn(state: State<ChatManager>, id: String, message: String) -> Result<(), String> {
-    state.turn(&id, message)
+async fn chat_turn(state: State<'_, ChatManager>, id: String, message: String) -> Result<(), String> {
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.turn(&id, message))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -336,6 +344,19 @@ pub fn run() {
     // adopt the user's real shell PATH so a GUI launch on macOS/Linux can find the provider CLIs
     fix_path_env();
 
+    // dev builds share the installed app's identity, so both fight over the same WebView2
+    // user-data folder — the second instance hangs windowless on the lock. give debug builds
+    // their own stable profile (one extra sign-in, then it sticks) so dev + installed coexist.
+    #[cfg(all(windows, debug_assertions))]
+    if std::env::var("WEBVIEW2_USER_DATA_FOLDER").is_err() {
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        if !home.is_empty() {
+            let dir = std::path::Path::new(&home).join(".hyprspace").join("dev-webview");
+            let _ = std::fs::create_dir_all(&dir);
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &dir);
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
@@ -393,7 +414,6 @@ pub fn run() {
             devtools::read_file,
             devtools::write_file,
             devtools::provider_status,
-            devtools::provider_usage,
             devtools::provider_usage_one,
             devtools::mcp_list,
             devtools::mcp_set,
@@ -407,7 +427,6 @@ pub fn run() {
             devtools::worktree_list,
             ai::ai_name_space,
             oauth::oauth_listen,
-            loophook::prepare_hook_settings,
             loophook::cleanup_hook_run,
             loophook::prepare_notify_settings
         ])

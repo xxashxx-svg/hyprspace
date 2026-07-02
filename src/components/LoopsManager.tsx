@@ -142,6 +142,36 @@ function ToggleRow({
   );
 }
 
+// number input that lets you actually clear/retype — clamps + commits on blur/Enter, not per keystroke
+function NumField({
+  value,
+  min,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  onCommit: (n: number) => void;
+}) {
+  const [txt, setTxt] = useState(String(value));
+  useEffect(() => setTxt(String(value)), [value]);
+  const commit = () => {
+    const n = Math.max(min, Math.round(+txt) || min);
+    setTxt(String(n));
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <input
+      className="svc-in"
+      type="number"
+      min={min}
+      value={txt}
+      onChange={(e) => setTxt(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && commit()}
+    />
+  );
+}
+
 function fmtWhen(t: number): string {
   const d = new Date(t);
   const today = new Date().toDateString() === d.toDateString();
@@ -157,7 +187,9 @@ function nextFirePreview(s?: LoopDef["schedule"]): string {
   if (s?.cron?.trim()) {
     if (!cronValid(s.cron)) return "invalid cron — using the simple fields instead";
     const t = nextCron(s.cron, now);
-    return t ? `next run ${fmtWhen(t)}` : "cron never fires";
+    // engine falls back to the simple fields when a valid cron can never match — say so
+    if (!t) return "cron never matches — falling back to the simple fields";
+    return `next run ${fmtWhen(t)}`;
   }
   if (s?.everyMin && s.everyMin > 0) return `next run ${fmtWhen(now + s.everyMin * 60000)}`;
   if (s?.dailyAt && /^\d{1,2}:\d{2}$/.test(s.dailyAt)) {
@@ -180,6 +212,12 @@ export function LoopsManager() {
   // one expanded card at a time keeps the list scannable; open the loop you came here to edit
   const focused = useUi((s) => s.openLoopId);
   const [openId, setOpenId] = useState<string | null>(() => useUi.getState().openLoopId);
+  // keep "next run …" previews fresh — they're computed from Date.now() at render time
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     if (focused && useLoops.getState().loops[focused]) setOpenId(focused);
   }, [focused]);
@@ -338,13 +376,15 @@ export function LoopsManager() {
                   <button className="svc-stop" title="Stop" onClick={() => stopLoop(id)}>
                     <Square size={13} />
                   </button>
-                  <button
-                    className="svc-run"
-                    title={status === "paused" ? "Resume" : "Pause"}
-                    onClick={() => pauseLoop(id, status !== "paused")}
-                  >
-                    <Pause size={13} />
-                  </button>
+                  {def.run !== "pane" && ( // pane sessions can't pause — the flag isn't read there
+                    <button
+                      className="svc-run"
+                      title={status === "paused" ? "Resume" : "Pause"}
+                      onClick={() => pauseLoop(id, status !== "paused")}
+                    >
+                      <Pause size={13} />
+                    </button>
+                  )}
                 </>
               ) : (
                 <button
@@ -431,7 +471,13 @@ export function LoopsManager() {
                 <Seg
                   value={def.run}
                   disabled={active}
-                  onChange={(v) => update(id, { run: v })}
+                  onChange={(v) =>
+                    update(id, {
+                      run: v,
+                      // interval doesn't apply to interactive sessions — fall back gracefully
+                      ...(v === "pane" && def.mode === "interval" ? { mode: "until-done" as const } : {}),
+                    })
+                  }
                   opts={[
                     { v: "headless", label: "Headless" },
                     {
@@ -452,7 +498,12 @@ export function LoopsManager() {
                   onChange={(v) => update(id, { mode: v })}
                   opts={[
                     { v: "until-done", label: "Until done" },
-                    { v: "interval", label: "Interval" },
+                    {
+                      v: "interval",
+                      label: "Interval",
+                      off: def.run === "pane",
+                      hint: def.run === "pane" ? "Interactive sessions can't re-launch on an interval" : undefined,
+                    },
                     { v: "cron", label: "Schedule" },
                     { v: "manual", label: "Once" },
                   ]}
@@ -464,12 +515,11 @@ export function LoopsManager() {
               <div className="loop-grid">
                 <label className="loop-field">
                   <span>Every (seconds)</span>
-                  <input
-                    className="svc-in"
-                    type="number"
-                    min={5}
+                  <NumField
+                    key={`${id}-int`}
                     value={def.intervalSec ?? 60}
-                    onChange={(e) => update(id, { intervalSec: Math.max(5, +e.target.value || 60) })}
+                    min={5}
+                    onCommit={(n) => update(id, { intervalSec: n })}
                   />
                 </label>
               </div>
@@ -562,12 +612,11 @@ export function LoopsManager() {
             <div className="loop-stops">
               <label className="loop-field">
                 <span>Max iterations</span>
-                <input
-                  className="svc-in"
-                  type="number"
-                  min={1}
+                <NumField
+                  key={`${id}-max`}
                   value={def.stop.maxIterations}
-                  onChange={(e) => updateStop(id, { maxIterations: Math.max(1, +e.target.value || 1) })}
+                  min={1}
+                  onCommit={(n) => updateStop(id, { maxIterations: n })}
                 />
               </label>
               <label className="loop-field">
@@ -651,6 +700,9 @@ export function LoopsManager() {
             <div className="loop-status">
               <span className={`loop-status-badge s-${status}`}>{STATUS_LABEL[status] ?? status}</span>
               {run && run.iteration > 0 && <span>iteration {run.iteration}</span>}
+              {run?.nextRunAt && status === "running" ? (
+                <span className="loop-next-fire">next run {fmtWhen(run.nextRunAt)}</span>
+              ) : null}
               {run && (run.costUsed || run.tokensUsed) ? (
                 <span className="loop-usage" title="cost · tokens this run">
                   {run.costUsed ? `$${run.costUsed.toFixed(3)}` : ""}
