@@ -74,12 +74,34 @@ export interface LoopRun {
   costUsed?: number; // running total in USD (claude reports total_cost_usd per turn)
   stale: number; // consecutive no-change iterations (drives the crash-loop guard)
   worktreePath?: string; // isolated git worktree the run is editing in (when worktree mode is on)
+  // diff summary computed when the run ends (what the agent actually touched)
+  filesChanged?: number;
+  additions?: number;
+  deletions?: number;
   logs: string[]; // captured output lines (capped) — feeds the classic logs panel
   events: LoopEvent[]; // structured transcript (capped) — feeds the live agentic view
 }
 
+// one finished run, kept across restarts (persisted as "loop-history", capped per automation)
+export interface LoopHistoryEntry {
+  id: string;
+  startedAt: number;
+  endedAt: number;
+  status: LoopStatus;
+  iterations: number;
+  note?: string; // why it stopped ("check passed", "3 consecutive failures", …)
+  lastResult?: string;
+  tokensUsed?: number;
+  costUsed?: number;
+  worktreePath?: string;
+  filesChanged?: number;
+  additions?: number;
+  deletions?: number;
+}
+
 const LOG_CAP = 4000;
 const EVENT_CAP = 1500;
+const HISTORY_CAP = 50; // per automation
 export const loopRunId = (id: string) => `loop:${id}`;
 
 function blankRun(): LoopRun {
@@ -109,6 +131,7 @@ export function newLoop(folder: string): LoopDef {
 interface LoopState {
   loops: Record<string, LoopDef>;
   runs: Record<string, LoopRun>;
+  history: Record<string, LoopHistoryEntry[]>; // loopId → newest-first finished runs
   loaded: boolean;
   load: () => Promise<void>;
   upsert: (def: LoopDef) => void;
@@ -119,13 +142,17 @@ interface LoopState {
   pushEvent: (id: string, ev: LoopEvent) => void;
   patchEvent: (id: string, eventId: string, patch: Partial<LoopEvent>) => void;
   resetRun: (id: string) => void;
+  addHistory: (loopId: string, entry: LoopHistoryEntry) => void;
 }
 
 export const useLoops = create<LoopState>()((set, get) => {
   const persist = () => void saveState("loops", JSON.stringify(get().loops)).catch(() => {});
+  const persistHistory = () =>
+    void saveState("loop-history", JSON.stringify(get().history)).catch(() => {});
   return {
     loops: {},
     runs: {},
+    history: {},
     loaded: false,
 
     load: async () => {
@@ -146,6 +173,15 @@ export const useLoops = create<LoopState>()((set, get) => {
           /* ignore a bad blob */
         }
       }
+      const hist = await loadState("loop-history").catch(() => null);
+      if (hist) {
+        try {
+          const h = JSON.parse(hist);
+          if (h && typeof h === "object") set({ history: h as Record<string, LoopHistoryEntry[]> });
+        } catch {
+          /* ignore a bad blob */
+        }
+      }
       set({ loaded: true });
     },
 
@@ -159,9 +195,12 @@ export const useLoops = create<LoopState>()((set, get) => {
         delete loops[id];
         const runs = { ...s.runs };
         delete runs[id];
-        return { loops, runs };
+        const history = { ...s.history };
+        delete history[id];
+        return { loops, runs, history };
       });
       persist();
+      persistHistory();
     },
 
     setRun: (id, patch) =>
@@ -191,5 +230,12 @@ export const useLoops = create<LoopState>()((set, get) => {
         return { runs: { ...s.runs, [id]: { ...cur, events } } };
       }),
     resetRun: (id) => set((s) => ({ runs: { ...s.runs, [id]: blankRun() } })),
+    addHistory: (loopId, entry) => {
+      set((s) => {
+        const list = [entry, ...(s.history[loopId] ?? [])].slice(0, HISTORY_CAP);
+        return { history: { ...s.history, [loopId]: list } };
+      });
+      persistHistory();
+    },
   };
 });

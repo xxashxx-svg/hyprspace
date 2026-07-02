@@ -78,25 +78,25 @@ export function CommandPalette() {
       },
       {
         id: "loops-open",
-        label: "Loops & automations",
+        label: "Automations",
         run: () => useUi.getState().goLoops(),
       },
       {
         id: "loop-new",
-        label: "New loop / automation",
+        label: "New automation",
         run: () => {
           const w = useWorkspaces.getState();
           const ws = w.workspaces.find((x) => x.id === w.activeId);
           const folder = ws && ws.kind !== "open" ? ws.cwd : "";
           const def = newLoop(folder);
-          def.name = "New loop";
+          def.name = "New automation";
           useLoops.getState().upsert(def);
           useUi.getState().goLoops();
         },
       },
       {
         id: "loops-pause",
-        label: "Pause all running loops",
+        label: "Pause all running automations",
         run: () => {
           const runs = useLoops.getState().runs;
           for (const id of Object.keys(runs)) if (runs[id].status === "running") pauseLoop(id, true);

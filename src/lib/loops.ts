@@ -18,16 +18,20 @@ import {
   runCheck,
   worktreeCreate,
   gitIsRepo,
+  gitChanges,
   revealPath,
   secretHas,
   prepareNotifySettings,
   readFile,
 } from "../api";
+import { nextCron, cronValid } from "./cron";
 import { startLoopTerm, stopLoopTerm } from "../terminal/loopTerm";
 
 const EXIT = "\0__agent_exit__"; // matches the sentinel agent.rs emits when a turn ends
 const NOPROGRESS_LIMIT = 3; // consecutive unchanged/empty iterations → crash-loop stop
 const UNTIL_DELAY_MS = 1200; // breather between until-done iterations
+const FAIL_LIMIT = 3; // consecutive failed iterations → stop + alert instead of burning quota
+const RETRY_BASE_MS = 5000; // failed-iteration backoff: 5s, 10s, 20s
 
 type Ctrl = {
   stop: boolean;
@@ -72,6 +76,11 @@ function isClaudeStream(p: string): boolean {
   return p === "claude" || p === "claude-sub" || p === "claude-hooks";
 }
 
+// backends whose CLI can run an interactive session seeded with the task (pane run mode)
+export function paneCapable(p: string): boolean {
+  return isClaudeStream(p) || p === "codex" || p === "gemini";
+}
+
 function buildArgs(def: LoopDef, cont: boolean): string[] {
   const pm = def.permissionMode || "acceptEdits";
   if (isClaudeStream(def.provider)) {
@@ -86,8 +95,9 @@ function buildArgs(def: LoopDef, cont: boolean): string[] {
   if (def.provider === "codex") {
     // codex headless — uses your `codex login` auth. fresh `exec` reads the prompt from stdin;
     // `resume --last -` continues the last session, the trailing `-` makes it read stdin.
-    if (cont) return ["codex", "exec", "resume", "--last", "-"];
-    const a = ["codex", "exec"];
+    // --json gives structured events (agent text, commands, token usage) for the live transcript.
+    if (cont) return ["codex", "exec", "resume", "--last", "--json", "-"];
+    const a = ["codex", "exec", "--json"];
     if (def.model) a.push("-m", def.model);
     if (pm === "bypass") a.push("--dangerously-bypass-approvals-and-sandbox");
     else a.push("-s", codexSandbox[pm] ?? "workspace-write");
@@ -172,7 +182,7 @@ function handleClaudeLine(
   iter: number,
   line: string,
   toolMap: Map<string, { eventId: string; start: number }>,
-  setResult: (r: string, tokens: number, cost: number) => void,
+  setResult: (r: string, tokens: number, cost: number, isError: boolean) => void,
   append: (line: string) => void,
 ) {
   const S = useLoops.getState;
@@ -225,10 +235,84 @@ function handleClaudeLine(
     for (const t of toolMap.values()) S().patchEvent(loopId, t.eventId, { status: "ok" });
     toolMap.clear();
     const costStr = costNum ? ` · $${costNum.toFixed(3)}` : "";
-    setResult(r, tokens, costNum);
+    setResult(r, tokens, costNum, ev.is_error === true);
     S().pushEvent(loopId, newLoopEvent(iter, { kind: "result", text: r, arg: costStr.trim() || undefined }));
     append(`✓ done${costStr}`);
   }
+}
+
+// parse one `codex exec --json` line: agent_message → text (and the iteration's result), reasoning
+// → thinking, command_execution → a tool row, turn.completed carries token usage, turn.failed marks
+// the iteration failed. non-JSON lines (stderr noise) pass through as plain text.
+function handleCodexLine(
+  loopId: string,
+  iter: number,
+  line: string,
+  state: { result: string; tokens: number; failed: boolean },
+  itemMap: Map<string, { eventId: string; start: number }>,
+  append: (line: string) => void,
+) {
+  const S = useLoops.getState;
+  let ev: Record<string, unknown>;
+  try {
+    ev = JSON.parse(line);
+  } catch {
+    S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
+    append(line);
+    return;
+  }
+  const item = ev.item as Record<string, unknown> | undefined;
+  if (ev.type === "item.started" && item?.type === "command_execution") {
+    const cmd = String(item.command ?? "").slice(0, 200);
+    const e = newLoopEvent(iter, { kind: "tool", tool: "Bash", arg: cmd, status: "running" });
+    if (typeof item.id === "string") itemMap.set(item.id, { eventId: e.id, start: e.ts });
+    S().pushEvent(loopId, e);
+    append(`→ Bash: ${cmd.slice(0, 90)}`);
+    return;
+  }
+  if (ev.type === "item.completed" && item) {
+    if (item.type === "agent_message" && typeof item.text === "string" && item.text.trim()) {
+      state.result = item.text.trim();
+      S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: state.result }));
+      append(state.result);
+    } else if (item.type === "reasoning" && typeof item.text === "string" && item.text.trim()) {
+      S().pushEvent(loopId, newLoopEvent(iter, { kind: "thinking", text: item.text.trim() }));
+    } else if (item.type === "command_execution") {
+      const failed = item.exit_code !== undefined && item.exit_code !== 0;
+      const t = typeof item.id === "string" ? itemMap.get(item.id) : undefined;
+      if (t) {
+        S().patchEvent(loopId, t.eventId, { status: failed ? "error" : "ok", durationMs: Date.now() - t.start });
+        if (typeof item.id === "string") itemMap.delete(item.id);
+      } else {
+        const cmd = String(item.command ?? "").slice(0, 200);
+        S().pushEvent(loopId, newLoopEvent(iter, { kind: "tool", tool: "Bash", arg: cmd, status: failed ? "error" : "ok" }));
+        append(`→ Bash: ${cmd.slice(0, 90)}`);
+      }
+    } else if (item.type === "error" && typeof item.message === "string") {
+      S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: `⚠ ${item.message}` }));
+      append(`⚠ ${item.message}`);
+    }
+    return;
+  }
+  if (ev.type === "turn.completed") {
+    const u = ev.usage as Record<string, unknown> | undefined;
+    const n = (k: string) => (typeof u?.[k] === "number" ? (u[k] as number) : 0);
+    state.tokens += n("input_tokens") + n("cached_input_tokens") + n("output_tokens");
+    for (const t of itemMap.values()) S().patchEvent(loopId, t.eventId, { status: "ok" });
+    itemMap.clear();
+    if (state.result) {
+      S().pushEvent(loopId, newLoopEvent(iter, { kind: "result", text: state.result }));
+      append("✓ done");
+    }
+    return;
+  }
+  if (ev.type === "turn.failed") {
+    state.failed = true;
+    const msg = String((ev.error as Record<string, unknown>)?.message ?? "turn failed");
+    S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: `⚠ ${msg}` }));
+    append(`⚠ ${msg}`);
+  }
+  // thread.started / turn.started are noise — skip
 }
 
 function hash(s: string): string {
@@ -241,9 +325,13 @@ function firstLine(s: string): string {
   return (l ?? "").trim().slice(0, 160);
 }
 
-// next fire time for a cron-mode loop. everyMin + dailyAt now; raw cron expression is a later add.
+// next fire time for a cron-mode loop: a real 5-field cron expression wins, then the simple forms.
 function nextFire(s?: ScheduleCfg): number {
   const now = Date.now();
+  if (s?.cron && cronValid(s.cron)) {
+    const n = nextCron(s.cron, now);
+    if (n) return n;
+  }
   if (s?.everyMin && s.everyMin > 0) return now + s.everyMin * 60000;
   if (s?.dailyAt && /^\d{1,2}:\d{2}$/.test(s.dailyAt)) {
     const [h, m] = s.dailyAt.split(":").map(Number);
@@ -259,8 +347,9 @@ function nextFire(s?: ScheduleCfg): number {
 // turn's exit sentinel arrives. `cont` continues the prior session instead of starting fresh.
 interface IterResult {
   out: string; // readable output, used for progress/sentinel checks
-  tokens: number; // tokens this iteration burned (claude only; 0 otherwise)
+  tokens: number; // tokens this iteration burned (claude + codex; 0 otherwise)
   cost: number; // USD this iteration cost (claude only)
+  failed: boolean; // the CLI failed to start or the turn errored — drives the retry policy
 }
 
 function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line: string) => void): Promise<IterResult> {
@@ -271,9 +360,11 @@ function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line
     const env = useProjectConfigs.getState().getConfig(def.folder).env;
     const lines: string[] = []; // readable text, used for progress/sentinel checks
     const toolMap = new Map<string, { eventId: string; start: number }>(); // tool_use id → its event + start
+    const codex = { result: "", tokens: 0, failed: false }; // per-iteration codex --json state
     let result = ""; // claude's final result text (when stream-json reports it)
     let tokens = 0;
     let cost = 0;
+    let failed = false;
     let done = false;
     const record = (line: string) => {
       lines.push(line);
@@ -282,29 +373,98 @@ function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line
     const finish = () => {
       if (done) return;
       done = true;
-      resolve({ out: result || lines.join("\n"), tokens, cost });
+      resolve({
+        out: result || codex.result || lines.join("\n"),
+        tokens: tokens + codex.tokens,
+        cost,
+        failed: failed || codex.failed,
+      });
     };
     void agentStart(rid, folder, buildArgs(def, cont), env, secretsFor(def), def.prompt, (line) => {
       if (line === EXIT) {
         finish();
         return;
       }
-      // both claude backends stream JSON events → structured transcript; others are plain text
+      // claude + codex stream JSON events → structured transcript; others are plain text
       if (isClaudeStream(def.provider)) {
-        handleClaudeLine(loopId, iter, line, toolMap, (r, t, c) => {
+        handleClaudeLine(loopId, iter, line, toolMap, (r, t, c, err) => {
           result = r;
           tokens = t;
           cost = c;
+          if (err) failed = true;
         }, record);
+      } else if (def.provider === "codex") {
+        handleCodexLine(loopId, iter, line, codex, toolMap, record);
       } else {
         useLoops.getState().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
         record(line);
       }
     }).catch((e) => {
       record(`⚠ failed to start: ${e}`);
+      failed = true;
       finish();
     });
   });
+}
+
+// a run just ended: compute what it changed, write the persisted history entry, and (unless the
+// user stopped it themselves) raise a notification with the outcome.
+async function recordRunEnd(id: string, status: LoopStatus, note: string | undefined, notify: boolean) {
+  const S = useLoops.getState;
+  const def = S().loops[id];
+  const run = S().runs[id];
+  if (!def || !run?.startedAt) return;
+  const name = def.name || "Automation";
+
+  // diff summary — the worktree if isolated, else the folder itself
+  let filesChanged: number | undefined;
+  let additions: number | undefined;
+  let deletions: number | undefined;
+  try {
+    const dir = run.worktreePath || def.folder;
+    if (dir) {
+      const ch = await gitChanges(dir);
+      if (ch.length) {
+        filesChanged = ch.length;
+        additions = ch.reduce((n, c) => n + c.added, 0);
+        deletions = ch.reduce((n, c) => n + c.removed, 0);
+        S().setRun(id, { filesChanged, additions, deletions });
+        S().appendLog(id, `${filesChanged} file${filesChanged === 1 ? "" : "s"} changed · +${additions} −${deletions}`);
+      }
+    }
+  } catch {
+    /* not a repo / folder gone — no diff to report */
+  }
+
+  S().addHistory(id, {
+    id: crypto.randomUUID(),
+    startedAt: run.startedAt,
+    endedAt: Date.now(),
+    status,
+    iterations: run.iteration,
+    note,
+    lastResult: run.lastResult,
+    tokensUsed: run.tokensUsed,
+    costUsed: run.costUsed,
+    worktreePath: run.worktreePath,
+    filesChanged,
+    additions,
+    deletions,
+  });
+
+  if (notify) {
+    const title =
+      status === "done"
+        ? `${name} finished`
+        : status === "crashloop"
+          ? `${name} stopped — no progress`
+          : status === "error"
+            ? `${name} failed`
+            : `${name} stopped`;
+    const diff = filesChanged ? `${filesChanged} file${filesChanged === 1 ? "" : "s"} · +${additions} −${deletions}` : "";
+    const body = [note, diff, run.costUsed ? `$${run.costUsed.toFixed(2)}` : ""].filter(Boolean).join(" · ");
+    useNotifications.getState().add({ title, body: body || undefined, kind: "info" });
+  }
 }
 
 export function startLoop(id: string) {
@@ -319,6 +479,7 @@ export function startLoop(id: string) {
   S().setRun(id, { status: "running", startedAt: Date.now(), iteration: 0, stale: 0 });
   const append = (line: string) => S().appendLog(id, line);
   let lastHash = "";
+  let fails = 0; // consecutive failed iterations (drives retry backoff + the fail-stop)
   let runFolder = def0.folder; // where iterations actually run — a worktree if isolation is on
 
   const finish = (status: LoopStatus, note?: string) => {
@@ -333,6 +494,7 @@ export function startLoop(id: string) {
     const wt = S().runs[id]?.worktreePath;
     if (wt && (status === "done" || status === "crashloop" || status === "stopped"))
       append(`changes are isolated in ${wt} — review and merge when ready`);
+    void recordRunEnd(id, status, note, true); // history + outcome notification
   };
 
   const tick = async () => {
@@ -351,7 +513,7 @@ export function startLoop(id: string) {
     // guard: time budget
     if (def.stop.timeBudgetMin && run.startedAt && Date.now() - run.startedAt > def.stop.timeBudgetMin * 60000)
       return finish("stopped", "time budget reached");
-    // guard: token budget (claude reports usage per turn; other backends never accumulate, so it's a no-op there)
+    // guard: token budget (claude + codex report usage per turn; gemini/grok/opencode don't, so it's a no-op there)
     if (def.stop.tokenBudget && (run.tokensUsed ?? 0) >= def.stop.tokenBudget)
       return finish("done", `token budget reached (${(run.tokensUsed ?? 0).toLocaleString()} tokens)`);
 
@@ -360,13 +522,25 @@ export function startLoop(id: string) {
     append(`\n— iteration ${iter} —`);
     S().pushEvent(id, newLoopEvent(iter, { kind: "iteration" }));
     const cont = def.session === "continue" && iter > 1; // first run seeds the session, rest continue it
-    const { out, tokens, cost } = await runIteration(def, runFolder, cont, append);
+    const { out, tokens, cost, failed } = await runIteration(def, runFolder, cont, append);
     if (ctrl.stop) return;
     // tally what this turn burned so the budget guard + UI have fresh numbers
     if (tokens || cost) {
       const cur = S().runs[id];
       S().setRun(id, { tokensUsed: (cur.tokensUsed ?? 0) + tokens, costUsed: (cur.costUsed ?? 0) + cost });
     }
+
+    // a failed iteration retries with backoff instead of burning quota; N in a row stops the run
+    if (failed) {
+      fails += 1;
+      if (fails >= FAIL_LIMIT) return finish("error", `${FAIL_LIMIT} consecutive failures`);
+      const delay = RETRY_BASE_MS * 2 ** (fails - 1);
+      append(`iteration failed — retrying in ${Math.round(delay / 1000)}s (${fails}/${FAIL_LIMIT})`);
+      S().setRun(id, { lastResult: firstLine(out) || "iteration failed" });
+      ctrl.timer = setTimeout(tick, delay);
+      return;
+    }
+    fails = 0;
 
     // guard: no-progress / crash-loop
     const h = hash(out);
@@ -413,30 +587,49 @@ export function startLoop(id: string) {
     const env = useProjectConfigs.getState().getConfig(def.folder).env;
     const max = Math.max(1, def.stop.maxIterations || 10);
 
-    // Notification hook → marker file the engine polls to ping the user when claude needs them
+    // Notification hook (claude only) → marker file the engine polls to ping the user when it
+    // needs them. codex/gemini have no hook system, so those run without the ping.
     let notifySettings = "";
     let notifyMarker = "";
-    try {
-      const f = await prepareNotifySettings(rid);
-      notifySettings = f.settings;
-      notifyMarker = f.marker;
-    } catch {
-      /* run without the notify hook if it couldn't be set up */
+    if (isClaudeStream(def.provider)) {
+      try {
+        const f = await prepareNotifySettings(rid);
+        notifySettings = f.settings;
+        notifyMarker = f.marker;
+      } catch {
+        /* run without the notify hook if it couldn't be set up */
+      }
     }
     if (ctrl.stop) return;
 
-    // build the launch command typed into the shell. /goal makes claude self-loop until the
-    // condition holds; "or stop after N turns" is the hard backstop. single-quote everything that
-    // carries user text / paths so the target shell treats it literally (PowerShell expands $ and `
-    // inside double quotes, so single quotes are the safe wrap on both Windows and *nix).
+    // build the launch command typed into the shell. single-quote everything that carries user
+    // text / paths so the target shell treats it literally (PowerShell expands $ and ` inside
+    // double quotes, so single quotes are the safe wrap on both Windows and *nix).
     const q = (s: string) =>
       isWindows ? `'${s.replace(/'/g, "''")}'` : `'${s.replace(/'/g, "'\\''")}'`;
-    const pm = claudePerm[def.permissionMode || "acceptEdits"] ?? "acceptEdits";
+    const pmKey = def.permissionMode || "acceptEdits";
     const goal = def.prompt.replace(/\s+/g, " ").trim();
-    const parts = ["claude", q(`/goal ${goal} or stop after ${max} turns`)];
-    if (pm !== "default") parts.push("--permission-mode", pm);
-    if (def.model) parts.push("--model", q(def.model));
-    if (notifySettings) parts.push("--settings", q(notifySettings));
+    let parts: string[];
+    if (isClaudeStream(def.provider)) {
+      // /goal makes claude self-loop until the condition holds; "stop after N turns" is the backstop
+      const pm = claudePerm[pmKey] ?? "acceptEdits";
+      parts = ["claude", q(`/goal ${goal} or stop after ${max} turns`)];
+      if (pm !== "default") parts.push("--permission-mode", pm);
+      if (def.model) parts.push("--model", q(def.model));
+      if (notifySettings) parts.push("--settings", q(notifySettings));
+    } else if (def.provider === "codex") {
+      // codex TUI takes the task as an initial prompt and keeps the session interactive
+      parts = ["codex"];
+      if (def.model) parts.push("-m", q(def.model));
+      if (pmKey === "bypass") parts.push("--dangerously-bypass-approvals-and-sandbox");
+      else parts.push("-s", codexSandbox[pmKey] ?? "workspace-write");
+      parts.push(q(goal));
+    } else {
+      // gemini TUI: -i seeds the session with the task and stays interactive
+      parts = ["gemini", "-i", q(goal)];
+      if (def.model) parts.push("-m", q(def.model));
+      parts.push("--approval-mode", geminiApproval[pmKey] ?? "default");
+    }
     const launchCmd = parts.join(" ");
 
     let ended = false;
@@ -447,7 +640,7 @@ export function startLoop(id: string) {
     };
 
     S().setRun(id, { status: "running", iteration: 0, startedAt: Date.now(), lastRunAt: Date.now() });
-    append("interactive Claude session — answer it in the terminal when it asks for input");
+    append("interactive session — answer it in the terminal when it asks for input");
     try {
       await startLoopTerm(rid, runFolder, env, launchCmd, () => done("the session ended"));
     } catch (e) {
@@ -522,8 +715,8 @@ export function startLoop(id: string) {
       }
     }
     if (ctrl.stop) return;
-    // interactive-terminal claude loops run a real session in a PTY; everything else is headless
-    if (def0.run === "pane" && isClaudeStream(def0.provider)) void runInteractive();
+    // interactive-terminal automations run a real session in a PTY; everything else is headless
+    if (def0.run === "pane" && paneCapable(def0.provider)) void runInteractive();
     else kickoff();
   })();
 }
@@ -536,6 +729,7 @@ export function revealLoopWorktree(id: string) {
 
 export function stopLoop(id: string) {
   const ctrl = ctrls.get(id);
+  const wasActive = !!ctrl;
   if (ctrl) {
     ctrl.stop = true;
     clearTimers(ctrl);
@@ -544,6 +738,8 @@ export function stopLoop(id: string) {
   void agentStop(loopRunId(id)).catch(() => {});
   stopLoopTerm(loopRunId(id));
   useLoops.getState().setRun(id, { status: "stopped", nextRunAt: undefined });
+  // the user hit stop themselves — record it in history, but no notification needed
+  if (wasActive) void recordRunEnd(id, "stopped", "stopped manually", false);
 }
 
 export function pauseLoop(id: string, paused: boolean) {

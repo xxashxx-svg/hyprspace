@@ -4,6 +4,17 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.9.0 — 2026-07-02
+
+- **Loops are now Automations** — same engine, clearer name, everywhere in the app.
+- **Real cron schedules** — give an automation a full 5-field cron expression (`*/30 9-18 * * 1-5`) with a live "next run" preview, alongside the existing interval and daily options.
+- **Run history** — every finished run is saved across restarts: status, iterations, duration, cost, and a "Past runs" list on the Runs tab with one-click access to each run's worktree.
+- **Outcome at a glance** — when a run ends you get a notification with the result and a diff summary ("4 files · +120 −80"), shown in the status bar and history too.
+- **Smarter failure handling** — failed iterations retry with backoff (5s/10s/20s); three failures in a row stops the run and alerts you instead of burning quota.
+- **Codex upgrades** — automations on Codex now show a live structured transcript (commands, reasoning, output) and count tokens, so token budgets work for Codex as well as Claude.
+- **Interactive mode for Codex & Gemini** — "In a terminal" automations aren't Claude-only anymore.
+- **Redesigned automation editor** — backend picker with brand logos, segmented run/schedule controls, proper toggle switches, and grouped sections that match the rest of the app.
+
 ## 0.8.0 — 2026-07-02
 
 - **Usage dashboard** (Settings → Usage): at-a-glance overview strip (total tokens, sessions, hottest rate limit with a live reset countdown), quota alerts when a rolling window crosses 80%, an all-time **"By model"** token breakdown for Claude, and token-based daily activity sparklines for Claude and Codex.

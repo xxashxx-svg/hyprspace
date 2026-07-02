@@ -147,9 +147,9 @@ export function LoopRunView({ id }: { id: string }) {
               {paused ? <Pause size={15} /> : <Loader2 size={15} className="spin" />}
             </span>
             <div className="loop-run-card-text">
-              <div className="loop-run-card-title">{paused ? "Loop paused" : "Loop agent running"}</div>
+              <div className="loop-run-card-title">{paused ? "Automation paused" : "Automation running"}</div>
               <div className="loop-run-card-sub">
-                <span className="loop-run-card-name">{def.name || "Loop"}</span>
+                <span className="loop-run-card-name">{def.name || "Automation"}</span>
                 <span className="loop-run-sep">iteration {iter} / {maxIter}</span>
                 {run?.costUsed ? <span className="loop-run-sep">${run.costUsed.toFixed(3)}</span> : null}
                 {run?.tokensUsed ? (
@@ -167,9 +167,9 @@ export function LoopRunView({ id }: { id: string }) {
             >
               {paused ? <Play size={14} /> : <Pause size={14} />}
             </button>
-            <button className="loop-run-btn loop-run-stop" title="Stop loop" onClick={() => stopLoop(id)}>
+            <button className="loop-run-btn loop-run-stop" title="Stop automation" onClick={() => stopLoop(id)}>
               <Square size={10} fill="currentColor" strokeWidth={0} />
-              Stop loop
+              Stop
             </button>
           </div>
           <div className="loop-run-progress">

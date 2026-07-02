@@ -260,13 +260,13 @@ function LoopsIndicator() {
   if (active.length === 0) return null;
   const only = active.length === 1 ? loops[active[0]] : null;
   const iter = active.length === 1 ? runs[active[0]]?.iteration : 0;
-  const label = only ? `${only.name || "loop"}${iter ? ` · ${iter}` : ""}` : `${active.length} loops`;
+  const label = only ? `${only.name || "automation"}${iter ? ` · ${iter}` : ""}` : `${active.length} automations`;
   const running = active.some((id) => runs[id]?.status === "running");
   return (
     <div className="tb-loop">
       <button
         className={`tb-loop-btn${running ? "" : " paused"}`}
-        title={`${active.length} loop${active.length > 1 ? "s" : ""} active — click to manage`}
+        title={`${active.length} automation${active.length > 1 ? "s" : ""} active — click to manage`}
         onClick={() => useUi.getState().goLoops()}
       >
         <span className={`tb-loop-dot${running ? " live" : ""}`} />
