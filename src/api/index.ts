@@ -343,6 +343,13 @@ export interface UsageDay {
   date: string;
   value: number;
 }
+export interface UsageModel {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheTokens: number;
+  totalTokens: number;
+}
 export interface ProviderUsage {
   id: string;
   label: string;
@@ -362,10 +369,16 @@ export interface ProviderUsage {
   primary: UsageWindow | null;
   secondary: UsageWindow | null;
   daily: UsageDay[];
+  dailyUnit: string | null; // "tokens" | "msgs" | "sessions"
+  models: UsageModel[];
   note: string | null;
 }
 export function providerUsage(): Promise<ProviderUsage[]> {
   return invoke("provider_usage");
+}
+// single provider — lets the usage panel stream cards in as each scan finishes
+export function providerUsageOne(id: string): Promise<ProviderUsage | null> {
+  return invoke("provider_usage_one", { id });
 }
 
 // MCP servers configured for Claude (~/.claude.json "mcpServers")

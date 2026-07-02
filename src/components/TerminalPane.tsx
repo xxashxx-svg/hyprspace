@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { makeTerminal, termTheme, attachGpuRenderer } from "../terminal/createTerminal";
+import type { WebglAddon } from "@xterm/addon-webgl";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { useProjectConfigs } from "../stores/projectConfig";
@@ -114,6 +115,7 @@ function TerminalPaneInner({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
+  const glRef = useRef<WebglAddon | null>(null);
   const [alive, setAlive] = useState(true);
   const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -123,6 +125,7 @@ function TerminalPaneInner({
   const lineHeight = useSettings((s) => s.lineHeight);
   const cursorStyle = useSettings((s) => s.cursorStyle);
   const cursorBlink = useSettings((s) => s.cursorBlink);
+  const gpuRender = useSettings((s) => s.gpuRender);
 
   const isClaude = provider === "claude";
 
@@ -143,7 +146,8 @@ function TerminalPaneInner({
     term.loadAddon(links);
     searchRef.current = search;
     term.open(el);
-    attachGpuRenderer(term); // GPU (WebGL) renderer if enabled — must come after open()
+    // GPU (WebGL) renderer attaches in the visibility effect below, not here — only the active
+    // space's panes hold a GL context, so N mounted spaces can't hit the browser's context cap
 
     // Ctrl+Shift+F search · Ctrl+C copies selection (else SIGINT) · Ctrl+V / Ctrl+Shift+V paste
     term.attachCustomKeyEventHandler((e) => {
@@ -372,12 +376,39 @@ function TerminalPaneInner({
       dropOutput(sessionId);
       forgetSession(sessionId); // drop the auto-namer's capture state for this pane
       void killPty(sessionId);
-      term.dispose();
+      term.dispose(); // also disposes the webgl addon if attached
+      glRef.current = null;
       termRef.current = null;
       fitRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // GPU renderer rides visibility: attach while our space is shown, detach when it's hidden.
+  // Hidden panes are display:none so the DOM renderer costs nothing there, and this keeps live
+  // WebGL contexts ≤ one grid's worth (~12) — browsers evict them past ~16 per page.
+  // Also reacts to the Settings toggle, so flipping it applies without reopening panes.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    const want = active && gpuRender;
+    if (want && !glRef.current) {
+      const gl = attachGpuRenderer(term);
+      if (gl) {
+        gl.onContextLoss(() => {
+          glRef.current = null; // addon self-disposes; next activation re-attaches
+        });
+        glRef.current = gl;
+      }
+    } else if (!want && glRef.current) {
+      try {
+        glRef.current.dispose();
+      } catch {
+        /* terminal already torn down */
+      }
+      glRef.current = null;
+    }
+  }, [active, gpuRender]);
 
   // re-fit when revealed or when maximize toggles the pane size
   useEffect(() => {

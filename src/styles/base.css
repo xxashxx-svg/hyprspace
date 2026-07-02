@@ -58,8 +58,21 @@ h3 {
   flex: 1;
   min-height: 0;
   display: flex;
+  position: relative; /* anchors the editor's full-screen dock overlay below the titlebar */
 }
 .workspace-view {
   flex: 1;
   min-width: 0;
+}
+
+/* sensitive text (emails) — blurred until clicked so screen shares don't leak it */
+.blurred {
+  filter: blur(4px);
+  cursor: pointer;
+  user-select: none;
+  transition: filter 0.15s var(--ease);
+}
+.blurred.show {
+  filter: none;
+  user-select: text;
 }

@@ -30,6 +30,16 @@ pub struct UsageDay {
 
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_tokens: u64,
+    total_tokens: u64,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderUsage {
     id: String,
     label: String,
@@ -53,6 +63,9 @@ pub struct ProviderUsage {
     secondary: Option<UsageWindow>,
     // small recent-activity sparkline
     daily: Vec<UsageDay>,
+    daily_unit: Option<String>, // "tokens" | "msgs" | "sessions"
+    // lifetime per-model split (claude keeps this in its stats cache)
+    models: Vec<ModelUsage>,
     note: Option<String>,
 }
 
@@ -63,6 +76,22 @@ pub async fn provider_usage() -> Vec<ProviderUsage> {
     })
     .await
     .unwrap_or_default()
+}
+
+// one provider at a time, so the panel can render cards as each scan finishes
+// (claude's transcript scan dwarfs the others — no reason to make codex wait on it)
+#[tauri::command]
+pub async fn provider_usage_one(id: String) -> Option<ProviderUsage> {
+    tauri::async_runtime::spawn_blocking(move || match id.as_str() {
+        "claude" => Some(claude_usage()),
+        "codex" => Some(codex_usage()),
+        "gemini" => Some(gemini_usage()),
+        "opencode" => Some(opencode_usage()),
+        "grok" => Some(grok_usage()),
+        _ => None,
+    })
+    .await
+    .unwrap_or(None)
 }
 
 // ---- helpers ----
@@ -179,6 +208,59 @@ fn claude_usage() -> ProviderUsage {
                     value: d["messageCount"].as_u64().unwrap_or(0),
                 });
             }
+            if !u.daily.is_empty() {
+                u.daily_unit = Some("msgs".into());
+            }
+        }
+        // the cache also carries authoritative lifetime totals — prefer them over the daily sum
+        if let Some(n) = v["totalSessions"].as_u64() {
+            if n > 0 {
+                u.sessions = n;
+            }
+        }
+        if let Some(n) = v["totalMessages"].as_u64() {
+            if n > 0 {
+                u.messages = n;
+            }
+        }
+        // tokens-per-day makes a better activity sparkline than message counts
+        if let Some(days) = v["dailyModelTokens"].as_array() {
+            let mut daily: Vec<UsageDay> = days
+                .iter()
+                .map(|d| UsageDay {
+                    date: d["date"].as_str().unwrap_or("").to_string(),
+                    value: d["tokensByModel"]
+                        .as_object()
+                        .map(|m| m.values().filter_map(|x| x.as_u64()).sum())
+                        .unwrap_or(0),
+                })
+                .collect();
+            if !daily.is_empty() {
+                let n = daily.len();
+                u.daily = daily.split_off(n.saturating_sub(30));
+                u.daily_unit = Some("tokens".into());
+            }
+        }
+        // lifetime split by model
+        if let Some(mu) = v["modelUsage"].as_object() {
+            for (name, m) in mu {
+                let i = m["inputTokens"].as_u64().unwrap_or(0);
+                let o = m["outputTokens"].as_u64().unwrap_or(0);
+                let c = m["cacheReadInputTokens"].as_u64().unwrap_or(0)
+                    + m["cacheCreationInputTokens"].as_u64().unwrap_or(0);
+                if i + o + c == 0 {
+                    continue;
+                }
+                u.models.push(ModelUsage {
+                    model: name.clone(),
+                    input_tokens: i,
+                    output_tokens: o,
+                    cache_tokens: c,
+                    total_tokens: i + o + c,
+                });
+            }
+            u.models.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+            u.models.truncate(8);
         }
     }
 
@@ -256,6 +338,7 @@ fn codex_usage() -> ProviderUsage {
     let files = recent_jsonl(&cdir.join("sessions"));
     u.sessions = files.len() as u64;
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
+    let mut by_day: std::collections::BTreeMap<String, u64> = Default::default();
     for (idx, f) in files.iter().enumerate() {
         let Some(tc) = last_token_count(f) else {
             continue;
@@ -264,6 +347,16 @@ fn codex_usage() -> ProviderUsage {
         i += ttu["input_tokens"].as_u64().unwrap_or(0);
         o += ttu["output_tokens"].as_u64().unwrap_or(0);
         c += ttu["cached_input_tokens"].as_u64().unwrap_or(0);
+        // rollout filenames embed the session date: rollout-YYYY-MM-DD...
+        if let Some(d) = f
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_prefix("rollout-"))
+            .and_then(|n| n.get(..10))
+        {
+            *by_day.entry(d.to_string()).or_insert(0) +=
+                ttu["total_tokens"].as_u64().unwrap_or(0);
+        }
         if idx == 0 {
             let rl = &tc["rate_limits"];
             u.primary = window_from(&rl["primary"]);
@@ -281,6 +374,13 @@ fn codex_usage() -> ProviderUsage {
     u.total_tokens = i + o + c;
     if u.total_tokens > 0 {
         u.tokens_window = Some("recent sessions".into());
+    }
+    if by_day.len() > 1 {
+        u.daily = by_day
+            .into_iter()
+            .map(|(date, value)| UsageDay { date, value })
+            .collect();
+        u.daily_unit = Some("tokens".into());
     }
     u
 }
@@ -357,8 +457,12 @@ fn grok_usage() -> ProviderUsage {
     };
     let g = home_dir().join(".grok");
     u.signed_in = g.exists() || std::env::var("XAI_API_KEY").is_ok();
-    // grok keeps session rollouts under ~/.grok/sessions — count them (best-effort)
-    u.sessions = recent_jsonl(&g.join("sessions")).len() as u64;
+    // a grok session = one folder holding a chat_history.jsonl (it also writes events/prompt
+    // jsonls alongside, which would triple-count)
+    u.sessions = recent_jsonl(&g.join("sessions"))
+        .iter()
+        .filter(|p| p.file_name().map(|n| n == "chat_history.jsonl").unwrap_or(false))
+        .count() as u64;
     u.note = Some("Grok Build CLI — token usage & rate limits live in your xAI console.".into());
     u
 }

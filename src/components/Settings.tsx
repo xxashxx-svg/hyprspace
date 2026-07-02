@@ -16,6 +16,7 @@ import { relTime } from "../lib/time";
 import { McpServers } from "./McpServers";
 import { SkillsManager } from "./SkillsManager";
 import { UsagePanel } from "./UsagePanel";
+import { Blurred } from "./Blurred";
 import { StartupSettings } from "./StartupSettings";
 import { useWorkspaces } from "../stores/workspace";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -142,7 +143,10 @@ function statusLine(s: ProviderStatus | "loading"): { cls: string; node: ReactNo
       cls: "ok",
       node: (
         <>
-          Authenticated as <span className="provider-acct">{s.account}</span>
+          Authenticated as{" "}
+          <span className="provider-acct">
+            <Blurred text={s.account} />
+          </span>
           {s.plan ? ` · ${s.plan}` : ""}
         </>
       ),
@@ -246,6 +250,7 @@ export function Settings() {
   const setGpuRender = useSettings((s) => s.setGpuRender);
   const autoNameAgents = useSettings((s) => s.autoNameAgents);
   const setAutoNameAgents = useSettings((s) => s.setAutoNameAgents);
+  const dismissedConfirms = useSettings((s) => s.dismissedConfirms);
   const claudePermission = useSettings((s) => s.claudePermission);
   const setClaudePermission = useSettings((s) => s.setClaudePermission);
   const geminiYolo = useSettings((s) => s.geminiYolo);
@@ -379,7 +384,7 @@ export function Settings() {
             <button
               className={`settings-acct${tab === "account" ? " active" : ""}`}
               onClick={() => setTab("account")}
-              title={authUser.email ?? "Account"}
+              title="Account"
             >
               {avatar ? (
                 <img src={avatar} alt="" referrerPolicy="no-referrer" />
@@ -387,8 +392,12 @@ export function Settings() {
                 <span className="settings-acct-ava">{initial}</span>
               )}
               <div className="settings-acct-meta">
-                <div className="settings-acct-name">{fullName || "Account"}</div>
-                <div className="settings-acct-sub">{authUser.email}</div>
+                {/* never the raw email here — it'd leak on streams */}
+                <div className="settings-acct-name">
+                  {((authUser.user_metadata?.full_name as string) || "").trim() ||
+                    authUser.email?.split("@")[0] ||
+                    "Account"}
+                </div>
               </div>
             </button>
           )}
@@ -620,6 +629,18 @@ export function Settings() {
                     )}
                   </div>
                 </Row>
+                <Row
+                  label="Confirmation dialogs"
+                  desc="Bring back any dialogs you've hidden with “don't ask me again”"
+                >
+                  <button
+                    className="btn"
+                    onClick={() => useSettings.getState().resetDismissedConfirms()}
+                    disabled={dismissedConfirms.length === 0}
+                  >
+                    {dismissedConfirms.length ? "Restore" : "None hidden"}
+                  </button>
+                </Row>
               </Group>
             )}
 
@@ -732,7 +753,7 @@ export function Settings() {
                   </Row>
                   <Row
                     label="GPU rendering"
-                    desc="WebGL — draws block art (logos, progress bars, box-drawing) seamlessly like Alacritty. Off = the DOM renderer with crisp ClearType text. Reopen panes to apply."
+                    desc="WebGL — draws block art (logos, progress bars, box-drawing) seamlessly like Alacritty. Off = the DOM renderer with ClearType text, which can leave row gaps in block art. Applies immediately."
                   >
                     <button
                       className={`toggle ${gpuRender ? "on" : ""}`}

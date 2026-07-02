@@ -56,6 +56,9 @@ export function makeTerminal(isClaude: boolean): Terminal {
     smoothScrollDuration: 80,
     fastScrollSensitivity: 5,
     rescaleOverlappingGlyphs: true, // crisper box-drawing / powerline glyphs
+    // draw block/box-drawing chars as filled rects instead of font glyphs (GPU renderer only) —
+    // this is what makes the Claude logo one solid shape instead of striped rows
+    customGlyphs: true,
     allowProposedApi: true,
     windowsPty,
     theme: termTheme(),
@@ -64,15 +67,19 @@ export function makeTerminal(isClaude: boolean): Terminal {
 
 // Attach the GPU (WebGL) renderer when it's enabled — same atlas-and-quads model as Alacritty's
 // OpenGL renderer, so block art (the Claude logo, progress bars, box-drawing) tiles seamlessly.
-// MUST be called after term.open(). No-ops on the DOM setting; on GPU context loss it disposes the
-// addon, which reverts xterm to the DOM renderer, so a lost context self-heals instead of blanking.
-export function attachGpuRenderer(term: Terminal): void {
-  if (!useSettings.getState().gpuRender) return;
+// MUST be called after term.open(). Returns the addon so callers can detach it again — panes drop
+// GPU while their space is hidden, since browsers cap WebGL contexts (~16 per page) and every
+// space's panes stay mounted. Null on the DOM setting or if WebGL is unavailable; on context loss
+// it self-disposes, reverting xterm to the DOM renderer instead of blanking.
+export function attachGpuRenderer(term: Terminal): WebglAddon | null {
+  if (!useSettings.getState().gpuRender) return null;
   try {
     const webgl = new WebglAddon();
     webgl.onContextLoss(() => webgl.dispose());
     term.loadAddon(webgl);
+    return webgl;
   } catch (err) {
     console.warn("WebGL renderer unavailable; staying on the DOM renderer", err);
+    return null;
   }
 }

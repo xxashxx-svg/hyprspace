@@ -10,11 +10,14 @@ type Snap = {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   copyOnSelect: boolean;
+  lineHeight: number;
+  gpuRender: boolean;
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
   codexMode: CodexMode;
   autoNameAgents: boolean;
   projectsDir: string;
+  dismissedConfirms: string[];
 };
 
 function snapshot(): Snap {
@@ -26,11 +29,14 @@ function snapshot(): Snap {
     cursorStyle: s.cursorStyle,
     cursorBlink: s.cursorBlink,
     copyOnSelect: s.copyOnSelect,
+    lineHeight: s.lineHeight,
+    gpuRender: s.gpuRender,
     claudePermission: s.claudePermission,
     geminiYolo: s.geminiYolo,
     codexMode: s.codexMode,
     autoNameAgents: s.autoNameAgents,
     projectsDir: s.projectsDir,
+    dismissedConfirms: s.dismissedConfirms,
   };
 }
 

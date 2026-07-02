@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
-import { providerUsage, type ProviderUsage, type UsageWindow, type UsageDay } from "../api";
-import { RotateCw } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
+import {
+  providerUsageOne,
+  type ProviderUsage,
+  type UsageWindow,
+  type UsageDay,
+  type UsageModel,
+} from "../api";
+import { RotateCw, TriangleAlert } from "lucide-react";
+import { Blurred } from "./Blurred";
 import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
@@ -96,23 +103,28 @@ function Tokens({ u }: { u: ProviderUsage }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub, hot }: { label: string; value: string; sub?: string; hot?: boolean }) {
   return (
     <div className="usage-stat">
-      <span className="usage-stat-val">{value}</span>
+      <span className="usage-stat-val" data-hot={!!hot}>
+        {value}
+      </span>
       <span className="usage-stat-label">{label}</span>
+      {sub && <span className="usage-stat-sub">{sub}</span>}
     </div>
   );
 }
 
-function Sparkline({ days }: { days: UsageDay[] }) {
+function Sparkline({ days, unit }: { days: UsageDay[]; unit: string }) {
   const max = Math.max(1, ...days.map((d) => d.value));
   const peak = days.reduce((a, b) => (b.value > a.value ? b : a), days[0]);
   return (
     <div className="usage-activity">
       <div className="usage-activity-top">
         <span>Recent activity</span>
-        <span className="usage-activity-peak">peak {fmt(peak?.value ?? 0)} msgs</span>
+        <span className="usage-activity-peak">
+          peak {fmt(peak?.value ?? 0)} {unit}
+        </span>
       </div>
       <div className="usage-spark">
         {days.map((d, i) => (
@@ -121,7 +133,7 @@ function Sparkline({ days }: { days: UsageDay[] }) {
             className="usage-spark-bar"
             data-peak={d.value === max && max > 1}
             style={{ height: `${Math.max(6, Math.round((d.value / max) * 100))}%` }}
-            title={`${d.date}: ${d.value.toLocaleString()} messages`}
+            title={`${d.date}: ${d.value.toLocaleString()} ${unit}`}
           />
         ))}
       </div>
@@ -129,10 +141,99 @@ function Sparkline({ days }: { days: UsageDay[] }) {
   );
 }
 
+// "claude-opus-4-8" -> "Opus 4.8", "claude-haiku-4-5-20251001" -> "Haiku 4.5"
+function prettyModel(id: string): string {
+  const parts = id.replace(/^claude-/, "").replace(/-\d{8}$/, "").split("-");
+  const name = parts.shift() ?? id;
+  const label = name.charAt(0).toUpperCase() + name.slice(1);
+  return parts.length ? `${label} ${parts.join(".")}` : label;
+}
+
+// lifetime magnitude per model — single hue, direct value labels
+function Models({ models }: { models: UsageModel[] }) {
+  const shown = models.slice(0, 6);
+  const max = Math.max(1, ...shown.map((m) => m.totalTokens));
+  return (
+    <div className="usage-models">
+      <div className="usage-activity-top">
+        <span>By model</span>
+        <span className="usage-activity-peak">all time</span>
+      </div>
+      {shown.map((m) => (
+        <div
+          key={m.model}
+          className="usage-model"
+          title={`${m.model}: ${fmt(m.inputTokens)} in · ${fmt(m.outputTokens)} out · ${fmt(m.cacheTokens)} cache`}
+        >
+          <span className="usage-model-name">{prettyModel(m.model)}</span>
+          <span className="usage-model-track">
+            <i style={{ width: `${(m.totalTokens / max) * 100}%` }} />
+          </span>
+          <span className="usage-model-val">{fmt(m.totalTokens)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// every rolling window across every provider, hottest first
+function hotWindows(data: ProviderUsage[]): { p: ProviderUsage; w: UsageWindow }[] {
+  const all: { p: ProviderUsage; w: UsageWindow }[] = [];
+  for (const p of data) {
+    if (!p.signedIn) continue;
+    for (const w of [p.primary, p.secondary]) if (w) all.push({ p, w });
+  }
+  return all.sort((a, b) => b.w.usedPercent - a.w.usedPercent);
+}
+
+function Overview({ data }: { data: ProviderUsage[] }) {
+  const on = data.filter((p) => p.signedIn);
+  const tokens = on.reduce((n, p) => n + p.totalTokens, 0);
+  const sessions = on.reduce((n, p) => n + p.sessions, 0);
+  const hot = hotWindows(data)[0];
+  return (
+    <div className="usage-overview">
+      <Stat label="Tokens · recent" value={fmt(tokens)} />
+      <Stat label="Sessions" value={sessions.toLocaleString()} />
+      {hot ? (
+        <Stat
+          label={`${hot.p.label} · ${windowLabel(hot.w.windowMinutes).toLowerCase()}`}
+          value={`${Math.max(0, Math.min(100, hot.w.usedPercent)).toFixed(0)}%`}
+          sub={resetLabel(hot.w.resetsAt)}
+          hot={hot.w.usedPercent >= 80}
+        />
+      ) : (
+        <Stat label="Tracked limits" value="—" />
+      )}
+      <Stat label="Connected" value={`${on.length}/${data.length}`} />
+    </div>
+  );
+}
+
+function Alerts({ data }: { data: ProviderUsage[] }) {
+  const hot = hotWindows(data).filter((x) => x.w.usedPercent >= 80);
+  if (!hot.length) return null;
+  return (
+    <>
+      {hot.map((x, i) => (
+        <div key={i} className="usage-alert">
+          <TriangleAlert size={14} />
+          <b>{x.p.label}</b>
+          <span>
+            {windowLabel(x.w.windowMinutes).toLowerCase()} at {x.w.usedPercent.toFixed(0)}%
+            {x.w.resetsAt ? ` · ${resetLabel(x.w.resetsAt)}` : ""}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function UsageCard({ u }: { u: ProviderUsage }) {
   const hasCounts = u.sessions > 0 || u.messages > 0 || u.toolCalls > 0 || u.activeDays > 0;
   const hasBody =
-    u.signedIn && (u.primary || u.secondary || u.totalTokens > 0 || hasCounts || u.daily.length > 1);
+    u.signedIn &&
+    (u.primary || u.secondary || u.totalTokens > 0 || hasCounts || u.daily.length > 1 || u.models.length > 0);
   return (
     <div className={`usage-card${u.signedIn ? "" : " off"}`}>
       <div className="usage-card-head">
@@ -140,7 +241,9 @@ function UsageCard({ u }: { u: ProviderUsage }) {
         <div className="usage-card-title">
           <span className="usage-name">{u.label}</span>
           {u.account ? (
-            <span className="usage-acct">{u.account}</span>
+            <span className="usage-acct">
+              <Blurred text={u.account} />
+            </span>
           ) : (
             !u.signedIn && <span className="usage-acct">Not connected</span>
           )}
@@ -162,6 +265,8 @@ function UsageCard({ u }: { u: ProviderUsage }) {
 
           {u.totalTokens > 0 && <Tokens u={u} />}
 
+          {u.models.length > 0 && <Models models={u.models} />}
+
           {hasCounts && (
             <div className="usage-stats">
               {u.sessions > 0 && <Stat label="Sessions" value={u.sessions.toLocaleString()} />}
@@ -171,7 +276,7 @@ function UsageCard({ u }: { u: ProviderUsage }) {
             </div>
           )}
 
-          {u.daily.length > 1 && <Sparkline days={u.daily} />}
+          {u.daily.length > 1 && <Sparkline days={u.daily} unit={u.dailyUnit ?? "msgs"} />}
         </div>
       )}
 
@@ -180,15 +285,26 @@ function UsageCard({ u }: { u: ProviderUsage }) {
   );
 }
 
-function Skeleton() {
+// scans stream in per provider — the slow one (claude) shouldn't hold up the rest
+const PROVIDERS = [
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "gemini", label: "Gemini" },
+  { id: "opencode", label: "OpenCode" },
+  { id: "grok", label: "Grok" },
+];
+
+// skeleton with the real brand + name, so the panel feels "there" while it fills in
+function ProviderSkeleton({ id, label, i }: { id: string; label: string; i: number }) {
   return (
-    <div className="usage-card usage-skeleton">
+    <div className="usage-card usage-skeleton" style={{ "--sk-delay": `${i * -0.18}s` } as CSSProperties}>
       <div className="usage-card-head">
-        <span className="sk sk-ico" />
+        <span className="usage-ico">{LOGO[id] && <img src={LOGO[id]} alt="" />}</span>
         <div className="usage-card-title">
-          <span className="sk sk-line" style={{ width: 96 }} />
-          <span className="sk sk-line" style={{ width: 140 }} />
+          <span className="usage-name">{label}</span>
+          <span className="usage-acct usage-reading">Reading local files…</span>
         </div>
+        <span className="sk sk-badge" />
       </div>
       <div className="usage-body">
         <span className="sk sk-bar" />
@@ -202,42 +318,86 @@ function Skeleton() {
   );
 }
 
-export function UsagePanel() {
-  const [data, setData] = useState<ProviderUsage[] | null>(null);
-  const [loading, setLoading] = useState(false);
+function OverviewSkeleton() {
+  return (
+    <div className="usage-overview">
+      {[0, 1, 2, 3].map((i) => (
+        <span key={i} className="sk sk-tile" style={{ "--sk-delay": `${i * -0.1}s` } as CSSProperties} />
+      ))}
+    </div>
+  );
+}
 
+export function UsagePanel() {
+  const [cards, setCards] = useState<Record<string, ProviderUsage>>({});
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [, setTick] = useState(0);
+
+  // fire all five scans at once and let each card land on its own
   const load = () => {
-    setLoading(true);
-    providerUsage()
-      .then(setData)
-      .catch(() => setData([]))
-      .finally(() => setLoading(false));
+    setPending(new Set(PROVIDERS.map((p) => p.id)));
+    for (const p of PROVIDERS) {
+      providerUsageOne(p.id)
+        .then((u) => u && setCards((c) => ({ ...c, [p.id]: u })))
+        .catch(() => {})
+        .finally(() =>
+          setPending((s) => {
+            const next = new Set(s);
+            next.delete(p.id);
+            return next;
+          }),
+        );
+    }
   };
   useEffect(load, []);
+  // keep "resets in" countdowns fresh + re-scan every few minutes while the tab is open
+  useEffect(() => {
+    const tick = setInterval(() => setTick((n) => n + 1), 30_000);
+    const auto = setInterval(load, 5 * 60_000);
+    return () => {
+      clearInterval(tick);
+      clearInterval(auto);
+    };
+  }, []);
 
-  const connected = data?.filter((p) => p.signedIn).length ?? 0;
+  const loading = pending.size > 0;
+  const data = PROVIDERS.map((p) => cards[p.id]).filter(Boolean);
+  const connected = data.filter((p) => p.signedIn).length;
+  const reading = PROVIDERS.filter((p) => pending.has(p.id) && !cards[p.id]).map((p) => p.label);
 
   return (
     <div className="usage">
       <div className="usage-bar">
         <span className="usage-summary">
-          {data ? `${connected} of ${data.length} providers connected` : "Reading usage…"}
+          {reading.length
+            ? `Reading ${reading.join(", ")}…`
+            : `${connected} of ${PROVIDERS.length} providers connected`}
         </span>
         <button className="btn" onClick={load} disabled={loading}>
           <RotateCw size={13} className={loading ? "usage-spin" : ""} /> Refresh
         </button>
       </div>
 
-      {!data && loading && (
+      {data.length === PROVIDERS.length || (!loading && data.length > 0) ? (
         <>
-          <Skeleton />
-          <Skeleton />
+          <Alerts data={data} />
+          <Overview data={data} />
         </>
+      ) : (
+        loading && <OverviewSkeleton />
       )}
-      {data && data.length === 0 && <div className="usage-empty">No provider usage found.</div>}
-      {data && data.map((p) => <UsageCard key={p.id} u={p} />)}
 
-      {data && data.length > 0 && (
+      {PROVIDERS.map((p, i) =>
+        cards[p.id] ? (
+          <UsageCard key={p.id} u={cards[p.id]} />
+        ) : pending.has(p.id) ? (
+          <ProviderSkeleton key={`sk-${p.id}`} id={p.id} label={p.label} i={i} />
+        ) : null,
+      )}
+
+      {!loading && data.length === 0 && <div className="usage-empty">No provider usage found.</div>}
+
+      {data.length > 0 && (
         <div className="usage-foot">
           Everything here is read from each tool's own files on this machine — no network calls, no
           tokens used.
