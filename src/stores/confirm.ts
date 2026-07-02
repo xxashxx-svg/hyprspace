@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSettings } from "./settings";
 
 export interface ConfirmReq {
   title: string;
@@ -6,6 +7,7 @@ export interface ConfirmReq {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  dontAskId?: string; // set to offer a "don't ask again" checkbox; dismissed ids auto-confirm
 }
 
 interface ConfirmState {
@@ -33,5 +35,8 @@ export const useConfirm = create<ConfirmState>((set, get) => ({
 
 // in-app replacement for the native ask() dialog — callable from anywhere (actions, etc.)
 export function confirmDialog(req: ConfirmReq): Promise<boolean> {
+  if (req.dontAskId && useSettings.getState().dismissedConfirms.includes(req.dontAskId)) {
+    return Promise.resolve(true);
+  }
   return useConfirm.getState().open(req);
 }

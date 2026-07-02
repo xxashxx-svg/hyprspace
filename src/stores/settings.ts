@@ -19,6 +19,7 @@ interface SettingsState {
   codexMode: CodexMode;
   autoNameAgents: boolean; // task-name agent panes via Codex (kill switch for the auto-namer)
   projectsDir: string; // base folder for new projects; "" → ~/Documents/HyprSpace
+  dismissedConfirms: string[]; // "don't ask again" ids
   hydrated: boolean;
   setTheme: (id: string) => void;
   setFontSize: (n: number) => void;
@@ -33,6 +34,8 @@ interface SettingsState {
   setCodexMode: (m: CodexMode) => void;
   setAutoNameAgents: (b: boolean) => void;
   setProjectsDir: (p: string) => void;
+  dismissConfirm: (id: string) => void;
+  resetDismissedConfirms: () => void;
   hydrate: (partial: Partial<SettingsState>) => void;
   markHydrated: () => void;
 }
@@ -47,12 +50,14 @@ export const useSettings = create<SettingsState>()((set) => ({
   cursorBlink: true,
   copyOnSelect: false,
   lineHeight: 1.1, // comfortable middle — 1.0 felt congested, 1.2 felt airy
-  gpuRender: false, // DOM renderer by default = crisp ClearType text (WebGL is softer; opt in for it)
+  gpuRender: true, // GPU/WebGL by default — block art (Claude logo, progress bars) tiles seamlessly
+  // at any line height; the DOM/ClearType renderer is the opt-out for folks who prefer subpixel text
   claudePermission: "acceptEdits",
   geminiYolo: false,
   codexMode: "auto",
   autoNameAgents: false, // off by default — opt in via Settings (uses your Codex free quota)
   projectsDir: "",
+  dismissedConfirms: [],
   hydrated: false,
 
   setTheme: (id) => {
@@ -71,6 +76,9 @@ export const useSettings = create<SettingsState>()((set) => ({
   setCodexMode: (m) => set({ codexMode: m }),
   setAutoNameAgents: (b) => set({ autoNameAgents: b }),
   setProjectsDir: (p) => set({ projectsDir: p.trim() }),
+  dismissConfirm: (id) =>
+    set((s) => (s.dismissedConfirms.includes(id) ? {} : { dismissedConfirms: [...s.dismissedConfirms, id] })),
+  resetDismissedConfirms: () => set({ dismissedConfirms: [] }),
 
   hydrate: (partial) => {
     set({ ...partial, hydrated: true });

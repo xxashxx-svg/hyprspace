@@ -18,6 +18,7 @@ interface UiState {
   dockOpen: boolean;
   dockTab: "changes" | "skills" | "services" | "files" | "editor";
   openFile: string | null; // absolute path open in the editor tab
+  editorMax: boolean; // editor expanded over the whole workspace area
   paneDragging: boolean; // a terminal pane is mid-drag (rail shows spaces as drop targets)
   paneDragOverWs: string | null; // the space the dragged pane is hovering over in the rail
   goHome: () => void;
@@ -47,6 +48,8 @@ interface UiState {
   setDock: (b: boolean) => void;
   setDockTab: (t: "changes" | "skills" | "services" | "files" | "editor") => void;
   openInEditor: (path: string) => void;
+  closeFile: () => void;
+  toggleEditorMax: () => void;
   setPaneDrag: (on: boolean) => void;
   setPaneDragOverWs: (id: string | null) => void;
 }
@@ -69,6 +72,7 @@ export const useUi = create<UiState>()((set) => ({
   dockOpen: false,
   dockTab: "skills",
   openFile: null,
+  editorMax: false,
   paneDragging: false,
   paneDragOverWs: null,
   goHome: () => set({ view: "home" }),
@@ -99,6 +103,9 @@ export const useUi = create<UiState>()((set) => ({
   setDock: (b) => set({ dockOpen: b }),
   setDockTab: (t) => set({ dockTab: t, dockOpen: true }),
   openInEditor: (path) => set({ openFile: path, dockTab: "editor", dockOpen: true }),
+  // closing lands you back on the file tree, since the editor tab disappears with the file
+  closeFile: () => set({ openFile: null, editorMax: false, dockTab: "files" }),
+  toggleEditorMax: () => set((s) => ({ editorMax: !s.editorMax })),
   setPaneDrag: (on) =>
     set(on ? { paneDragging: true } : { paneDragging: false, paneDragOverWs: null }),
   setPaneDragOverWs: (id) => set({ paneDragOverWs: id }),

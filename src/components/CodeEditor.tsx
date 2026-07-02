@@ -12,7 +12,9 @@ import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { readFile, writeFile } from "../api";
-import { Save, AlertCircle, FileCode } from "lucide-react";
+import { useUi } from "../stores/ui";
+import { confirmDialog } from "../stores/confirm";
+import { Save, AlertCircle, FileCode, Maximize2, Minimize2, X } from "lucide-react";
 
 // language support by file extension (the few that cover most of what people edit here)
 function langFor(path: string): Extension[] {
@@ -54,6 +56,8 @@ export function CodeEditor({ path }: { path: string }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [autosave, setAutosave] = useState(false);
+  const editorMax = useUi((s) => s.editorMax);
+  const toggleEditorMax = useUi((s) => s.toggleEditorMax);
 
   // keep the latest autosave flag + save fn reachable from the long-lived editor extensions
   const autosaveRef = useRef(autosave);
@@ -61,6 +65,29 @@ export function CodeEditor({ path }: { path: string }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const name = path.split(/[\\/]/).pop() ?? path;
+
+  const close = async () => {
+    if (dirty) {
+      const ok = await confirmDialog({
+        title: "Discard changes?",
+        message: `${name} has unsaved changes.`,
+        confirmLabel: "Discard",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    useUi.getState().closeFile();
+  };
+
+  // Esc drops out of full screen (but never closes the file)
+  useEffect(() => {
+    if (!editorMax) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") toggleEditorMax();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editorMax, toggleEditorMax]);
 
   // a ref so the editor's long-lived keymap/listener always call the latest path-bound save
   const save = useRef(async () => {});
@@ -133,6 +160,16 @@ export function CodeEditor({ path }: { path: string }) {
         </label>
         <button className="editor-save" onClick={() => void save.current()} disabled={!dirty || saving}>
           <Save size={12} /> {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          className="editor-icon-btn"
+          onClick={toggleEditorMax}
+          title={editorMax ? "Exit full screen (Esc)" : "Full screen"}
+        >
+          {editorMax ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+        </button>
+        <button className="editor-icon-btn" onClick={() => void close()} title="Close file">
+          <X size={14} />
         </button>
       </div>
       {err ? (

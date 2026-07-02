@@ -1188,6 +1188,85 @@
   background: var(--text-2);
 }
 
+/* at-a-glance overview strip */
+.usage-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.usage-overview .usage-stat {
+  background: var(--surface-2);
+}
+.usage-stat-sub {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+.usage-stat-val[data-hot="true"] {
+  color: var(--status-error);
+}
+
+/* quota alert banner (any rolling window >= 80%) */
+.usage-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--status-error) 35%, transparent);
+  background: color-mix(in srgb, var(--status-error) 9%, var(--surface-2));
+  border-radius: var(--radius-2);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+.usage-alert svg {
+  color: var(--status-error);
+  flex: 0 0 auto;
+}
+.usage-alert b {
+  font-weight: 600;
+}
+.usage-alert span {
+  color: var(--text-2);
+}
+
+/* lifetime per-model bars — one hue, magnitude only */
+.usage-models {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.usage-model {
+  display: grid;
+  grid-template-columns: 92px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+}
+.usage-model-name {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage-model-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.usage-model-track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 58%, var(--surface-3));
+}
+.usage-model-val {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
 /* per-provider note + panel footer */
 .usage-note {
   font-size: var(--text-xs);
@@ -1232,8 +1311,46 @@
 .sk-tile {
   height: 46px;
 }
+.sk-badge {
+  width: 84px;
+  height: 20px;
+  border-radius: 999px;
+}
 @keyframes usageShimmer {
   to {
     background-position: -200% 0;
   }
+}
+
+/* negative delay = phase offset, so neighbouring skeletons shimmer out of step */
+.sk {
+  animation-delay: var(--sk-delay, 0s);
+}
+
+/* cards ease in as each provider's scan lands */
+.usage-card {
+  animation: usageIn 0.25s var(--ease) both;
+}
+@keyframes usageIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* the "Reading local files…" line breathes while its scan runs */
+.usage-reading {
+  animation: usagePulse 1.3s ease-in-out infinite;
+}
+@keyframes usagePulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.usage-skeleton .usage-ico {
+  opacity: 0.75;
 }

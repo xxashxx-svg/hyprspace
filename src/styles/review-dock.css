@@ -32,6 +32,13 @@
 .dock.closing {
   animation: dockOut 0.16s var(--ease) forwards;
 }
+/* editor full screen — the dock overlays the whole workspace area (terminals stay mounted under it) */
+.dock.max {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  z-index: 40;
+}
 .dock-tabs {
   display: flex;
   align-items: center;

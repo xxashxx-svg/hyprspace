@@ -118,6 +118,7 @@ export async function closeSession(wsId: string, sessionId: string) {
       confirmLabel: isService ? "Stop" : "Close",
       cancelLabel: "Cancel",
       danger: true,
+      dontAskId: isService ? undefined : "close-running-pane",
     });
     if (!ok) return;
   }

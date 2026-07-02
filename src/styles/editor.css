@@ -68,6 +68,23 @@
   opacity: 0.45;
   cursor: default;
 }
+.editor-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.editor-icon-btn:hover {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
 .editor-cm {
   flex: 1;
   min-height: 0;

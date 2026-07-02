@@ -7,6 +7,7 @@ import { pickFolder } from "../api";
 import { kbd } from "../platform";
 import { Folder, FolderPlus, LayoutGrid, ChevronRight, Rocket } from "lucide-react";
 import { ChatPanel } from "./ChatPanel";
+import { Blurred } from "./Blurred";
 
 export function HomePage() {
   const workspaces = useWorkspaces((s) => s.workspaces);
@@ -151,7 +152,11 @@ export function HomePage() {
       <ChatPanel />
       <footer className="home-foot">
         <span>HyprSpace{version ? ` v${version}` : ""}</span>
-        {user?.email && <span className="home-foot-acct">{user.email}</span>}
+        {user?.email && (
+          <span className="home-foot-acct">
+            <Blurred text={user.email} />
+          </span>
+        )}
       </footer>
     </div>
   );

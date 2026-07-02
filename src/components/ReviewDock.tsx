@@ -225,6 +225,7 @@ export function ReviewDock() {
   const open = useUi((s) => s.dockOpen);
   const tab = useUi((s) => s.dockTab);
   const openFile = useUi((s) => s.openFile);
+  const editorMax = useUi((s) => s.editorMax);
   const view = useUi((s) => s.view);
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
@@ -247,7 +248,7 @@ export function ReviewDock() {
 
   return (
     <div
-      className={`dock${closing ? " closing" : ""}`}
+      className={`dock${closing ? " closing" : ""}${editorMax && tab === "editor" && openFile ? " max" : ""}`}
       onAnimationEnd={() => {
         if (closing) setRender(false);
       }}

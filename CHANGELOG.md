@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.8.0 — 2026-07-02
+
+- **Usage dashboard** (Settings → Usage): at-a-glance overview strip (total tokens, sessions, hottest rate limit with a live reset countdown), quota alerts when a rolling window crosses 80%, an all-time **"By model"** token breakdown for Claude, and token-based daily activity sparklines for Claude and Codex.
+- **Usage loads progressively** — each provider's card streams in as its scan finishes (with branded skeletons), so the big Claude transcript scan no longer holds up the rest of the panel.
+- **Streaming-safe emails** — account emails in Providers, Usage, and the home footer are blurred until clicked, and the settings sidebar shows just your name. Screen shares don't leak your accounts anymore.
+- **Seamless terminal block art** — GPU (WebGL) rendering is now the default, so the Claude logo, progress bars, and box-drawing render as solid shapes at any line height. HyprSpace manages GPU per visible space (no context limits with many panes), and the renderer + line-height settings now actually persist across restarts (bug fix).
+- **Editor: full screen & close** — new buttons in the editor header expand it over the whole workspace (Esc to exit) or close the file, with an unsaved-changes prompt.
+- **"Don't ask me again"** on the close-running-pane confirmation — restore hidden dialogs anytime in Settings → Workspace.
+
 ## 0.7.1 — 2026-07-01
 
 - Grok and OpenCode now appear in every launch surface — the titlebar "New" menu, the right-click "Open … here" menu, and the home-chat agent spawner. They were reachable but missing from a few of these menus in 0.7.0.
