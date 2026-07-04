@@ -1,0 +1,33 @@
+/* Bundled JetBrainsMono Nerd Font (Mono variant — icons squished to one cell so xterm's fixed
+   grid stays aligned). Shipping it means the terminal + mono UI render identically on every
+   machine instead of silently falling back to Consolas, and powerline/nerd glyphs in agent
+   status lines actually draw instead of showing tofu boxes. */
+
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-BoldItalic.ttf") format("truetype");
+}

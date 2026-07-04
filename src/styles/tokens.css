@@ -56,6 +56,6 @@
   --line-normal: 1.5;
 
   --font-ui: "DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }

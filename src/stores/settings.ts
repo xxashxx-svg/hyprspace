@@ -13,6 +13,7 @@ interface SettingsState {
   cursorBlink: boolean;
   copyOnSelect: boolean;
   lineHeight: number; // terminal row spacing (1.0 = tight, 1.2 = airy)
+  terminalTheme: string; // terminal color scheme id (see terminal/palettes.ts); "adaptive" = match app
   gpuRender: boolean; // WebGL renderer (GPU, seamless block art) vs the DOM renderer (ClearType text)
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
@@ -29,6 +30,7 @@ interface SettingsState {
   setCursorBlink: (b: boolean) => void;
   setCopyOnSelect: (b: boolean) => void;
   setLineHeight: (n: number) => void;
+  setTerminalTheme: (id: string) => void;
   setGpuRender: (b: boolean) => void;
   setClaudePermission: (m: ClaudePermission) => void;
   setGeminiYolo: (b: boolean) => void;
@@ -42,16 +44,18 @@ interface SettingsState {
   markHydrated: () => void;
 }
 
-export const DEFAULT_FONT = '"Cascadia Code", "JetBrains Mono", "Consolas", monospace';
+export const DEFAULT_FONT =
+  '"JetBrainsMono Nerd Font", "Cascadia Code", "JetBrains Mono", "Consolas", monospace';
 
 export const useSettings = create<SettingsState>()((set) => ({
   theme: "t3",
   fontSize: 13,
-  fontFamily: '"JetBrains Mono", "Cascadia Code", monospace',
+  fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", monospace',
   cursorStyle: "block",
   cursorBlink: true,
   copyOnSelect: false,
   lineHeight: 1.1, // comfortable middle — 1.0 felt congested, 1.2 felt airy
+  terminalTheme: "adaptive", // follow the app theme by default; pick a named scheme in Settings
   gpuRender: true, // GPU/WebGL by default — block art (Claude logo, progress bars) tiles seamlessly
   // at any line height; the DOM/ClearType renderer is the opt-out for folks who prefer subpixel text
   claudePermission: "acceptEdits",
@@ -73,6 +77,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   setCursorBlink: (b) => set({ cursorBlink: b }),
   setCopyOnSelect: (b) => set({ copyOnSelect: b }),
   setLineHeight: (n) => set({ lineHeight: Math.min(1.8, Math.max(1.0, Math.round(n * 100) / 100)) }),
+  setTerminalTheme: (id) => set({ terminalTheme: id }),
   setGpuRender: (b) => set({ gpuRender: b }),
   setClaudePermission: (m) => set({ claudePermission: m }),
   setGeminiYolo: (b) => set({ geminiYolo: b }),

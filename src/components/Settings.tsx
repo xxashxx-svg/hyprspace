@@ -10,6 +10,7 @@ import {
 } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { useUpdater } from "../stores/updater";
+import { PALETTES, paletteById } from "../terminal/palettes";
 import { useAuth } from "../stores/auth";
 import { providerStatus, pickFolder, getHomeDir, type ProviderStatus } from "../api";
 import { relTime } from "../lib/time";
@@ -47,7 +48,8 @@ import {
 } from "lucide-react";
 
 const FONTS: { label: string; value: string }[] = [
-  { label: "Cascadia Code", value: DEFAULT_FONT },
+  { label: "JetBrainsMono Nerd Font (bundled)", value: DEFAULT_FONT },
+  { label: "Cascadia Code", value: '"Cascadia Code", "Consolas", monospace' },
   { label: "JetBrains Mono", value: '"JetBrains Mono", "Cascadia Code", monospace' },
   { label: "Consolas", value: '"Consolas", monospace' },
   { label: "Courier New", value: '"Courier New", monospace' },
@@ -246,6 +248,8 @@ export function Settings() {
   const setCopyOnSelect = useSettings((s) => s.setCopyOnSelect);
   const lineHeight = useSettings((s) => s.lineHeight);
   const setLineHeight = useSettings((s) => s.setLineHeight);
+  const terminalTheme = useSettings((s) => s.terminalTheme);
+  const setTerminalTheme = useSettings((s) => s.setTerminalTheme);
   const gpuRender = useSettings((s) => s.gpuRender);
   const setGpuRender = useSettings((s) => s.setGpuRender);
   const autoNameAgents = useSettings((s) => s.autoNameAgents);
@@ -727,6 +731,51 @@ export function Settings() {
 
             {tab === "terminal" && (
               <>
+                <div className="set-section">
+                  <div className="set-label">Color theme</div>
+                  <div className="term-theme-grid">
+                    {PALETTES.map((p) => {
+                      const t = p.theme;
+                      const active = p.id === terminalTheme;
+                      // adaptive has no palette of its own — preview it with the app's terminal vars
+                      const bg = t?.background ?? "var(--bg-terminal)";
+                      const fg = t?.foreground ?? "var(--term-fg)";
+                      const dots = t
+                        ? [t.green, t.yellow, t.red, t.blue, t.magenta, t.cyan]
+                        : ["var(--accent)", "var(--term-fg)", "var(--term-cursor)"];
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={`term-theme-card ${active ? "active" : ""}`}
+                          onClick={() => setTerminalTheme(p.id)}
+                          aria-pressed={active}
+                          style={{ background: bg, color: fg }}
+                        >
+                          <div className="ttc-sample">
+                            <span className="ttc-prompt" style={{ color: (t?.green ?? "var(--accent)") as string }}>
+                              ❯
+                            </span>
+                            <span className="ttc-caret" style={{ background: (t?.cursor ?? "var(--term-cursor)") as string }} />
+                            <span className="ttc-dots">
+                              {dots.map((c, i) => (
+                                <span key={i} style={{ background: c as string }} />
+                              ))}
+                            </span>
+                          </div>
+                          <div className="ttc-name">
+                            <span>{p.label}</span>
+                            {active && <Check size={12} strokeWidth={3} />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="set-hint">
+                    Applies live to every terminal. “{paletteById(terminalTheme).label}” selected.
+                  </div>
+                </div>
+
                 <Group label="Cursor">
                   <Row label="Style" desc="Shape of the terminal cursor">
                     <div className="seg">

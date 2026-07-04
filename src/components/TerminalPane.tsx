@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { makeTerminal, termTheme, attachGpuRenderer } from "../terminal/createTerminal";
+import { termSurface } from "../terminal/palettes";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
@@ -120,6 +121,7 @@ function TerminalPaneInner({
   const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const themeId = useSettings((s) => s.theme);
+  const terminalTheme = useSettings((s) => s.terminalTheme);
   const fontSize = useSettings((s) => s.fontSize);
   const fontFamily = useSettings((s) => s.fontFamily);
   const lineHeight = useSettings((s) => s.lineHeight);
@@ -436,13 +438,15 @@ function TerminalPaneInner({
     const t = termRef.current;
     if (!t) return;
     t.options.theme = termTheme();
+    // paint the pane surface (padding ring + corners) with the same bg so edges don't show the old color
+    document.documentElement.style.setProperty("--term-surface", termSurface(terminalTheme));
     try {
       t.clearTextureAtlas?.();
       t.refresh(0, t.rows - 1);
     } catch {
       /* renderer not ready */
     }
-  }, [themeId]);
+  }, [themeId, terminalTheme]);
 
   // live font change → re-fit + resize the pty
   useEffect(() => {

@@ -4,6 +4,12 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.0 — 2026-07-04
+
+- Terminal color themes: pick from 9 schemes (Claude Code, One Dark, Dracula, Catppuccin Mocha, Tokyo Night, Nord, Gruvbox, Solarized) in Settings → Terminal — applies live to every pane
+- Bundled JetBrainsMono Nerd Font: terminals now render identically on every machine, with proper powerline/status-line glyphs (no more tofu boxes)
+- Terminal polish: theme colors now fill the whole pane (no edge bleed), scrollbar hides until you hover, roomier text padding
+
 ## 0.10.0 — 2026-07-02
 
 - **First-run onboarding**: new installs get a short setup wizard that checks which agent CLIs are installed (with copyable install commands), sets the Claude permission mode and theme, and opens your first workspace. Replay it anytime from Settings, About.

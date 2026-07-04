@@ -2,6 +2,7 @@
    Order is preserved exactly, so the cascade is identical to the old single file.
    Edit the matching styles/<area>.css; add a new area = new file + one @import line here. */
 
+@import "./styles/fonts.css";
 @import "./styles/base.css";
 @import "./styles/rail.css";
 @import "./styles/menus.css";
