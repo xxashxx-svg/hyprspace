@@ -1354,3 +1354,73 @@
 .usage-skeleton .usage-ico {
   opacity: 0.75;
 }
+
+/* terminal color-scheme picker — each card renders in its own palette so you preview the real look */
+.term-theme-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.term-theme-card {
+  flex: 0 0 calc(33.333% - 7px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.14s var(--ease), transform 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.term-theme-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-1);
+}
+.term-theme-card.active {
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor;
+}
+.ttc-sample {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+}
+.ttc-prompt {
+  font-weight: 700;
+}
+.ttc-caret {
+  width: 7px;
+  height: 14px;
+  border-radius: 1px;
+  opacity: 0.9;
+}
+.ttc-dots {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.ttc-dots span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.ttc-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.92;
+}
+.set-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 10px;
+  padding-left: 2px;
+}

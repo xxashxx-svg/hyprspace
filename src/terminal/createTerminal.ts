@@ -2,11 +2,14 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { useSettings } from "../stores/settings";
+import { paletteById } from "./palettes";
 
-// terminal palette: bg/fg/cursor/selection come from the active theme's CSS vars (so the bg blends
-// with the app surface, T3-style); the ANSI 16 are T3 Code's muted set so output looks soft and
-// cohesive instead of harsh-default.
+// terminal palette: on "adaptive" (default) bg/fg/cursor/selection come from the active theme's CSS
+// vars (so the bg blends with the app surface, T3-style) and the ANSI 16 are T3 Code's muted set;
+// pick any named scheme in Settings → Terminal and we hand xterm that palette's colors instead.
 export function termTheme(): ITheme {
+  const p = paletteById(useSettings.getState().terminalTheme);
+  if (!p.adaptive && p.theme) return p.theme;
   const css = getComputedStyle(document.documentElement);
   const v = (n: string, fb: string) => css.getPropertyValue(n).trim() || fb;
   const bg = v("--bg-terminal", "#161616");

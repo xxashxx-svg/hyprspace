@@ -11,6 +11,7 @@ type Snap = {
   cursorBlink: boolean;
   copyOnSelect: boolean;
   lineHeight: number;
+  terminalTheme: string;
   gpuRender: boolean;
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
@@ -31,6 +32,7 @@ function snapshot(): Snap {
     cursorBlink: s.cursorBlink,
     copyOnSelect: s.copyOnSelect,
     lineHeight: s.lineHeight,
+    terminalTheme: s.terminalTheme,
     gpuRender: s.gpuRender,
     claudePermission: s.claudePermission,
     geminiYolo: s.geminiYolo,

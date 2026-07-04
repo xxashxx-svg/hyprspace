@@ -39,7 +39,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-terminal);
+  background: var(--term-surface, var(--bg-terminal));
   border: 1px solid var(--border-1);
   border-radius: 0;
   overflow: hidden;
@@ -147,7 +147,7 @@
 .pane-term {
   flex: 1;
   min-height: 0;
-  padding: 8px 16px;
+  padding: 12px 18px 10px;
   /* native subpixel antialiasing (ClearType on Windows) for crisp, full-T3 text. trade-off: fringes
      a touch on small/dense panes — but that softness is inherent to small font sizes anyway. */
   -webkit-font-smoothing: subpixel-antialiased;
@@ -166,7 +166,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: var(--bg-terminal);
+  background: var(--term-surface, var(--bg-terminal));
   animation: paneBootIn 0.2s var(--ease);
 }
 @keyframes paneBootIn {
@@ -202,7 +202,9 @@
   background: transparent !important;
 }
 /* give xterm a real (non-overlay) scrollbar so it reserves a gutter — otherwise the
-   WebView2 overlay bar paints over the rightmost column once scrollback kicks in. */
+   WebView2 overlay bar paints over the rightmost column once scrollback kicks in.
+   the gutter stays, but the thumb hides until the pane is hovered so it reads like a
+   modern overlay bar (the always-on track+thumb looked dated next to the Claude app). */
 .pane-term .xterm-viewport::-webkit-scrollbar {
   width: 10px;
 }
@@ -210,13 +212,17 @@
   background: transparent;
 }
 .pane-term .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--border-2);
+  background: transparent;
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
+.pane-term:hover .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(160, 166, 176, 0.28);
+  background-clip: padding-box;
+}
 .pane-term .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--text-3);
+  background: rgba(180, 186, 196, 0.5);
   background-clip: padding-box;
 }
 
