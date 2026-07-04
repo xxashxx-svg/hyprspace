@@ -1355,68 +1355,81 @@
   opacity: 0.75;
 }
 
-/* terminal color-scheme picker — each card renders in its own palette so you preview the real look */
+/* terminal color-scheme picker — each card is a miniature terminal drawn in its own palette,
+   with a name bar + ansi strip below. mirrors the app-theme cards' shot-plus-meta structure. */
 .term-theme-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .term-theme-card {
-  flex: 0 0 calc(33.333% - 7px);
+  flex: 0 0 calc(33.333% - 8px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 12px 10px;
+  padding: 0;
+  background: var(--surface-2);
   border: 1px solid var(--border-1);
   border-radius: var(--radius-2);
+  overflow: hidden;
   cursor: pointer;
   text-align: left;
   transition: border-color 0.14s var(--ease), transform 0.14s var(--ease),
     box-shadow 0.14s var(--ease);
 }
 .term-theme-card:hover {
+  border-color: var(--border-2);
   transform: translateY(-2px);
   box-shadow: var(--shadow-1);
 }
+/* selection ring takes the palette's caret color, so each theme signs its own selection */
 .term-theme-card.active {
-  border-color: currentColor;
-  box-shadow: 0 0 0 1px currentColor;
+  border-color: var(--tc-ring);
+  box-shadow: 0 0 0 1px var(--tc-ring),
+    0 10px 24px -14px color-mix(in srgb, var(--tc-ring) 70%, transparent);
 }
-.ttc-sample {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.ttc-shot {
+  padding: 11px 13px 12px;
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1;
-}
-.ttc-prompt {
-  font-weight: 700;
+  font-size: 10.5px;
+  line-height: 1.8;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .ttc-caret {
-  width: 7px;
-  height: 14px;
+  display: inline-block;
+  width: 6px;
+  height: 11px;
   border-radius: 1px;
-  opacity: 0.9;
+  margin-left: 2px;
+  vertical-align: -1px;
 }
-.ttc-dots {
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
-}
-.ttc-dots span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-}
-.ttc-name {
+.ttc-meta {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  justify-content: center;
+  padding: 7px 26px; /* side padding = room for the absolutely-placed check */
+  border-top: 1px solid var(--border-1);
+}
+.ttc-name {
   font-size: 12px;
   font-weight: 500;
-  opacity: 0.92;
+  color: var(--text-1);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ttc-check {
+  position: absolute;
+  right: 9px;
+  display: flex;
+  color: var(--tc-ring);
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+.term-theme-card.active .ttc-check {
+  opacity: 1;
 }
 .set-hint {
   font-size: 11.5px;

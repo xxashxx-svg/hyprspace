@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.1 — 2026-07-04
+
+- Redesigned the terminal color-theme picker: each card is now a miniature terminal preview with centered theme names
+
 ## 0.11.0 — 2026-07-04
 
 - Terminal color themes: pick from 9 schemes (Claude Code, One Dark, Dracula, Catppuccin Mocha, Tokyo Night, Nord, Gruvbox, Solarized) in Settings → Terminal — applies live to every pane
