@@ -10,7 +10,7 @@ import {
 } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { useUpdater } from "../stores/updater";
-import { PALETTES, paletteById } from "../terminal/palettes";
+import { PALETTES } from "../terminal/palettes";
 import { useAuth } from "../stores/auth";
 import { providerStatus, pickFolder, getHomeDir, type ProviderStatus } from "../api";
 import { relTime } from "../lib/time";
@@ -737,12 +737,20 @@ export function Settings() {
                     {PALETTES.map((p) => {
                       const t = p.theme;
                       const active = p.id === terminalTheme;
-                      // adaptive has no palette of its own — preview it with the app's terminal vars
+                      // adaptive card: bg/fg/caret ride the app theme vars; its ANSI preview uses
+                      // the fixed T3 muted set (same colors termTheme() hands xterm on adaptive)
                       const bg = t?.background ?? "var(--bg-terminal)";
                       const fg = t?.foreground ?? "var(--term-fg)";
-                      const dots = t
-                        ? [t.green, t.yellow, t.red, t.blue, t.magenta, t.cyan]
-                        : ["var(--accent)", "var(--term-fg)", "var(--term-cursor)"];
+                      const caret = t?.cursor ?? "var(--term-cursor)";
+                      const gray = t?.brightBlack ?? "rgb(110, 120, 136)";
+                      const c = {
+                        red: t?.red ?? "rgb(255, 122, 142)",
+                        green: t?.green ?? "rgb(134, 231, 149)",
+                        yellow: t?.yellow ?? "rgb(244, 205, 114)",
+                        blue: t?.blue ?? "rgb(137, 190, 255)",
+                        magenta: t?.magenta ?? "rgb(208, 176, 255)",
+                        cyan: t?.cyan ?? "rgb(124, 232, 237)",
+                      };
                       return (
                         <button
                           key={p.id}
@@ -750,30 +758,34 @@ export function Settings() {
                           className={`term-theme-card ${active ? "active" : ""}`}
                           onClick={() => setTerminalTheme(p.id)}
                           aria-pressed={active}
-                          style={{ background: bg, color: fg }}
+                          style={{ "--tc-ring": caret } as CSSProperties}
                         >
-                          <div className="ttc-sample">
-                            <span className="ttc-prompt" style={{ color: (t?.green ?? "var(--accent)") as string }}>
-                              ❯
-                            </span>
-                            <span className="ttc-caret" style={{ background: (t?.cursor ?? "var(--term-cursor)") as string }} />
-                            <span className="ttc-dots">
-                              {dots.map((c, i) => (
-                                <span key={i} style={{ background: c as string }} />
-                              ))}
-                            </span>
+                          {/* mini terminal: a real prompt drawn in the palette's own colors */}
+                          <div className="ttc-shot" style={{ background: bg, color: fg }}>
+                            <div className="ttc-line">
+                              <span style={{ color: c.green }}>❯ </span>
+                              <span style={{ color: c.magenta }}>git </span>
+                              commit <span style={{ color: c.cyan }}>-m </span>
+                              <span style={{ color: c.yellow }}>"ship it"</span>
+                              <span className="ttc-caret" style={{ background: caret }} />
+                            </div>
+                            <div className="ttc-line" style={{ color: gray }}>
+                              <span style={{ color: c.green }}>✓ </span>
+                              <span style={{ color: c.blue }}>main </span>
+                              a1f39c · 2 files
+                            </div>
                           </div>
-                          <div className="ttc-name">
-                            <span>{p.label}</span>
-                            {active && <Check size={12} strokeWidth={3} />}
+                          <div className="ttc-meta">
+                            <span className="ttc-name">{p.label}</span>
+                            <span className="ttc-check">
+                              <Check size={12} strokeWidth={3} />
+                            </span>
                           </div>
                         </button>
                       );
                     })}
                   </div>
-                  <div className="set-hint">
-                    Applies live to every terminal. “{paletteById(terminalTheme).label}” selected.
-                  </div>
+                  <div className="set-hint">Applies live to every terminal.</div>
                 </div>
 
                 <Group label="Cursor">
