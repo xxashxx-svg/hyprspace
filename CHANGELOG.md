@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.2 — 2026-07-08
+
+- Fixed flickering when dragging to reorder projects and open spaces in the sidebar. Drag feedback is now applied directly to the DOM, so moving a row no longer re-renders the whole rail.
+
 ## 0.11.1 — 2026-07-04
 
 - Redesigned the terminal color-theme picker: each card is now a miniature terminal preview with centered theme names

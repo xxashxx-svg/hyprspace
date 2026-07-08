@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces, type Workspace } from "../stores/workspace";
 import { useUi } from "../stores/ui";
@@ -71,9 +71,22 @@ export function Rail() {
   const [, tick] = useReducer((x) => x + 1, 0);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const drag = useRef<{ id: string; sx: number; sy: number; active: boolean } | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const drag = useRef<{ id: string; sx: number; sy: number; active: boolean; over: string | null } | null>(null);
+  // drag feedback is toggled imperatively so a pointermove never re-renders (and flickers) the whole
+  // rail — dropping is the only thing that hits React state. re-applied after any unrelated re-render.
+  const applyDrag = () => {
+    for (const el of document.querySelectorAll(".rail-item.dragging, .rail-item.drop-over"))
+      el.classList.remove("dragging", "drop-over");
+    const d = drag.current;
+    if (!d?.active) return;
+    document.querySelector(`.rail-item[data-wsid="${d.id}"]`)?.classList.add("dragging");
+    if (d.over) document.querySelector(`.rail-item[data-wsid="${d.over}"]`)?.classList.add("drop-over");
+  };
+  // a re-render mid-drag (a running session's output, the 1s tick) would wipe the classes React
+  // doesn't know about — re-apply here, before paint, so it never flickers.
+  useLayoutEffect(() => {
+    if (drag.current?.active) applyDrag();
+  });
   // a wrap's sub-content (sessions / file tree) is mounted once it's first expanded and kept mounted
   // after — so collapsing/expanding the whole sidebar never remounts (and refetches) it. the .rail-sub
   // grid-rows reveal hides it when not open. readyTrees = projects whose file listing has loaded, so
@@ -148,8 +161,6 @@ export function Rail() {
         <div
           data-wsid={w.id}
           className={`rail-item ${w.id === activeId && view === "space" ? "active" : ""}${
-            dragId === w.id ? " dragging" : ""
-          }${overId === w.id ? " drop-over" : ""}${
             paneDragging && w.id !== activeId ? " pane-droppable" : ""
           }${paneDragOverWs === w.id ? " pane-drop-over" : ""}`}
           title={w.cwd || w.name}
@@ -185,7 +196,7 @@ export function Rail() {
             onPointerDown={(e) => {
               e.stopPropagation();
               e.currentTarget.setPointerCapture?.(e.pointerId);
-              drag.current = { id: w.id, sx: e.clientX, sy: e.clientY, active: false };
+              drag.current = { id: w.id, sx: e.clientX, sy: e.clientY, active: false, over: null };
             }}
             onPointerMove={(e) => {
               const d = drag.current;
@@ -193,21 +204,21 @@ export function Rail() {
               if (!d.active) {
                 if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
                 d.active = true;
-                setDragId(d.id);
+                applyDrag(); // mark the picked-up row
               }
               const t = wsAt(e.clientX, e.clientY);
-              setOverId(t && t !== d.id ? t : null);
+              const over = t && t !== d.id ? t : null;
+              if (over !== d.over) {
+                d.over = over;
+                applyDrag(); // move the drop indicator — no setState, no re-render
+              }
             }}
             onPointerUp={(e) => {
               const d = drag.current;
               drag.current = null;
               e.currentTarget.releasePointerCapture?.(e.pointerId);
-              if (d?.active) {
-                const t = wsAt(e.clientX, e.clientY);
-                if (t && t !== d.id) reorderWorkspaces(d.id, t);
-              }
-              setDragId(null);
-              setOverId(null);
+              applyDrag(); // clears the drag classes
+              if (d?.active && d.over && d.over !== d.id) reorderWorkspaces(d.id, d.over);
             }}
           >
             <GripVertical size={13} aria-hidden="true" />
