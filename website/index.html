@@ -72,16 +72,16 @@
       .btn-line:hover { background: var(--surface-3); }
       :focus-visible { outline: 2px solid var(--text-1); outline-offset: 3px; border-radius: 5px; }
 
-      /* nav */
-      header.nav { position: sticky; top: 0; z-index: 30; background: color-mix(in oklab, var(--bg) 82%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
-      .nav-row { display: flex; align-items: center; gap: 18px; height: 60px; }
-      .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15.5px; letter-spacing: -0.01em; }
+      /* nav — floating pill / island (detached from the top, rounded, blurred surface) */
+      header.nav { position: sticky; top: 0; z-index: 30; padding-top: 14px; }
+      .nav-row { position: relative; display: flex; align-items: center; justify-content: space-between; height: 54px; max-width: 900px; margin: 0 auto; padding: 0 8px 0 20px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-2); }
+      .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15.5px; letter-spacing: -0.01em; padding-right: 6px; }
       .brand .ico { width: 22px; height: 22px; border-radius: 6px; }
       .nav-spacer { flex: 1; }
-      .nav-links { display: flex; gap: 4px; }
-      .nav-links a { padding: 7px 12px; border-radius: var(--r1); color: var(--text-2); font-size: 14px; transition: color 0.15s, background 0.15s; }
-      .nav-links a:hover { color: var(--text-1); background: var(--surface-2); }
-      .nav .btn { font-size: 13.5px; padding: 8px 15px; }
+      .nav-links { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; }
+      .nav-links a { padding: 7px 14px; border-radius: 999px; color: var(--text-2); font-size: 14px; font-weight: 500; transition: color 0.15s, background 0.15s; }
+      .nav-links a:hover { color: var(--text-1); background: var(--surface-3); }
+      .nav .btn { font-size: 13.5px; padding: 9px 16px; border-radius: 999px; }
 
       /* section rhythm */
       .section { padding: 116px 0; }
@@ -254,16 +254,17 @@
     </svg>
 
     <header class="nav">
-      <div class="wrap nav-row">
-        <a class="brand" href="#top"><svg class="ico"><use href="#appicon" /></svg> HyprSpace</a>
-        <span class="nav-spacer"></span>
-        <nav class="nav-links">
-          <a href="#automations">Automations</a>
-          <a href="#launcher">Launcher</a>
-          <a href="#subscription">Subscription</a>
-          <a href="#features">Features</a>
-        </nav>
-        <a class="btn btn-primary" data-download href="https://github.com/xxashxx-svg/hyprspace-releases/releases/latest/download/HyprSpace-windows-x64-setup.exe">Download</a>
+      <div class="wrap">
+        <div class="nav-row">
+          <a class="brand" href="#top"><svg class="ico"><use href="#appicon" /></svg> HyprSpace</a>
+          <nav class="nav-links">
+            <a href="#automations">Automations</a>
+            <a href="#launcher">Launcher</a>
+            <a href="#subscription">Subscription</a>
+            <a href="#features">Features</a>
+          </nav>
+          <a class="btn btn-primary" data-download href="https://github.com/xxashxx-svg/hyprspace-releases/releases/latest/download/HyprSpace-windows-x64-setup.exe">Download</a>
+        </div>
       </div>
     </header>
 

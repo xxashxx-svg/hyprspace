@@ -9,14 +9,11 @@ import "./styles/tokens.css";
 import "./App.css";
 import App from "./App";
 import { AuthGate } from "./components/AuthGate";
-import { AccessGate } from "./components/AccessGate";
 
 // NO React.StrictMode — its double-mount corrupts the xterm terminal lifecycle.
-// AccessGate is the temporary private-beta code wall (outermost); AuthGate is sign-in.
+// AuthGate is the sign-in gate; nothing below it mounts until you're signed in.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <AccessGate>
-    <AuthGate>
-      <App />
-    </AuthGate>
-  </AccessGate>,
+  <AuthGate>
+    <App />
+  </AuthGate>,
 );
