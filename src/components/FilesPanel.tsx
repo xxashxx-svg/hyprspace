@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { listDir, revealPath, type DirEntry } from "../api";
+import { listDir, revealPath, fileOp, type DirEntry } from "../api";
 import { joinPath } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
+import { confirmDialog } from "../stores/confirm";
 import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { isWindows } from "../platform";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ChevronRight, Folder, File as FileIcon, RefreshCw } from "lucide-react";
 
 const WSL_CMD = "wsl";
@@ -52,6 +54,8 @@ function TreeNode({
   depth,
   wsId,
   liveDirs,
+  rootCwd,
+  onChanged,
 }: {
   path: string;
   name: string;
@@ -59,12 +63,22 @@ function TreeNode({
   depth: number;
   wsId?: string;
   liveDirs?: Set<string>; // normalized cwds that have an open session — so we can flag them
+  rootCwd: string; // the tree's root, for "Copy relative path"
+  onChanged: () => void; // parent re-lists after a rename/delete of this node
 }) {
   const [open, setOpen] = useState(false);
   const [kids, setKids] = useState<DirEntry[] | null>(() => peekDir(path));
   const [loading, setLoading] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [creating, setCreating] = useState<"file" | "dir" | null>(null); // input row for a new child
   const [aaRef] = useAutoAnimate(); // smooth folder expand/collapse
+
+  // re-list THIS dir's children (used after creating a child, and passed down to kids)
+  const reloadKids = async () => {
+    invalidateDir(path);
+    setKids(await loadDir(path, true));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -115,36 +129,120 @@ function TreeNode({
     setMenu(null);
   };
 
+  // ---- file ops (Orca-style context menu) ----
+  const relOf = (p: string) => {
+    const root = rootCwd.replace(/[\\/]+$/, "");
+    return p.startsWith(root) ? p.slice(root.length + 1) : name;
+  };
+  const copyPath = (rel: boolean) => {
+    void writeText(rel ? relOf(path) : path).catch(() => {});
+    setMenu(null);
+  };
+  const startCreate = async (kind: "file" | "dir") => {
+    setMenu(null);
+    if (kids === null) await load();
+    setOpen(true);
+    setCreating(kind);
+  };
+  const doDelete = async () => {
+    setMenu(null);
+    const ok = await confirmDialog({
+      title: dir ? "Delete folder?" : "Delete file?",
+      message: `"${name}" will be permanently deleted${dir ? ", including everything inside" : ""}.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    await fileOp("delete", path).catch(() => {});
+    onChanged();
+  };
+  const commitRename = async (next: string) => {
+    setRenaming(false);
+    const v = next.trim();
+    if (!v || v === name || /[\\/]/.test(v)) return;
+    await fileOp("rename", path, joinPath(parentOf(path), v)).catch(() => {});
+    onChanged();
+  };
+  const commitCreate = async (next: string) => {
+    const kind = creating;
+    setCreating(null);
+    const v = next.trim();
+    if (!kind || !v || /[\\/]/.test(v)) return;
+    await fileOp(kind === "dir" ? "create-dir" : "create-file", joinPath(path, v)).catch(() => {});
+    await reloadKids();
+  };
+
   const pad = depth * 12 + 8;
   return (
     <div className="ft-node" ref={aaRef}>
-      <button
-        className="ft-row"
-        style={{ paddingLeft: pad }}
-        onClick={() => void toggle()}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY });
-        }}
-      >
-        {dir ? (
-          <ChevronRight size={13} className={`ft-twist${open ? " open" : ""}`} />
-        ) : (
-          <span className="ft-spacer" />
-        )}
-        {dir ? <Folder size={14} className="ft-ico" /> : <FileIcon size={14} className="ft-ico file" />}
-        <span className="ft-name">{name}</span>
-        {dir && liveDirs?.has(normPath(path)) && (
-          <span className="ft-live" title="A session is running here" />
-        )}
-      </button>
+      {renaming ? (
+        <div className="ft-row" style={{ paddingLeft: pad }}>
+          {dir ? (
+            <ChevronRight size={13} className={`ft-twist${open ? " open" : ""}`} />
+          ) : (
+            <span className="ft-spacer" />
+          )}
+          {dir ? <Folder size={14} className="ft-ico" /> : <FileIcon size={14} className="ft-ico file" />}
+          <input
+            className="ft-rename"
+            autoFocus
+            defaultValue={name}
+            onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void commitRename(e.currentTarget.value);
+              if (e.key === "Escape") setRenaming(false);
+            }}
+            onBlur={() => setRenaming(false)}
+          />
+        </div>
+      ) : (
+        <button
+          className="ft-row"
+          style={{ paddingLeft: pad }}
+          onClick={() => void toggle()}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
+          {dir ? (
+            <ChevronRight size={13} className={`ft-twist${open ? " open" : ""}`} />
+          ) : (
+            <span className="ft-spacer" />
+          )}
+          {dir ? <Folder size={14} className="ft-ico" /> : <FileIcon size={14} className="ft-ico file" />}
+          <span className="ft-name">{name}</span>
+          {dir && liveDirs?.has(normPath(path)) && (
+            <span className="ft-live" title="A session is running here" />
+          )}
+        </button>
+      )}
 
       {open && dir && (
         <>
           {loading && (
             <div className="ft-dim" style={{ paddingLeft: pad + 19 }}>
               …
+            </div>
+          )}
+          {creating && (
+            <div className="ft-row" style={{ paddingLeft: pad + 12 + 8 }}>
+              {creating === "dir" ? (
+                <Folder size={14} className="ft-ico" />
+              ) : (
+                <FileIcon size={14} className="ft-ico file" />
+              )}
+              <input
+                className="ft-rename"
+                autoFocus
+                placeholder={creating === "dir" ? "folder name" : "file name"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitCreate(e.currentTarget.value);
+                  if (e.key === "Escape") setCreating(null);
+                }}
+                onBlur={() => setCreating(null)}
+              />
             </div>
           )}
           {kids?.map((k) => (
@@ -156,9 +254,11 @@ function TreeNode({
               depth={depth + 1}
               wsId={wsId}
               liveDirs={liveDirs}
+              rootCwd={rootCwd}
+              onChanged={() => void reloadKids()}
             />
           ))}
-          {kids && kids.length === 0 && (
+          {kids && kids.length === 0 && !creating && (
             <div className="ft-dim" style={{ paddingLeft: pad + 19 }}>
               empty
             </div>
@@ -189,6 +289,24 @@ function TreeNode({
               </button>
             )}
             {dir && (
+              <>
+                <button className="ctx-item" onClick={() => void startCreate("file")}>
+                  New file…
+                </button>
+                <button className="ctx-item" onClick={() => void startCreate("dir")}>
+                  New folder…
+                </button>
+              </>
+            )}
+            <div className="ctx-sep" />
+            <button className="ctx-item" onClick={() => copyPath(false)}>
+              Copy path
+            </button>
+            <button className="ctx-item" onClick={() => copyPath(true)}>
+              Copy relative path
+            </button>
+            <div className="ctx-sep" />
+            {dir && (
               <button className="ctx-item" onClick={openAsProject}>
                 Open as project
               </button>
@@ -201,6 +319,19 @@ function TreeNode({
               ))}
             <button className="ctx-item" onClick={reveal}>
               Reveal in Explorer
+            </button>
+            <div className="ctx-sep" />
+            <button
+              className="ctx-item"
+              onClick={() => {
+                setMenu(null);
+                setRenaming(true);
+              }}
+            >
+              Rename
+            </button>
+            <button className="ctx-item danger" onClick={() => void doDelete()}>
+              Delete
             </button>
           </div>
         </>
@@ -266,6 +397,11 @@ export function FileTree({
             depth={0}
             wsId={wsId}
             liveDirs={liveDirs}
+            rootCwd={cwd}
+            onChanged={() => {
+              invalidateDir(cwd);
+              void loadDir(cwd, true).then(setEntries);
+            }}
           />
         ))
       )}

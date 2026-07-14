@@ -106,4 +106,49 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+// File ops for the Files panel's context menu (new file/folder, rename, delete). Rename/create
+// refuse to clobber an existing target; delete is recursive for folders (the UI confirms first).
+
+#[tauri::command]
+pub async fn file_op(op: String, path: String, to: Option<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        match op.as_str() {
+            "create-file" => {
+                if p.exists() {
+                    return Err("something with that name already exists".into());
+                }
+                if let Some(parent) = p.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                std::fs::write(p, "").map_err(|e| e.to_string())
+            }
+            "create-dir" => {
+                if p.exists() {
+                    return Err("something with that name already exists".into());
+                }
+                std::fs::create_dir_all(p).map_err(|e| e.to_string())
+            }
+            "rename" => {
+                let to = to.ok_or("missing rename target")?;
+                let tp = std::path::Path::new(&to);
+                if tp.exists() {
+                    return Err("something with that name already exists".into());
+                }
+                std::fs::rename(p, tp).map_err(|e| e.to_string())
+            }
+            "delete" => {
+                if p.is_dir() {
+                    std::fs::remove_dir_all(p).map_err(|e| e.to_string())
+                } else {
+                    std::fs::remove_file(p).map_err(|e| e.to_string())
+                }
+            }
+            other => Err(format!("unknown file op: {other}")),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---- provider status (version + signed-in account/plan) for Settings → Providers ----

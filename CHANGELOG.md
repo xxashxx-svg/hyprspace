@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.5 — 2026-07-14
+
+- The sidebar is cleaner: projects expand to their sessions only — files moved fully into the dock's Files panel.
+- The Files panel grew a real context menu: New file / New folder (inline, right in the tree), Copy path / Copy relative path, Rename, and Delete (with confirmation) — alongside the existing open-agent-here and Reveal options.
+
 ## 0.11.4 — 2026-07-14
 
 - Sidebar now shows the provider logo on each agent session — Claude, Codex, Gemini, Grok, OpenCode — with its status as a small corner badge, like Orca.
