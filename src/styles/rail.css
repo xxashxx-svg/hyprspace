@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px 8px;
+  padding: 6px 12px 6px;
 }
 .rail-title {
   font-size: 12px;
@@ -299,23 +299,37 @@
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 5px 8px;
+  padding: 6px 8px;
   border: none;
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 12px;
-  border-radius: var(--radius-1);
+  font-size: 12.5px;
+  border-radius: 7px;
   cursor: pointer;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-session:hover {
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
   color: var(--text-1);
 }
 .rail-session.active {
-  background: var(--accent-dim);
+  background: var(--surface-3);
   color: var(--text-1);
+}
+.rail-sess-ico {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rail-sess-logo {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
 }
 .rail-sess-dot {
   flex: 0 0 auto;
@@ -323,6 +337,15 @@
   height: 7px;
   border-radius: 50%;
   background: var(--status-idle);
+}
+/* with a provider logo shown, the status becomes a small corner presence badge */
+.rail-sess-dot.badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 0 1.5px var(--surface-1);
 }
 .rail-sess-dot.s-ready {
   background: var(--status-ok);
@@ -374,13 +397,13 @@
 }
 .rail-list {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  padding: 2px 8px 4px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .rail-header:not(:first-child) {
-  margin-top: 4px;
+  margin-top: 12px;
 }
 .rail-empty {
   padding: 2px 12px 6px;
@@ -393,24 +416,28 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 9px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   color: var(--text-2);
-  border-radius: var(--radius-1);
+  border-radius: 8px;
   cursor: pointer;
   text-align: left;
   width: 100%;
   font: inherit;
+  font-size: 13px;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-item:hover {
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
   color: var(--text-1);
 }
 .rail-item.active {
-  background: var(--accent-dim);
+  background: var(--surface-3);
   color: var(--text-1);
+}
+.rail-item.active .rail-ico {
+  opacity: 1;
 }
 .dot {
   width: 8px;
