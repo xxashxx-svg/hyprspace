@@ -3,7 +3,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { basicSetup } from "codemirror";
-import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { vscodeChrome, vscodeHighlight } from "../lib/editorTheme";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { css } from "@codemirror/lang-css";
@@ -29,25 +29,6 @@ function langFor(path: string): Extension[] {
   if (ext === "rs") return [rust()];
   return [];
 }
-
-// editor chrome themed to our tokens; syntax colors come from one-dark
-const chrome = EditorView.theme(
-  {
-    "&": { height: "100%", color: "var(--text-1)", backgroundColor: "var(--bg-terminal)" },
-    ".cm-content": { fontFamily: "var(--font-mono)", fontSize: "12.5px", caretColor: "var(--text-1)" },
-    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.55" },
-    ".cm-gutters": { backgroundColor: "var(--bg-terminal)", color: "var(--text-3)", border: "none" },
-    ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.03)" },
-    ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.04)", color: "var(--text-2)" },
-    "&.cm-focused": { outline: "none" },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text-1)" },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(255,255,255,0.12)",
-    },
-    ".cm-selectionMatch": { backgroundColor: "rgba(255,255,255,0.08)" },
-  },
-  { dark: true },
-);
 
 export function CodeEditor({ path }: { path: string }) {
   const elRef = useRef<HTMLDivElement>(null);
@@ -131,8 +112,8 @@ export function CodeEditor({ path }: { path: string }) {
           extensions: [
             basicSetup,
             ...langFor(path),
-            syntaxHighlighting(oneDarkHighlightStyle),
-            chrome,
+            syntaxHighlighting(vscodeHighlight),
+            vscodeChrome,
             Prec.highest(
               keymap.of([
                 { key: "Mod-s", preventDefault: true, run: () => (void save.current(), true) },

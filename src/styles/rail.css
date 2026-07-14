@@ -15,9 +15,9 @@
   padding: 12px 14px 8px;
 }
 .rail-title {
-  font-size: 11px;
-  letter-spacing: 0.09em;
-  color: var(--text-3);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--text-2) 82%, transparent);
   font-weight: 600;
 }
 .rail-add {
@@ -30,6 +30,7 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-1);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-add:hover {
   background: var(--surface-3);
@@ -96,6 +97,7 @@
   font-size: 13px;
   font-weight: 500;
   text-align: left;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-home svg {
   color: var(--accent);
@@ -133,6 +135,7 @@
   font-size: 13px;
   font-weight: 500;
   text-align: left;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-nav svg {
   flex: 0 0 auto;
@@ -304,6 +307,7 @@
   font-size: 12px;
   border-radius: var(--radius-1);
   cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-session:hover {
   background: var(--surface-2);
@@ -398,6 +402,7 @@
   text-align: left;
   width: 100%;
   font: inherit;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-item:hover {
   background: var(--surface-2);
@@ -458,11 +463,14 @@
   white-space: nowrap;
 }
 .rail-count {
-  font-size: 11px;
-  color: var(--text-2);
-  background: var(--surface-3);
-  border-radius: 9px;
-  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--text-3) 13%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 16px;
+  text-align: center;
 }
 .rail-clear {
   position: absolute;

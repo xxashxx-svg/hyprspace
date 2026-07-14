@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { makeTerminal, termTheme, attachGpuRenderer } from "../terminal/createTerminal";
+import { applyUnicode } from "../terminal/unicodeProvider";
 import { termSurface } from "../terminal/palettes";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { useSettings } from "../stores/settings";
@@ -148,6 +149,7 @@ function TerminalPaneInner({
     term.loadAddon(links);
     searchRef.current = search;
     term.open(el);
+    applyUnicode(term); // Unicode 11 widths + ZWJ-emoji glued to one cell so agent output doesn't mis-width
     // GPU (WebGL) renderer attaches in the visibility effect below, not here — only the active
     // space's panes hold a GL context, so N mounted spaces can't hit the browser's context cap
 

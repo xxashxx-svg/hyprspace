@@ -334,7 +334,7 @@ export function Rail() {
       </button>
 
       <div className="rail-header">
-        <span className="rail-title">PROJECTS</span>
+        <span className="rail-title">Projects</span>
         <button
           className="rail-add"
           title="New project"
@@ -346,7 +346,7 @@ export function Rail() {
       <div className="rail-list" ref={projRef}>{projects.map(item)}</div>
 
       <div className="rail-header">
-        <span className="rail-title">OPEN SPACES</span>
+        <span className="rail-title">Open spaces</span>
         <button
           className="rail-add"
           title="New open space"

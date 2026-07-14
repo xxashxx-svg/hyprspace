@@ -340,6 +340,10 @@ pub fn run() {
         loophook::run_loop_notify(argv.get(2).cloned());
         return; // unreachable — run_loop_notify exits the process
     }
+    if argv.get(1).map(String::as_str) == Some("loop-done") {
+        loophook::run_loop_done(argv.get(2).cloned());
+        return; // unreachable — run_loop_done exits the process
+    }
 
     // adopt the user's real shell PATH so a GUI launch on macOS/Linux can find the provider CLIs
     fix_path_env();

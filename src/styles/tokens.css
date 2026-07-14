@@ -59,3 +59,30 @@
   --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }
+
+/* app-wide scrollbars — thin, rounded, neutral; thumb brightens on hover, matches the T3 chrome.
+   (the terminal viewport keeps its own hover-reveal bar via a more specific rule in pane.css) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-3) 45%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 38%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent; /* inset via a transparent border so the thumb reads thin */
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-2) 55%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

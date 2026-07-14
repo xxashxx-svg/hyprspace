@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.3 — 2026-07-14
+
+- Fixed a major memory blowup: the app was starting every session in every space at once on launch, which could use many GB of RAM and freeze. It now only starts the space you actually open — launch is light and fast.
+- Automations actually run now: fixed a bad launch command so an automation opens a real Claude session on your goal and finishes cleanly when the task is done.
+- Editor restyled to a VS Code (Dark+) look — familiar syntax colors and selection.
+- Smoother, cleaner sidebar: brighter headers, fade-in hover states, tidier badges.
+- Terminal renders wide and ZWJ emoji at the correct width (no more mis-aligned lines).
+- Refined, consistent scrollbars across the whole app.
+
 ## 0.11.2 — 2026-07-08
 
 - Fixed flickering when dragging to reorder projects and open spaces in the sidebar. Drag feedback is now applied directly to the DOM, so moving a row no longer re-renders the whole rail.

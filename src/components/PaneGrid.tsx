@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as RPointerEvent } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
@@ -43,6 +43,15 @@ export function PaneGrid() {
   const activeCount = active?.sessions.length ?? 0;
   const activeLayout = resolveLayout(activeCount, active?.layouts?.[activeCount]);
   const showGrid = !!active && active.sessions.length > 0;
+
+  // Lazy pane mounting: only mount (and spawn a PTY/agent for) spaces you've actually opened this
+  // run. Otherwise EVERY persisted session across EVERY space spawns a live process at launch — with
+  // a dozen spaces that's many GB of Claude processes and a freeze. Once opened, a space stays
+  // mounted so its state is kept and panes can move between opened spaces without a restart.
+  const [activated, setActivated] = useState<Set<string>>(() => (activeId ? new Set([activeId]) : new Set()));
+  useEffect(() => {
+    if (activeId) setActivated((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
+  }, [activeId]);
 
   // ONE stable reference per handler (store actions + setState setters are stable, drag is a ref),
   // so memoized TerminalPanes don't re-render when a sibling is focused or a drag updates overId.
@@ -129,6 +138,7 @@ export function PaneGrid() {
         }}
       >
         {workspaces.flatMap((w) => {
+          if (!activated.has(w.id)) return []; // not opened yet this run — don't mount or spawn it
           const isActiveWs = w.id === activeId;
           const layout = resolveLayout(w.sessions.length, w.layouts?.[w.sessions.length]);
           return w.sessions.map((sess, i) => {

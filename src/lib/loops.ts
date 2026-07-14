@@ -651,17 +651,18 @@ export function startLoop(id: string) {
     if (!def) return finish("stopped");
     const rid = loopRunId(id);
     const env = useProjectConfigs.getState().getConfig(def.folder).env;
-    const max = Math.max(1, def.stop.maxIterations || 10);
 
     // Notification hook (claude only) → marker file the engine polls to ping the user when it
     // needs them. codex/gemini have no hook system, so those run without the ping.
     let notifySettings = "";
     let notifyMarker = "";
+    let notifyDone = "";
     if (isClaudeStream(def.provider)) {
       try {
         const f = await prepareNotifySettings(rid);
         notifySettings = f.settings;
         notifyMarker = f.marker;
+        notifyDone = f.done;
       } catch {
         /* run without the notify hook if it couldn't be set up */
       }
@@ -677,12 +678,16 @@ export function startLoop(id: string) {
     const goal = def.prompt.replace(/\s+/g, " ").trim();
     let parts: string[];
     if (isClaudeStream(def.provider)) {
-      // /goal makes claude self-loop until the condition holds; "stop after N turns" is the backstop
+      // hand claude the goal as its opening prompt and let it run its normal agentic loop, exactly
+      // like a human opening a session (the Orca approach). there is no `/goal` command in claude —
+      // the old wrapper made claude choke on a fake slash command instead of doing the work. the
+      // wall-clock time budget below is the backstop.
       const pm = claudePerm[pmKey] ?? "acceptEdits";
-      parts = ["claude", q(`/goal ${goal} or stop after ${max} turns`)];
+      parts = ["claude"];
       if (pm !== "default") parts.push("--permission-mode", pm);
       if (def.model) parts.push("--model", q(def.model));
       if (notifySettings) parts.push("--settings", q(notifySettings));
+      parts.push(q(goal)); // the goal is claude's opening prompt, passed last like a manual launch
     } else if (def.provider === "codex") {
       // codex TUI takes the task as an initial prompt and keeps the session interactive
       parts = ["codex"];
@@ -716,10 +721,18 @@ export function startLoop(id: string) {
     }
     if (ctrl.stop) return;
 
-    // poll the notify marker → raise a HyprSpace notification each time claude needs the user
+    // poll: the Stop marker → claude's turn ended, finish the run; the notify marker → "needs you" pings
     let seenNotif = 0;
     ctrl.pollTimer = setInterval(() => {
-      if (ended || !notifyMarker) return;
+      if (ended) return;
+      if (notifyDone) {
+        void readFile(notifyDone)
+          .then((s) => {
+            if (s && s.trim() && !ended) done("goal finished");
+          })
+          .catch(() => {});
+      }
+      if (!notifyMarker) return;
       void readFile(notifyMarker)
         .then((s) => {
           const lines = (s || "").split("\n").filter((l) => l.trim());
