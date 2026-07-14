@@ -222,7 +222,7 @@ export function cleanupHookRun(runId: string): Promise<void> {
   return invoke("cleanup_hook_run", { runId });
 }
 // settings file with a Notification hook for an interactive-terminal loop (pings when Claude needs you)
-export function prepareNotifySettings(runId: string): Promise<{ settings: string; marker: string }> {
+export function prepareNotifySettings(runId: string): Promise<{ settings: string; marker: string; done: string }> {
   return invoke("prepare_notify_settings", { runId });
 }
 

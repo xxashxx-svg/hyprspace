@@ -135,6 +135,7 @@ pub fn cleanup_hook_run(run_id: String) {
 pub struct NotifyFiles {
     settings: String, // pass to `claude --settings <path>`
     marker: String, // the hook appends a line per notification; the engine polls this to ping the user
+    done: String, // the Stop hook writes here when Claude's turn ends; the engine polls it to finish the run
 }
 
 // Build a settings file with a Notification hook for an INTERACTIVE-terminal loop. Claude fires the
@@ -147,16 +148,21 @@ pub fn prepare_notify_settings(run_id: String) -> Result<NotifyFiles, String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let settings = dir.join("notify-settings.json");
     let marker = dir.join("notify");
+    let done = dir.join("done");
     let _ = fs::remove_file(&marker); // no stale notifications from a prior run
+    let _ = fs::remove_file(&done); // no stale "done" from a prior run
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let hook_cmd = format!(
-        "\"{}\" loop-notify \"{}\"",
-        exe.to_string_lossy(),
-        marker.to_string_lossy()
-    );
+    let exe = exe.to_string_lossy();
+    // Notification hook → "needs you" pings; Stop hook → the turn ended, so the engine can finish the
+    // run (interactive Claude goes idle instead of exiting, so a Stop marker is how we learn it's done).
+    let notify_cmd = format!("\"{}\" loop-notify \"{}\"", exe, marker.to_string_lossy());
+    let done_cmd = format!("\"{}\" loop-done \"{}\"", exe, done.to_string_lossy());
     let stg = json!({
-        "hooks": { "Notification": [ { "hooks": [ { "type": "command", "command": hook_cmd } ] } ] }
+        "hooks": {
+            "Notification": [ { "hooks": [ { "type": "command", "command": notify_cmd } ] } ],
+            "Stop": [ { "matcher": "*", "hooks": [ { "type": "command", "command": done_cmd } ] } ]
+        }
     });
     fs::write(&settings, serde_json::to_string_pretty(&stg).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
@@ -164,6 +170,7 @@ pub fn prepare_notify_settings(run_id: String) -> Result<NotifyFiles, String> {
     Ok(NotifyFiles {
         settings: settings.to_string_lossy().to_string(),
         marker: marker.to_string_lossy().to_string(),
+        done: done.to_string_lossy().to_string(),
     })
 }
 
@@ -183,6 +190,15 @@ pub fn run_loop_notify(marker_path: Option<String>) {
         if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&marker) {
             let _ = writeln!(f, "{}", msg.replace(['\n', '\r'], " "));
         }
+    }
+    std::process::exit(0);
+}
+
+// Stop-hook entry point (binary invoked as `loop-done <marker>`). Interactive Claude goes idle rather
+// than exiting when it finishes, so its Stop hook writes this marker to tell the engine the run is done.
+pub fn run_loop_done(marker_path: Option<String>) {
+    if let Some(marker) = marker_path {
+        let _ = fs::write(&marker, "done");
     }
     std::process::exit(0);
 }
