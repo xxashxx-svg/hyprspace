@@ -84,6 +84,7 @@ export function Rail() {
   const [, tick] = useReducer((x) => x + 1, 0);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [filter, setFilter] = useState(""); // live sidebar filter (Orca-style Search box)
   const drag = useRef<{ id: string; sx: number; sy: number; active: boolean; over: string | null } | null>(null);
   // drag feedback is toggled imperatively so a pointermove never re-renders (and flickers) the whole
   // rail — dropping is the only thing that hits React state. re-applied after any unrelated re-render.
@@ -111,8 +112,12 @@ export function Rail() {
   const [projRef] = useAutoAnimate();
   const [spaceRef] = useAutoAnimate();
 
-  const projects = workspaces.filter((w) => w.kind !== "open");
-  const openSpaces = workspaces.filter((w) => w.kind === "open");
+  // filter matches a space by name or any of its session titles
+  const q = filter.trim().toLowerCase();
+  const matchesFilter = (w: Workspace) =>
+    !q || w.name.toLowerCase().includes(q) || w.sessions.some((s) => s.title.toLowerCase().includes(q));
+  const projects = workspaces.filter((w) => w.kind !== "open").filter(matchesFilter);
+  const openSpaces = workspaces.filter((w) => w.kind === "open").filter(matchesFilter);
 
   // expand/collapse a wrap; on first expand, mount its sub-content (kept mounted after).
   // files live in the dock's Files panel now — the sidebar only expands to its sessions.
@@ -317,11 +322,38 @@ export function Rail() {
         {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
       </button>
       <div className="rail-scroll">
-      <button className="rail-search" onClick={() => useUi.getState().setPalette(true)}>
-        <Search size={15} />
-        <span className="rail-search-label">Search</span>
-        <span className="rail-search-kbd">{kbd("Ctrl K")}</span>
-      </button>
+      {collapsed ? (
+        <button className="rail-search" onClick={() => useUi.getState().setPalette(true)}>
+          <Search size={15} />
+        </button>
+      ) : (
+        <div className="rail-search-box">
+          <Search size={14} />
+          <input
+            className="rail-search-input"
+            placeholder="Search"
+            value={filter}
+            spellCheck={false}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setFilter("");
+            }}
+          />
+          {filter ? (
+            <button className="rail-search-clear" title="Clear" onClick={() => setFilter("")}>
+              <X size={12} />
+            </button>
+          ) : (
+            <button
+              className="rail-search-kbd"
+              title="Search everything (command palette)"
+              onClick={() => useUi.getState().setPalette(true)}
+            >
+              {kbd("Ctrl K")}
+            </button>
+          )}
+        </div>
+      )}
       <button
         className={`rail-nav${view === "loops" ? " active" : ""}`}
         title="Automations"

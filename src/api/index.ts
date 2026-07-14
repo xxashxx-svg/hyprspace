@@ -147,6 +147,10 @@ export function writeFile(path: string, content: string): Promise<void> {
 export function fileOp(op: "create-file" | "create-dir" | "rename" | "delete", path: string, to?: string): Promise<void> {
   return invoke("file_op", { op, path, to });
 }
+// recursive filename search under root; returns root-relative paths (files only, capped)
+export function findFiles(root: string, query: string): Promise<string[]> {
+  return invoke("find_files", { root, query });
+}
 
 export function saveState(name: string, data: string): Promise<void> {
   return invoke("save_state", { name, data });

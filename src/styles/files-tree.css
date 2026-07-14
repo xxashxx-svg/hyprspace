@@ -45,28 +45,78 @@
   background: var(--surface-3);
   color: var(--text-1);
 }
+/* Orca-style "Find files" box */
+.ft-search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 10px 6px;
+  padding: 0 8px;
+  height: 30px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  transition: border-color 0.12s var(--ease);
+}
+.ft-search:focus-within {
+  border-color: color-mix(in srgb, var(--text-3) 55%, transparent);
+}
+.ft-search-in {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+}
+.ft-search-in::placeholder {
+  color: var(--text-3);
+}
+.ft-search-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.ft-search-clear:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
 .ft-tree {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0 10px;
+  padding: 2px 4px 10px;
 }
 .ft-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   width: 100%;
-  padding: 3px 8px;
+  padding: 4px 8px;
   background: transparent;
   border: none;
+  border-radius: 6px;
   color: var(--text-2);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .ft-row:hover {
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
   color: var(--text-1);
 }
 .ft-twist {
@@ -83,9 +133,24 @@
 }
 .ft-ico {
   flex: 0 0 auto;
-  color: var(--text-2);
+  color: var(--text-3);
+  opacity: 0.9;
 }
 .ft-ico.file {
+  color: var(--text-3);
+  opacity: 0.75;
+}
+/* search hit: filename + dim relative folder */
+.ft-hit .ft-name {
+  flex: 0 1 auto;
+}
+.ft-hit-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
   color: var(--text-3);
 }
 .ft-name {
@@ -122,16 +187,4 @@
   color: var(--text-3);
   font-size: 11.5px;
   padding: 3px 8px;
-}
-/* the file tree inside the left sidebar (under an expanded project) — flows with the rail scroll */
-.rail-files {
-  padding: 2px 0 6px 14px;
-}
-.rail-files .ft-tree {
-  flex: none;
-  overflow: visible;
-  padding: 0;
-}
-.rail-files .ft-row {
-  font-size: 12px;
 }

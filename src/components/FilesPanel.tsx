@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { listDir, revealPath, fileOp, type DirEntry } from "../api";
+import { listDir, revealPath, fileOp, findFiles, type DirEntry } from "../api";
 import { joinPath } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
 import { confirmDialog } from "../stores/confirm";
 import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { isWindows } from "../platform";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ChevronRight, Folder, File as FileIcon, RefreshCw } from "lucide-react";
+import { ChevronRight, Folder, File as FileIcon, RefreshCw, ListFilter, X } from "lucide-react";
 
 const WSL_CMD = "wsl";
 
@@ -409,26 +409,88 @@ export function FileTree({
   );
 }
 
-// The active project's file tree, in the dock.
+// The active project's file tree, in the dock — with an Orca-style "Find files" box on top.
 export function FilesPanel() {
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<string[] | null>(null); // null = not searching (show the tree)
+  const cwd = ws?.cwd ?? "";
 
-  if (!ws || !ws.cwd) {
+  // debounced recursive filename search; clearing the box goes back to the tree
+  useEffect(() => {
+    const query = q.trim();
+    if (!query || !cwd) {
+      setHits(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      void findFiles(cwd, query).then(setHits).catch(() => setHits([]));
+    }, 220);
+    return () => clearTimeout(t);
+  }, [q, cwd]);
+
+  if (!ws || !cwd) {
     return <div className="ft-empty">Open a project (a folder) to browse its files.</div>;
   }
 
   return (
     <div className="ft">
       <div className="ft-head">
-        <span className="ft-root" title={ws.cwd}>
+        <span className="ft-root" title={cwd}>
           {ws.name}
         </span>
         <button className="ft-refresh" title="Refresh" onClick={() => setRefreshKey((k) => k + 1)}>
           <RefreshCw size={13} />
         </button>
       </div>
-      <FileTree cwd={ws.cwd} refreshKey={refreshKey} wsId={ws.id} />
+      <div className="ft-search">
+        <ListFilter size={13} />
+        <input
+          className="ft-search-in"
+          placeholder="Find files"
+          value={q}
+          spellCheck={false}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setQ("");
+          }}
+        />
+        {q && (
+          <button className="ft-search-clear" title="Clear" onClick={() => setQ("")}>
+            <X size={12} />
+          </button>
+        )}
+      </div>
+      {hits === null ? (
+        <FileTree cwd={cwd} refreshKey={refreshKey} wsId={ws.id} />
+      ) : (
+        <div className="ft-tree">
+          {hits.length === 0 ? (
+            <div className="ft-dim" style={{ paddingLeft: 12 }}>
+              No files match.
+            </div>
+          ) : (
+            hits.map((rel) => {
+              const parts = rel.split(/[\\/]/);
+              const base = parts.pop() ?? rel;
+              const dirPart = parts.join("/");
+              return (
+                <button
+                  key={rel}
+                  className="ft-row ft-hit"
+                  title={rel}
+                  onClick={() => useUi.getState().openInEditor(joinPath(cwd, rel))}
+                >
+                  <FileIcon size={14} className="ft-ico file" />
+                  <span className="ft-name">{base}</span>
+                  {dirPart && <span className="ft-hit-dir">{dirPart}</span>}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }
