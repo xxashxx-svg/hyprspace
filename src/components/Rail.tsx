@@ -8,6 +8,11 @@ import { relTime } from "../lib/time";
 import { kbd } from "../platform";
 import { revealPath } from "../api";
 import { FileTree, loadDir } from "./FilesPanel";
+import claudeLogo from "../assets/brand/claude.svg";
+import geminiLogo from "../assets/brand/gemini.svg";
+import openaiLogo from "../assets/brand/openai.svg";
+import opencodeLogo from "../assets/brand/opencode.svg";
+import grokLogo from "../assets/brand/grok.svg";
 import {
   GripVertical,
   Folder,
@@ -24,6 +29,15 @@ import {
   Server,
   Pencil,
 } from "lucide-react";
+
+// provider brand marks shown on agent session rows (Codex = OpenAI), like Orca surfaces the agent
+const SESS_LOGO: Record<string, string> = {
+  claude: claudeLogo,
+  codex: openaiLogo,
+  gemini: geminiLogo,
+  opencode: opencodeLogo,
+  grok: grokLogo,
+};
 
 const wsAt = (x: number, y: number): string | null => {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
@@ -275,7 +289,12 @@ export function Rail() {
                         title={s.cwd || s.title}
                         onClick={() => focusSession(w.id, s.id)}
                       >
-                        <span className={`rail-sess-dot s-${dot}`} />
+                        <span className="rail-sess-ico">
+                          {SESS_LOGO[s.provider] && (
+                            <img className="rail-sess-logo" src={SESS_LOGO[s.provider]} alt="" />
+                          )}
+                          <span className={`rail-sess-dot s-${dot}${SESS_LOGO[s.provider] ? " badge" : ""}`} />
+                        </span>
                         <span className="rail-sess-name">{s.title}</span>
                         {sub && (
                           <span className="rail-sess-sub" title={s.cwd}>

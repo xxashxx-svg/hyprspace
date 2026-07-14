@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.4 — 2026-07-14
+
+- Sidebar now shows the provider logo on each agent session — Claude, Codex, Gemini, Grok, OpenCode — with its status as a small corner badge, like Orca.
+- Sidebar polish: a clear rounded "selected" highlight, airier rows, more spacing between sections, and smoother fade-in hovers.
+
 ## 0.11.3 — 2026-07-14
 
 - Fixed a major memory blowup: the app was starting every session in every space at once on launch, which could use many GB of RAM and freeze. It now only starts the space you actually open — launch is light and fast.
