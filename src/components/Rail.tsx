@@ -7,7 +7,6 @@ import { useActivity } from "../stores/activity";
 import { relTime } from "../lib/time";
 import { kbd } from "../platform";
 import { revealPath } from "../api";
-import { FileTree, loadDir } from "./FilesPanel";
 import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
@@ -106,7 +105,6 @@ export function Rail() {
   // grid-rows reveal hides it when not open. readyTrees = projects whose file listing has loaded, so
   // we only reveal once the height is known (no Loading→pop).
   const [mountedSubs, setMountedSubs] = useState<Set<string>>(new Set());
-  const [readyTrees, setReadyTrees] = useState<Set<string>>(new Set());
 
   // smooth list add/remove/reorder (the two rail lists), T3-style. the per-item expand reveal is CSS
   // (.rail-sub grid-rows) so it tolerates the async file tree and doesn't fight the width transition.
@@ -116,18 +114,12 @@ export function Rail() {
   const projects = workspaces.filter((w) => w.kind !== "open");
   const openSpaces = workspaces.filter((w) => w.kind === "open");
 
-  const hasTree = (w: Workspace) => w.kind !== "open" && !!w.cwd;
-  const contentReady = (w: Workspace) => !hasTree(w) || readyTrees.has(w.id);
-  // expand/collapse a wrap; on first expand, mount its sub-content and (for projects) warm the dir
-  // cache so the reveal animates straight to full height
+  // expand/collapse a wrap; on first expand, mount its sub-content (kept mounted after).
+  // files live in the dock's Files panel now — the sidebar only expands to its sessions.
   const expandSub = (w: Workspace) => {
     const willOpen = !expanded.has(w.id);
     toggleExpand(w.id);
-    if (!willOpen) return;
-    setMountedSubs((p) => (p.has(w.id) ? p : new Set(p).add(w.id)));
-    if (w.kind !== "open" && w.cwd && !readyTrees.has(w.id)) {
-      void loadDir(w.cwd).then(() => setReadyTrees((p) => new Set(p).add(w.id)));
-    }
+    if (willOpen) setMountedSubs((p) => (p.has(w.id) ? p : new Set(p).add(w.id)));
   };
 
   // auto-expand the active OPEN SPACE so its session list shows. projects aren't auto-expanded —
@@ -168,8 +160,7 @@ export function Rail() {
   const item = (w: Workspace) => {
     const isExpanded = expanded.has(w.id);
     const hasSessions = w.sessions.length > 0;
-    // projects can expand to browse their folders even with no sessions yet
-    const canExpand = hasSessions || (w.kind !== "open" && !!w.cwd);
+    const canExpand = hasSessions; // sessions only — files belong to the dock's Files panel
     return (
       <div key={w.id} className="rail-item-wrap" data-wsid={w.id}>
         <div
@@ -274,7 +265,7 @@ export function Rail() {
           </button>
         </div>
         {mountedSubs.has(w.id) && (
-          <div className={`rail-sub${isExpanded && contentReady(w) ? " open" : ""}`}>
+          <div className={`rail-sub${isExpanded ? " open" : ""}`}>
             <div className="rail-sub-inner">
               {hasSessions && (
                 <div className="rail-sessions">
@@ -307,11 +298,6 @@ export function Rail() {
                       </button>
                     );
                   })}
-                </div>
-              )}
-              {w.kind !== "open" && w.cwd && (
-                <div className="rail-files">
-                  <FileTree cwd={w.cwd} wsId={w.id} />
                 </div>
               )}
             </div>

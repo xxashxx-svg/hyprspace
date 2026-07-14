@@ -143,6 +143,10 @@ export function readFile(path: string): Promise<string> {
 export function writeFile(path: string, content: string): Promise<void> {
   return invoke("write_file", { path, content });
 }
+// Files-panel ops: create-file / create-dir / rename (to = new full path) / delete
+export function fileOp(op: "create-file" | "create-dir" | "rename" | "delete", path: string, to?: string): Promise<void> {
+  return invoke("file_op", { op, path, to });
+}
 
 export function saveState(name: string, data: string): Promise<void> {
   return invoke("save_state", { name, data });

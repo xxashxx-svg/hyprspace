@@ -417,6 +417,7 @@ pub fn run() {
             devtools::list_dir,
             devtools::read_file,
             devtools::write_file,
+            devtools::file_op,
             devtools::provider_status,
             devtools::provider_usage_one,
             devtools::mcp_list,

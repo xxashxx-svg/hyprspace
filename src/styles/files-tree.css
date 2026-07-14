@@ -95,6 +95,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* inline rename / new-file input in a tree row */
+.ft-rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-base);
+  border: 1px solid var(--accent);
+  color: var(--text-1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
 /* dot on a folder that has a live session running in it */
 .ft-live {
   flex: 0 0 auto;
