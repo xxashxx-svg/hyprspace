@@ -106,6 +106,54 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+// Recursive filename search for the Files panel's "Find files" box. Case-insensitive substring
+// match on the name; skips heavy build/vcs dirs; capped on results AND visited dirs so a giant
+// repo can't wedge the walk. Returns paths relative to root, files only.
+
+#[tauri::command]
+pub async fn find_files(root: String, query: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let q = query.to_lowercase();
+        if q.is_empty() {
+            return Ok(vec![]);
+        }
+        const MAX_HITS: usize = 100;
+        const MAX_DIRS: usize = 4000;
+        let skip = [
+            "node_modules", ".git", "target", "dist", "build", ".next", "out", ".venv", "__pycache__",
+        ];
+        let mut hits = vec![];
+        let mut visited = 0usize;
+        let mut stack = vec![std::path::PathBuf::from(&root)];
+        while let Some(dir) = stack.pop() {
+            visited += 1;
+            if hits.len() >= MAX_HITS || visited > MAX_DIRS {
+                break;
+            }
+            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            for e in rd.flatten() {
+                if hits.len() >= MAX_HITS {
+                    break;
+                }
+                let name = e.file_name().to_string_lossy().to_string();
+                let p = e.path();
+                if p.is_dir() {
+                    if !skip.contains(&name.as_str()) {
+                        stack.push(p);
+                    }
+                } else if name.to_lowercase().contains(&q) {
+                    if let Ok(rel) = p.strip_prefix(&root) {
+                        hits.push(rel.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        Ok(hits)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // File ops for the Files panel's context menu (new file/folder, rename, delete). Rename/create
 // refuse to clobber an existing target; delete is recursive for folders (the UI confirms first).
 

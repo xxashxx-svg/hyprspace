@@ -36,7 +36,60 @@
   background: var(--surface-3);
   color: var(--text-1);
 }
-/* sidebar search at the very top (T3-style) — opens the command palette */
+/* sidebar Search — an Orca-style inline filter input; the kbd chip still opens the palette */
+.rail-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 2px 8px;
+  padding: 0 8px;
+  height: 32px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  transition: border-color 0.12s var(--ease);
+}
+.rail-search-box:focus-within {
+  border-color: color-mix(in srgb, var(--text-3) 55%, transparent);
+}
+.rail-search-box > svg {
+  flex: 0 0 auto;
+}
+.rail-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+}
+.rail-search-input::placeholder {
+  color: var(--text-3);
+}
+.rail-search-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.rail-search-clear:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.rail-search-kbd {
+  cursor: pointer;
+}
+/* collapsed rail keeps the icon-button that opens the palette */
 .rail-search {
   display: flex;
   align-items: center;
