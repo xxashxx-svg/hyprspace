@@ -37,6 +37,13 @@ export function PaneGrid() {
   );
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  // drag hit-testing rides rAF: pointermove can fire way faster than the frame rate, and each
+  // pass costs two elementFromPoint calls — coalesce to one pass per frame on the latest coords
+  const dragRaf = useRef(0);
+  const dragPos = useRef({ x: 0, y: 0 });
+  useEffect(() => () => {
+    if (dragRaf.current) cancelAnimationFrame(dragRaf.current);
+  }, []);
 
   const active = workspaces.find((w) => w.id === activeId) ?? null;
   const maxedHere = !!maximizedId && !!active && active.sessions.some((s) => s.id === maximizedId);
@@ -77,16 +84,24 @@ export function PaneGrid() {
         setDragId(d.id);
         useUi.getState().setPaneDrag(true);
       }
-      // hovering a different space in the rail → it becomes the drop target
-      const overWs = railWsAt(e.clientX, e.clientY);
-      if (overWs && overWs !== d.ws) {
-        setOverId(null);
-        useUi.getState().setPaneDragOverWs(overWs);
-      } else {
-        useUi.getState().setPaneDragOverWs(null);
-        const sid = cellSidAt(e.clientX, e.clientY);
-        setOverId(sid && sid !== d.id ? sid : null);
-      }
+      dragPos.current = { x: e.clientX, y: e.clientY };
+      if (dragRaf.current) return;
+      dragRaf.current = requestAnimationFrame(() => {
+        dragRaf.current = 0;
+        const cur = drag.current;
+        if (!cur?.active) return; // drag ended before the frame
+        const { x, y } = dragPos.current;
+        // hovering a different space in the rail → it becomes the drop target
+        const overWs = railWsAt(x, y);
+        if (overWs && overWs !== cur.ws) {
+          setOverId(null);
+          useUi.getState().setPaneDragOverWs(overWs);
+        } else {
+          useUi.getState().setPaneDragOverWs(null);
+          const sid = cellSidAt(x, y);
+          setOverId(sid && sid !== cur.id ? sid : null);
+        }
+      });
     },
     [setDragId, setOverId],
   );
@@ -94,6 +109,10 @@ export function PaneGrid() {
     (e: RPointerEvent<HTMLDivElement>) => {
       const d = drag.current;
       drag.current = null;
+      if (dragRaf.current) {
+        cancelAnimationFrame(dragRaf.current);
+        dragRaf.current = 0;
+      }
       e.currentTarget.releasePointerCapture?.(e.pointerId);
       if (d?.active) {
         const overWs = railWsAt(e.clientX, e.clientY);
