@@ -20,10 +20,12 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::Manager;
 use tauri::State;
 
+// async + spawn_blocking: ConPTY open + shell spawn are blocking syscalls (tens of ms each), and
+// the launcher fans out N of these in one commit — serialized on the UI thread they froze the window
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-fn create_pty(
-    state: State<PtyManager>,
+async fn create_pty(
+    state: State<'_, PtyManager>,
     id: String,
     cwd: String,
     shell: Option<String>,
@@ -34,21 +36,51 @@ fn create_pty(
     on_event: Channel<InvokeResponseBody>,
     auto_respond: bool,
 ) -> Result<(), String> {
-    state.create(id, cwd, shell, args, env, cols, rows, on_event, auto_respond)
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        mgr.create(id, cwd, shell, args, env, cols, rows, on_event, auto_respond)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-// async + spawn_blocking so a write that blocks (child not draining stdin) never stalls the UI thread
+// async + spawn_blocking so a write that blocks (child not draining stdin) never stalls the UI
+// thread. input crosses IPC as base64 (a JSON number-array was ~4-5 bytes per input byte — a
+// big paste built a multi-MB JSON string on the UI thread).
 #[tauri::command]
-async fn write_pty(state: State<'_, PtyManager>, id: String, data: Vec<u8>) -> Result<(), String> {
+async fn write_pty(state: State<'_, PtyManager>, id: String, data: String) -> Result<(), String> {
+    use base64::Engine;
     let mgr = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.write(&id, &data))
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&data)
+            .map_err(|e| e.to_string())?;
+        mgr.write(&id, &bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// async + spawn_blocking: ResizePseudoConsole is cross-process ConPTY IPC that can stall; during a
+// window drag every visible pane fires these at ~16/s
+#[tauri::command]
+async fn resize_pty(state: State<'_, PtyManager>, id: String, cols: u16, rows: u16) -> Result<(), String> {
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.resize(&id, cols, rows))
         .await
         .map_err(|e| e.to_string())?
 }
 
+// xterm flow control (see pty.rs PauseGate): the frontend pauses the PTY reader when xterm's
+// write buffer backs up, and resumes once it drains
 #[tauri::command]
-fn resize_pty(state: State<PtyManager>, id: String, cols: u16, rows: u16) -> Result<(), String> {
-    state.resize(&id, cols, rows)
+fn pause_pty(state: State<PtyManager>, id: String) {
+    state.set_paused(&id, true);
+}
+
+#[tauri::command]
+fn resume_pty(state: State<PtyManager>, id: String) {
+    state.set_paused(&id, false);
 }
 
 #[tauri::command]
@@ -56,15 +88,19 @@ fn kill_pty(state: State<PtyManager>, id: String) -> Result<(), String> {
     state.kill(&id)
 }
 
+// start/stop spawn a process (or run a blocking taskkill tree-kill) — always off the UI thread
 #[tauri::command]
-fn chat_start(
-    state: State<ChatManager>,
+async fn chat_start(
+    state: State<'_, ChatManager>,
     id: String,
     cwd: String,
     args: Vec<String>,
     on_event: Channel<String>,
 ) -> Result<(), String> {
-    state.start(id, cwd, args, on_event)
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.start(id, cwd, args, on_event))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // async + spawn_blocking so a pipe write that blocks (child stopped reading stdin) can't hang the window
@@ -77,30 +113,40 @@ async fn chat_turn(state: State<'_, ChatManager>, id: String, message: String) -
 }
 
 #[tauri::command]
-fn chat_stop(state: State<ChatManager>, id: String) {
-    state.stop(&id);
+async fn chat_stop(state: State<'_, ChatManager>, id: String) -> Result<(), String> {
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.stop(&id))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn service_start(
-    state: State<ServiceManager>,
+async fn service_start(
+    state: State<'_, ServiceManager>,
     id: String,
     cwd: String,
     command: String,
     env: HashMap<String, String>,
     on_event: Channel<String>,
 ) -> Result<(), String> {
-    state.start(id, cwd, command, env, on_event)
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.start(id, cwd, command, env, on_event))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn service_stop(state: State<ServiceManager>, id: String) {
-    state.stop(&id);
+async fn service_stop(state: State<'_, ServiceManager>, id: String) -> Result<(), String> {
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.stop(&id))
+        .await
+        .map_err(|e| e.to_string())
 }
 
+// agent_start also reads keychain secrets (an OS credential-manager RPC) — definitely not UI-thread work
 #[tauri::command]
-fn agent_start(
-    state: State<AgentManager>,
+async fn agent_start(
+    state: State<'_, AgentManager>,
     id: String,
     cwd: String,
     args: Vec<String>,
@@ -109,38 +155,58 @@ fn agent_start(
     prompt: String,
     on_event: Channel<String>,
 ) -> Result<(), String> {
-    state.start(id, cwd, args, env, secrets, prompt, on_event)
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.start(id, cwd, args, env, secrets, prompt, on_event))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn agent_stop(state: State<AgentManager>, id: String) {
-    state.stop(&id);
+async fn agent_stop(state: State<'_, AgentManager>, id: String) -> Result<(), String> {
+    let mgr = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.stop(&id))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- OS keychain: store loop-agent API keys (Windows Credential Manager / macOS Keychain) ----
 const KEYCHAIN_SVC: &str = "hyprspace";
 
+// keychain calls are out-of-process RPCs (Credential Manager / Keychain) that can stall on slow
+// credential providers — spawn_blocking so a slow keychain never blocks the window
 #[tauri::command]
-fn secret_set(name: String, value: String) -> Result<(), String> {
-    keyring::Entry::new(KEYCHAIN_SVC, &name)
-        .and_then(|e| e.set_password(&value))
-        .map_err(|e| e.to_string())
+async fn secret_set(name: String, value: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        keyring::Entry::new(KEYCHAIN_SVC, &name)
+            .and_then(|e| e.set_password(&value))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn secret_has(name: String) -> bool {
-    keyring::Entry::new(KEYCHAIN_SVC, &name)
-        .and_then(|e| e.get_password())
-        .is_ok()
+async fn secret_has(name: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        keyring::Entry::new(KEYCHAIN_SVC, &name)
+            .and_then(|e| e.get_password())
+            .is_ok()
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn secret_clear(name: String) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SVC, &name).map_err(|e| e.to_string())?;
-    match entry.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
+async fn secret_clear(name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry = keyring::Entry::new(KEYCHAIN_SVC, &name).map_err(|e| e.to_string())?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -192,10 +258,15 @@ fn folder_has_transcript(dir: &std::path::Path) -> bool {
     }
 }
 
-// does claude have any saved conversation for this folder?
+// does claude have any saved conversation for this folder? (scans a dir that can hold a LOT
+// of transcripts — same blocking-thread treatment as its siblings below)
 #[tauri::command]
-fn claude_has_history(cwd: String) -> bool {
-    claude_project_dir(&cwd).map_or(false, |d| folder_has_transcript(&d))
+async fn claude_has_history(cwd: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        claude_project_dir(&cwd).map_or(false, |d| folder_has_transcript(&d))
+    })
+    .await
+    .unwrap_or(false)
 }
 
 // How a restored claude pane should come back. claude stores each chat as <session-id>.jsonl,
@@ -263,19 +334,30 @@ fn sessions_blocking(cwd: &str) -> Vec<(String, u64)> {
     out
 }
 
+// persistence does real disk I/O incl. an fsync (1-50ms, worse on HDD/AV-scanned machines) and
+// the chat blob can be several MB — never on the UI thread
 #[tauri::command]
-fn save_state(store: State<Store>, name: String, data: String) -> Result<(), String> {
-    store.save(&name, &data)
+async fn save_state(store: State<'_, Store>, name: String, data: String) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.save(&name, &data))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn load_state(store: State<Store>, name: String) -> Result<Option<String>, String> {
-    store.load(&name)
+async fn load_state(store: State<'_, Store>, name: String) -> Result<Option<String>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.load(&name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn backup_state(store: State<Store>, name: String) -> Result<(), String> {
-    store.backup(&name)
+async fn backup_state(store: State<'_, Store>, name: String) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.backup(&name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // macOS/Linux GUI launches (Finder/Dock) hand the app a minimal PATH with no Homebrew, npm
@@ -377,6 +459,8 @@ pub fn run() {
             create_pty,
             write_pty,
             resize_pty,
+            pause_pty,
+            resume_pty,
             kill_pty,
             chat_start,
             chat_turn,

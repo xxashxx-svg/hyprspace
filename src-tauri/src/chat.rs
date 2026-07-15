@@ -17,13 +17,19 @@ use tauri::ipc::Channel;
 
 struct Proc {
     child: Child,
-    stdin: ChildStdin,
+    // stdin sits behind its own lock so `turn` can write WITHOUT holding the process map —
+    // a child that stops draining stdin must only block its own turn, never chat_stop/start.
+    stdin: Arc<Mutex<Option<ChildStdin>>>,
 }
 
 // kill a process tree (cmd → claude) and reap it, closing stdin first so claude can wind down
 fn kill_proc(proc: Proc) {
     let Proc { mut child, stdin } = proc;
-    drop(stdin); // EOF on stdin → claude winds down
+    // EOF on stdin → claude winds down. take() so a concurrent writer holding the stdin lock
+    // just finds it gone instead of us blocking here.
+    if let Ok(mut s) = stdin.try_lock() {
+        drop(s.take());
+    }
     // already gone? just reap it — dodges taskkill racing a reused PID
     if let Ok(Some(_)) = child.try_wait() {
         return;
@@ -58,9 +64,12 @@ impl ChatManager {
         self.procs.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    // kill + reap the process under this id (closing its stdin first so claude can exit cleanly)
+    // kill + reap the process under this id (closing its stdin first so claude can exit cleanly).
+    // remove under a short lock, kill AFTER the guard drops — taskkill can take hundreds of ms
+    // and holding the map the whole time would block every other chat op behind it.
     fn reap(&self, id: &str) {
-        if let Some(proc) = self.procs().remove(id) {
+        let proc = self.procs().remove(id);
+        if let Some(proc) = proc {
             kill_proc(proc);
         }
     }
@@ -126,22 +135,29 @@ impl ChatManager {
         });
 
         // if some earlier process was still mapped under this id, reap it so it can't orphan
-        if let Some(old) = self.procs().insert(id, Proc { child, stdin }) {
+        let old = self
+            .procs()
+            .insert(id, Proc { child, stdin: Arc::new(Mutex::new(Some(stdin))) });
+        if let Some(old) = old {
             kill_proc(old);
         }
         Ok(())
     }
 
-    // write one user-message JSON envelope (a single line) to the live process's stdin
+    // write one user-message JSON envelope (a single line) to the live process's stdin.
+    // clone the stdin handle out of the map and drop the map guard BEFORE the blocking write —
+    // a wedged child must not hold the process map hostage (chat_stop needs it to kill him).
     pub fn turn(&self, id: &str, message: String) -> Result<(), String> {
-        let mut guard = self.procs();
-        let proc = guard.get_mut(id).ok_or("no live session")?;
+        let stdin = {
+            let guard = self.procs();
+            guard.get(id).ok_or("no live session")?.stdin.clone()
+        };
+        let mut slot = stdin.lock().map_err(|_| "stdin lock poisoned".to_string())?;
+        let sin = slot.as_mut().ok_or("session closing")?;
         let mut line = message;
         line.push('\n');
-        proc.stdin
-            .write_all(line.as_bytes())
-            .map_err(|e| e.to_string())?;
-        proc.stdin.flush().map_err(|e| e.to_string())?;
+        sin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+        sin.flush().map_err(|e| e.to_string())?;
         Ok(())
     }
 

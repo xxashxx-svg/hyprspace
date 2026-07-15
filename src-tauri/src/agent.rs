@@ -5,15 +5,15 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 use tauri::ipc::Channel;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AgentManager {
-    procs: Mutex<HashMap<String, Child>>,
+    procs: Arc<Mutex<HashMap<String, Child>>>,
 }
 
 // frontend sentinel: a log line equal to this means the turn's process ended
@@ -47,8 +47,11 @@ impl AgentManager {
         let _ = child.wait();
     }
 
+    // remove under a short lock, kill after the guard drops — a blocking taskkill must not
+    // hold the map while other loop iterations try to start/stop their own turns
     fn reap(&self, id: &str) {
-        if let Some(child) = self.procs().remove(id) {
+        let child = self.procs().remove(id);
+        if let Some(child) = child {
             self.kill(child);
         }
     }
@@ -134,7 +137,8 @@ impl AgentManager {
             let _ = ch.send(EXIT_MARK.to_string());
         });
 
-        if let Some(old) = self.procs().insert(id, child) {
+        let old = self.procs().insert(id, child);
+        if let Some(old) = old {
             self.kill(old);
         }
         Ok(())

@@ -271,15 +271,18 @@ fn claude_usage() -> ProviderUsage {
 }
 
 fn sum_claude_tokens(projects: &Path) -> (u64, u64, u64) {
+    use std::io::BufRead;
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
     for f in recent_jsonl(projects) {
         if std::fs::metadata(&f).map(|m| m.len() > MAX_FILE_BYTES).unwrap_or(false) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&f) else {
+        // stream line-by-line — read_to_string here allocated up to MAX_FILE_BYTES per transcript
+        let Ok(file) = std::fs::File::open(&f) else {
             continue;
         };
-        for line in text.lines() {
+        for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+            let line = line.as_str();
             if !line.contains("\"output_tokens\"") {
                 continue;
             }
@@ -381,13 +384,29 @@ fn codex_usage() -> ProviderUsage {
     u
 }
 
-// scan a rollout from the end for the last token_count event (has the current rate limits)
+// scan a rollout from the end for the last token_count event (has the current rate limits).
+// only the tail matters, so seek and read the last chunk instead of the whole (multi-MB) file.
 fn last_token_count(file: &Path) -> Option<Value> {
-    if std::fs::metadata(file).map(|m| m.len() > MAX_FILE_BYTES).unwrap_or(false) {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL_BYTES: u64 = 256 * 1024;
+    let len = std::fs::metadata(file).ok()?.len();
+    if len > MAX_FILE_BYTES {
         return None;
     }
-    let text = std::fs::read_to_string(file).ok()?;
-    for line in text.lines().rev() {
+    let mut f = std::fs::File::open(file).ok()?;
+    let start = len.saturating_sub(TAIL_BYTES);
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut text = String::new();
+    // a seek can land mid-utf8/mid-line; lossy-convert and drop the partial first line
+    let mut raw = Vec::with_capacity((len - start) as usize);
+    f.read_to_end(&mut raw).ok()?;
+    text.push_str(&String::from_utf8_lossy(&raw));
+    let body = if start > 0 {
+        text.split_once('\n').map(|(_, rest)| rest).unwrap_or("")
+    } else {
+        text.as_str()
+    };
+    for line in body.lines().rev() {
         if line.contains("\"token_count\"") && line.contains("\"rate_limits\"") {
             if let Ok(v) = serde_json::from_str::<Value>(line) {
                 if v["payload"]["type"] == "token_count" {

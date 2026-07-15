@@ -90,10 +90,7 @@ pub fn prepare_hook_settings(
 // Pull Claude's real responses out of a transcript JSONL, in order. Each line is one JSON object;
 // assistant turns have message.role == "assistant" and a content[] of typed blocks — we keep the
 // "text" blocks (the actual answer) and skip thinking/tool_use. Tolerant: bad lines are skipped.
-fn extract_assistant_texts(transcript_path: &str) -> Vec<String> {
-    let Ok(text) = fs::read_to_string(transcript_path) else {
-        return vec![];
-    };
+fn extract_assistant_texts(text: &str) -> Vec<String> {
     let mut out = vec![];
     for line in text.lines() {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
@@ -251,11 +248,14 @@ fn decide(config_path: Option<String>) -> i32 {
     let _ = std::io::stdin().read_to_string(&mut input);
     let stdin_json: Value = serde_json::from_str(&input).unwrap_or_else(|_| json!({}));
     let transcript = stdin_json.get("transcript_path").and_then(|v| v.as_str());
+    // read the transcript ONCE — it grows every iteration, and both the snapshot and the
+    // sentinel scan below need it
+    let transcript_text = transcript.and_then(|tp| fs::read_to_string(tp).ok());
 
     // snapshot Claude's real responses for the engine (this is what the Runs tab shows). Do it before
     // the max-iteration return so the final turn's answer is captured too.
-    if let (Some(tp), Some(out)) = (transcript, cfg.get("output").and_then(|v| v.as_str())) {
-        let facts = extract_assistant_texts(tp);
+    if let (Some(text), Some(out)) = (transcript_text.as_deref(), cfg.get("output").and_then(|v| v.as_str())) {
+        let facts = extract_assistant_texts(text);
         let _ = fs::write(out, serde_json::to_string(&facts).unwrap_or_else(|_| "[]".into()));
     }
 
@@ -282,8 +282,8 @@ fn decide(config_path: Option<String>) -> i32 {
     // sentinel: stop once the token shows up in the transcript
     if let Some(tok) = cfg.get("sentinel").and_then(|v| v.as_str()) {
         if !tok.is_empty() {
-            if let Some(tp) = transcript {
-                if fs::read_to_string(tp).map(|s| s.contains(tok)).unwrap_or(false) {
+            if let Some(text) = transcript_text.as_deref() {
+                if text.contains(tok) {
                     return allow_stop(&cfg, "sentinel reached");
                 }
             }
