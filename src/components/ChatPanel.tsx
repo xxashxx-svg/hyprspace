@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -238,7 +238,8 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-function Message({ m, live }: { m: ChatMsg; live?: boolean }) {
+// memoized — a stream flush only re-renders the message it patched, not the whole thread
+const Message = memo(function Message({ m, live }: { m: ChatMsg; live?: boolean }) {
   if (m.role === "user") {
     return (
       <div className="chat-msg user">
@@ -297,7 +298,7 @@ function Message({ m, live }: { m: ChatMsg; live?: boolean }) {
       </div>
     </div>
   );
-}
+});
 
 export function ChatPanel() {
   const messages = useChat((s) => s.threads.find((t) => t.id === s.currentId)?.messages ?? EMPTY);

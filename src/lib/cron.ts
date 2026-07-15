@@ -72,27 +72,42 @@ export const cronValid = (expr: string) => parseCron(expr) !== null;
 // null = bad expression or nothing matches (e.g. feb 30).
 // known limit: a job scheduled inside the spring-forward DST gap (e.g. 02:30 on the jump night)
 // slides to the next day instead of running right after the jump — rare enough to live with.
+const MAX_DOM = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // per-month max day-of-month
+
 export function nextCron(expr: string, from = Date.now()): number | null {
   const spec = parseCron(expr);
   if (!spec) return null;
+  // a dom/mon combo that can never exist (e.g. "0 0 30 2 *") would otherwise scan the whole
+  // horizon minute by minute — bail out up front. only decisive on the AND path; the OR path
+  // (both dom and dow restricted) always has a weekday escape hatch.
+  if (spec.domAny || spec.dowAny) {
+    let possible = false;
+    for (const mo of spec.mon) for (const dd of spec.dom) if (dd <= MAX_DOM[mo - 1]) possible = true;
+    if (!possible) return null;
+  }
   const d = new Date(from);
   d.setSeconds(0, 0);
   d.setMinutes(d.getMinutes() + 1);
   for (let i = 0; i < 366 * 24 * 60; i++) {
-    if (spec.min.has(d.getMinutes()) && spec.hour.has(d.getHours()) && spec.mon.has(d.getMonth() + 1)) {
-      const domOk = spec.dom.has(d.getDate());
-      const dowOk = spec.dow.has(d.getDay());
-      // vixie: the star flags only pick OR vs AND — the sets themselves always apply
-      // (a plain "*" set contains every value, so the AND path is naturally satisfied)
-      const dayOk = !spec.domAny && !spec.dowAny ? domOk || dowOk : domOk && dowOk;
-      if (dayOk) return d.getTime();
-    }
-    // skip fast when the hour/day can't match
-    if (!spec.hour.has(d.getHours())) {
-      d.setMinutes(0);
-      d.setHours(d.getHours() + 1);
+    const monOk = spec.mon.has(d.getMonth() + 1);
+    const domOk = spec.dom.has(d.getDate());
+    const dowOk = spec.dow.has(d.getDay());
+    // vixie: the star flags only pick OR vs AND — the sets themselves always apply
+    // (a plain "*" set contains every value, so the AND path is naturally satisfied)
+    const dayOk = !spec.domAny && !spec.dowAny ? domOk || dowOk : domOk && dowOk;
+    if (monOk && dayOk) {
+      if (spec.min.has(d.getMinutes()) && spec.hour.has(d.getHours())) return d.getTime();
+      // skip fast when the hour can't match
+      if (!spec.hour.has(d.getHours())) {
+        d.setMinutes(0);
+        d.setHours(d.getHours() + 1);
+      } else {
+        d.setMinutes(d.getMinutes() + 1);
+      }
     } else {
-      d.setMinutes(d.getMinutes() + 1);
+      // the date alone rules this whole day out — jump to the next midnight
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + 1);
     }
   }
   return null;
