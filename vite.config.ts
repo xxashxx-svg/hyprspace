@@ -8,6 +8,23 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  // split the big vendors into their own long-lived chunks
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return;
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
+          if (id.includes("@xterm")) return "xterm";
+          // language packs + their grammars stay out so they chunk per-language (lazy loaded)
+          if (id.includes("@codemirror/lang-") || /@lezer[\\/](?!common|highlight|lr)/.test(id)) return;
+          if (id.includes("codemirror") || id.includes("@lezer")) return "codemirror";
+          if (id.includes("@supabase")) return "supabase";
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

@@ -8,26 +8,26 @@
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype");
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrainsMono Nerd Font";
   font-style: normal;
   font-weight: 700;
   font-display: block;
-  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Bold.ttf") format("truetype");
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Bold.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrainsMono Nerd Font";
   font-style: italic;
   font-weight: 400;
   font-display: block;
-  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Italic.ttf") format("truetype");
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-Italic.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrainsMono Nerd Font";
   font-style: italic;
   font-weight: 700;
   font-display: block;
-  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-BoldItalic.ttf") format("truetype");
+  src: url("../assets/fonts/JetBrainsMonoNerdFontMono-BoldItalic.woff2") format("woff2");
 }
