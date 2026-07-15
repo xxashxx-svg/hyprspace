@@ -183,6 +183,51 @@ function newLoopEvent(iter: number, partial: Partial<LoopEvent>): LoopEvent {
   return { id: `e${Date.now().toString(36)}-${evSeq++}`, iteration: iter, ts: Date.now(), kind: "text", ...partial };
 }
 
+// batch the run stream — a chatty iteration emits hundreds of lines/sec, and every line used to do
+// two store sets (each cloning the capped log/event arrays). buffer per run and flush at most every
+// ~100ms; finish/stop flush explicitly so nothing is dropped.
+const STREAM_FLUSH_MS = 100;
+type StreamBuf = { logs: string[]; events: LoopEvent[]; timer: ReturnType<typeof setTimeout> };
+const streamBufs = new Map<string, StreamBuf>();
+
+function flushStream(id: string) {
+  const b = streamBufs.get(id);
+  if (!b) return;
+  clearTimeout(b.timer);
+  streamBufs.delete(id);
+  const S = useLoops.getState();
+  if (b.events.length) S.pushEvents(id, b.events);
+  if (b.logs.length) S.appendLogs(id, b.logs);
+}
+
+function streamBuf(id: string): StreamBuf {
+  let b = streamBufs.get(id);
+  if (!b) {
+    b = { logs: [], events: [], timer: setTimeout(() => flushStream(id), STREAM_FLUSH_MS) };
+    streamBufs.set(id, b);
+  }
+  return b;
+}
+
+const queueLog = (id: string, line: string) => void streamBuf(id).logs.push(line);
+const queueEvent = (id: string, ev: LoopEvent) => void streamBuf(id).events.push(ev);
+
+// patch an event that may still be sitting in the buffer (a tool_result often lands <100ms after
+// its tool_use) — else it's already flushed, patch it in the store
+function patchStreamEvent(id: string, eventId: string, patch: Partial<LoopEvent>) {
+  const b = streamBufs.get(id);
+  const i = b ? b.events.findIndex((e) => e.id === eventId) : -1;
+  if (b && i >= 0) b.events[i] = { ...b.events[i], ...patch };
+  else useLoops.getState().patchEvent(id, eventId, patch);
+}
+
+// drop anything a previous run left buffered (called before resetRun on start)
+function dropStream(id: string) {
+  const b = streamBufs.get(id);
+  if (b) clearTimeout(b.timer);
+  streamBufs.delete(id);
+}
+
 // parse one claude stream-json line into transcript events: a tool_use becomes a "running" tool row,
 // its tool_result flips it to ok/error with a duration, and thinking/text/result carry the words.
 // `append` keeps the flat log line going for the classic panel. non-JSON (stderr) passes through.
@@ -201,12 +246,11 @@ function handleClaudeLine(
   setResult: (r: string, tokens: number, cost: number, isError: boolean) => void,
   append: (line: string) => void,
 ) {
-  const S = useLoops.getState;
   let ev: Record<string, unknown>;
   try {
     ev = JSON.parse(line);
   } catch {
-    S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
+    queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
     append(line);
     return;
   }
@@ -215,16 +259,16 @@ function handleClaudeLine(
     for (const b of content as Array<Record<string, unknown>>) {
       if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
         const t = b.text.trim();
-        S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: t }));
+        queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: t }));
         append(t);
       } else if (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim()) {
-        S().pushEvent(loopId, newLoopEvent(iter, { kind: "thinking", text: b.thinking.trim() }));
+        queueEvent(loopId, newLoopEvent(iter, { kind: "thinking", text: b.thinking.trim() }));
       } else if (b.type === "tool_use") {
         const name = b.name as string;
         const input = b.input as Record<string, unknown>;
         const e = newLoopEvent(iter, { kind: "tool", tool: name, arg: toolArg(name, input), status: "running" });
         if (typeof b.id === "string") toolMap.set(b.id, { eventId: e.id, start: e.ts });
-        S().pushEvent(loopId, e);
+        queueEvent(loopId, e);
         append(`→ ${toolLabel(name, input)}`);
       }
     }
@@ -236,7 +280,7 @@ function handleClaudeLine(
       if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
         const t = toolMap.get(b.tool_use_id);
         if (t) {
-          S().patchEvent(loopId, t.eventId, { status: b.is_error ? "error" : "ok", durationMs: Date.now() - t.start });
+          patchStreamEvent(loopId, t.eventId, { status: b.is_error ? "error" : "ok", durationMs: Date.now() - t.start });
           toolMap.delete(b.tool_use_id);
         }
       }
@@ -248,11 +292,11 @@ function handleClaudeLine(
     const costNum = typeof ev.total_cost_usd === "number" ? (ev.total_cost_usd as number) : 0;
     const tokens = usageTokens(ev.usage as Record<string, unknown> | undefined);
     // the turn finished — any tool still showing "running" did complete, so settle it
-    for (const t of toolMap.values()) S().patchEvent(loopId, t.eventId, { status: "ok" });
+    for (const t of toolMap.values()) patchStreamEvent(loopId, t.eventId, { status: "ok" });
     toolMap.clear();
     const costStr = costNum ? ` · $${costNum.toFixed(3)}` : "";
     setResult(r, tokens, costNum, ev.is_error === true);
-    S().pushEvent(loopId, newLoopEvent(iter, { kind: "result", text: r, arg: costStr.trim() || undefined }));
+    queueEvent(loopId, newLoopEvent(iter, { kind: "result", text: r, arg: costStr.trim() || undefined }));
     append(`✓ done${costStr}`);
   }
 }
@@ -268,12 +312,11 @@ function handleCodexLine(
   itemMap: Map<string, { eventId: string; start: number }>,
   append: (line: string) => void,
 ) {
-  const S = useLoops.getState;
   let ev: Record<string, unknown>;
   try {
     ev = JSON.parse(line);
   } catch {
-    S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
+    queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
     append(line);
     return;
   }
@@ -282,30 +325,30 @@ function handleCodexLine(
     const cmd = String(item.command ?? "").slice(0, 200);
     const e = newLoopEvent(iter, { kind: "tool", tool: "Bash", arg: cmd, status: "running" });
     if (typeof item.id === "string") itemMap.set(item.id, { eventId: e.id, start: e.ts });
-    S().pushEvent(loopId, e);
+    queueEvent(loopId, e);
     append(`→ Bash: ${cmd.slice(0, 90)}`);
     return;
   }
   if (ev.type === "item.completed" && item) {
     if (item.type === "agent_message" && typeof item.text === "string" && item.text.trim()) {
       state.result = item.text.trim();
-      S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: state.result }));
+      queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: state.result }));
       append(state.result);
     } else if (item.type === "reasoning" && typeof item.text === "string" && item.text.trim()) {
-      S().pushEvent(loopId, newLoopEvent(iter, { kind: "thinking", text: item.text.trim() }));
+      queueEvent(loopId, newLoopEvent(iter, { kind: "thinking", text: item.text.trim() }));
     } else if (item.type === "command_execution") {
       const failed = item.exit_code !== undefined && item.exit_code !== 0;
       const t = typeof item.id === "string" ? itemMap.get(item.id) : undefined;
       if (t) {
-        S().patchEvent(loopId, t.eventId, { status: failed ? "error" : "ok", durationMs: Date.now() - t.start });
+        patchStreamEvent(loopId, t.eventId, { status: failed ? "error" : "ok", durationMs: Date.now() - t.start });
         if (typeof item.id === "string") itemMap.delete(item.id);
       } else {
         const cmd = String(item.command ?? "").slice(0, 200);
-        S().pushEvent(loopId, newLoopEvent(iter, { kind: "tool", tool: "Bash", arg: cmd, status: failed ? "error" : "ok" }));
+        queueEvent(loopId, newLoopEvent(iter, { kind: "tool", tool: "Bash", arg: cmd, status: failed ? "error" : "ok" }));
         append(`→ Bash: ${cmd.slice(0, 90)}`);
       }
     } else if (item.type === "error" && typeof item.message === "string") {
-      S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: `⚠ ${item.message}` }));
+      queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: `⚠ ${item.message}` }));
       append(`⚠ ${item.message}`);
     }
     return;
@@ -314,10 +357,10 @@ function handleCodexLine(
     const u = ev.usage as Record<string, unknown> | undefined;
     const n = (k: string) => (typeof u?.[k] === "number" ? (u[k] as number) : 0);
     state.tokens += n("input_tokens") + n("cached_input_tokens") + n("output_tokens");
-    for (const t of itemMap.values()) S().patchEvent(loopId, t.eventId, { status: "ok" });
+    for (const t of itemMap.values()) patchStreamEvent(loopId, t.eventId, { status: "ok" });
     itemMap.clear();
     if (state.result) {
-      S().pushEvent(loopId, newLoopEvent(iter, { kind: "result", text: state.result }));
+      queueEvent(loopId, newLoopEvent(iter, { kind: "result", text: state.result }));
       append("✓ done");
     }
     return;
@@ -325,7 +368,7 @@ function handleCodexLine(
   if (ev.type === "turn.failed") {
     state.failed = true;
     const msg = String((ev.error as Record<string, unknown>)?.message ?? "turn failed");
-    S().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: `⚠ ${msg}` }));
+    queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: `⚠ ${msg}` }));
     append(`⚠ ${msg}`);
   }
   // thread.started / turn.started are noise — skip
@@ -412,7 +455,7 @@ function runIteration(def: LoopDef, folder: string, cont: boolean, append: (line
       } else if (def.provider === "codex") {
         handleCodexLine(loopId, iter, line, codex, toolMap, record);
       } else {
-        useLoops.getState().pushEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
+        queueEvent(loopId, newLoopEvent(iter, { kind: "text", text: line }));
         record(line);
       }
     }).catch((e) => {
@@ -518,9 +561,11 @@ export function startLoop(id: string) {
   const ctrl: Ctrl = { stop: false, paused: false };
   ctrls.set(id, ctrl);
   const S = () => useLoops.getState();
+  dropStream(id); // a previous run's stragglers must not leak into the fresh transcript
   S().resetRun(id);
   S().setRun(id, { status: "running", startedAt: Date.now(), iteration: 0, stale: 0 });
-  const append = (line: string) => S().appendLog(id, line);
+  // all log lines go through the batch buffer so ordering with the streamed output holds
+  const append = (line: string) => queueLog(id, line);
   // iteration output only — swallowed once the run is over, so late buffered lines from a killed
   // agent can't pollute a stopped run's log
   const streamAppend = (line: string) => {
@@ -547,6 +592,7 @@ export function startLoop(id: string) {
     const wt = S().runs[id]?.worktreePath;
     if (wt && (status === "done" || status === "crashloop" || status === "stopped"))
       append(`changes are isolated in ${wt} — review and merge when ready`);
+    flushStream(id); // the run is over — land everything buffered (incl. the note) right now
     void recordRunEnd(id, status, note, true, prevResult); // history + outcome notification
   };
 
@@ -586,7 +632,7 @@ export function startLoop(id: string) {
     const iter = run.iteration + 1;
     S().setRun(id, { status: "running", iteration: iter, lastRunAt: Date.now() });
     append(`\n— iteration ${iter} —`);
-    S().pushEvent(id, newLoopEvent(iter, { kind: "iteration" }));
+    queueEvent(id, newLoopEvent(iter, { kind: "iteration" }));
     const cont = def.session === "continue" && iter > 1; // first run seeds the session, rest continue it
     const { out, tokens, cost, failed } = await runIteration(def, runFolder, cont, streamAppend);
     if (ctrl.stop) return;
@@ -721,13 +767,20 @@ export function startLoop(id: string) {
     }
     if (ctrl.stop) return;
 
-    // poll: the Stop marker → claude's turn ended, finish the run; the notify marker → "needs you" pings
+    // poll: the Stop marker → claude's turn ended, finish the run; the notify marker → "needs you"
+    // pings. each tick is up to two IPC file reads for the run's whole life, so keep it slow and
+    // skip re-processing when the file hasn't grown since the last look
     let seenNotif = 0;
+    let doneLen = -1;
+    let markerLen = -1;
     ctrl.pollTimer = setInterval(() => {
       if (ended) return;
       if (notifyDone) {
         void readFile(notifyDone)
           .then((s) => {
+            const len = (s ?? "").length;
+            if (len === doneLen) return;
+            doneLen = len;
             if (s && s.trim() && !ended) done("goal finished");
           })
           .catch(() => {});
@@ -735,6 +788,9 @@ export function startLoop(id: string) {
       if (!notifyMarker) return;
       void readFile(notifyMarker)
         .then((s) => {
+          const len = (s ?? "").length;
+          if (len === markerLen) return;
+          markerLen = len;
           const lines = (s || "").split("\n").filter((l) => l.trim());
           for (let i = seenNotif; i < lines.length; i++) {
             const msg = lines[i].slice(0, 200);
@@ -745,7 +801,7 @@ export function startLoop(id: string) {
           seenNotif = Math.max(seenNotif, lines.length);
         })
         .catch(() => {});
-    }, 1500);
+    }, 4000);
 
     // engine-side wall-clock cap (the /goal "stop after N turns" owns the turn cap)
     if (def.stop.timeBudgetMin && def.stop.timeBudgetMin > 0) {
@@ -841,6 +897,7 @@ export function stopLoop(id: string) {
   void agentStop(loopRunId(id)).catch(() => {});
   stopLoopTerm(loopRunId(id));
   void cleanupHookRun(loopRunId(id)).catch(() => {});
+  flushStream(id); // land anything still buffered before we stamp the stop status
   const prevResult = useLoops.getState().runs[id]?.lastResult;
   useLoops.getState().setRun(id, { status: "stopped", nextRunAt: undefined });
   // the user hit stop themselves — record it in history, but no notification needed.

@@ -139,14 +139,29 @@ interface LoopState {
   // runtime mutators (used by the loop runner)
   setRun: (id: string, patch: Partial<LoopRun>) => void;
   appendLog: (id: string, line: string) => void;
+  appendLogs: (id: string, lines: string[]) => void;
   pushEvent: (id: string, ev: LoopEvent) => void;
+  pushEvents: (id: string, evs: LoopEvent[]) => void;
   patchEvent: (id: string, eventId: string, patch: Partial<LoopEvent>) => void;
   resetRun: (id: string) => void;
   addHistory: (loopId: string, entry: LoopHistoryEntry) => void;
 }
 
+// upsert fires per keystroke of the loops editor, and each persist is a full-store crash-safe disk
+// write — debounce it (trailing), same as settingsSync. structural ops flush right away, and the
+// hide/close listeners below make sure a pending write never gets lost.
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+function persistNow() {
+  clearTimeout(persistTimer);
+  persistTimer = undefined;
+  void saveState("loops", JSON.stringify(useLoops.getState().loops)).catch(() => {});
+}
+function persistSoon() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistNow, 300);
+}
+
 export const useLoops = create<LoopState>()((set, get) => {
-  const persist = () => void saveState("loops", JSON.stringify(get().loops)).catch(() => {});
   const persistHistory = () =>
     void saveState("loop-history", JSON.stringify(get().history)).catch(() => {});
   return {
@@ -187,7 +202,7 @@ export const useLoops = create<LoopState>()((set, get) => {
 
     upsert: (def) => {
       set((s) => ({ loops: { ...s.loops, [def.id]: def } }));
-      persist();
+      persistSoon();
     },
     remove: (id) => {
       set((s) => {
@@ -199,26 +214,30 @@ export const useLoops = create<LoopState>()((set, get) => {
         delete history[id];
         return { loops, runs, history };
       });
-      persist();
+      persistNow(); // structural — don't sit on a delete
       persistHistory();
     },
 
     setRun: (id, patch) =>
       set((s) => ({ runs: { ...s.runs, [id]: { ...(s.runs[id] ?? blankRun()), ...patch } } })),
-    appendLog: (id, line) =>
+    appendLogs: (id, lines) =>
       set((s) => {
+        if (lines.length === 0) return {};
         const cur = s.runs[id] ?? blankRun();
-        const logs = [...cur.logs, line];
+        const logs = [...cur.logs, ...lines];
         if (logs.length > LOG_CAP) logs.splice(0, logs.length - LOG_CAP);
         return { runs: { ...s.runs, [id]: { ...cur, logs } } };
       }),
-    pushEvent: (id, ev) =>
+    appendLog: (id, line) => get().appendLogs(id, [line]),
+    pushEvents: (id, evs) =>
       set((s) => {
+        if (evs.length === 0) return {};
         const cur = s.runs[id] ?? blankRun();
-        const events = [...cur.events, ev];
+        const events = [...cur.events, ...evs];
         if (events.length > EVENT_CAP) events.splice(0, events.length - EVENT_CAP);
         return { runs: { ...s.runs, [id]: { ...cur, events } } };
       }),
+    pushEvent: (id, ev) => get().pushEvents(id, [ev]),
     patchEvent: (id, eventId, patch) =>
       set((s) => {
         const cur = s.runs[id];
@@ -238,4 +257,14 @@ export const useLoops = create<LoopState>()((set, get) => {
       persistHistory();
     },
   };
+});
+
+// land a pending debounced write before the window goes away (same guards App.tsx uses)
+const flushPersist = () => {
+  if (persistTimer) persistNow();
+};
+window.addEventListener("blur", flushPersist);
+window.addEventListener("pagehide", flushPersist);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushPersist();
 });

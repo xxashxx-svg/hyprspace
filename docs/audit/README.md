@@ -4,7 +4,7 @@ Full security + bug audit of the app (Rust backend, Tauri config/capabilities, R
 
 - [`security.md`](./security.md) — security findings (S1–S8) + permissions inventory + cleared items.
 - [`bugs.md`](./bugs.md) — reliability/correctness bugs (B1–B10).
-- [`performance.md`](./performance.md) — performance audit 2026-07-15 (P1–P16 + lows), findings only, nothing fixed yet.
+- [`performance.md`](./performance.md) — performance audit 2026-07-15 (P1–P16 + lows); all high/medium findings fixed same day on this branch.
 
 ## Headline
 The scary theoretical risks are **cleared**: no markdown XSS (no raw HTML), subscription compliance intact (no token ever used for auth), the orchestrator can't smuggle shell commands or escape the projects folder. The most valuable open item is **S1 (set a CSP)** — left for you to apply on a production build since a strict CSP breaks dev HMR.

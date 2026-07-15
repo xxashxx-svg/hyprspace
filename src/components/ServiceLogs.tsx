@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useRef } from "react";
 import { useUi } from "../stores/ui";
 import { useServices } from "../stores/services";
 import { X, Square, Trash2 } from "lucide-react";
@@ -7,6 +7,11 @@ import { X, Square, Trash2 } from "lucide-react";
 // eslint-disable-next-line no-control-regex
 const ANSI = /\[[0-9;?]*[A-Za-z]/g;
 const clean = (s: string) => s.replace(ANSI, "");
+
+// memoized so unchanged lines don't re-run the ANSI strip every time a new batch lands
+const LogLine = memo(function LogLine({ line }: { line: string }) {
+  return <div className="log-line">{clean(line) || " "}</div>;
+});
 
 // Output viewer for a background service. Streams the captured stdout/stderr lines live.
 export function ServiceLogs() {
@@ -71,11 +76,7 @@ export function ServiceLogs() {
           {!lines || lines.length === 0 ? (
             <div className="log-empty">No output yet…</div>
           ) : (
-            lines.map((l, i) => (
-              <div className="log-line" key={i}>
-                {clean(l) || " "}
-              </div>
-            ))
+            lines.map((l, i) => <LogLine key={i} line={l} />)
           )}
         </div>
       </div>

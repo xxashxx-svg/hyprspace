@@ -54,6 +54,75 @@ function relSub(wsCwd: string, sessCwd?: string): string {
   return b.split(/[\\/]/).pop() || ""; // not under the project — just its name
 }
 
+// one session row — subscribes to just ITS activity primitives, so a chatty pane re-renders only
+// this row (not the whole rail), and owns the busy→ready decay timer + relTime refresh itself
+function SessionRow({
+  sess,
+  active,
+  sub,
+  onFocus,
+}: {
+  sess: Workspace["sessions"][number];
+  active: boolean;
+  sub: string;
+  onFocus: () => void;
+}) {
+  const isExited = useActivity((s) => !!s.exited[sess.id]);
+  const lastOut = useActivity((s) => s.lastOut[sess.id]);
+  const [, tick] = useReducer((x: number) => x + 1, 0);
+
+  // re-render right after the 1.5s busy window lapses so the dot decays busy → ready
+  useEffect(() => {
+    if (!lastOut) return;
+    const left = lastOut + 1500 - Date.now();
+    if (left <= 0) return;
+    const t = setTimeout(tick, left + 50);
+    return () => clearTimeout(t);
+  }, [lastOut]);
+
+  // keep the relTime label fresh — a slow tick, and only while the app is actually visible
+  const hasOut = !!lastOut;
+  useEffect(() => {
+    if (!hasOut) return;
+    let iv: ReturnType<typeof setInterval> | undefined;
+    const arm = () => {
+      if (document.visibilityState === "visible") {
+        if (!iv) iv = setInterval(tick, 30_000);
+      } else if (iv) {
+        clearInterval(iv);
+        iv = undefined;
+      }
+    };
+    arm();
+    const onVis = () => {
+      arm();
+      if (document.visibilityState === "visible") tick(); // catch up after being hidden
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      if (iv) clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [hasOut]);
+
+  const dot = isExited ? "exited" : lastOut && Date.now() - lastOut < 1500 ? "busy" : "ready";
+  return (
+    <button className={`rail-session${active ? " active" : ""}`} title={sess.cwd || sess.title} onClick={onFocus}>
+      <span className="rail-sess-ico">
+        {SESS_LOGO[sess.provider] && <img className="rail-sess-logo" src={SESS_LOGO[sess.provider]} alt="" />}
+        <span className={`rail-sess-dot s-${dot}${SESS_LOGO[sess.provider] ? " badge" : ""}`} />
+      </span>
+      <span className="rail-sess-name">{sess.title}</span>
+      {sub && (
+        <span className="rail-sess-sub" title={sess.cwd}>
+          {sub}
+        </span>
+      )}
+      {lastOut ? <span className="rail-sess-time">{relTime(lastOut)}</span> : null}
+    </button>
+  );
+}
+
 export function Rail() {
   const workspaces = useWorkspaces((s) => s.workspaces);
   const activeId = useWorkspaces((s) => s.activeId);
@@ -69,19 +138,18 @@ export function Rail() {
   const view = useUi((s) => s.view);
   const goSpace = useUi((s) => s.goSpace);
   // loops live entirely on the Loops page now — the rail only surfaces a count on the nav item:
-  // how many are running (highlighted) or, when idle, how many exist (muted)
-  const loopRuns = useLoops((s) => s.runs);
+  // how many are running (highlighted) or, when idle, how many exist (muted). primitive selectors
+  // so a run's streamed output never re-renders the rail
+  const activeLoops = useLoops((s) => {
+    let n = 0;
+    for (const r of Object.values(s.runs)) if (r.status === "running" || r.status === "paused") n++;
+    return n;
+  });
   const loopCount = useLoops((s) => Object.keys(s.loops).length);
-  const activeLoops = Object.values(loopRuns).filter(
-    (r) => r.status === "running" || r.status === "paused",
-  ).length;
   const setFocused = useWorkspaces((s) => s.setFocused);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
-  const exited = useActivity((s) => s.exited);
-  const lastOut = useActivity((s) => s.lastOut);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [, tick] = useReducer((x) => x + 1, 0);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [filter, setFilter] = useState(""); // live sidebar filter (Orca-style Search box)
@@ -96,7 +164,7 @@ export function Rail() {
     document.querySelector(`.rail-item[data-wsid="${d.id}"]`)?.classList.add("dragging");
     if (d.over) document.querySelector(`.rail-item[data-wsid="${d.over}"]`)?.classList.add("drop-over");
   };
-  // a re-render mid-drag (a running session's output, the 1s tick) would wipe the classes React
+  // a re-render mid-drag (a store update, a workspace change) would wipe the classes React
   // doesn't know about — re-apply here, before paint, so it never flickers.
   useLayoutEffect(() => {
     if (drag.current?.active) applyDrag();
@@ -129,7 +197,7 @@ export function Rail() {
 
   // auto-expand the active OPEN SPACE so its session list shows. projects aren't auto-expanded —
   // their chevron opens a file tree, and dumping that on every click is annoying (toggle it yourself).
-  // while anything is expanded, re-render once a second so the "working" dots decay back to idle.
+  // (dot decay / relTime refresh live in each SessionRow now — no rail-wide tick.)
   useEffect(() => {
     if (!activeId) return;
     const ws = useWorkspaces.getState().workspaces.find((w) => w.id === activeId);
@@ -138,11 +206,6 @@ export function Rail() {
       setMountedSubs((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
     }
   }, [activeId]);
-  useEffect(() => {
-    if (expanded.size === 0) return;
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [expanded]);
 
   const toggleExpand = (id: string) =>
     setExpanded((p) => {
@@ -155,11 +218,6 @@ export function Rail() {
     setActive(wid);
     setFocused(sid);
     goSpace();
-  };
-  const sessDot = (id: string): "busy" | "ready" | "exited" => {
-    if (exited[id]) return "exited";
-    const t = lastOut[id];
-    return t && Date.now() - t < 1500 ? "busy" : "ready";
   };
 
   const item = (w: Workspace) => {
@@ -274,35 +332,15 @@ export function Rail() {
             <div className="rail-sub-inner">
               {hasSessions && (
                 <div className="rail-sessions">
-                  {w.sessions.map((s) => {
-                    const dot = sessDot(s.id);
-                    const active = view === "space" && w.id === activeId && focusedSessionId === s.id;
-                    const sub = relSub(w.cwd, s.cwd); // subfolder it's running in, if any
-                    return (
-                      <button
-                        key={s.id}
-                        className={`rail-session${active ? " active" : ""}`}
-                        title={s.cwd || s.title}
-                        onClick={() => focusSession(w.id, s.id)}
-                      >
-                        <span className="rail-sess-ico">
-                          {SESS_LOGO[s.provider] && (
-                            <img className="rail-sess-logo" src={SESS_LOGO[s.provider]} alt="" />
-                          )}
-                          <span className={`rail-sess-dot s-${dot}${SESS_LOGO[s.provider] ? " badge" : ""}`} />
-                        </span>
-                        <span className="rail-sess-name">{s.title}</span>
-                        {sub && (
-                          <span className="rail-sess-sub" title={s.cwd}>
-                            {sub}
-                          </span>
-                        )}
-                        {lastOut[s.id] ? (
-                          <span className="rail-sess-time">{relTime(lastOut[s.id])}</span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
+                  {w.sessions.map((s) => (
+                    <SessionRow
+                      key={s.id}
+                      sess={s}
+                      active={view === "space" && w.id === activeId && focusedSessionId === s.id}
+                      sub={relSub(w.cwd, s.cwd)} // subfolder it's running in, if any
+                      onFocus={() => focusSession(w.id, s.id)}
+                    />
+                  ))}
                 </div>
               )}
             </div>

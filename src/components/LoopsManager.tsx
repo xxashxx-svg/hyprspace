@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useLoops, newLoop, type LoopDef, type LoopStop } from "../stores/loops";
 import { useUi } from "../stores/ui";
@@ -77,6 +77,11 @@ function fmtTokens(n: number): string {
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
+
+// memoized so a growing log doesn't re-render every line already on screen
+const LogLine = memo(function LogLine({ line }: { line: string }) {
+  return <div className="loop-logs-line">{line || " "}</div>;
+});
 
 // backend picker chips — same brand marks the launcher / usage panel use
 const BACKENDS: { id: LoopDef["provider"]; label: string; sub?: string; logo: string }[] = [
@@ -727,11 +732,7 @@ export function LoopsManager() {
                 {(run?.logs ?? []).length === 0 ? (
                   <div className="loop-logs-empty">No output yet.</div>
                 ) : (
-                  (run?.logs ?? []).map((l, i) => (
-                    <div className="loop-logs-line" key={i}>
-                      {l || " "}
-                    </div>
-                  ))
+                  (run?.logs ?? []).map((l, i) => <LogLine key={i} line={l} />)
                 )}
               </div>
             )}

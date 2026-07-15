@@ -5,8 +5,34 @@ subscription patterns, the Rust backend commands, the long-running engines (chat
 polling, settings sync), and build/bundle/CSS. Complements [`security.md`](./security.md) and
 [`bugs.md`](./bugs.md) — this file is only about speed, jank, CPU/battery, memory, and size.
 
-Every finding below was verified against the actual code (file:line quoted). Nothing here is
-fixed yet — this is the audit, ordered by expected user impact.
+Every finding below was verified against the actual code (file:line quoted).
+
+## Status — fixed 2026-07-15 (same branch)
+
+Everything high/medium and most lows were fixed the same day, verified with `cargo check`,
+`npx tsc --noEmit`, and a production `vite build`:
+
+- **Fixed:** P1 (xterm flow control via new `pause_pty`/`resume_pty` + pending-byte accounting,
+  1MB high / 128KB low water), P2–P4 + P16 (every remaining sync command is now
+  `async` + `spawn_blocking`), P3/P9 (kills happen after the map guard drops; chat stdin sits
+  behind its own lock), P5 (loops persist debounced 300ms + flush-on-hide), P6 (run streams
+  batch ~100ms into plural store ops; Rail/Titlebar/LoopsPage select primitives; EventRow
+  memoized), P7 (13 lazy surfaces, vendor manualChunks, per-language CodeMirror imports —
+  entry chunk 215KB/71KB gzip), P8 (in-flight guard + visibility/view gate + payload compare;
+  DiffView memo + 2000-line cap; lazy CodeEditor), P10 (async resize + no-op skip + rAF'd zoom),
+  P11 (per-session Rail rows on primitive selectors; no rail-wide interval left), P12 (pj
+  buffered on the 55ms throttle, tail-swap patchMsg, in-memory cap, memoized Message),
+  P13 (streamed reads + tail-read), P14 (services batched ~30ms into joined sends),
+  P15 (woff2, ~9.9MB → ~4.2MB), and lows L1–L8, L10–L12, L14, L15, most of L16.
+- **Left open (deliberate):** per-line channel sends in agent.rs/chat.rs (protocol-paced, a
+  batching change would touch the stream parsers for little gain), the backend git
+  status+branch fold-into-one-process idea in P8 (frontend gating removed ~all the waste),
+  L9 (focus-only persist no-ops — the signature compare already prevents the disk write),
+  L13 (rail width transition — visual-risk/benefit not worth it), the duplicate boot
+  `loadState("settings")` (one redundant read), and supabase stays an eager client (but now
+  in its own split chunk; swapping to `@supabase/auth-js` is a bigger auth refactor).
+- Incidental: added the Linux keyring backend to Cargo.toml — the Linux build didn't compile
+  at all before (keyring was only declared for Windows/macOS targets).
 
 ## Headline
 
