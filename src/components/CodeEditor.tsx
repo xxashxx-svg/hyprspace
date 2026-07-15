@@ -1,32 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import { EditorView, keymap } from "@codemirror/view";
-import { EditorState, Prec, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { basicSetup } from "codemirror";
 import { vscodeChrome, vscodeHighlight } from "../lib/editorTheme";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { markdown } from "@codemirror/lang-markdown";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
 import { readFile, writeFile } from "../api";
 import { useUi } from "../stores/ui";
 import { confirmDialog, useConfirm } from "../stores/confirm";
 import { Save, AlertCircle, FileCode, Maximize2, Minimize2, X } from "lucide-react";
 
-// language support by file extension (the few that cover most of what people edit here)
-function langFor(path: string): Extension[] {
+// language support by file extension (the few that cover most of what people edit here) —
+// each pack is imported on demand so its grammar only loads when a matching file is opened
+async function langFor(path: string): Promise<Extension[]> {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  if (["js", "jsx", "ts", "tsx", "mjs", "cjs"].includes(ext))
-    return [javascript({ jsx: ext.endsWith("x"), typescript: ext.startsWith("ts") })];
-  if (ext === "json") return [json()];
-  if (["css", "scss", "less"].includes(ext)) return [css()];
-  if (["html", "htm", "xml", "svg", "vue"].includes(ext)) return [html()];
-  if (["md", "markdown", "mdx"].includes(ext)) return [markdown()];
-  if (ext === "py") return [python()];
-  if (ext === "rs") return [rust()];
+  try {
+    if (["js", "jsx", "ts", "tsx", "mjs", "cjs"].includes(ext)) {
+      const { javascript } = await import("@codemirror/lang-javascript");
+      return [javascript({ jsx: ext.endsWith("x"), typescript: ext.startsWith("ts") })];
+    }
+    if (ext === "json") return [(await import("@codemirror/lang-json")).json()];
+    if (["css", "scss", "less"].includes(ext)) return [(await import("@codemirror/lang-css")).css()];
+    if (["html", "htm", "xml", "svg", "vue"].includes(ext))
+      return [(await import("@codemirror/lang-html")).html()];
+    if (["md", "markdown", "mdx"].includes(ext))
+      return [(await import("@codemirror/lang-markdown")).markdown()];
+    if (ext === "py") return [(await import("@codemirror/lang-python")).python()];
+    if (ext === "rs") return [(await import("@codemirror/lang-rust")).rust()];
+  } catch {
+    // a failed chunk load just means no highlighting
+  }
   return [];
 }
 
@@ -104,6 +106,9 @@ export function CodeEditor({ path }: { path: string }) {
     let disposed = false;
     setErr(null);
     setDirty(false);
+    // the editor opens right away without a language; the pack slots in via this compartment
+    // a tick later once its dynamic import resolves
+    const langComp = new Compartment();
     readFile(path)
       .then((content) => {
         if (disposed || !elRef.current) return;
@@ -111,7 +116,7 @@ export function CodeEditor({ path }: { path: string }) {
           doc: content,
           extensions: [
             basicSetup,
-            ...langFor(path),
+            langComp.of([]),
             syntaxHighlighting(vscodeHighlight),
             vscodeChrome,
             Prec.highest(
@@ -131,6 +136,10 @@ export function CodeEditor({ path }: { path: string }) {
           ],
         });
         viewRef.current = new EditorView({ state, parent: elRef.current });
+        void langFor(path).then((lang) => {
+          if (disposed || !lang.length || !viewRef.current) return;
+          viewRef.current.dispatch({ effects: langComp.reconfigure(lang) });
+        });
       })
       .catch((e) => {
         if (!disposed) setErr(String(e));
