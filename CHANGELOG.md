@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.7 — 2026-07-15
+
+Hide the review-dock toggle on the home screen — it did nothing there and only added clutter.
+
 ## 0.11.6 — 2026-07-14
 
 - Sidebar Search is now a live filter: type to instantly narrow your projects, open spaces, and sessions by name. The Ctrl K chip still opens the full command palette.

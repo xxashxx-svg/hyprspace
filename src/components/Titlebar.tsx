@@ -455,13 +455,15 @@ export function Titlebar() {
         <LoopsIndicator />
         <ServicesIndicator />
         <NotificationPanel />
-        <button
-          className="tb-ctl"
-          title="Review dock — changes & run (Ctrl+Shift+G)"
-          onClick={() => useUi.getState().toggleDock()}
-        >
-          <PanelRight size={14} strokeWidth={1.75} />
-        </button>
+        {view === "space" && (
+          <button
+            className="tb-ctl"
+            title="Review dock — changes & run (Ctrl+Shift+G)"
+            onClick={() => useUi.getState().toggleDock()}
+          >
+            <PanelRight size={14} strokeWidth={1.75} />
+          </button>
+        )}
         {/* Windows/Linux: our own controls. macOS draws native traffic lights instead. */}
         {!isMac && (
           <>
