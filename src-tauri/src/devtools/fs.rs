@@ -66,12 +66,11 @@ pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
             let dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
             out.push(DirEntry { name, dir });
         }
-        out.sort_by(|a, b| {
-            (b.dir as u8)
-                .cmp(&(a.dir as u8))
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-        Ok(out)
+        // precompute the sort key — to_lowercase inside the comparator allocated O(n log n) strings
+        let mut keyed: Vec<(String, DirEntry)> =
+            out.into_iter().map(|e| (e.name.to_lowercase(), e)).collect();
+        keyed.sort_by(|(ka, a), (kb, b)| (b.dir as u8).cmp(&(a.dir as u8)).then_with(|| ka.cmp(kb)));
+        Ok(keyed.into_iter().map(|(_, e)| e).collect())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -137,7 +136,8 @@ pub async fn find_files(root: String, query: String) -> Result<Vec<String>, Stri
                 }
                 let name = e.file_name().to_string_lossy().to_string();
                 let p = e.path();
-                if p.is_dir() {
+                // file_type() is free from the dir entry; is_dir() was an extra stat per entry
+                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                     if !skip.contains(&name.as_str()) {
                         stack.push(p);
                     }

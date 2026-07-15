@@ -55,12 +55,25 @@ fn run_claude(prompt: &str, fast: bool) -> Result<Option<String>, String> {
         let mut sin = child.stdin.take().ok_or("no stdin")?;
         sin.write_all(prompt.as_bytes()).map_err(|e| e.to_string())?;
     }
-    // bound the wait so a wedged claude can't pin naming forever (output is tiny, so polling
-    // try_wait won't deadlock against the stdout pipe buffer)
+    // drain both pipes on reader threads while we poll — a verbose stderr (auth error, update
+    // banner) bigger than the pipe buffer would otherwise block claude and burn the whole timeout
+    let drain = |r: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut r) = r {
+                let _ = r.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    use std::io::Read;
+    let out_t = drain(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
+    let err_t = drain(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
+    // bound the wait so a wedged claude can't pin naming forever
     let start = Instant::now();
-    loop {
+    let status = loop {
         match child.try_wait().map_err(|e| e.to_string())? {
-            Some(_) => break,
+            Some(st) => break st,
             None => {
                 if start.elapsed() > Duration::from_secs(30) {
                     let _ = child.kill();
@@ -70,12 +83,13 @@ fn run_claude(prompt: &str, fast: bool) -> Result<Option<String>, String> {
                 std::thread::sleep(Duration::from_millis(80));
             }
         }
+    };
+    let stdout = out_t.join().unwrap_or_default();
+    let stderr = err_t.join().unwrap_or_default();
+    if !status.success() {
+        return Err(String::from_utf8_lossy(&stderr).trim().to_string());
     }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    let name = sanitize(&String::from_utf8_lossy(&out.stdout));
+    let name = sanitize(&String::from_utf8_lossy(&stdout));
     if name.is_empty() || name.eq_ignore_ascii_case("workspace") {
         return Ok(None); // model said it's unclear → keep the folder-name placeholder
     }

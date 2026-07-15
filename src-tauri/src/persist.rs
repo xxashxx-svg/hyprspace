@@ -1,14 +1,16 @@
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // Single-writer, crash-safe JSON blob store at ~/.hyprspace/v2/<name>.json.
 // The frontend owns the schema; we persist the stringified state atomically
 // (temp file + fsync + rename) under one lock so concurrent writes can't tear a file.
+// Clone shares the same lock so the async commands can move a handle onto a blocking thread.
+#[derive(Clone)]
 pub struct Store {
-    lock: Mutex<()>,
+    lock: Arc<Mutex<()>>,
     dir: PathBuf,
 }
 
@@ -18,7 +20,7 @@ impl Store {
         if let Err(e) = fs::create_dir_all(&dir) {
             eprintln!("hyprspace: could not create state dir {dir:?}: {e}");
         }
-        Store { lock: Mutex::new(()), dir }
+        Store { lock: Arc::new(Mutex::new(())), dir }
     }
 
     // keep the name a single safe token so it can't traverse out of the state dir
