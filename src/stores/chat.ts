@@ -44,6 +44,7 @@ interface Live {
   skipBlock: boolean;
   startedAt: number;
   pending: string;
+  pj: string; // buffered partial tool-input json, flushed on the same timer as text
   timer: ReturnType<typeof setTimeout> | null;
   watchdog: ReturnType<typeof setTimeout> | null;
 }
@@ -53,12 +54,23 @@ let live: Live | null = null;
 // generous on purpose — legitimate agentic turns stream events well within this.
 const WATCHDOG_MS = 6 * 60 * 1000;
 
+// keep in-memory threads from growing forever — same cap the disk blob uses
+const MAX_THREAD_MSGS = 200;
+
 // ---- module-level store helpers (used by the persistent stream handler) ----
 const patchMsg = (tid: string, asstId: string, fn: (m: ChatMsg) => ChatMsg) =>
   useChat.setState((s) => ({
-    threads: s.threads.map((t) =>
-      t.id !== tid ? t : { ...t, messages: t.messages.map((m) => (m.id === asstId ? fn(m) : m)) },
-    ),
+    threads: s.threads.map((t) => {
+      if (t.id !== tid) return t;
+      // streaming almost always patches the tail — swap it without mapping every message
+      const last = t.messages[t.messages.length - 1];
+      if (last && last.id === asstId) {
+        const messages = t.messages.slice();
+        messages[messages.length - 1] = fn(last);
+        return { ...t, messages };
+      }
+      return { ...t, messages: t.messages.map((m) => (m.id === asstId ? fn(m) : m)) };
+    }),
   }));
 
 const setThreadSession = (tid: string, sid: string) =>
@@ -69,13 +81,14 @@ const setThreadSession = (tid: string, sid: string) =>
 const persistNow = () => {
   const { threads, model, currentId } = useChat.getState();
   // cap what hits disk: newest 30 threads, last 200 messages each, tool results truncated —
-  // keeps the blob (and next load) bounded even after very long sessions. (in-memory stays full.)
+  // keeps the blob (and next load) bounded even after very long sessions. (in-memory shares the
+  // message cap but keeps tool results whole for the ui.)
   const trimmed = [...threads]
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 30)
     .map((t) => ({
       ...t,
-      messages: t.messages.slice(-200).map((m) => ({
+      messages: t.messages.slice(-MAX_THREAD_MSGS).map((m) => ({
         ...m,
         blocks: m.blocks.map((b) =>
           b.kind === "tool" && typeof b.result === "string" && b.result.length > 4000
@@ -96,21 +109,39 @@ const appendText = (tid: string, asstId: string, delta: string) =>
     return { ...m, blocks };
   });
 
-// throttle token deltas so a long reply doesn't re-render markdown on every token
+const appendPj = (tid: string, asstId: string, delta: string) =>
+  patchMsg(tid, asstId, (m) => {
+    const blocks = [...m.blocks];
+    const last = blocks[blocks.length - 1];
+    // partial json always belongs to the block being streamed, which is the last one
+    if (last && last.kind === "tool") blocks[blocks.length - 1] = { ...last, _pj: (last._pj ?? "") + delta };
+    return { ...m, blocks };
+  });
+
+// throttle token/json deltas so a long reply doesn't re-render markdown on every chunk.
+// text and pj never accumulate at the same time (block boundaries flush), so order is safe.
 const flush = () => {
   if (!live) return;
   if (live.timer) {
     clearTimeout(live.timer);
     live.timer = null;
   }
-  if (!live.pending) return;
+  if (!live.pending && !live.pj) return;
   const chunk = live.pending;
+  const pj = live.pj;
   live.pending = "";
-  appendText(live.tid, live.asstId, chunk);
+  live.pj = "";
+  if (chunk) appendText(live.tid, live.asstId, chunk);
+  if (pj) appendPj(live.tid, live.asstId, pj);
 };
 const queueText = (d: string) => {
   if (!live) return;
   live.pending += d;
+  if (!live.timer) live.timer = setTimeout(flush, 55);
+};
+const queuePj = (d: string) => {
+  if (!live) return;
+  live.pj += d;
   if (!live.timer) live.timer = setTimeout(flush, 55);
 };
 
@@ -247,14 +278,7 @@ function routeLine(sess: Live, line: string) {
       if (cur.skipBlock) return;
       const d = e.delta;
       if (d?.type === "text_delta" && d.text) queueText(d.text);
-      else if (d?.type === "input_json_delta" && d.partial_json !== undefined)
-        patch((m) => {
-          const blocks = [...m.blocks];
-          const last = blocks[blocks.length - 1];
-          if (last && last.kind === "tool")
-            blocks[blocks.length - 1] = { ...last, _pj: (last._pj ?? "") + d.partial_json };
-          return { ...m, blocks };
-        });
+      else if (d?.type === "input_json_delta" && d.partial_json !== undefined) queuePj(d.partial_json);
     } else if (e.type === "content_block_stop") {
       flush();
       if (cur.skipBlock) {
@@ -475,11 +499,12 @@ export const useChat = create<ChatState>((set, get) => ({
               title,
               cwd: t.cwd ?? cwd, // pin the cwd on first use so a resume always runs in the right folder
               updatedAt: Date.now(),
+              // cap in memory too (disk already does) so a long-lived session stays bounded
               messages: [
                 ...t.messages,
-                { id: uid(), role: "user", blocks: [{ kind: "text", text }] },
-                { id: asstId, role: "assistant", blocks: [] },
-              ],
+                { id: uid(), role: "user" as const, blocks: [{ kind: "text" as const, text }] },
+                { id: asstId, role: "assistant" as const, blocks: [] },
+              ].slice(-MAX_THREAD_MSGS),
             },
       ),
       busy: true,
@@ -510,6 +535,7 @@ export const useChat = create<ChatState>((set, get) => ({
         skipBlock: false,
         startedAt: Date.now(),
         pending: "",
+        pj: "",
         timer: null,
         watchdog: null,
       };
@@ -522,6 +548,7 @@ export const useChat = create<ChatState>((set, get) => ({
       live.skipBlock = false;
       live.startedAt = Date.now();
       live.pending = "";
+      live.pj = "";
       if (live.timer) {
         clearTimeout(live.timer);
         live.timer = null;

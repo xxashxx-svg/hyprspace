@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { useLoops, newLoop } from "../stores/loops";
@@ -130,11 +130,13 @@ export function CommandPalette() {
     return commands.filter((c) => c.label.toLowerCase().includes(s));
   }, [q, commands]);
 
-  // search terminal scrollback → jump-to-pane results
+  // search terminal scrollback → jump-to-pane results. scanning every pane's buffer is the
+  // expensive part, so it runs on a deferred query — typing stays snappy, hits lag a beat.
+  const dq = useDeferredValue(q);
   const termItems = useMemo<Item[]>(() => {
-    if (q.trim().length < 2) return [];
+    if (dq.trim().length < 2) return [];
     const out: Item[] = [];
-    for (const hit of searchOutput(q)) {
+    for (const hit of searchOutput(dq)) {
       let wsId = "";
       let label = "";
       for (const w of workspaces) {
@@ -158,7 +160,7 @@ export function CommandPalette() {
       });
     }
     return out;
-  }, [q, workspaces]);
+  }, [dq, workspaces]);
 
   const items = useMemo(() => [...filteredCommands, ...termItems], [filteredCommands, termItems]);
 
