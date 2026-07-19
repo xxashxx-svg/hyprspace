@@ -51,6 +51,6 @@ minor. Big shift / it's a new era → major.
 ## Examples from this codebase
 
 - cwd resume fix, audit fixes, status-bar restyle → **patch**
-- persistent home chat, the orchestrator, Skills, Codex provider, collapsible chat → **minor**
+- Loops, the multi-agent launcher, the integrated editor, Skills, Codex provider → **minor**
   (a batch of these together is one minor, e.g. `0.2.x → 0.3.0`)
 - declaring HyprSpace stable / "v1" → **major** (`→ 1.0.0`)

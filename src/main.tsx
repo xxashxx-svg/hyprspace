@@ -11,7 +11,8 @@ import App from "./App";
 import { AuthGate } from "./components/AuthGate";
 
 // NO React.StrictMode — its double-mount corrupts the xterm terminal lifecycle.
-// AuthGate is the sign-in gate; nothing below it mounts until you're signed in.
+// AuthGate is the sign-in gate: nothing below it mounts until you're signed in, unless no
+// supabase project is configured (see .env.example), in which case it falls open.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <AuthGate>
     <App />

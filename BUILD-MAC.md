@@ -19,16 +19,14 @@ brew install node
 ## 2. Get the code
 
 ```bash
-git clone https://github.com/xxashxx-svg/hyprspace-2.git
-cd hyprspace-2
+git clone https://github.com/xxashxx-svg/hyprspace.git
+cd hyprspace
 ```
-
-(The repo is private — ask Ansh to add you as a collaborator first.)
 
 ## 3. One local tweak
 
-The repo is set up to build Windows auto-update files that need a private signing key
-you don't have. For a local Mac build, open `src-tauri/tauri.conf.json` and change:
+The repo is set up to build Windows auto-update files that need the maintainer's private
+signing key. For a local Mac build, open `src-tauri/tauri.conf.json` and change:
 
 ```json
 "createUpdaterArtifacts": true,
@@ -38,8 +36,8 @@ to
 "createUpdaterArtifacts": false,
 ```
 
-Don't commit that change — it's only for your local build. (You won't get auto-updates;
-Ansh will send you new builds when there are any.)
+Don't commit that change — it's only for your local build. A locally built app won't
+auto-update; rebuild from a newer checkout to get changes.
 
 ## 4. Build
 

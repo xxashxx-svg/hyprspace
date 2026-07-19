@@ -10,7 +10,7 @@ export interface Session {
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
   // the claude conversation this pane is currently on — starts as `id`, but follows a manual
-  // /resume so the right chat comes back next launch (tracked in claude/sessionTracker)
+  // /resume so the right chat comes back next launch
   claudeSessionId?: string;
 }
 

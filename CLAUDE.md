@@ -7,8 +7,8 @@
 HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
 Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
 resume, drag-to-swap, a multi-agent **launcher** (fan out N agents in a folder at once), scheduled
-**Loops**, an integrated **code editor**, a command palette, a git review dock, and a home-screen
-AI chat that can operate the app. Neutral, T3-Code-inspired dark UI.
+**Loops**, an integrated **code editor**, a command palette, and a git review dock. Neutral,
+T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
@@ -23,8 +23,7 @@ AI chat that can operate the app. Neutral, T3-Code-inspired dark UI.
    claude.ai OAuth flow, **NEVER** read/store/forward the subscription OAuth token to call the
    Anthropic API yourself, **NEVER** feed subscription tokens to an SDK. Reading credential files
    for **display-only** fields (email / plan) is fine; using a token for auth is not. This is the
-   same sanctioned path T3 Code uses. The home chat (`chat.rs`) and the terminal panes both just
-   spawn the CLI.
+   same sanctioned path T3 Code uses. The terminal panes just spawn the CLI.
 2. **No `React.StrictMode`.** It's intentionally disabled in `main.tsx` — double-mounting corrupts
    xterm.js lifecycles. Don't re-add it.
 3. **Styling = vanilla CSS + design tokens.** Use the CSS variables in `src/styles/tokens.css`
@@ -81,26 +80,31 @@ src/                         React frontend
   styles/<area>.css          per-area component CSS (rail, home, pane, loops, launcher, editor, …) —
                              split out of the old monolithic App.css so agents don't collide
   components/                UI: Titlebar, Rail (sidebar), PaneGrid, TerminalPane, HomePage,
-                             ChatPanel, ReviewDock, Settings, NewProjectDialog, CommandPalette,
+                             ReviewDock, Settings, NewProjectDialog, CommandPalette,
                              LaunchWorkspace (multi-agent launcher), CodeEditor (dock editor),
                              LoopsPage + LoopsManager + LoopRunner (Loops), StartupSettings, Logo, …
-  stores/                    Zustand: workspace, ui, settings, settingsSync, chat, orchestrator,
-                             git, activity, skills, auth, updater, notifications, confirm, loops,
-                             launchPresets, projectConfig, services
+  stores/                    Zustand: workspace, ui, settings, settingsSync, git, activity, skills,
+                             auth, updater, notifications, confirm, loops, launchPresets,
+                             projectConfig, services
   api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
                              never invoke() directly
   actions.ts                 shared actions (launch panes, worktrees, close) + provider cmd builders
+  platform.ts                OS detection + platform-conditional bits (modifier keys, shells)
+  themes.ts                  theme definitions applied over styles/tokens.css
+  ai/                        autoNameSession.ts — titles a pane from the user's first prompt (Codex)
   lib/                       small helpers (projects.ts = where new projects go, time.ts) +
                              loops.ts (the Loops engine)
 
 src-tauri/                   Rust backend
   src/lib.rs                 all #[tauri::command] registrations + app lifecycle (kill_all on exit)
   src/pty.rs                 PtyManager — ConPTY/portable-pty, byte coalescing
-  src/chat.rs                ChatManager — the persistent home-chat claude process (stream-json)
   src/agent.rs               AgentManager — runs ONE provider turn (claude -p …) for the Loops engine
+  src/loophook.rs            "Claude (hooks)" loop backend — one self-looping `claude -p` session
+                             driven by a Stop hook that decides continue-vs-stop each turn
   src/services.rs            ServiceManager — per-folder startup services (background processes)
   src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
-                             providers.rs, mcp.rs, skills.rs (+ mod.rs re-exports + shared helpers)
+                             providers.rs, mcp.rs, skills.rs, usage.rs (per-provider usage read from
+                             local CLI files, display-only) (+ mod.rs re-exports + shared helpers)
   src/persist.rs             crash-safe JSON state store (~/.hyprspace/v2)
   src/oauth.rs               loopback listener for the app's own Google/Supabase sign-in (PKCE)
   src/license.rs             Ed25519 license verification
@@ -109,6 +113,8 @@ src-tauri/                   Rust backend
   capabilities/default.json  Tauri permission grants
 
 docs/                        documentation (start at docs/README.md)
+website/                     the marketing site — its own Vite + React + Tailwind app (bun)
+CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contributors)
 deploy.ps1                   Windows release script
 .github/workflows/release.yml  macOS CI build (merges darwin into the release manifest)
 ```
@@ -131,12 +137,6 @@ deploy.ps1                   Windows release script
   panes get friendly names (`lib/names.ts`).
 - **Editor.** `CodeEditor` (CodeMirror) lives in the Review dock's "Editor" tab; clicking a file in
   the Files tree opens it (`read_file`/`write_file` in `devtools/fs.rs`), with save / autosave.
-- **Home chat = a persistent `claude` stream-json process.** `ChatPanel` → `stores/chat.ts` →
-  `chat.rs`. One long-lived process per thread (`--input-format stream-json`), fed user turns over
-  stdin, streaming events back. Runs on the subscription (spawns the CLI). See ARCHITECTURE.
-- **Orchestrator.** The chat model can operate the app by emitting ```hyprspace fenced JSON blocks
-  (create_project / new_open_space / spawn_agents / switch_space) which `stores/orchestrator.ts`
-  parses and executes against the stores. It's in-process text directives — **not** an MCP bridge.
 - **Loops.** Scheduled / interval / until-done / manual agents. A `LoopDef` (persisted `"loops"`,
   `stores/loops.ts`) is driven by the engine in `lib/loops.ts`, which runs each iteration through the
   headless agent runner (`agent.rs`). Pluggable backends: **Claude** (on a user Anthropic API key from
@@ -149,24 +149,22 @@ deploy.ps1                   Windows release script
 - **Windows note.** `claude` is a `.cmd` shim, so it's spawned via `cmd /c claude …` so PATHEXT
   resolves it. Prompts go over stdin to avoid shell-escaping.
 
-Full design details (chat protocol, session/cwd pinning, watchdog, orchestrator format, PTY
-coalescing): **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
+Full design details (session/cwd pinning, the Loops engine + hook backend, PTY coalescing):
+**[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
 ---
 
 ## Gotchas learned the hard way
 
 - **`claude --resume <id>` is folder-scoped.** A session only resumes in the directory it was
-  created in. The chat pins a `cwd` per thread for this reason; if a resume fails ("No conversation
-  found"), the thread forgets the dead session and starts fresh on the next message.
-- **The chat parser must never render blank.** It falls back to the complete `assistant` event when
-  streaming yields only a thinking block, and an inactivity watchdog unsticks a wedged turn.
+  created in, so anything that resumes has to pin the `cwd` the session was created with. If a
+  resume fails ("No conversation found"), drop the dead session id and start fresh.
 - **Open spaces have no `cwd`** — code that pins/falls-back to cwd uses `??` (not `||`) so an empty
   string is preserved, not replaced.
 - **CSP is currently `null`** (see [docs/audit/security.md](./docs/audit/security.md) S1). A strict
   CSP breaks Vite dev HMR, so it's a production-build task, not a dev change.
-- **Persisted state names** are sanitized to a token in `persist.rs`; the chat blob is capped
-  (30 threads, 200 msgs/thread, tool results truncated) on save.
+- **Persisted state names** are sanitized to a token in `persist.rs`, and large blobs are capped on
+  save so the store can't grow unbounded.
 - **A Loop can never run forever.** `LoopStop.maxIterations` is mandatory by construction, and the
   engine also auto-stops on no-progress (3 consecutive unchanged/empty iterations → `crashloop`),
   an optional sentinel token in the output, and an optional time budget. Don't add an infinite path.

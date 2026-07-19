@@ -74,26 +74,6 @@ export function killPty(id: string): Promise<void> {
   return invoke("kill_pty", { id });
 }
 
-// ---- native chat: drive a persistent `claude` stream-json session (runs on the subscription) ----
-// chatStart spawns the long-lived process and streams every event to onLine for its whole life;
-// chatTurn feeds one user-message envelope to its stdin; chatStop kills it.
-export function chatStart(
-  id: string,
-  cwd: string,
-  args: string[],
-  onLine: (line: string) => void,
-): Promise<void> {
-  const channel = new Channel<string>();
-  channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
-  return invoke("chat_start", { id, cwd, args, onEvent: channel });
-}
-export function chatTurn(id: string, message: string): Promise<void> {
-  return invoke("chat_turn", { id, message });
-}
-export function chatStop(id: string): Promise<void> {
-  return invoke("chat_stop", { id });
-}
-
 // ---- background services: run a command headless and stream its stdout+stderr as log lines ----
 // the backend batches lines (~30ms) and sends them joined with '\n' so a chatty dev server
 // doesn't cost one IPC hop per line — onLines gets the whole batch, one store write per batch

@@ -1,6 +1,5 @@
 mod agent;
 mod ai;
-mod chat;
 mod devtools;
 mod license;
 mod loophook;
@@ -12,7 +11,6 @@ mod services;
 use std::collections::HashMap;
 
 use agent::AgentManager;
-use chat::ChatManager;
 use services::ServiceManager;
 use persist::Store;
 use pty::PtyManager;
@@ -86,38 +84,6 @@ fn resume_pty(state: State<PtyManager>, id: String) {
 #[tauri::command]
 fn kill_pty(state: State<PtyManager>, id: String) -> Result<(), String> {
     state.kill(&id)
-}
-
-// start/stop spawn a process (or run a blocking taskkill tree-kill) — always off the UI thread
-#[tauri::command]
-async fn chat_start(
-    state: State<'_, ChatManager>,
-    id: String,
-    cwd: String,
-    args: Vec<String>,
-    on_event: Channel<String>,
-) -> Result<(), String> {
-    let mgr = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.start(id, cwd, args, on_event))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-// async + spawn_blocking so a pipe write that blocks (child stopped reading stdin) can't hang the window
-#[tauri::command]
-async fn chat_turn(state: State<'_, ChatManager>, id: String, message: String) -> Result<(), String> {
-    let mgr = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.turn(&id, message))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn chat_stop(state: State<'_, ChatManager>, id: String) -> Result<(), String> {
-    let mgr = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.stop(&id))
-        .await
-        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -451,7 +417,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(PtyManager::default())
-        .manage(ChatManager::default())
         .manage(ServiceManager::default())
         .manage(AgentManager::default())
         .manage(Store::new())
@@ -462,9 +427,6 @@ pub fn run() {
             pause_pty,
             resume_pty,
             kill_pty,
-            chat_start,
-            chat_turn,
-            chat_stop,
             service_start,
             service_stop,
             agent_start,
@@ -528,7 +490,6 @@ pub fn run() {
             match event {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     app.state::<PtyManager>().kill_all();
-                    app.state::<ChatManager>().kill_all();
                     app.state::<ServiceManager>().kill_all();
                     app.state::<AgentManager>().kill_all();
                 }

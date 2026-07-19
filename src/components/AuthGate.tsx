@@ -57,6 +57,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [init]);
 
+  // no supabase project configured (fresh clone, no .env) → skip sign-in entirely
+  if (!supabaseReady) return <EntitlementGate>{children}</EntitlementGate>;
+
   // signed in → run the (currently dormant) subscription gate, then the app
   if (session) return <EntitlementGate>{children}</EntitlementGate>;
   if (!ready) return <div className="license-boot" />; // brief blank while we restore the session
