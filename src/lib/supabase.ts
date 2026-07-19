@@ -1,13 +1,13 @@
-// Supabase client for account sign-in (Google). The anon key is a PUBLIC key — it's meant to ship
-// in the client, and row-level security guards the data — so it's fine to keep here and commit it
-// (Prince's build then talks to the same project). Fill these in after creating the project.
+// Supabase client for account sign-in (Google). Both values come from the environment — copy
+// .env.example to .env to point at your own project. The anon key is a PUBLIC (publishable) key:
+// it's meant to ship in the client and row-level security guards the data.
 //
-// Until both are set, `supabase` is null and the app falls back to the license-key gate, so the
-// dev build keeps working while we get the project set up.
+// Leave them unset and `supabase` is null — AuthGate then falls open and the app runs without
+// sign-in, so a fresh clone works out of the box.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://cibfmxazhbcpazsdpipm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_N3_d6v34fPbNPm3BVaBxNA_OjreiDNH"; // publishable (public) key — safe to ship
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
 
 export const supabaseReady = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 

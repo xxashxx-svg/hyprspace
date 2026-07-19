@@ -8,13 +8,13 @@ How the non-obvious subsystems work. For the high-level map + constraints, see
 A Tauri app = a Rust **main process** + a **webview** (the React app). They talk over Tauri IPC:
 - React → Rust: `invoke("command", args)`. **All commands are wrapped in `src/api/index.ts`** —
   components import those typed wrappers, never `invoke()` directly.
-- Rust → React: a `Channel<T>` (streaming, used for PTY bytes and chat events) or events.
+- Rust → React: a `Channel<T>` (streaming, used for PTY bytes, agent/service output) or events.
 - Sync `#[tauri::command]` runs on the UI thread → anything slow/filesystem-heavy is `async fn` +
   `tauri::async_runtime::spawn_blocking` so the window never freezes.
 
 The webview only ever loads **local bundled assets** — no remote page is loaded into an
 IPC-privileged window. The realistic threat to the IPC surface is a renderer XSS, which is why CSP
-matters (see [audit/security.md](./audit/security.md) S1). Markdown is rendered without raw HTML.
+matters (see [audit/security.md](./audit/security.md) S1).
 
 ## Spaces & sessions (`stores/workspace.ts`)
 
@@ -38,71 +38,11 @@ matters (see [audit/security.md](./audit/security.md) S1). Markdown is rendered 
   This is essential: orphaned `OpenConsole.exe` hosts busy-spin at high CPU. Locks use a
   poison-tolerant helper (`unwrap_or_else(|e| e.into_inner())`).
 
-## Persistent home chat (`chat.rs` ↔ `stores/chat.ts` ↔ `ChatPanel.tsx`)
+## Where new projects go (`lib/projects.ts`)
 
-The home-screen chat runs Claude **on the subscription** by spawning the user's `claude` CLI in
-**stream-json** mode — no API key, no SDK, no token handling.
-
-### Transport (`chat.rs`)
-One **long-lived process per thread**:
-```
-claude -p --input-format stream-json --output-format stream-json --include-partial-messages --verbose
-       [--model X] [--resume <sid>] [--permission-mode Y]
-```
-- `start(id, cwd, args, ch)` — spawns it (via `cmd /c claude …` on Windows so the `.cmd` shim
-  resolves), keeps **stdin open**, streams every stdout line to the `Channel` for the process's
-  whole life. On stdout EOF (process gone) it emits an `{"type":"exit"}` sentinel.
-- `turn(id, message)` — writes one user-message JSON envelope (a single line) to the live stdin:
-  `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"…"}]}}`.
-- A **turn is complete on the `result` event** — the process stays alive for the next turn (no
-  respawn, no `--resume` between turns). `--resume` is only used to recover an existing conversation
-  when a fresh process is started (process died, app restarted, thread switched).
-- `stop`/`kill_all` reap the tree (`taskkill /T /F` on Windows after closing stdin).
-
-### Driver (`stores/chat.ts`)
-- A module-level `live` session owns the current process. Each `chatStart` binds its event handler
-  to a **specific session object** (`routeLine(sess, …)`), and the handler ignores lines when
-  `live !== sess` — so events from a superseded or dead process can't clobber the new one.
-- Per-turn parse state (gotStream/skipBlock/startedAt/pending text + throttle) lives on the session.
-  Token deltas are throttled (~55ms) so markdown doesn't re-render every token.
-- **Never render blank:** if streaming produced only a thinking block, the handler falls back to the
-  complete `assistant` event; if a turn ends with nothing, a `(no response)` placeholder is shown.
-- **Watchdog:** an inactivity timer (reset on every event, ~6 min) unsticks a wedged turn —
-  surfaces a timeout note and clears `busy`. Generous so long agentic turns aren't interrupted.
-- **cwd pinning:** the thread records the folder it first ran in (`thread.cwd`) and every later
-  turn/resume uses it — because `claude --resume` is **folder-scoped** (a session only resumes in
-  the directory it was created in). If a resume fails ("No conversation found"), the thread drops
-  the dead `sessionId` so the next message starts fresh.
-- **Persistence is bounded:** newest 30 threads, last 200 messages/thread, tool `result` strings
-  truncated. `load()` defensively normalizes the blob so a corrupt/old shape can't white-screen.
-
-### UI (`ChatPanel.tsx`)
-Collapsible: a launcher (closed) → composer (open) → composer + history (expanded). Auto-expands on
-send. The "continue in a terminal pane" button resumes the thread's session **in the thread's
-folder** (and prefers a project already at that folder) so `--resume` works.
-
-## Orchestrator (`stores/orchestrator.ts`)
-
-The chat model can operate the app. It's an **in-process operator-command protocol** — NOT an MCP
-bridge. A system preamble (`ORCHESTRATOR_PREAMBLE`) is injected into the first turn telling the
-model it can emit fenced blocks:
-````
-```hyprspace
-{"action":"create_project","name":"my-app"}
-```
-````
-On turn completion, `runOperatorText` strips those blocks from the visible text and `executeCommand`
-runs them against the stores. Actions: `create_project`, `new_open_space`, `spawn_agents`
-(provider whitelisted, count clamped 1–8), `switch_space`. Results render as action chips.
-
-**Safety:** `create_project` is confined to the projects base folder — `slug()` strips every
-non-`[A-Za-z0-9_-]` char (so `..`, `/`, `\`, `:` collapse), and a `startsWith(base)` check is the
-backstop. The model **cannot** supply an arbitrary path (the `path` field was removed). Spawned
-panes use the constant provider command builders, so no model text reaches a process argument.
-
-Where new projects go: `src/lib/projects.ts` → `projectsBaseDir()` (the Settings → Workspace
-"Projects folder", default `~/Documents/HyprSpace`) + `joinPath`. Both the chat and the New Project
-dialog use it so they agree.
+`projectsBaseDir()` resolves the Settings → Workspace "Projects folder" (default
+`~/Documents/HyprSpace`) and `joinPath` builds the folder under it. Anything that creates a project —
+today the New Project dialog — goes through it so they all agree on the location.
 
 ## Startup services (`services.rs` ↔ `StartupSettings.tsx`)
 
@@ -118,7 +58,7 @@ option. Configured in Settings → Startup; the per-folder list + env live in `s
 - Like the agent runner it clears `NoDefaultCurrentDirectoryInExePath` so a script behaves like a
   double-click (an `.exe` next to a `.bat` still resolves).
 - Commands: `service_start` / `service_stop` (`api/index.ts` → `serviceStart`/`serviceStop`). Reaped
-  by `kill_all` on app exit (`taskkill /T /F` on Windows), same as PTYs and the chat process.
+  by `kill_all` on app exit (`taskkill /T /F` on Windows), same as PTYs and the agent runner.
 
 ## Loops (`stores/loops.ts` + `lib/loops.ts` + `agent.rs`)
 
@@ -131,7 +71,7 @@ and a titlebar/rail badge while any run. The page leads with one-click starter t
 
 ### Backends (pluggable — and the subscription is never used)
 Each loop picks a `provider`. **Loops deliberately do not use the Claude subscription** — that path is
-reserved for the panes + home chat. Instead:
+reserved for the panes. Instead:
 - **Claude** runs on a user-provided **Anthropic API key** stored in the OS keychain (Windows
   Credential Manager / macOS Keychain via `secret_set`/`secret_has`/`secret_clear`). The key is read
   in Rust at spawn time and injected as `ANTHROPIC_API_KEY` — it never crosses into the webview. A
@@ -182,7 +122,7 @@ Enforced in the tick loop, in this order:
 (`tokenBudget` exists on `LoopStop` but isn't wired in yet — it needs token counts from the JSON output.)
 
 ### Agent runner (`agent.rs`)
-`AgentManager` runs **one** provider turn per call — the headless analog of `chat.rs`. `start(id, cwd,
+`AgentManager` runs **one** provider turn per call, headless — no PTY, no pane. `start(id, cwd,
 args, env, secrets, prompt, ch)` spawns the full argv (via `cmd /c …` on Windows so the `.cmd` shim
 resolves), writes the prompt to stdin then closes it (so a long/multiline prompt never has to survive
 shell quoting), and streams stdout+stderr as lines. `secrets` maps an env-var name → a keychain secret
@@ -238,7 +178,7 @@ A single-writer, crash-safe JSON store at `~/.hyprspace/v2/<name>.json`: temp fi
 atomic rename, under one (poison-tolerant) lock. `load` distinguishes "file absent" (Ok(None)) from
 "IO error" (Err) so a transient error never looks like a first run and clobbers data. The `name` is
 sanitized to a safe token so it can't traverse out of the dir. The TS stores (`workspace`,
-`settings`, `chat`, …) serialize their state into this.
+`settings`, `loops`, …) serialize their state into this.
 
 ## Auth (`oauth.rs` + `lib/supabase.ts` + `stores/auth.ts`)
 

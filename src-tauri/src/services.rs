@@ -4,19 +4,56 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 use tauri::ipc::Channel;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ServiceManager {
-    procs: Mutex<HashMap<String, Child>>,
+    procs: Arc<Mutex<HashMap<String, Child>>>,
 }
 
 // frontend sentinel: a log line equal to this means the process ended
 const EXIT_MARK: &str = "\u{0}__service_exit__";
+
+// a chatty dev server can emit thousands of lines/sec; one Channel::send per line means one
+// webview IPC hop per line. batch lines for up to this long (or count) and send them joined
+// with '\n' — the frontend splits. keystroke-latency doesn't matter for background logs.
+const BATCH_MS: u64 = 30;
+const BATCH_LINES: usize = 256;
+
+fn spawn_line_batcher(ch: Channel<String>) -> SyncSender<String> {
+    let (tx, rx) = sync_channel::<String>(4096);
+    std::thread::spawn(move || {
+        let mut buf: Vec<String> = Vec::new();
+        let flush = |buf: &mut Vec<String>| {
+            if !buf.is_empty() {
+                let _ = ch.send(buf.join("\n"));
+                buf.clear();
+            }
+        };
+        loop {
+            match rx.recv_timeout(Duration::from_millis(BATCH_MS)) {
+                Ok(line) => {
+                    buf.push(line);
+                    if buf.len() >= BATCH_LINES {
+                        flush(&mut buf);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => flush(&mut buf),
+                Err(RecvTimeoutError::Disconnected) => {
+                    flush(&mut buf);
+                    break;
+                }
+            }
+        }
+    });
+    tx
+}
 
 impl ServiceManager {
     fn procs(&self) -> MutexGuard<'_, HashMap<String, Child>> {
@@ -46,8 +83,11 @@ impl ServiceManager {
         let _ = child.wait();
     }
 
+    // remove under a short lock, kill after the guard drops — taskkill blocks for the whole
+    // process-tree teardown and must not hold the map (or every other service op) hostage
     fn reap(&self, id: &str) {
-        if let Some(child) = self.procs().remove(id) {
+        let child = self.procs().remove(id);
+        if let Some(child) = child {
             self.kill(child);
         }
     }
@@ -91,11 +131,15 @@ impl ServiceManager {
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
+        // both streams feed one batcher so ordering is preserved and IPC is coalesced
+        let batch = spawn_line_batcher(ch);
         if let Some(err) = stderr {
-            let che = ch.clone();
+            let btx = batch.clone();
             std::thread::spawn(move || {
                 for line in BufReader::new(err).lines().map_while(Result::ok) {
-                    let _ = che.send(line);
+                    if btx.send(line).is_err() {
+                        break;
+                    }
                 }
             });
         }
@@ -103,13 +147,16 @@ impl ServiceManager {
         std::thread::spawn(move || {
             if let Some(out) = stdout {
                 for line in BufReader::new(out).lines().map_while(Result::ok) {
-                    let _ = ch.send(line);
+                    if batch.send(line).is_err() {
+                        break;
+                    }
                 }
             }
-            let _ = ch.send(EXIT_MARK.to_string());
+            let _ = batch.send(EXIT_MARK.to_string());
         });
 
-        if let Some(old) = self.procs().insert(id, child) {
+        let old = self.procs().insert(id, child);
+        if let Some(old) = old {
             self.kill(old);
         }
         Ok(())

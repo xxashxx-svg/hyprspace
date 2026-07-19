@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -36,10 +36,36 @@ fn send_ctrl(ch: &Channel<InvokeResponseBody>, c: &Control) {
 
 type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
 
+// xterm flow control: when the frontend's write buffer backs up it pauses us; the reader thread
+// parks here instead of reading, the kernel PTY buffer fills, and the child blocks on write —
+// real end-to-end backpressure instead of unbounded queueing in the webview.
+struct PauseGate {
+    paused: Mutex<bool>,
+    cv: Condvar,
+}
+
+impl PauseGate {
+    fn new() -> Arc<Self> {
+        Arc::new(PauseGate { paused: Mutex::new(false), cv: Condvar::new() })
+    }
+    fn set(&self, v: bool) {
+        *self.paused.lock().unwrap_or_else(|e| e.into_inner()) = v;
+        self.cv.notify_all();
+    }
+    // block while paused; returns immediately when running
+    fn wait_if_paused(&self) {
+        let mut p = self.paused.lock().unwrap_or_else(|e| e.into_inner());
+        while *p {
+            p = self.cv.wait(p).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+}
+
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: SharedWriter, // shared so the reader thread can answer terminal queries (headless mode)
     killer: Box<dyn ChildKiller + Send + Sync>,
+    gate: Arc<PauseGate>,
 }
 
 // Headless PTY mode (no xterm): a TUI like claude's emits terminal queries on startup — cursor
@@ -48,6 +74,11 @@ struct Session {
 // also auto-confirm the one-time folder-trust prompt as a fallback (--dangerously-skip-permissions
 // normally skips it). `trust_sent` is per-session so we only confirm once.
 fn answer_terminal_queries(chunk: &[u8], writer: &SharedWriter, trust_sent: &mut bool) {
+    // queries only occur around TUI startup; once trust is confirmed, a chunk with no ESC
+    // byte can't contain one — skip the utf8 conversion + substring scans on the firehose
+    if *trust_sent && !chunk.contains(&0x1b) {
+        return;
+    }
     let s = String::from_utf8_lossy(chunk);
     let mut resp: Vec<u8> = Vec::new();
     if s.contains("\x1b[6n") {
@@ -130,11 +161,14 @@ impl PtyManager {
         // reader thread -> bounded channel (blocking = real backpressure, no byte drops) -> coalescer
         let (tx, rx) = sync_channel::<Vec<u8>>(256);
         let resp_writer = if auto_respond { Some(writer.clone()) } else { None };
+        let gate = PauseGate::new();
+        let reader_gate = gate.clone();
         thread::spawn(move || {
             let mut reader = reader;
             let mut buf = [0u8; READ_BUF];
             let mut trust_sent = false;
             loop {
+                reader_gate.wait_if_paused();
                 match reader.read(&mut buf) {
                     Ok(0) => break, // EOF
                     Ok(n) => {
@@ -196,8 +230,16 @@ impl PtyManager {
         });
 
         self.sessions()
-            .insert(id, Session { master: pair.master, writer, killer });
+            .insert(id, Session { master: pair.master, writer, killer, gate });
         Ok(())
+    }
+
+    // frontend flow control: xterm's write buffer crossed its high-water mark → stop reading the
+    // PTY until resumed. Unknown ids are fine (session died while the pause was in flight).
+    pub fn set_paused(&self, id: &str, paused: bool) {
+        if let Some(s) = self.sessions().get(id) {
+            s.gate.set(paused);
+        }
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
@@ -222,6 +264,7 @@ impl PtyManager {
 
     pub fn kill(&self, id: &str) -> Result<(), String> {
         if let Some(mut s) = self.sessions().remove(id) {
+            s.gate.set(false); // wake a paused reader so it can see EOF and exit
             let _ = s.killer.kill();
             // dropping the Session drops its master PTY → ClosePseudoConsole, which can BLOCK until
             // the attached process tree detaches. kill_pty runs on the UI thread, so do the drop
@@ -236,6 +279,7 @@ impl PtyManager {
     // drops its master PTY, which closes the pseudoconsole (ClosePseudoConsole) and ends the host.
     pub fn kill_all(&self) {
         for (_, mut s) in self.sessions().drain() {
+            s.gate.set(false);
             let _ = s.killer.kill();
         }
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, memo, useEffect, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { gitChanges, gitDiff, gitBranchInfo, gitFileOp, gitCommit, type BranchInfo } from "../api";
@@ -6,11 +6,13 @@ import type { FileChange } from "../api/types";
 import { SkillsPanel } from "./SkillsPanel";
 import { ServicesPanel } from "./ServicesPanel";
 import { FilesPanel } from "./FilesPanel";
-import { CodeEditor } from "./CodeEditor";
 import { confirmDialog } from "../stores/confirm";
 import { kbd } from "../platform";
 import { useNotifications } from "../stores/notifications";
 import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, Server, FolderTree, FileCode } from "lucide-react";
+
+// codemirror + language packs are heavy — load the editor only when the tab is opened
+const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
 // porcelain code → a coarse class for the status chip color
 function statusClass(code: string): string {
@@ -21,11 +23,19 @@ function statusClass(code: string): string {
   return "mod";
 }
 
-function DiffView({ text }: { text: string }) {
+const DIFF_LINE_CAP = 2000; // keep a giant lockfile diff from creating 50k dom nodes
+
+const DiffView = memo(function DiffView({ text }: { text: string }) {
+  // remember which diff was expanded, so switching files re-collapses without a flash
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
   if (!text.trim()) return <div className="dock-empty">No diff to show.</div>;
+  const lines = text.split("\n");
+  const showAll = expandedFor === text;
+  const shown = showAll ? lines : lines.slice(0, DIFF_LINE_CAP);
+  const hidden = lines.length - shown.length;
   return (
     <pre className="diff">
-      {text.split("\n").map((l, i) => {
+      {shown.map((l, i) => {
         let cls = "";
         if (l.startsWith("+++") || l.startsWith("---") || l.startsWith("diff ") || l.startsWith("index "))
           cls = "d-meta";
@@ -38,19 +48,26 @@ function DiffView({ text }: { text: string }) {
           </div>
         );
       })}
+      {hidden > 0 && (
+        <button className="sc-mini" onClick={() => setExpandedFor(text)}>
+          Show {hidden.toLocaleString()} more lines
+        </button>
+      )}
     </pre>
   );
-}
+});
 
 // Full source-control panel: branch + ahead/behind, staged/unstaged with per-file
 // stage/unstage/discard, a commit box (commits exactly what's staged), and a diff view.
 function SourceControl({ cwd }: { cwd: string }) {
+  const view = useUi((s) => s.view);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [branch, setBranch] = useState<BranchInfo | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [diff, setDiff] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const inflight = useRef(false);
 
   const refresh = () => {
     if (!cwd) {
@@ -58,22 +75,39 @@ function SourceControl({ cwd }: { cwd: string }) {
       setBranch(null);
       return;
     }
-    gitChanges(cwd).then(setFiles).catch(() => {});
-    gitBranchInfo(cwd).then(setBranch).catch(() => {});
+    if (inflight.current) return; // a slow repo shouldn't stack up ticks
+    inflight.current = true;
+    Promise.allSettled([
+      // only take fresh identities when something actually changed, so the panel
+      // doesn't re-render every poll
+      gitChanges(cwd).then((next) =>
+        setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next)),
+      ),
+      gitBranchInfo(cwd).then((next) =>
+        setBranch((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next)),
+      ),
+    ]).then(() => {
+      inflight.current = false;
+    });
   };
   useEffect(() => {
-    let stop = false;
     const tick = () => {
-      if (!stop) refresh();
+      // don't poll while the window is hidden or we're off the workspace view
+      if (document.hidden || view !== "space") return;
+      refresh();
     };
     tick();
     const id = setInterval(tick, 4000); // keep fresh while the dock is open
+    const onVis = () => {
+      if (!document.hidden) tick(); // catch up right away on return
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
-      stop = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd]);
+  }, [cwd, view]);
 
   const staged = files.filter((f) => f.status[0] !== " " && f.status[0] !== "?");
   const unstaged = files.filter((f) => f.status[1] !== " ");
@@ -302,7 +336,13 @@ export function ReviewDock() {
       ) : tab === "services" ? (
         <ServicesPanel />
       ) : tab === "editor" ? (
-        openFile ? <CodeEditor key={openFile} path={openFile} /> : <FilesPanel />
+        openFile ? (
+          <Suspense fallback={null}>
+            <CodeEditor key={openFile} path={openFile} />
+          </Suspense>
+        ) : (
+          <FilesPanel />
+        )
       ) : (
         <SkillsPanel cwd={cwd} />
       )}

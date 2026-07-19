@@ -148,7 +148,6 @@ export function HomePage() {
         </div>
       </div>
       </div>
-      {/* home chat is parked for now — re-add <ChatPanel /> (./ChatPanel) to bring it back */}
       <footer className="home-foot">
         <span>HyprSpace{version ? ` v${version}` : ""}</span>
         {user?.email && (

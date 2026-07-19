@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import {
   Repeat,
@@ -82,7 +83,22 @@ const STATUS_LABEL: Record<string, string> = {
 // transcript on the right; and "Manage" — the classic editor (templates, API key, full config cards).
 export function LoopsPage() {
   const loops = useLoops((s) => s.loops);
-  const runs = useLoops((s) => s.runs);
+  // `runs` re-mints on every batched stream flush — the heavy live view renders inside LoopRunView,
+  // so the page itself only selects the coarse per-run bits it shows (status dots + iteration counts)
+  const statuses = useLoops(
+    useShallow((s) => {
+      const m: Record<string, string> = {};
+      for (const [k, r] of Object.entries(s.runs)) m[k] = r.status;
+      return m;
+    }),
+  );
+  const iters = useLoops(
+    useShallow((s) => {
+      const m: Record<string, number> = {};
+      for (const [k, r] of Object.entries(s.runs)) m[k] = r.iteration;
+      return m;
+    }),
+  );
   const tab = useUi((s) => s.loopsTab);
   const openLoopId = useUi((s) => s.openLoopId);
   const ids = Object.keys(loops);
@@ -102,7 +118,7 @@ export function LoopsPage() {
 
   // running/paused loops float up so the live ones lead the list
   const rank = (id: string) => {
-    const st = runs[id]?.status;
+    const st = statuses[id];
     return st === "running" || st === "paused" ? 0 : 1;
   };
   const list = Object.values(loops).sort((a, b) => rank(a.id) - rank(b.id));
@@ -123,8 +139,10 @@ export function LoopsPage() {
   };
 
   const def = sel ? loops[sel] : null;
-  const run = sel ? runs[sel] : undefined;
-  const status = run?.status ?? "idle";
+  // narrow per-field selects for the detail head — status/iteration change per iteration, not per line
+  const worktreePath = useLoops((s) => (sel ? s.runs[sel]?.worktreePath : undefined));
+  const nextRunAt = useLoops((s) => (sel ? s.runs[sel]?.nextRunAt : undefined));
+  const status = (sel && statuses[sel]) || "idle";
   const active = status === "running" || status === "paused";
   // interactive (pane) claude runs on the logged-in CLI — no API key needed (matches the engine)
   const needsKey = !!def && def.provider === "claude" && def.run !== "pane" && !hasKey;
@@ -175,8 +193,7 @@ export function LoopsPage() {
           <div className="loops-split">
             <div className="loops-master" ref={listRef}>
               {list.map((d) => {
-                const r = runs[d.id];
-                const st = r?.status ?? "idle";
+                const st = statuses[d.id] ?? "idle";
                 if (editingId === d.id) {
                   return (
                     <div key={d.id} className="loops-master-item editing">
@@ -216,7 +233,7 @@ export function LoopsPage() {
                     <span className="loops-master-name">{d.name || "Untitled loop"}</span>
                     {st === "running" && <Loader2 size={12} className="rail-loop-spin" />}
                     <span className="rail-loop-count">
-                      {r?.iteration ?? 0}/{d.stop.maxIterations}
+                      {iters[d.id] ?? 0}/{d.stop.maxIterations}
                     </span>
                   </button>
                 );
@@ -254,10 +271,10 @@ export function LoopsPage() {
                           <Play size={13} />
                         </button>
                       )}
-                      {run?.worktreePath && (
+                      {worktreePath && (
                         <button
                           className="loop-review"
-                          title={`Open the isolated worktree:\n${run.worktreePath}`}
+                          title={`Open the isolated worktree:\n${worktreePath}`}
                           onClick={() => revealLoopWorktree(sel)}
                         >
                           <FolderGit2 size={12} /> Review changes
@@ -274,7 +291,7 @@ export function LoopsPage() {
                   </div>
                   {def.run === "pane" ? (
                     active ? (
-                      run?.nextRunAt ? (
+                      nextRunAt ? (
                         <div className="loop-run-empty">
                           Scheduled — the interactive session launches at the next fire (while
                           HyprSpace is open).
@@ -304,7 +321,7 @@ export function LoopsPage() {
         (() => {
           const d = loops[loopMenu.id];
           if (!d) return null;
-          const st = runs[loopMenu.id]?.status;
+          const st = statuses[loopMenu.id];
           const isActive = st === "running" || st === "paused";
           const close = () => setLoopMenu(null);
           return (

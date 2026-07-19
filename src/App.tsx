@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Titlebar } from "./components/Titlebar";
 import { Rail } from "./components/Rail";
@@ -9,33 +9,49 @@ import { taskFromFile } from "./lib/startup";
 import { useUi } from "./stores/ui";
 import { useSettings } from "./stores/settings";
 import { initSettingsSync } from "./stores/settingsSync";
-import { Settings } from "./components/Settings";
-import { CommitDialog } from "./components/CommitDialog";
-import { PrDialog } from "./components/PrDialog";
-import { InitRepoDialog } from "./components/InitRepoDialog";
-import { ActionDialog } from "./components/ActionDialog";
-import { PreviewPanel } from "./components/PreviewPanel";
+import { useGit } from "./stores/git";
+import { useActionEditor } from "./stores/actionEditor";
+import { usePreview } from "./stores/preview";
 import { ConfirmDialog } from "./components/ConfirmDialog";
-import { NewProjectDialog } from "./components/NewProjectDialog";
-import { LaunchWorkspace } from "./components/LaunchWorkspace";
-import { ServicesDialog } from "./components/ServicesDialog";
-import { ServiceLogs } from "./components/ServiceLogs";
 import { Updater } from "./components/Updater";
-import { CommandPalette } from "./components/CommandPalette";
 import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
 import { HomePage } from "./components/HomePage";
-import { LoopsPage } from "./components/LoopsPage";
 import { StartupRunner } from "./components/StartupRunner";
 import { LoopRunner } from "./components/LoopRunner";
 import { WhatsNew } from "./components/WhatsNew";
-import { Onboarding } from "./components/Onboarding";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
 import { useSessionNamer } from "./ai/autoNameSession";
 import { saveState, loadState, backupState, writePty } from "./api";
 import "./styles/tokens.css";
 import "./App.css";
+
+// pages/dialogs that only appear behind a condition are code-split — their chunks load on
+// first open, not at startup. always-mounted stuff (Titlebar/Rail/PaneGrid/HomePage) stays static.
+const Settings = lazy(() => import("./components/Settings").then((m) => ({ default: m.Settings })));
+const LoopsPage = lazy(() => import("./components/LoopsPage").then((m) => ({ default: m.LoopsPage })));
+const LaunchWorkspace = lazy(() =>
+  import("./components/LaunchWorkspace").then((m) => ({ default: m.LaunchWorkspace })),
+);
+const NewProjectDialog = lazy(() =>
+  import("./components/NewProjectDialog").then((m) => ({ default: m.NewProjectDialog })),
+);
+const Onboarding = lazy(() => import("./components/Onboarding").then((m) => ({ default: m.Onboarding })));
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
+);
+const CommitDialog = lazy(() => import("./components/CommitDialog").then((m) => ({ default: m.CommitDialog })));
+const PrDialog = lazy(() => import("./components/PrDialog").then((m) => ({ default: m.PrDialog })));
+const InitRepoDialog = lazy(() =>
+  import("./components/InitRepoDialog").then((m) => ({ default: m.InitRepoDialog })),
+);
+const ActionDialog = lazy(() => import("./components/ActionDialog").then((m) => ({ default: m.ActionDialog })));
+const PreviewPanel = lazy(() => import("./components/PreviewPanel").then((m) => ({ default: m.PreviewPanel })));
+const ServicesDialog = lazy(() =>
+  import("./components/ServicesDialog").then((m) => ({ default: m.ServicesDialog })),
+);
+const ServiceLogs = lazy(() => import("./components/ServiceLogs").then((m) => ({ default: m.ServiceLogs })));
 
 const win = getCurrentWindow();
 
@@ -69,6 +85,19 @@ let booted = false;
 export default function App() {
   const view = useUi((s) => s.view);
   const settingsOpen = useUi((s) => s.settingsOpen);
+  // open flags for the lazy dialogs — hoisted here so their chunks only load on first open
+  const paletteOpen = useUi((s) => s.paletteOpen);
+  const newProjectOpen = useUi((s) => s.newProjectOpen);
+  const servicesFor = useUi((s) => s.servicesFor);
+  const serviceLogsFor = useUi((s) => s.serviceLogsFor);
+  const onboardingOpen = useUi((s) => s.onboardingOpen);
+  const onboarded = useSettings((s) => s.onboarded);
+  const settingsHydrated = useSettings((s) => s.hydrated);
+  const commitOpen = useGit((s) => s.dialogOpen);
+  const prOpen = useGit((s) => s.prOpen);
+  const initRepoOpen = useGit((s) => s.initOpen);
+  const actionOpen = useActionEditor((s) => s.open);
+  const previewOpen = usePreview((s) => s.open);
   useSessionNamer(); // periodically task-names agent panes via Codex (single-flight, kill-switchable)
 
   // ---- hydrate on launch, carefully: a read hiccup must never clobber saved data ----
@@ -267,8 +296,10 @@ export default function App() {
       <div className="app-body">
         <Rail />
         {view === "home" && <HomePage />}
-        {view === "loops" && <LoopsPage />}
-        {view === "launch" && <LaunchWorkspace />}
+        <Suspense fallback={null}>
+          {view === "loops" && <LoopsPage />}
+          {view === "launch" && <LaunchWorkspace />}
+        </Suspense>
         {/* kept mounted (PTYs stay alive) but hidden unless we're in a space */}
         <div className="workspace-view" style={{ display: view === "space" ? "flex" : "none" }}>
           <PaneGrid />
@@ -279,18 +310,22 @@ export default function App() {
       <StartupRunner />
       <LoopRunner />
       <WhatsNew />
-      <Onboarding />
-      <CommandPalette />
-      {settingsOpen && <Settings />}
-      <PreviewPanel />
-      <CommitDialog />
-      <PrDialog />
-      <InitRepoDialog />
-      <ActionDialog />
+      <Suspense fallback={null}>
+        {/* onboarding also mounts while undecided (!onboarded) — its own effect makes the
+            new-install-vs-existing-user call, then either opens the wizard or flags + unmounts */}
+        {settingsHydrated && (onboardingOpen || !onboarded) && <Onboarding />}
+        {paletteOpen && <CommandPalette />}
+        {settingsOpen && <Settings />}
+        {previewOpen && <PreviewPanel />}
+        {commitOpen && <CommitDialog />}
+        {prOpen && <PrDialog />}
+        {initRepoOpen && <InitRepoDialog />}
+        {actionOpen && <ActionDialog />}
+        {newProjectOpen && <NewProjectDialog />}
+        {servicesFor && <ServicesDialog />}
+        {serviceLogsFor && <ServiceLogs />}
+      </Suspense>
       <ConfirmDialog />
-      <NewProjectDialog />
-      <ServicesDialog />
-      <ServiceLogs />
       {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}
       {!isMac &&
         RESIZE.map(([k, dir]) => (

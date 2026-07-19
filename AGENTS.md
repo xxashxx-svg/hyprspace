@@ -15,18 +15,18 @@ src/                     the entire frontend (React + TS) — "the UI and stuff"
   App.css                ORDERED @import index of styles/*.css — don't add rules here
   styles/tokens.css      design tokens (theme variables)
   styles/<area>.css      per-area component CSS: rail, home, pane, loops, launcher, editor,
-                         chat, settings, files-tree, services, command-palette, titlebar, … (~30 files)
+                         settings, files-tree, services, command-palette, titlebar, … (~30 files)
   components/*.tsx        one file per UI component (Rail, PaneGrid, TerminalPane, HomePage,
-                         ChatPanel, ReviewDock, Settings, LoopsPage/Manager, LaunchWorkspace,
+                         ReviewDock, Settings, LoopsPage/Manager, LaunchWorkspace,
                          CodeEditor, Titlebar, CommandPalette, …)
-  stores/*.ts            Zustand state, one file per domain (workspace, ui, settings, chat, loops,
+  stores/*.ts            Zustand state, one file per domain (workspace, ui, settings, loops,
                          launchPresets, git, services, …)
   lib/*.ts               small helpers + engines (loops.ts engine, loopTemplates, names, projects, time)
   api/index.ts           typed bridge over Tauri invoke()/Channel — components import THIS, never invoke()
 
 src-tauri/               the Rust backend
   src/lib.rs             all #[tauri::command] registrations + app lifecycle
-  src/<feature>.rs       pty, chat, agent, services, persist, license, oauth, ai
+  src/<feature>.rs       pty, agent, services, persist, license, oauth, ai
   src/devtools/          dev-cockpit commands split per area: git.rs, worktree.rs, project.rs,
                          fs.rs, providers.rs, mcp.rs, skills.rs (+ mod.rs re-exports & shared helpers)
   tauri.conf.json        app config / version / updater / capabilities

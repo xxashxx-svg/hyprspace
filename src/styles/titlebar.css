@@ -210,11 +210,23 @@
   border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-1));
 }
 .tb-svc-dot {
+  position: relative;
+  z-index: 0; /* own stacking context so the ring can sit behind the dot */
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--status-ok);
+}
+/* pulse ring animates transform/opacity only (compositable) — the old box-shadow version
+   forced a repaint every frame for as long as any service was running */
+.tb-svc-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--status-ok) 55%, transparent);
   animation: svcPulse 2s var(--ease) infinite;
 }
 .tb-svc-label {
@@ -285,13 +297,14 @@
 }
 @keyframes svcPulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-ok) 55%, transparent);
+    transform: scale(1);
+    opacity: 1;
   }
-  70% {
-    box-shadow: 0 0 0 5px transparent;
-  }
+  /* 7px dot + 5px spread ≈ 2.4x — same reach as the old shadow ring */
+  70%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    transform: scale(2.4);
+    opacity: 0;
   }
 }
 .tb-menu-pop {

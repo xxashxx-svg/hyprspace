@@ -42,48 +42,50 @@ export async function createPty(opts: CreatePtyOpts, handlers: PtyHandlers): Pro
   });
 }
 
+// input crosses IPC as base64 — a JSON number array was ~4-5 bytes per input byte, which made
+// big pastes build multi-MB JSON strings on the UI thread
+function toBase64(data: Uint8Array): string {
+  let s = "";
+  const CHUNK = 0x8000; // fromCharCode arg-count limit
+  for (let i = 0; i < data.length; i += CHUNK) {
+    s += String.fromCharCode(...data.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+
 export function writePty(id: string, data: Uint8Array): Promise<void> {
-  return invoke("write_pty", { id, data: Array.from(data) });
+  return invoke("write_pty", { id, data: toBase64(data) });
 }
 
 export function resizePty(id: string, cols: number, rows: number): Promise<void> {
   return invoke("resize_pty", { id, cols, rows });
 }
 
+// xterm flow control: pause stops the backend PTY reader (kernel buffer then backpressures the
+// child); resume when xterm's write buffer has drained
+export function pausePty(id: string): Promise<void> {
+  return invoke("pause_pty", { id });
+}
+export function resumePty(id: string): Promise<void> {
+  return invoke("resume_pty", { id });
+}
+
 export function killPty(id: string): Promise<void> {
   return invoke("kill_pty", { id });
 }
 
-// ---- native chat: drive a persistent `claude` stream-json session (runs on the subscription) ----
-// chatStart spawns the long-lived process and streams every event to onLine for its whole life;
-// chatTurn feeds one user-message envelope to its stdin; chatStop kills it.
-export function chatStart(
-  id: string,
-  cwd: string,
-  args: string[],
-  onLine: (line: string) => void,
-): Promise<void> {
-  const channel = new Channel<string>();
-  channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
-  return invoke("chat_start", { id, cwd, args, onEvent: channel });
-}
-export function chatTurn(id: string, message: string): Promise<void> {
-  return invoke("chat_turn", { id, message });
-}
-export function chatStop(id: string): Promise<void> {
-  return invoke("chat_stop", { id });
-}
-
 // ---- background services: run a command headless and stream its stdout+stderr as log lines ----
+// the backend batches lines (~30ms) and sends them joined with '\n' so a chatty dev server
+// doesn't cost one IPC hop per line — onLines gets the whole batch, one store write per batch
 export function serviceStart(
   id: string,
   cwd: string,
   command: string,
   env: Record<string, string>,
-  onLine: (line: string) => void,
+  onLines: (lines: string[]) => void,
 ): Promise<void> {
   const channel = new Channel<string>();
-  channel.onmessage = (msg) => onLine(typeof msg === "string" ? msg : String(msg));
+  channel.onmessage = (msg) => onLines((typeof msg === "string" ? msg : String(msg)).split("\n"));
   return invoke("service_start", { id, cwd, command, env, onEvent: channel });
 }
 export function serviceStop(id: string): Promise<void> {

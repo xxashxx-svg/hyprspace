@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useRef, useState, memo } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -16,7 +16,7 @@ import { useProjectConfigs } from "../stores/projectConfig";
 import { useUi } from "../stores/ui";
 import { useNotifications } from "../stores/notifications";
 import { claudeCmd } from "../actions";
-import { createPty, writePty, resizePty, killPty, claudeResumeMode, revealPath, worktreeCreate } from "../api";
+import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { noteUserInput, forgetSession } from "../ai/autoNameSession";
 import { useActivity } from "../stores/activity";
@@ -132,6 +132,23 @@ function TerminalPaneInner({
 
   const isClaude = provider === "claude";
 
+  // skip no-op resize_pty invokes — fit() usually lands on the same cols/rows
+  const lastSize = useRef({ cols: -1, rows: -1 });
+  const fitResize = useCallback(
+    (cols: number, rows: number) => {
+      if (cols === lastSize.current.cols && rows === lastSize.current.rows) return;
+      lastSize.current = { cols, rows };
+      void resizePty(sessionId, cols, rows);
+    },
+    [sessionId],
+  );
+
+  // the refocus redraw listener below only repaints visible panes; ref so it sees the latest
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -229,6 +246,14 @@ function TerminalPaneInner({
       }
     });
 
+    // flow control: xterm parses async, so a firehose child (cat bigfile, verbose build) can pile
+    // megabytes into its write buffer. past HIGH_WATER we pause the backend reader thread (the
+    // kernel pipe then backpressures the child) and resume once xterm drains below LOW_WATER.
+    const HIGH_WATER = 1024 * 1024;
+    const LOW_WATER = 128 * 1024;
+    let pending = 0;
+    let paused = false;
+
     useActivity.getState().markStart(sessionId);
     // apply the owning project's per-project env vars + default shell, if set
     const ownerWs = useWorkspaces
@@ -242,6 +267,7 @@ function TerminalPaneInner({
     const env = isClaude
       ? { ...(projEnv ?? {}), CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT: "1" }
       : projEnv;
+    lastSize.current = { cols: term.cols, rows: term.rows }; // create_pty carries the initial size
     createPty(
       {
         id: sessionId,
@@ -256,7 +282,18 @@ function TerminalPaneInner({
         onData: (bytes) => {
           if (disposed) return;
           markBooted();
-          term.write(bytes);
+          pending += bytes.length;
+          term.write(bytes, () => {
+            pending -= bytes.length;
+            if (paused && !disposed && pending < LOW_WATER) {
+              paused = false;
+              void resumePty(sessionId).catch(() => {});
+            }
+          });
+          if (!paused && pending > HIGH_WATER) {
+            paused = true;
+            void pausePty(sessionId).catch(() => {});
+          }
           appendOutput(sessionId, dec.decode(bytes, { stream: true }));
           useActivity.getState().markOutput(sessionId);
         },
@@ -302,7 +339,7 @@ function TerminalPaneInner({
       const atBottom = term.buffer.active.viewportY === term.buffer.active.baseY;
       try {
         fit.fit();
-        void resizePty(sessionId, term.cols, term.rows);
+        fitResize(term.cols, term.rows);
         if (atBottom) term.scrollToBottom();
       } catch {
         /* not ready */
@@ -332,17 +369,29 @@ function TerminalPaneInner({
     // Ctrl+scroll zooms the font (persisted, so every pane tracks the same size). capture phase +
     // stopPropagation so xterm's scrollback viewport can't eat the scroll-up (that broke zoom-in:
     // scrolling up had history to consume, scrolling down at the bottom didn't — hence the asymmetry).
+    // coalesce fast gestures to one setFontSize per frame — every notch used to trigger a font
+    // re-measure + atlas rebuild on every mounted pane
+    let wheelDelta = 0;
+    let wheelRaf = 0;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
       e.stopPropagation();
-      const cur = useSettings.getState().fontSize;
-      useSettings.getState().setFontSize(cur + (e.deltaY > 0 ? -1 : 1));
+      wheelDelta += e.deltaY > 0 ? -1 : 1;
+      if (wheelRaf) return;
+      wheelRaf = requestAnimationFrame(() => {
+        wheelRaf = 0;
+        if (disposed || !wheelDelta) return;
+        const cur = useSettings.getState().fontSize;
+        useSettings.getState().setFontSize(cur + wheelDelta);
+        wheelDelta = 0;
+      });
     };
     el.addEventListener("wheel", onWheel, { passive: false, capture: true });
 
     // after sleep/resume or refocus the WebGL atlas can go stale → ghost cursor; invalidate + repaint
     const redraw = () => {
+      if (!activeRef.current) return; // hidden panes rebuild their atlas when re-activated anyway
       try {
         term.clearTextureAtlas?.();
         requestAnimationFrame(() => {
@@ -365,6 +414,7 @@ function TerminalPaneInner({
     return () => {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
+      if (wheelRaf) cancelAnimationFrame(wheelRaf);
       clearTimeout(tSettled);
       clearTimeout(bootShow);
       clearTimeout(bootMax);
@@ -379,6 +429,7 @@ function TerminalPaneInner({
       searchRef.current = null;
       dropOutput(sessionId);
       forgetSession(sessionId); // drop the auto-namer's capture state for this pane
+      if (paused) void resumePty(sessionId).catch(() => {}); // unstick the reader before the kill
       void killPty(sessionId);
       term.dispose(); // also disposes the webgl addon if attached
       glRef.current = null;
@@ -422,14 +473,14 @@ function TerminalPaneInner({
       if (!term || !fit) return;
       try {
         fit.fit();
-        void resizePty(sessionId, term.cols, term.rows);
+        fitResize(term.cols, term.rows);
       } catch {
         /* not ready */
       }
       term.scrollToBottom();
     });
     return () => cancelAnimationFrame(id);
-  }, [active, isMaxed, sessionId]);
+  }, [active, isMaxed, fitResize]);
 
   useEffect(() => {
     if (focused) termRef.current?.focus();
@@ -460,11 +511,11 @@ function TerminalPaneInner({
     t.options.lineHeight = lineHeight ?? 1.1;
     try {
       f?.fit();
-      void resizePty(sessionId, t.cols, t.rows);
+      fitResize(t.cols, t.rows);
     } catch {
       /* not ready */
     }
-  }, [fontFamily, fontSize, lineHeight, sessionId]);
+  }, [fontFamily, fontSize, lineHeight, fitResize]);
 
   // live cursor change
   useEffect(() => {

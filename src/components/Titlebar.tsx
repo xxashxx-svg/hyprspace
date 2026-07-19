@@ -250,23 +250,34 @@ function ServicesIndicator() {
 }
 
 // Live indicator for running automations. Hidden when none are active; click jumps to the Automations page.
+// primitive selectors only — `runs` re-mints on every streamed batch, and this sits in the titlebar
 function LoopsIndicator() {
-  const runs = useLoops((s) => s.runs);
-  const loops = useLoops((s) => s.loops);
-  const active = Object.keys(runs).filter((id) => {
-    const st = runs[id]?.status;
-    return st === "running" || st === "paused";
+  const activeCount = useLoops((s) => {
+    let n = 0;
+    for (const r of Object.values(s.runs)) if (r.status === "running" || r.status === "paused") n++;
+    return n;
   });
-  if (active.length === 0) return null;
-  const only = active.length === 1 ? loops[active[0]] : null;
-  const iter = active.length === 1 ? runs[active[0]]?.iteration : 0;
-  const label = only ? `${only.name || "automation"}${iter ? ` · ${iter}` : ""}` : `${active.length} automations`;
-  const running = active.some((id) => runs[id]?.status === "running");
+  const running = useLoops((s) => Object.values(s.runs).some((r) => r.status === "running"));
+  // "name · iteration" when exactly one automation is active, null otherwise
+  const soloLabel = useLoops((s) => {
+    let id: string | null = null;
+    for (const [k, r] of Object.entries(s.runs)) {
+      if (r.status === "running" || r.status === "paused") {
+        if (id) return null;
+        id = k;
+      }
+    }
+    if (!id) return null;
+    const iter = s.runs[id].iteration;
+    return `${s.loops[id]?.name || "automation"}${iter ? ` · ${iter}` : ""}`;
+  });
+  if (activeCount === 0) return null;
+  const label = soloLabel ?? `${activeCount} automations`;
   return (
     <div className="tb-loop">
       <button
         className={`tb-loop-btn${running ? "" : " paused"}`}
-        title={`${active.length} automation${active.length > 1 ? "s" : ""} active — click to manage`}
+        title={`${activeCount} automation${activeCount > 1 ? "s" : ""} active — click to manage`}
         onClick={() => useUi.getState().goLoops()}
       >
         <span className={`tb-loop-dot${running ? " live" : ""}`} />

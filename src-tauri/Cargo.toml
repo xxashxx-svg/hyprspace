@@ -1,8 +1,10 @@
 [package]
 name = "hyprspace-tauri"
 version = "0.11.7"
-description = "A Tauri App"
-authors = ["you"]
+description = "A multi-terminal AI workspace — tile coding agents across projects, then automate them."
+authors = ["HyprSpace contributors"]
+license = "MIT"
+repository = "https://github.com/xxashxx-svg/hyprspace"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -39,3 +41,13 @@ keyring = { version = "3", features = ["windows-native"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native"] }
+
+
+# smaller + faster shipped binary (auto-update download size matters). thin LTO keeps the
+# release build time sane vs full; panic stays "unwind" — the poison-tolerant locks rely on it.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

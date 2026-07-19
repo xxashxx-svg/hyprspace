@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { memo, useEffect, useRef, useState, type ComponentType } from "react";
 import { useLoops, type LoopEvent } from "../stores/loops";
 import { stopLoop, pauseLoop } from "../lib/loops";
 import {
@@ -76,7 +76,9 @@ function ToolRow({ ev }: { ev: LoopEvent }) {
   );
 }
 
-function EventRow({ ev }: { ev: LoopEvent }) {
+// memoized — events are immutable (patchEvent swaps in a NEW object), so old rows skip re-rendering
+// as the transcript grows
+const EventRow = memo(function EventRow({ ev }: { ev: LoopEvent }) {
   if (ev.kind === "iteration")
     return (
       <div className="loop-ev-iter">
@@ -100,7 +102,7 @@ function EventRow({ ev }: { ev: LoopEvent }) {
     );
   // plain assistant / system text
   return <div className="loop-ev loop-ev-text">{ev.text}</div>;
-}
+});
 
 // The live agentic transcript for one loop: tool calls with durations, thinking, results, plus the
 // "next run today 14:30" / "next run Fri, Jul 3 03:00"
