@@ -60,7 +60,7 @@ npm run tauri build        # production build (Windows NSIS installer by default
 ```
 
 `deploy.ps1 <none|patch|minor|major>` bumps all three version files, builds + signs the Windows
-installer, publishes to the public `hyprspace-releases` repo with a `latest.json` manifest, and
+installer, publishes a GitHub release with a `latest.json` manifest, and
 triggers the macOS CI build. Full runbook (incl. doing it without Claude): [docs/DEPLOY.md](./docs/DEPLOY.md).
 
 **Verifying a change in dev:** TS changes hot-reload (run `npx tsc --noEmit` to typecheck). Rust

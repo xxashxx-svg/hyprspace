@@ -19,7 +19,7 @@ on:
         required: true
 
 env:
-  RELEASES_REPO: xxashxx-svg/hyprspace-releases
+  RELEASES_REPO: xxashxx-svg/hyprspace
 
 jobs:
   macos:

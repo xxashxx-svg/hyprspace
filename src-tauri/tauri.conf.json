@@ -46,7 +46,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/xxashxx-svg/hyprspace-releases/releases/latest/download/latest.json"
+        "https://github.com/xxashxx-svg/hyprspace/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxNDU5OTExNkNENjQ3MTAKUldRUVI5WnNFWmxGc1pzSjU3SEJWMWo3ODM5T0xQREZVT3FCdktJSTVtSkNBVlpCRDJ0SnBFNHMK"
     }
