@@ -24,6 +24,6 @@ publicly.
 
 - Vulnerabilities in the agent CLIs themselves (`claude`, `gemini`, `codex`). Report those upstream.
 - The fact that a terminal pane can run arbitrary commands. That's the product.
-- Missing hardening already tracked in [docs/audit/](./docs/audit/README.md), unless you have a
-  working exploit.
+- Missing hardening we're already aware of (e.g. a not-yet-strict CSP), unless you have a working
+  exploit.
 - Anything that requires an attacker who already has local code execution as the user.

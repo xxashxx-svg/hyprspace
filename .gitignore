@@ -45,3 +45,11 @@ scripts/logo-1024.png
 
 # tsc -b build info
 *.tsbuildinfo
+
+# maintainer-only tooling & internal docs — kept local, never published
+deploy.ps1
+docs/DEPLOY.md
+docs/ENTITLEMENT.md
+docs/audit/
+scripts/gen-license-keypair.mjs
+scripts/license-keygen.mjs

@@ -14,7 +14,7 @@ A Tauri app = a Rust **main process** + a **webview** (the React app). They talk
 
 The webview only ever loads **local bundled assets** — no remote page is loaded into an
 IPC-privileged window. The realistic threat to the IPC surface is a renderer XSS, which is why CSP
-matters (see [audit/security.md](./audit/security.md) S1).
+matters.
 
 ## Spaces & sessions (`stores/workspace.ts`)
 

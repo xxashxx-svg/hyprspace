@@ -1,7 +1,8 @@
 # Versioning
 
 HyprSpace uses **adapted Semantic Versioning**: `MAJOR.MINOR.PATCH` (e.g. `0.2.5`). Every release
-bumps the version via [`deploy.ps1`](../deploy.ps1) — see [DEPLOY.md](./DEPLOY.md).
+bumps the version through the maintainer's release tooling — the three version files
+(`tauri.conf.json`, `package.json`, `Cargo.toml`) always move together.
 
 ```
    0   .   2   .   5

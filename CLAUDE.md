@@ -54,13 +54,10 @@ npm run tauri dev          # dev with HMR (Vite + Rust). This is how you work da
 npm run tauri build        # production build (Windows NSIS installer by default)
 ```
 
-```powershell
-.\deploy.ps1 patch "what changed"   # bump + build + sign + publish a GitHub release & update feed
-```
-
-`deploy.ps1 <none|patch|minor|major>` bumps all three version files, builds + signs the Windows
-installer, publishes a GitHub release with a `latest.json` manifest, and
-triggers the macOS CI build. Full runbook (incl. doing it without Claude): [docs/DEPLOY.md](./docs/DEPLOY.md).
+Releases are cut by a maintainer-local PowerShell script (`deploy.ps1`, not in this repo) that bumps
+all three version files, builds + signs the Windows installer, publishes a GitHub release with a
+`latest.json` manifest, and triggers the macOS CI build. It needs the project's signing key, so it's
+maintainer-only.
 
 **Verifying a change in dev:** TS changes hot-reload (run `npx tsc --noEmit` to typecheck). Rust
 changes (`src-tauri/`) trigger a recompile + app relaunch — confirm with `cargo check` in
@@ -114,7 +111,6 @@ src-tauri/                   Rust backend
 docs/                        documentation (start at docs/README.md)
 website/                     the marketing site — its own Vite + React + Tailwind app (bun)
 CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contributors)
-deploy.ps1                   Windows release script
 .github/workflows/release.yml  macOS CI build (merges darwin into the release manifest)
 ```
 
@@ -160,8 +156,8 @@ Full design details (session/cwd pinning, the Loops engine + hook backend, PTY c
   resume fails ("No conversation found"), drop the dead session id and start fresh.
 - **Open spaces have no `cwd`** — code that pins/falls-back to cwd uses `??` (not `||`) so an empty
   string is preserved, not replaced.
-- **CSP is currently `null`** (see [docs/audit/security.md](./docs/audit/security.md) S1). A strict
-  CSP breaks Vite dev HMR, so it's a production-build task, not a dev change.
+- **CSP is currently `null`.** A strict CSP breaks Vite dev HMR, so it's a production-build task,
+  not a dev change.
 - **Persisted state names** are sanitized to a token in `persist.rs`, and large blobs are capped on
   save so the store can't grow unbounded.
 - **A Loop can never run forever.** `LoopStop.maxIterations` is mandatory by construction, and the
@@ -171,8 +167,5 @@ Full design details (session/cwd pinning, the Loops engine + hook backend, PTY c
 ## Docs index
 - [docs/README.md](./docs/README.md) — index of everything below
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — how the tricky subsystems work
-- [docs/DEPLOY.md](./docs/DEPLOY.md) — release runbook (no Claude required)
 - [docs/VERSIONING.md](./docs/VERSIONING.md) — when to bump which digit
-- [docs/ENTITLEMENT.md](./docs/ENTITLEMENT.md) — subscription gating: how to go free → paid
-- [docs/audit/](./docs/audit/README.md) — security + bug audit and its status
 - [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) — building the macOS app locally

@@ -84,7 +84,6 @@ MIT. See [LICENSE](./LICENSE).
 
 ### Releasing (maintainers)
 
-Releases are cut with `.\deploy.ps1 <none|patch|minor|major> "what changed"`, which bumps the version
-files, builds and signs the installer, and publishes it with an update manifest. It needs the
-project's signing keys, so it's maintainer-only. Runbook: [docs/DEPLOY.md](./docs/DEPLOY.md). Bump
-levels: [docs/VERSIONING.md](./docs/VERSIONING.md).
+Releases are cut with maintainer-local tooling that bumps the version files, builds and signs the
+installer, and publishes it with an update manifest. It needs the project's signing keys, so it's
+maintainer-only. Bump levels: [docs/VERSIONING.md](./docs/VERSIONING.md).
