@@ -1,8 +1,7 @@
 # HyprSpace — project guide
 
 > Read this first. It's the canonical guide for anyone (human or AI agent) working on this repo.
-> Deep dives live in [`docs/`](./docs/README.md). **Working in parallel with other agents?**
-> Read [`AGENTS.md`](./AGENTS.md) — where to work so you don't collide + the shared hot-files.
+> Deep dives live in [`docs/`](./docs/README.md).
 
 HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
 Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
@@ -41,7 +40,7 @@ T3-Code-inspired dark UI.
 7. **Release notes are written at ship time, not per task.** Don't keep a running changelog while you
    work. When the user asks to ship, look at what changed since the last release
    (`git log <lastTag>..HEAD`) and write a few short user-facing bullets — pass them as the
-   `deploy.ps1` notes; it records them in `CHANGELOG.md` and the in-app "What's new".
+   `deploy.ps1` notes; it records them in `docs/CHANGELOG.md` and the in-app "What's new".
 8. **Code style:** human/casual, minimal comments (comment only tricky logic, keep it short and
    lowercase-casual). Match the surrounding code.
 
@@ -176,4 +175,4 @@ Full design details (session/cwd pinning, the Loops engine + hook backend, PTY c
 - [docs/VERSIONING.md](./docs/VERSIONING.md) — when to bump which digit
 - [docs/ENTITLEMENT.md](./docs/ENTITLEMENT.md) — subscription gating: how to go free → paid
 - [docs/audit/](./docs/audit/README.md) — security + bug audit and its status
-- [BUILD-MAC.md](./BUILD-MAC.md) — building the macOS app locally
+- [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) — building the macOS app locally

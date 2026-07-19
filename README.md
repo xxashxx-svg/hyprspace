@@ -28,7 +28,7 @@ credentials.
 - **Windows:** the MSVC C++ build tools ("Desktop development with C++" in the Visual Studio Build
   Tools), plus the WebView2 runtime. WebView2 already ships with Windows 11 and current Windows 10;
   otherwise grab the evergreen installer from Microsoft.
-- **macOS:** `xcode-select --install`. See [BUILD-MAC.md](./BUILD-MAC.md) for producing a `.dmg`.
+- **macOS:** `xcode-select --install`. See [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) for producing a `.dmg`.
 - **Linux:** the standard Tauri deps (`webkit2gtk-4.1`, `libsoup-3.0`, `librsvg2`, `build-essential`).
   Linux mostly works but isn't shipped.
 
