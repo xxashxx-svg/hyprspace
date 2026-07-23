@@ -13,6 +13,8 @@ import { pickFolder, gitIsRepo, revealPath } from "../api";
 import { newClaude, newGemini, newCodex, newOpencode, newGrok, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
 import {
   PanelRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   ChevronDown,
   Sparkles,
@@ -358,6 +360,8 @@ export function Titlebar() {
   // git actions target the focused pane's folder (or the active space's) — only show for a repo,
   // and only while you're actually in a space (the git menu makes no sense on the home screen)
   const view = useUi((s) => s.view);
+  const railHidden = useUi((s) => s.railCollapsed);
+  const toggleRail = useUi((s) => s.toggleRail);
   const activeWs = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId));
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
   const repoCwd = activeWs?.sessions.find((s) => s.id === focusedId)?.cwd || activeWs?.cwd || "";
@@ -421,7 +425,13 @@ export function Titlebar() {
           <span className="tb-logo">
             <Logo size={16} />
           </span>
-          <span className="tb-brand">HyprSpace</span>
+        </button>
+        <button
+          className="tb-sidebar"
+          title={railHidden ? "Show sidebar" : "Hide sidebar"}
+          onClick={toggleRail}
+        >
+          {railHidden ? <PanelLeftOpen size={16} strokeWidth={1.75} /> : <PanelLeftClose size={16} strokeWidth={1.75} />}
         </button>
       </div>
 

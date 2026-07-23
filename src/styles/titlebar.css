@@ -33,9 +33,43 @@
   display: flex;
   align-items: center;
 }
-.tb-brand {
-  font-weight: 600;
-  font-size: 13px;
+/* the sidebar hide/show toggle that sits next to the logo (replaces the old edge chevron) */
+.tb-sidebar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-2);
+  border-radius: var(--radius-1);
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.tb-sidebar:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+/* the home button wraps the logo + wordmark — strip the native button chrome so it sits flat in the bar */
+.tb-home {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  border-radius: var(--radius-1);
+  transition: opacity 0.12s var(--ease);
+}
+.tb-home:hover {
+  opacity: 0.75;
 }
 /* topbar action dropdowns (T3-style outlined menus) */
 .tb-actions {

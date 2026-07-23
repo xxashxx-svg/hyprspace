@@ -21,7 +21,6 @@ import {
   Plus,
   X,
   Search,
-  ChevronLeft,
   ChevronRight,
   Repeat,
   Copy,
@@ -132,7 +131,6 @@ export function Rail() {
   const renameWorkspace = useWorkspaces((s) => s.renameWorkspace);
   const reorderWorkspaces = useWorkspaces((s) => s.reorderWorkspaces);
   const collapsed = useUi((s) => s.railCollapsed);
-  const toggleRail = useUi((s) => s.toggleRail);
   const paneDragging = useUi((s) => s.paneDragging);
   const paneDragOverWs = useUi((s) => s.paneDragOverWs);
   const view = useUi((s) => s.view);
@@ -351,20 +349,8 @@ export function Rail() {
   };
 
   return (
-    <div className={`rail${collapsed ? " collapsed" : ""}`}>
-      <button
-        className="rail-edge"
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        onClick={toggleRail}
-      >
-        {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-      </button>
+    <div className={`rail${collapsed ? " hidden" : ""}`}>
       <div className="rail-scroll">
-      {collapsed ? (
-        <button className="rail-search" onClick={() => useUi.getState().setPalette(true)}>
-          <Search size={15} />
-        </button>
-      ) : (
         <div className="rail-search-box">
           <Search size={14} />
           <input
@@ -391,7 +377,6 @@ export function Rail() {
             </button>
           )}
         </div>
-      )}
       <button
         className={`rail-nav${view === "loops" ? " active" : ""}`}
         title="Automations"

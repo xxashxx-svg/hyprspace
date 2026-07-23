@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.8 — 2026-07-24
+
+You can now fully hide the left sidebar: click the toggle next to the logo (top-left) to slide it away, and again to bring it back. Removed the old edge collapse handle and the wordmark for a cleaner top bar.
+
 ## 0.11.7 — 2026-07-15
 
 Hide the review-dock toggle on the home screen — it did nothing there and only added clutter.
