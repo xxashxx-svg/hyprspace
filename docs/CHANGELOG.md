@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.10 — 2026-07-24
+
+Paste images into any agent — copy an image and press Ctrl+V (or Alt+V) in a terminal; it drops in as a file the agent can read, now near-instant instead of taking seconds. New built-in image viewer: Ctrl+click an image path in output to open it as a tab (fit or 1:1). Settings now hides the New/Open/Commit/Actions bar for a cleaner screen.
+
 ## 0.11.9 — 2026-07-24
 
 Cleaner sidebar toggle icon in the top-left: the left rail is solid while the sidebar is out and hollow once it's hidden, so the state reads at a glance.

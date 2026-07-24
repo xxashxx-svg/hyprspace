@@ -126,6 +126,11 @@ export function secretClear(name: string): Promise<void> {
 export function getHomeDir(): Promise<string> {
   return invoke("get_home_dir");
 }
+// Alt+V image paste: read the clipboard image ourselves and write a temp PNG (dodges the flaky
+// first clipboard read the CLIs hit). Returns the file path, or null when there's no image.
+export function clipboardImageToTemp(): Promise<string | null> {
+  return invoke("clipboard_image_to_temp");
+}
 // open a folder in the OS file manager
 export function revealPath(path: string): Promise<void> {
   return invoke("reveal_path", { path });
@@ -144,6 +149,10 @@ export function readFile(path: string): Promise<string> {
 }
 export function writeFile(path: string, content: string): Promise<void> {
   return invoke("write_file", { path, content });
+}
+// read an image file as a data URL for the in-app image viewer (caps at 25MB)
+export function readImageFile(path: string): Promise<string> {
+  return invoke("read_image_file", { path });
 }
 // Files-panel ops: create-file / create-dir / rename (to = new full path) / delete
 export function fileOp(op: "create-file" | "create-dir" | "rename" | "delete", path: string, to?: string): Promise<void> {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useUi } from "../stores/ui";
-import { useWorkspaces } from "../stores/workspace";
+import { useWorkspaces, toSlots } from "../stores/workspace";
 import { layoutsFor, activeLayoutId } from "../lib/grid";
 import { LayoutGrid } from "lucide-react";
 
@@ -15,7 +15,7 @@ export function LayoutPicker() {
   const [open, setOpen] = useState(false);
 
   const active = workspaces.find((w) => w.id === activeId) ?? null;
-  const count = active?.sessions.length ?? 0;
+  const count = active ? toSlots(active.sessions).length : 0; // tiling is by slot; a tabbed group = 1
   const presets = layoutsFor(count);
   if (view !== "space" || !active || presets.length === 0) return null;
 

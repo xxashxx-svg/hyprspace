@@ -105,6 +105,38 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+// Read an image file for the in-app image viewer as a data URL. Caps at 25MB; picks a mime from
+// the extension; base64-encodes the bytes so binary crosses IPC safely.
+
+#[tauri::command]
+pub async fn read_image_file(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+        if meta.len() > 25_000_000 {
+            return Err("image is too large to open (>25MB)".into());
+        }
+        let mime = match Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("png") => "image/png",
+            Some("jpg") | Some("jpeg") => "image/jpeg",
+            Some("gif") => "image/gif",
+            Some("webp") => "image/webp",
+            Some("bmp") => "image/bmp",
+            Some("svg") => "image/svg+xml",
+            _ => "application/octet-stream",
+        };
+        let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(format!("data:{mime};base64,{b64}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // Recursive filename search for the Files panel's "Find files" box. Case-insensitive substring
 // match on the name; skips heavy build/vcs dirs; capped on results AND visited dirs so a giant
 // repo can't wedge the walk. Returns paths relative to root, files only.

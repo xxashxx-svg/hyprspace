@@ -70,6 +70,15 @@
     transform: translateY(0);
   }
 }
+.pane-menu-label {
+  padding: 4px 9px 6px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pane-menu-item {
   display: flex;
   align-items: center;

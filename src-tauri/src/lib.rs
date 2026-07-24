@@ -182,6 +182,58 @@ fn get_home_dir() -> String {
         .unwrap_or_default()
 }
 
+// Alt+V image paste: we read the clipboard image ourselves and drop it to a temp PNG, then the
+// frontend types the path into the prompt. Doing the read here (not letting the agent CLI do it)
+// dodges the Windows first-clipboard-read race that made the first paste silently miss. Returns
+// the file path, or None when the clipboard holds no image.
+#[tauri::command]
+async fn clipboard_image_to_temp(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let (rgba, w, h) = match app.clipboard().read_image() {
+        Ok(img) => (img.rgba().to_vec(), img.width(), img.height()),
+        Err(_) => return Ok(None), // no image on the clipboard — caller falls back to a normal paste
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let buf = image::RgbaImage::from_raw(w, h, rgba)
+            .ok_or_else(|| "clipboard image had an unexpected size".to_string())?;
+        let dir = std::env::temp_dir().join("hyprspace-clip");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        // keep the dir from growing forever — drop clips older than a few hours
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            let cutoff = std::time::SystemTime::now()
+                .checked_sub(std::time::Duration::from_secs(6 * 3600));
+            for e in rd.flatten() {
+                if let (Some(cutoff), Ok(meta)) = (cutoff, e.metadata()) {
+                    if meta.modified().map(|m| m < cutoff).unwrap_or(false) {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = dir.join(format!("clip-{stamp}.png"));
+        // fast PNG: the default encoder does adaptive per-scanline filtering + full deflate, which is
+        // 0.5-2s on a screenshot-sized buffer. these are throwaway temp files the agent reads once, so
+        // trade a bigger file for speed — Fast (fdeflate) + no filter search drops it to tens of ms.
+        use image::ImageEncoder;
+        let file = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|e| e.to_string())?);
+        image::codecs::png::PngEncoder::new_with_quality(
+            file,
+            image::codecs::png::CompressionType::Fast,
+            image::codecs::png::FilterType::NoFilter,
+        )
+        .write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)
+        .map_err(|e| e.to_string())?;
+        // forward slashes: Windows + the agent CLIs both accept them, and they dodge escaping
+        Ok(Some(path.to_string_lossy().replace('\\', "/")))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // friendly name of the shell we spawn by default (for the status bar)
 #[tauri::command]
 fn shell_name() -> String {
@@ -431,6 +483,7 @@ pub fn run() {
             service_stop,
             agent_start,
             agent_stop,
+            clipboard_image_to_temp,
             secret_set,
             secret_has,
             secret_clear,
@@ -462,6 +515,7 @@ pub fn run() {
             devtools::reveal_path,
             devtools::list_dir,
             devtools::read_file,
+            devtools::read_image_file,
             devtools::write_file,
             devtools::file_op,
             devtools::find_files,

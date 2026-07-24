@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as RPointerEvent } from "react";
-import { useWorkspaces } from "../stores/workspace";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
+import { X, Plus, Terminal as TerminalIcon } from "lucide-react";
+import { useWorkspaces, toSlots } from "../stores/workspace";
+import type { Session } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { TerminalPane } from "./TerminalPane";
+import { TerminalPane, PROVIDER_ICONS } from "./TerminalPane";
+import { ImageViewer } from "./ImageViewer";
+import { PaneAddMenu } from "./PaneAddMenu";
 import { Launchpad } from "./Launchpad";
 import { Logo } from "./Logo";
 import { closeSession } from "../actions";
@@ -24,6 +28,7 @@ export function PaneGrid() {
   const activeId = useWorkspaces((s) => s.activeId);
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const setFocused = useWorkspaces((s) => s.setFocused);
+  const setActiveTab = useWorkspaces((s) => s.setActiveTab);
   const reorder = useWorkspaces((s) => s.reorderSessions);
   const moveToWs = useWorkspaces((s) => s.moveSessionToWorkspace);
 
@@ -47,9 +52,15 @@ export function PaneGrid() {
 
   const active = workspaces.find((w) => w.id === activeId) ?? null;
   const maxedHere = !!maximizedId && !!active && active.sessions.some((s) => s.id === maximizedId);
-  const activeCount = active?.sessions.length ?? 0;
+  // the grid tiles SLOTS, not sessions — a tabbed slot (a group) counts as one cell
+  const activeCount = active ? toSlots(active.sessions).length : 0;
   const activeLayout = resolveLayout(activeCount, active?.layouts?.[activeCount]);
   const showGrid = !!active && active.sessions.length > 0;
+
+  // provider picker opened from a slot's tab-strip + (mirrors the pane header's + menu)
+  const [tabMenu, setTabMenu] = useState<
+    { x: number; y: number; wsId: string; anchorId: string; anchorCommand?: string; cwd: string } | null
+  >(null);
 
   // Lazy pane mounting: only mount (and spawn a PTY/agent for) spaces you've actually opened this
   // run. Otherwise EVERY persisted session across EVERY space spawns a live process at launch — with
@@ -65,6 +76,8 @@ export function PaneGrid() {
   const onPaneFocus = useCallback((sid: string) => setFocused(sid), [setFocused]);
   const onPaneClose = useCallback((wsId: string, sid: string) => void closeSession(wsId, sid), []);
   const onPaneToggleMax = useCallback((sid: string) => toggleMaximized(sid), [toggleMaximized]);
+  // tabbed slots aren't drag targets in v1 — their panes get inert grip handlers
+  const noopGrip = useCallback(() => {}, []);
   const onGripDown = useCallback(
     (e: RPointerEvent<HTMLDivElement>, wsId: string, sid: string) => {
       if (e.button !== 0) return;
@@ -159,66 +172,150 @@ export function PaneGrid() {
         {workspaces.flatMap((w) => {
           if (!activated.has(w.id)) return []; // not opened yet this run — don't mount or spawn it
           const isActiveWs = w.id === activeId;
-          const layout = resolveLayout(w.sessions.length, w.layouts?.[w.sessions.length]);
-          return w.sessions.map((sess, i) => {
-            const hiddenByMax = maxedHere && sess.id !== maximizedId;
-            const visible = isActiveWs && !hiddenByMax;
-            // a "guest" pane sits in a project space but points at a different folder than the
-            // project (e.g. dragged in from an open space) — flag it so it's obvious at a glance
-            const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
+          const slots = toSlots(w.sessions);
+          const layout = resolveLayout(slots.length, w.layouts?.[slots.length]);
+          return slots.map((slot, si) => {
+            const tabbed = slot.sessions.length > 1;
+            const stored = slot.group ? w.activeTabByGroup?.[slot.group] : undefined;
+            // fall back to the first pane if the stored active tab is gone
+            const activeTab = stored && slot.sessions.some((ss) => ss.id === stored) ? stored : slot.sessions[0].id;
+            // when maximized, only the slot holding the maximized pane stays on screen
+            const slotHasMax = maxedHere && slot.sessions.some((ss) => ss.id === maximizedId);
+            const cellVisible = isActiveWs && (!maxedHere || slotHasMax);
+            const solo = slot.sessions[0];
+            const place = layout.place(si);
             return (
               <div
-                key={sess.id}
-                data-sid={sess.id}
-                className={`pane-cell${dragId === sess.id ? " dragging" : ""}${overId === sess.id ? " drop-over" : ""}`}
+                key={slot.group ?? solo.id}
+                data-sid={tabbed ? undefined : solo.id}
+                className={`pane-cell${tabbed ? " tabbed" : ""}${!tabbed && dragId === solo.id ? " dragging" : ""}${!tabbed && overId === solo.id ? " drop-over" : ""}`}
                 style={{
-                  display: visible ? undefined : "none",
-                  gridColumn: visible && !maxedHere ? layout.place(i).gridColumn : undefined,
-                  gridRow: visible && !maxedHere ? layout.place(i).gridRow : undefined,
+                  display: cellVisible ? undefined : "none",
+                  gridColumn: cellVisible && !maxedHere ? place.gridColumn : undefined,
+                  gridRow: cellVisible && !maxedHere ? place.gridRow : undefined,
                 }}
               >
-                <TerminalPane
-                  sessionId={sess.id}
-                  wsId={w.id}
-                  cwd={sess.cwd ?? w.cwd}
-                  guest={guest}
-                  command={sess.command}
-                  provider={sess.provider}
-                  title={sess.title}
-                  started={sess.started}
-                  active={isActiveWs}
-                  focused={isActiveWs && focusedSessionId === sess.id}
-                  isMaxed={maximizedId === sess.id}
-                  onFocus={onPaneFocus}
-                  onClose={onPaneClose}
-                  onToggleMax={onPaneToggleMax}
-                  onGripDown={onGripDown}
-                  onGripMove={onGripMove}
-                  onGripUp={onGripUp}
-                />
-                {fileDropId === sess.id && (
-                  <div className="file-drop-overlay">
-                    <div className="fdo-card">
-                      <div className="fdo-icon">⤓</div>
-                      <div className="fdo-title">Drop to insert</div>
-                      <div className="fdo-sub">adds the path(s) to this terminal</div>
-                    </div>
+                {tabbed && slot.group && (
+                  <div className="pane-tabs">
+                    {slot.sessions.map((ts) => {
+                      const TIcon = PROVIDER_ICONS[ts.provider] ?? TerminalIcon;
+                      return (
+                        <div
+                          key={ts.id}
+                          className={`pane-tab${ts.id === activeTab ? " active" : ""}`}
+                          onMouseDown={() => setActiveTab(w.id, slot.group!, ts.id)}
+                        >
+                          <TIcon size={11} className="pane-tab-ico" />
+                          <span className="pane-tab-title">{ts.title || ts.provider}</span>
+                          <button
+                            className="pane-tab-x"
+                            title="Close tab"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onPaneClose(w.id, ts.id);
+                            }}
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <button
+                      className="pane-tab-add"
+                      title="Open a pane in this folder"
+                      onClick={(e: RMouseEvent) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const anchor = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
+                        setTabMenu({
+                          x: Math.min(r.right - 196, window.innerWidth - 210),
+                          y: r.bottom + 4,
+                          wsId: w.id,
+                          anchorId: anchor.id,
+                          anchorCommand: anchor.command,
+                          cwd: anchor.cwd ?? w.cwd,
+                        });
+                      }}
+                    >
+                      <Plus size={13} />
+                    </button>
                   </div>
                 )}
-                {skillDropId === sess.id && (
-                  <div className="file-drop-overlay">
-                    <div className="fdo-card">
-                      <div className="fdo-icon">⌁</div>
-                      <div className="fdo-title">Drop to insert</div>
-                      <div className="fdo-sub">inserts this skill into the terminal</div>
+                {slot.sessions.map((sess: Session) => {
+                  // one pane is on screen per visible slot: the maximized pane when maximizing,
+                  // else the slot's active tab. hidden tabs stay mounted (display:none) so their PTY lives.
+                  const visible = cellVisible && (maxedHere ? sess.id === maximizedId : sess.id === activeTab);
+                  // a "guest" pane sits in a project space but points at a different folder than the
+                  // project (e.g. dragged in from an open space) — flag it so it's obvious at a glance
+                  const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
+                  const pane = sess.image ? (
+                    <ImageViewer path={sess.image} active={visible} onClose={() => onPaneClose(w.id, sess.id)} />
+                  ) : (
+                    <>
+                      <TerminalPane
+                        sessionId={sess.id}
+                        wsId={w.id}
+                        cwd={sess.cwd ?? w.cwd}
+                        guest={guest}
+                        command={sess.command}
+                        provider={sess.provider}
+                        title={sess.title}
+                        started={sess.started}
+                        active={visible}
+                        focused={isActiveWs && focusedSessionId === sess.id && visible}
+                        isMaxed={maximizedId === sess.id}
+                        onFocus={onPaneFocus}
+                        onClose={onPaneClose}
+                        onToggleMax={onPaneToggleMax}
+                        onGripDown={tabbed ? noopGrip : onGripDown}
+                        onGripMove={tabbed ? noopGrip : onGripMove}
+                        onGripUp={tabbed ? noopGrip : onGripUp}
+                      />
+                      {fileDropId === sess.id && (
+                        <div className="file-drop-overlay">
+                          <div className="fdo-card">
+                            <div className="fdo-icon">⤓</div>
+                            <div className="fdo-title">Drop to insert</div>
+                            <div className="fdo-sub">adds the path(s) to this terminal</div>
+                          </div>
+                        </div>
+                      )}
+                      {skillDropId === sess.id && (
+                        <div className="file-drop-overlay">
+                          <div className="fdo-card">
+                            <div className="fdo-icon">⌁</div>
+                            <div className="fdo-title">Drop to insert</div>
+                            <div className="fdo-sub">inserts this skill into the terminal</div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                  // tabbed slots wrap each pane so hidden tabs stay mounted (display:none), never unmounted
+                  return tabbed ? (
+                    <div key={sess.id} className="pane-tab-body" style={{ display: visible ? undefined : "none" }}>
+                      {pane}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <Fragment key={sess.id}>{pane}</Fragment>
+                  );
+                })}
               </div>
             );
           });
         })}
       </div>
+      {tabMenu && (
+        <PaneAddMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          wsId={tabMenu.wsId}
+          anchorId={tabMenu.anchorId}
+          anchorCommand={tabMenu.anchorCommand}
+          cwd={tabMenu.cwd}
+          onClose={() => setTabMenu(null)}
+        />
+      )}
     </div>
   );
 }

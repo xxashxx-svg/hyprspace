@@ -384,6 +384,7 @@ export function Titlebar() {
   const view = useUi((s) => s.view);
   const railHidden = useUi((s) => s.railCollapsed);
   const toggleRail = useUi((s) => s.toggleRail);
+  const settingsOpen = useUi((s) => s.settingsOpen);
   const activeWs = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId));
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
   const repoCwd = activeWs?.sessions.find((s) => s.id === focusedId)?.cwd || activeWs?.cwd || "";
@@ -458,6 +459,8 @@ export function Titlebar() {
       </div>
 
       <div className="tb-controls" data-tauri-drag-region>
+        {/* workspace action dropdowns — irrelevant on the settings screen, so hide them there */}
+        {!settingsOpen && (
         <div className="tb-actions">
           <ActionMenu label="New" lead={<Plus size={14} />} items={newItems} />
           <ActionMenu label="Open" lead={<FolderOpen size={14} />} items={openItems} />
@@ -495,6 +498,7 @@ export function Titlebar() {
           )}
           <LayoutPicker />
         </div>
+        )}
         <LoopsIndicator />
         <ServicesIndicator />
         <NotificationPanel />

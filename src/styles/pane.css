@@ -32,6 +32,112 @@
   min-height: 0;
   display: flex;
 }
+/* a slot holding a tab group stacks a tab strip above the (stacked) panes */
+.pane-cell.tabbed {
+  flex-direction: column;
+}
+.pane-tab-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+/* ---- pane tab strip (a slot with >1 pane) ---- */
+.pane-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 3px 4px 0;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pane-tabs::-webkit-scrollbar {
+  height: 0;
+}
+.pane-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 5px 6px 5px 9px;
+  border-radius: var(--radius-1) var(--radius-1) 0 0;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.pane-tab:hover {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.pane-tab.active {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.pane-tab.active .pane-tab-ico {
+  color: var(--accent);
+}
+.pane-tab-ico {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.pane-tab-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pane-tab-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease), opacity 0.12s var(--ease);
+}
+.pane-tab:hover .pane-tab-x,
+.pane-tab.active .pane-tab-x {
+  opacity: 0.7;
+}
+.pane-tab-x:hover {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.16);
+  color: #ff6b6b;
+}
+.pane-tab-add {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px 3px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.pane-tab-add:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+}
 .terminal-pane {
   flex: 1;
   position: relative;

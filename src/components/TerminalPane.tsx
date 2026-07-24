@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, memo } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { Terminal } from "@xterm/xterm";
+import type { ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -16,7 +17,7 @@ import { useProjectConfigs } from "../stores/projectConfig";
 import { useUi } from "../stores/ui";
 import { useNotifications } from "../stores/notifications";
 import { claudeCmd } from "../actions";
-import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate } from "../api";
+import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { noteUserInput, forgetSession } from "../ai/autoNameSession";
 import { useActivity } from "../stores/activity";
@@ -32,18 +33,20 @@ import {
   SquareCode,
   Atom,
   Terminal as TerminalIcon,
+  Image as ImageIcon,
   MoreHorizontal,
   Copy,
   FolderOpen,
   ClipboardList,
   GitBranch,
   GitPullRequestArrow,
-  SplitSquareHorizontal,
+  Plus,
 } from "lucide-react";
 import { TerminalSearch } from "./TerminalSearch";
+import { PaneAddMenu } from "./PaneAddMenu";
 
 // small lucide glyph per provider, shown at the start of the pane header
-const PROVIDER_ICONS = {
+export const PROVIDER_ICONS = {
   claude: Sparkles,
   gemini: Gem,
   codex: Bot,
@@ -51,6 +54,7 @@ const PROVIDER_ICONS = {
   grok: Atom,
   wsl: SquareTerminal,
   terminal: TerminalIcon,
+  image: ImageIcon,
 } as const;
 
 // friendly name for the brief "Starting …" boot indicator
@@ -62,6 +66,7 @@ const PROVIDER_LABEL = {
   grok: "Grok",
   wsl: "WSL",
   terminal: "terminal",
+  image: "image",
 } as const;
 
 // Each claude pane owns its session id (= the pane's uuid), so on relaunch it resumes its OWN
@@ -72,13 +77,27 @@ function injectClaudeArg(cmd: string, arg: string): string {
   return cmd.replace(/^claude\b/, `claude ${arg}`);
 }
 
+// image-file paths in terminal output become ctrl+clickable — matches windows/posix absolute +
+// relative paths ending in an image extension (a run of non-space/quote chars before the ext)
+const IMG_RE = /[^\s"'<>|]+\.(?:png|jpe?g|gif|webp|bmp|svg)\b/gi;
+
+// resolve a matched path against the pane cwd: absolute stays as-is, relative joins onto cwd
+// (separator-aware, so a windows cwd keeps backslashes and a posix cwd keeps forward slashes)
+function resolveImgPath(p: string, cwd: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(p) || /^[\\/]/.test(p)) return p;
+  const rel = p.replace(/^\.[\\/]/, "");
+  const sep = cwd.includes("\\") ? "\\" : "/";
+  const base = cwd.replace(/[\\/]+$/, "");
+  return base ? `${base}${sep}${rel}` : rel;
+}
+
 interface Props {
   sessionId: string;
   wsId: string;
   cwd: string;
   guest?: boolean;
   command?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image";
   title?: string;
   started?: boolean;
   active: boolean;
@@ -164,6 +183,30 @@ function TerminalPaneInner({
       if (e.ctrlKey || e.metaKey) void openUrl(uri).catch(() => {});
     });
     term.loadAddon(links);
+    // ctrl/cmd + click an image path → open it as an image tab in this pane's slot
+    const imgLinks = term.registerLinkProvider({
+      provideLinks(lineNo, cb) {
+        const line = term.buffer.active.getLine(lineNo - 1);
+        if (!line) return cb(undefined);
+        const text = line.translateToString(false);
+        const out: ILink[] = [];
+        IMG_RE.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = IMG_RE.exec(text))) {
+          const startX = m.index + 1; // xterm ranges are 1-based, end inclusive
+          out.push({
+            text: m[0],
+            range: { start: { x: startX, y: lineNo }, end: { x: startX + m[0].length - 1, y: lineNo } },
+            decorations: { underline: true, pointerCursor: true },
+            activate(event, txt) {
+              if (!event.ctrlKey && !event.metaKey) return;
+              useWorkspaces.getState().openImageTab(wsId, sessionId, resolveImgPath(txt, cwd));
+            },
+          });
+        }
+        cb(out.length ? out : undefined);
+      },
+    });
     searchRef.current = search;
     term.open(el);
     applyUnicode(term); // Unicode 11 widths + ZWJ-emoji glued to one cell so agent output doesn't mis-width
@@ -172,7 +215,30 @@ function TerminalPaneInner({
 
     // Ctrl+Shift+F search · Ctrl+C copies selection (else SIGINT) · Ctrl+V / Ctrl+Shift+V paste
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== "keydown" || !e.ctrlKey || e.altKey) return true;
+      if (e.type !== "keydown") return true;
+      // Ctrl+Tab / Ctrl+Shift+Tab cycles the tabs in this pane's slot (only if it's a tabbed group)
+      if (e.ctrlKey && !e.altKey && e.code === "Tab") {
+        const st = useWorkspaces.getState();
+        const w = st.workspaces.find((x) => x.sessions.some((ss) => ss.id === sessionId));
+        const me = w?.sessions.find((ss) => ss.id === sessionId);
+        if (!w || !me?.group) return true; // solo pane → let the terminal have Tab
+        const sibs = w.sessions.filter((ss) => ss.group === me.group);
+        const idx = sibs.findIndex((ss) => ss.id === sessionId);
+        const next = sibs[(idx + (e.shiftKey ? -1 : 1) + sibs.length) % sibs.length];
+        st.setActiveTab(w.id, me.group, next.id);
+        return false;
+      }
+      // Alt+V = image-aware paste. HyprSpace reads the clipboard image itself and drops a temp
+      // file path into the prompt (the agents read images by path), which sidesteps the CLI's
+      // flaky first clipboard read so it lands on the first try. No image → forward Alt+V as-is.
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyV") {
+        const fallback = () => void writePty(sessionId, Uint8Array.from([0x1b, 0x76])); // ESC v
+        clipboardImageToTemp()
+          .then((path) => (path ? term.paste(path + " ") : fallback()))
+          .catch(fallback);
+        return false;
+      }
+      if (!e.ctrlKey || e.altKey) return true;
       if (e.shiftKey && e.code === "KeyF") {
         setShowSearch((p) => !p);
         return false;
@@ -187,9 +253,17 @@ function TerminalPaneInner({
         return !e.shiftKey; // nothing selected: plain Ctrl+C interrupts; Ctrl+Shift+C no-ops
       }
       if (e.code === "KeyV") {
+        // text first (like Orca): if the clipboard has text, paste it; only when there's none do we
+        // fall back to an image — drop it to a temp file and paste the path (agents read images by path)
         void readText()
           .then((t) => {
-            if (t) term.paste(t);
+            if (t) {
+              term.paste(t);
+              return;
+            }
+            return clipboardImageToTemp().then((path) => {
+              if (path) term.paste(path + " ");
+            });
           })
           .catch(() => {});
         return false;
@@ -425,6 +499,7 @@ function TerminalPaneInner({
       dataDisp.dispose();
       selDisp.dispose();
       links.dispose();
+      imgLinks.dispose();
       search.dispose();
       searchRef.current = null;
       dropOutput(sessionId);
@@ -530,6 +605,12 @@ function TerminalPaneInner({
 
   // ---- pane actions menu (… button / right-click the header) ----
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // ---- + button: open a new pane as a tab in this slot (provider picker) ----
+  const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null);
+  const openAddMenu = (e: RMouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setAddMenu({ x: Math.min(r.right - 196, window.innerWidth - 210), y: r.bottom + 4 });
+  };
   const note = (title: string) => useNotifications.getState().add({ title });
   const openMenuAt = (e: RMouseEvent) => {
     e.preventDefault();
@@ -588,11 +669,11 @@ function TerminalPaneInner({
         <span className="pane-head-right">
           <button
             className="pane-btn"
-            title={`Split — add another ${provider === "terminal" ? "terminal" : provider} pane here`}
+            title="Open a pane in this folder"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => useWorkspaces.getState().addSession(wsId, command, cwd)}
+            onClick={openAddMenu}
           >
-            <SplitSquareHorizontal size={12} />
+            <Plus size={13} />
           </button>
           <button
             className="pane-btn"
@@ -710,6 +791,17 @@ function TerminalPaneInner({
             </button>
           </div>
         </>
+      )}
+      {addMenu && (
+        <PaneAddMenu
+          x={addMenu.x}
+          y={addMenu.y}
+          wsId={wsId}
+          anchorId={sessionId}
+          anchorCommand={command}
+          cwd={cwd}
+          onClose={() => setAddMenu(null)}
+        />
       )}
     </div>
   );
