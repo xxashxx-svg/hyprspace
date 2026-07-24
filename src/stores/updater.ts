@@ -15,7 +15,7 @@ interface UpdaterState {
   update: Update | null;
   detail: string; // version, progress text, or error message
   pct: number; // download progress 0–100, or -1 for indeterminate
-  checkNow: () => Promise<void>;
+  checkNow: (silent?: boolean) => Promise<void>;
   install: () => Promise<void>;
   dismiss: () => void;
 }
@@ -26,7 +26,9 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
   detail: "",
   pct: -1,
 
-  checkNow: async () => {
+  // silent = the automatic check (launch/interval/focus): a failure just goes quiet. only an explicit
+  // "Check now" surfaces an error toast, so a transient blip on startup never nags.
+  checkNow: async (silent = false) => {
     const p = get().phase;
     if (p === "checking" || p === "downloading") return;
     set({ phase: "checking", detail: "" });
@@ -35,8 +37,15 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
       if (u?.available) set({ phase: "available", update: u, detail: u.version });
       else set({ phase: "uptodate", update: null, detail: "" });
     } catch (e) {
+      // no manifest entry for this platform = there's simply no update channel for us (macOS ships as
+      // a manual .dmg with no updater artifacts) — that's "up to date", never a server error
+      const msg = String((e as { message?: string })?.message ?? e);
+      if (/platform|target/i.test(msg)) {
+        set({ phase: "uptodate", update: null, detail: "" });
+        return;
+      }
       console.error("update check failed:", e);
-      set({ phase: "error", detail: "Couldn't reach the update server" });
+      set(silent ? { phase: "idle", detail: "" } : { phase: "error", detail: "Couldn't reach the update server" });
     }
   },
 

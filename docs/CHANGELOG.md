@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.13 — 2026-07-24
+
+macOS: no more 'Couldn't reach the update server' toast on launch — the updater now treats a platform with no update channel as up-to-date, and only a manual 'Check now' surfaces a real error. Auto-checks stay silent on transient failures.
+
 ## 0.11.12 — 2026-07-24
 
 Fixed: opening an image tab (or a new agent tab) in a single-pane slot no longer restarts the terminal when you switch back to it — the pane and its running agent stay alive instead of remounting.

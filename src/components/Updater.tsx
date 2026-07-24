@@ -19,7 +19,7 @@ export function Updater() {
   useEffect(() => {
     const run = () => {
       lastCheck.current = Date.now();
-      void useUpdater.getState().checkNow();
+      void useUpdater.getState().checkNow(true); // auto-check: stay quiet on failure
     };
     run();
     const id = setInterval(run, RECHECK_MS);
