@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { X, Plus, Terminal as TerminalIcon } from "lucide-react";
 import { useWorkspaces, toSlots } from "../stores/workspace";
@@ -186,7 +186,7 @@ export function PaneGrid() {
             const place = layout.place(si);
             return (
               <div
-                key={slot.group ?? solo.id}
+                key={solo.id}
                 data-sid={tabbed ? undefined : solo.id}
                 className={`pane-cell${tabbed ? " tabbed" : ""}${!tabbed && dragId === solo.id ? " dragging" : ""}${!tabbed && overId === solo.id ? " drop-over" : ""}`}
                 style={{
@@ -291,13 +291,14 @@ export function PaneGrid() {
                       )}
                     </>
                   );
-                  // tabbed slots wrap each pane so hidden tabs stay mounted (display:none), never unmounted
-                  return tabbed ? (
+                  // ALWAYS wrap each pane in the same element (a .pane-tab-body div), solo or tabbed —
+                  // so a solo pane that becomes tabbed (opening an image tab) keeps the SAME wrapper and
+                  // its TerminalPane/PTY is never unmounted (was a Fragment→div swap that killed claude).
+                  // hidden tabs are display:none so their PTY lives.
+                  return (
                     <div key={sess.id} className="pane-tab-body" style={{ display: visible ? undefined : "none" }}>
                       {pane}
                     </div>
-                  ) : (
-                    <Fragment key={sess.id}>{pane}</Fragment>
                   );
                 })}
               </div>
