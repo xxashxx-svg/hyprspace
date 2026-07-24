@@ -42,6 +42,10 @@ keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# AppKit access to force the native traffic-light buttons visible (macOS 26 hides them). versions
+# match what tauri already pulls so there's no duplicate objc2 in the tree.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSView", "NSControl", "NSButton", "NSWindow"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native"] }

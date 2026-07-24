@@ -511,15 +511,27 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|_app| {
-            // macOS 26 doesn't paint the native traffic lights from the config-time Overlay title-bar
-            // style, leaving the window with no close/min/max buttons. re-assert the style once the
-            // window exists and it renders them. Overlay (not Transparent) keeps our full-height
-            // custom titlebar — the lights just overlay its top-left corner.
+            // macOS 26 leaves the native traffic-light buttons hidden even with decorations + the
+            // Overlay title-bar style, so the window ends up with no close/min/max controls. Re-assert
+            // the style, then explicitly un-hide the three standard window buttons through AppKit.
             #[cfg(target_os = "macos")]
             {
+                use objc2_app_kit::{NSWindow, NSWindowButton};
                 use tauri::{Manager, TitleBarStyle};
-                if let Some(win) = _app.get_webview_window("main") {
+                for win in _app.webview_windows().values() {
                     let _ = win.set_title_bar_style(TitleBarStyle::Overlay);
+                    if let Ok(ptr) = win.ns_window() {
+                        let ns: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+                        for b in [
+                            NSWindowButton::CloseButton,
+                            NSWindowButton::MiniaturizeButton,
+                            NSWindowButton::ZoomButton,
+                        ] {
+                            if let Some(btn) = unsafe { ns.standardWindowButton(b) } {
+                                btn.setHidden(false);
+                            }
+                        }
+                    }
                 }
             }
             Ok(())
