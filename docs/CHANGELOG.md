@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.15 — 2026-07-24
+
+macOS: the native window buttons (close / minimize / maximize) now appear in the top-left — they were being hidden on macOS 26.
+
 ## 0.11.14 — 2026-07-24
 
 macOS now auto-updates automatically, like Windows — no more manual .dmg downloads. Also includes the macOS window close/traffic-light button fix.

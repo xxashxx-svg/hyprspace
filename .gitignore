@@ -48,6 +48,7 @@ scripts/logo-1024.png
 
 # maintainer-only tooling & internal docs — kept local, never published
 deploy.ps1
+mac-publish.ps1
 docs/DEPLOY.md
 docs/ENTITLEMENT.md
 docs/audit/
