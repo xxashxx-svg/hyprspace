@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.17 — 2026-07-25
+
+Fixed: opening an image tab from a single terminal pane no longer restarts the terminal (and its running agent) the first time — a React remount was recreating the PTY on the solo-to-tabbed transition. The pane now keeps its identity, so claude stays put.
+
 ## 0.11.16 — 2026-07-24
 
 Fixed: opening an image (Ctrl/Cmd-click an [Image #N] marker) shows the image again instead of the terminal.
