@@ -105,6 +105,15 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+// Does a path exist on disk? The terminal's image-path linkifier calls this (Orca-style) so a link
+// only lights up for a file that's actually there. Cheap, so it can run on hover.
+#[tauri::command]
+pub async fn path_exists(path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || Path::new(&path).exists())
+        .await
+        .unwrap_or(false)
+}
+
 // Read an image file for the in-app image viewer as a data URL. Caps at 25MB; picks a mime from
 // the extension; base64-encodes the bytes so binary crosses IPC safely.
 

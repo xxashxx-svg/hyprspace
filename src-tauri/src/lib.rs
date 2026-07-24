@@ -267,6 +267,48 @@ fn claude_project_dir(cwd: &str) -> Option<std::path::PathBuf> {
     )
 }
 
+// Resolve Claude Code's `[Image #N]` terminal marker to the cached image file. Claude stores pasted
+// images at ~/.claude/image-cache/<session-id>/<N>.<ext>, numbered across the session. We find the
+// pane cwd's newest session (its .jsonl stem IS the session id + the image-cache dir name), then look
+// up <N>.* there. Returns the file path, or None if there's no such image yet.
+#[tauri::command]
+async fn claude_image_path(cwd: String, n: u32) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .ok()
+            .filter(|h| !h.is_empty())?;
+        let proj = claude_project_dir(&cwd)?;
+        // newest .jsonl in the project dir → the active claude session id
+        let session_id = std::fs::read_dir(&proj)
+            .ok()?
+            .flatten()
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+            .filter_map(|e| {
+                let modified = e.metadata().ok()?.modified().ok()?;
+                let stem = e.path().file_stem()?.to_string_lossy().into_owned();
+                Some((modified, stem))
+            })
+            .max_by_key(|(m, _)| *m)
+            .map(|(_, stem)| stem)?;
+        let dir = std::path::Path::new(&home)
+            .join(".claude")
+            .join("image-cache")
+            .join(&session_id);
+        let target = n.to_string();
+        for e in std::fs::read_dir(&dir).ok()?.flatten() {
+            let p = e.path();
+            if p.is_file() && p.file_stem().and_then(|s| s.to_str()) == Some(target.as_str()) {
+                return Some(p.to_string_lossy().replace('\\', "/"));
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 fn folder_has_transcript(dir: &std::path::Path) -> bool {
     match std::fs::read_dir(dir) {
         Ok(rd) => rd
@@ -516,6 +558,8 @@ pub fn run() {
             devtools::list_dir,
             devtools::read_file,
             devtools::read_image_file,
+            devtools::path_exists,
+            claude_image_path,
             devtools::write_file,
             devtools::file_op,
             devtools::find_files,

@@ -325,10 +325,16 @@ export function Titlebar() {
   // so we drive the drag ourselves. Skip clicks that land on a button/menu/input so they still work.
   const onChrome = (e: ReactMouseEvent) =>
     !(e.target as HTMLElement).closest("button, a, input, select, textarea, [role='menuitem']");
+  // the top-left traffic-light corner is native (not DOM), so onChrome can't see it. starting a drag
+  // there swallows the mousedown meant for the close/min/max buttons — the long-standing macOS
+  // "can't close the window" flakiness. leave that corner entirely to the native buttons.
+  const inTrafficLights = (e: ReactMouseEvent) => e.clientX < 80 && e.clientY < 36;
   const onTbDown = (e: ReactMouseEvent) => {
+    if (inTrafficLights(e)) return;
     if (e.button === 0 && onChrome(e)) void win.startDragging().catch(() => {});
   };
   const onTbDblClick = (e: ReactMouseEvent) => {
+    if (inTrafficLights(e)) return;
     if (onChrome(e)) void win.toggleMaximize().catch(() => {});
   };
 

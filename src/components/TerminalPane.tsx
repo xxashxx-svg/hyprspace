@@ -17,7 +17,7 @@ import { useProjectConfigs } from "../stores/projectConfig";
 import { useUi } from "../stores/ui";
 import { useNotifications } from "../stores/notifications";
 import { claudeCmd } from "../actions";
-import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp } from "../api";
+import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp, pathExists, claudeImagePath } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { noteUserInput, forgetSession } from "../ai/autoNameSession";
 import { useActivity } from "../stores/activity";
@@ -183,28 +183,109 @@ function TerminalPaneInner({
       if (e.ctrlKey || e.metaKey) void openUrl(uri).catch(() => {});
     });
     term.loadAddon(links);
-    // ctrl/cmd + click an image path → open it as an image tab in this pane's slot
+    // ctrl/cmd + click an image path → open it as an image tab in this pane's slot. faithful to Orca:
+    // scan the whole LOGICAL line (xterm soft-wraps long paths across rows, so a single-row scan
+    // misses them) and only light up paths that actually exist on disk. existence is cached ~10s so
+    // hovering doesn't spam IPC.
+    const existCache = new Map<string, { ok: boolean; at: number }>();
+    const checkExists = async (abs: string) => {
+      const hit = existCache.get(abs);
+      if (hit && Date.now() - hit.at < 10_000) return hit.ok;
+      const ok = await pathExists(abs).catch(() => false);
+      existCache.set(abs, { ok, at: Date.now() });
+      return ok;
+    };
     const imgLinks = term.registerLinkProvider({
+      provideLinks(lineNo, cb) {
+        const buf = term.buffer.active;
+        // walk back to the start of this logical line (a wrapped continuation belongs to the path
+        // that began on an earlier row), then stitch the row + its continuations into one string
+        let start = lineNo;
+        while (start > 1 && buf.getLine(start - 1)?.isWrapped) start--;
+        const head = buf.getLine(start - 1);
+        if (!head) return cb(undefined);
+        let text = head.translateToString(false);
+        for (let i = start; ; i++) {
+          const cont = buf.getLine(i);
+          if (!cont || !cont.isWrapped) break;
+          text += cont.translateToString(false);
+        }
+        const cols = term.cols;
+        // map a 0-based offset in the logical line → xterm's 1-based { x, y } (rows are cols wide)
+        const at = (off: number) => ({ x: (off % cols) + 1, y: start + Math.floor(off / cols) });
+        const cands: { abs: string; range: ILink["range"] }[] = [];
+        IMG_RE.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = IMG_RE.exec(text))) {
+          cands.push({
+            abs: resolveImgPath(m[0], cwd),
+            range: { start: at(m.index), end: at(m.index + m[0].length - 1) },
+          });
+        }
+        if (!cands.length) return cb(undefined);
+        void Promise.all(
+          cands.map(async (c): Promise<ILink | null> =>
+            (await checkExists(c.abs))
+              ? {
+                  text: c.abs,
+                  range: c.range,
+                  decorations: { underline: true, pointerCursor: true },
+                  activate(event) {
+                    if (!event.ctrlKey && !event.metaKey) return;
+                    useWorkspaces.getState().openImageTab(wsId, sessionId, c.abs);
+                  },
+                }
+              : null,
+          ),
+        ).then((links) => {
+          const hits = links.filter((l): l is ILink => l !== null);
+          cb(hits.length ? hits : undefined);
+        });
+      },
+    });
+    // ctrl/cmd + click Claude Code's `[Image #N]` marker → open the pasted image. Claude keeps these
+    // at ~/.claude/image-cache/<session>/N.png; the backend resolves N → that file for this pane's
+    // session. cached per N (stable once written; a miss is re-checked in case the file's mid-write).
+    const markerCache = new Map<number, { path: string | null; at: number }>();
+    const resolveMarker = async (n: number) => {
+      const hit = markerCache.get(n);
+      if (hit && (hit.path || Date.now() - hit.at < 4000)) return hit.path;
+      const path = await claudeImagePath(cwd, n).catch(() => null);
+      markerCache.set(n, { path, at: Date.now() });
+      return path;
+    };
+    const markerLinks = term.registerLinkProvider({
       provideLinks(lineNo, cb) {
         const line = term.buffer.active.getLine(lineNo - 1);
         if (!line) return cb(undefined);
         const text = line.translateToString(false);
-        const out: ILink[] = [];
-        IMG_RE.lastIndex = 0;
+        const cands: { n: number; range: ILink["range"] }[] = [];
+        const re = /\[Image #(\d+)\]/g;
         let m: RegExpExecArray | null;
-        while ((m = IMG_RE.exec(text))) {
-          const startX = m.index + 1; // xterm ranges are 1-based, end inclusive
-          out.push({
-            text: m[0],
-            range: { start: { x: startX, y: lineNo }, end: { x: startX + m[0].length - 1, y: lineNo } },
-            decorations: { underline: true, pointerCursor: true },
-            activate(event, txt) {
-              if (!event.ctrlKey && !event.metaKey) return;
-              useWorkspaces.getState().openImageTab(wsId, sessionId, resolveImgPath(txt, cwd));
-            },
-          });
+        while ((m = re.exec(text))) {
+          const sx = m.index + 1;
+          cands.push({ n: parseInt(m[1], 10), range: { start: { x: sx, y: lineNo }, end: { x: sx + m[0].length - 1, y: lineNo } } });
         }
-        cb(out.length ? out : undefined);
+        if (!cands.length) return cb(undefined);
+        void Promise.all(
+          cands.map(async (c): Promise<ILink | null> => {
+            const path = await resolveMarker(c.n);
+            return path
+              ? {
+                  text: path,
+                  range: c.range,
+                  decorations: { underline: true, pointerCursor: true },
+                  activate(event) {
+                    if (!event.ctrlKey && !event.metaKey) return;
+                    useWorkspaces.getState().openImageTab(wsId, sessionId, path);
+                  },
+                }
+              : null;
+          }),
+        ).then((links) => {
+          const hits = links.filter((l): l is ILink => l !== null);
+          cb(hits.length ? hits : undefined);
+        });
       },
     });
     searchRef.current = search;
@@ -500,6 +581,7 @@ function TerminalPaneInner({
       selDisp.dispose();
       links.dispose();
       imgLinks.dispose();
+      markerLinks.dispose();
       search.dispose();
       searchRef.current = null;
       dropOutput(sessionId);

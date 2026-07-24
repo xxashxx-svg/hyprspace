@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.11.11 — 2026-07-24
+
+Ctrl+click Claude's [Image #N] markers in a terminal to reopen that pasted image in a viewer tab. macOS: fixed the top-left close / traffic-light buttons — clicking near the corner no longer starts a window drag instead of closing. Image paths in terminal output are also more reliably clickable now (wrapped paths + existence-checked).
+
 ## 0.11.10 — 2026-07-24
 
 Paste images into any agent — copy an image and press Ctrl+V (or Alt+V) in a terminal; it drops in as a file the agent can read, now near-instant instead of taking seconds. New built-in image viewer: Ctrl+click an image path in output to open it as a tab (fit or 1:1). Settings now hides the New/Open/Commit/Actions bar for a cleaner screen.

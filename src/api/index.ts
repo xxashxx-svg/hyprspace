@@ -154,6 +154,14 @@ export function writeFile(path: string, content: string): Promise<void> {
 export function readImageFile(path: string): Promise<string> {
   return invoke("read_image_file", { path });
 }
+// does a path exist on disk? the terminal image linkifier only lights up real files (Orca-style)
+export function pathExists(path: string): Promise<boolean> {
+  return invoke("path_exists", { path });
+}
+// resolve Claude Code's `[Image #N]` marker → the cached image file for this pane's session, or null
+export function claudeImagePath(cwd: string, n: number): Promise<string | null> {
+  return invoke("claude_image_path", { cwd, n });
+}
 // Files-panel ops: create-file / create-dir / rename (to = new full path) / delete
 export function fileOp(op: "create-file" | "create-dir" | "rename" | "delete", path: string, to?: string): Promise<void> {
   return invoke("file_op", { op, path, to });
