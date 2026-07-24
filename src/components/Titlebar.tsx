@@ -13,8 +13,6 @@ import { pickFolder, gitIsRepo, revealPath } from "../api";
 import { newClaude, newGemini, newCodex, newOpencode, newGrok, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
 import {
   PanelRight,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   ChevronDown,
   Sparkles,
@@ -53,6 +51,30 @@ import { LayoutPicker } from "./LayoutPicker";
 const win = getCurrentWindow();
 
 type MenuItem = { label: string; icon?: ReactNode; onClick: () => void };
+
+// sidebar toggle glyph: the left rail is solid while the sidebar is out and hollow once it's tucked
+// away — carrying the state in the fill keeps it two shapes, which stays readable at 16px
+function SidebarIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      {open ? (
+        <path d="M5 3h4v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" fill="currentColor" stroke="none" />
+      ) : (
+        <path d="M9 3v18" />
+      )}
+    </svg>
+  );
+}
 
 // A compact outlined dropdown button for the topbar — T3's action-menu style.
 function ActionMenu({ label, lead, items }: { label: string; lead?: ReactNode; items: MenuItem[] }) {
@@ -431,7 +453,7 @@ export function Titlebar() {
           title={railHidden ? "Show sidebar" : "Hide sidebar"}
           onClick={toggleRail}
         >
-          {railHidden ? <PanelLeftOpen size={16} strokeWidth={1.75} /> : <PanelLeftClose size={16} strokeWidth={1.75} />}
+          <SidebarIcon open={!railHidden} />
         </button>
       </div>
 
