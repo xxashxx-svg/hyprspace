@@ -510,6 +510,20 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .setup(|_app| {
+            // macOS 26 doesn't paint the native traffic lights from the config-time Overlay title-bar
+            // style, leaving the window with no close/min/max buttons. re-assert the style once the
+            // window exists and it renders them. Overlay (not Transparent) keeps our full-height
+            // custom titlebar — the lights just overlay its top-left corner.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::{Manager, TitleBarStyle};
+                if let Some(win) = _app.get_webview_window("main") {
+                    let _ = win.set_title_bar_style(TitleBarStyle::Overlay);
+                }
+            }
+            Ok(())
+        })
         .manage(PtyManager::default())
         .manage(ServiceManager::default())
         .manage(AgentManager::default())
