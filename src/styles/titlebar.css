@@ -75,8 +75,17 @@
 .tb-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-right: 10px;
+  gap: 6px;
+  margin-right: 12px;
+}
+/* divider between the workspace actions and the app/system controls (bell, dock, window buttons) —
+   they do very different things and were reading as one long row */
+.tb-actions::after {
+  content: "";
+  width: 1px;
+  height: 16px;
+  margin-left: 10px;
+  background: var(--border-2);
 }
 .tb-menu {
   position: relative;
@@ -86,23 +95,27 @@
 .tb-action {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 9px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-1);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
   border-radius: var(--radius-1);
-  color: var(--text-1);
+  color: var(--text-2);
   font: inherit;
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
 }
 .tb-action:hover {
-  background: var(--surface-3);
-  border-color: var(--border-2);
+  background: var(--surface-2);
+  color: var(--text-1);
 }
 .tb-action-caret {
   color: var(--text-3);
@@ -128,14 +141,8 @@
   display: flex;
   align-items: center;
 }
-.tb-layout-btn {
-  padding: 0;
-  width: 30px;
-  justify-content: center;
-}
 .tb-layout-btn.open {
-  background: var(--surface-3);
-  border-color: var(--border-2);
+  background: var(--surface-2);
   color: var(--text-1);
 }
 .tb-menu-backdrop {
@@ -146,7 +153,8 @@
 .tb-layout-pop {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 200;
   width: 224px;
   padding: 8px;
@@ -154,7 +162,7 @@
   border: 1px solid var(--border-2);
   border-radius: var(--radius-2);
   box-shadow: var(--shadow-2);
-  animation: fdoIn 0.12s var(--ease);
+  animation: tbPopIn 0.12s var(--ease);
 }
 .tb-layout-head {
   font-size: 10.5px;
@@ -216,64 +224,6 @@
   text-align: center;
   line-height: 1.2;
 }
-/* live background-service pill in the topbar */
-.tb-svc {
-  position: relative;
-  margin-right: 4px;
-}
-.tb-svc-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 26px;
-  max-width: 170px;
-  padding: 0 11px;
-  background: color-mix(in srgb, var(--status-ok) 12%, var(--surface-2));
-  border: 1px solid color-mix(in srgb, var(--status-ok) 30%, var(--border-1));
-  border-radius: 999px;
-  color: var(--text-1);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    background 0.12s var(--ease),
-    border-color 0.12s var(--ease);
-}
-.tb-svc-btn:hover {
-  background: color-mix(in srgb, var(--status-ok) 18%, var(--surface-2));
-  border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-1));
-}
-.tb-svc-dot {
-  position: relative;
-  z-index: 0; /* own stacking context so the ring can sit behind the dot */
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--status-ok);
-}
-/* pulse ring animates transform/opacity only (compositable) — the old box-shadow version
-   forced a repaint every frame for as long as any service was running */
-.tb-svc-dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--status-ok) 55%, transparent);
-  animation: svcPulse 2s var(--ease) infinite;
-}
-.tb-svc-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tb-svc-pop {
-  left: auto;
-  right: 0;
-  min-width: 180px;
-}
-
 /* running-loops indicator — a neutral pill that reads as a sibling of the New/Open buttons
    (no status-green tint), with one small accent dot that gently breathes while iterating. */
 .tb-loop {
@@ -329,56 +279,60 @@
     opacity: 0.4;
   }
 }
-@keyframes svcPulse {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  /* 7px dot + 5px spread ≈ 2.4x — same reach as the old shadow ring */
-  70%,
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
-}
 .tb-menu-pop {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 200;
   min-width: 210px;
   padding: 5px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
+  background: var(--surface-3);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: var(--radius-2);
-  box-shadow: var(--shadow-2);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
   gap: 1px;
-  animation: fdoIn 0.12s var(--ease);
+  animation: tbPopIn 0.12s var(--ease);
+}
+@keyframes tbPopIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
 }
 .tb-menu-item {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 9px;
+  padding: 6px 9px;
   border: none;
   background: transparent;
-  color: var(--text-2);
+  color: var(--text-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   text-align: left;
   border-radius: var(--radius-1);
   cursor: pointer;
   white-space: nowrap;
 }
 .tb-menu-item:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: #fff;
 }
 .tb-menu-item svg {
-  color: var(--text-3);
+  color: var(--text-2);
   flex: 0 0 auto;
+}
+.tb-menu-item:hover svg {
+  color: #fff;
 }
 /* commit dialog (topbar Commit & push) */
 .cd-overlay {
@@ -795,4 +749,63 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+/* ---- nested submenu in a topbar dropdown ("New agent ▸") ---- */
+.tb-sub {
+  position: relative;
+}
+.tb-sub-caret {
+  margin-left: auto;
+  opacity: 0.55;
+}
+.tb-sub:hover > .tb-menu-item {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+
+/* ---- nested submenu in a topbar dropdown ("New agent ▸") ---- */
+.tb-sub {
+  position: relative;
+}
+.tb-sub-caret {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.tb-sub:hover > .tb-menu-item {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.tb-sub-pop {
+  position: absolute;
+  top: -5px;
+  left: 100%;
+  margin-left: 3px;
+  z-index: 1;
+  transform: none; /* undo the parent menu's centring translate */
+  animation: none;
+}
+.tb-sub-pop.left {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 3px;
+}
+
+/* ---- action bar: one filled primary + square icon buttons ---- */
+/* the single call-to-action; everything you can create lives behind it */
+/* section labels + dividers inside a topbar dropdown */
+.tb-menu-head {
+  padding: 6px 9px 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.tb-menu-sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.09);
+  margin: 5px 7px;
 }

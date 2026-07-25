@@ -6,13 +6,27 @@ import { listDir, revealPath, fileOp, findFiles, gitChanges, type DirEntry } fro
 import { joinPath } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
 import { confirmDialog } from "../stores/confirm";
-import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
-import { isWindows } from "../platform";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ChevronRight, Folder, RefreshCw, ListFilter, X } from "lucide-react";
+import {
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  FilePlus,
+  Copy,
+  Link2,
+  Pencil,
+  Trash2,
+  ExternalLink,
+  RefreshCw,
+  ListFilter,
+  X,
+  Terminal as TerminalIcon,
+} from "lucide-react";
+import { isMac, isWindows } from "../platform";
 import { fileIcon } from "../lib/fileIcons";
-
-const WSL_CMD = "wsl";
+import { PROVIDERS } from "../lib/providers";
+import { CtxSubmenu } from "./CtxSubmenu";
 
 // git decoration + open-file highlight for the tree. context (not props) because TreeNode recurses;
 // `status` is keyed by repo-relative path with forward slashes, which is what git porcelain gives us.
@@ -137,15 +151,6 @@ function TreeNode({
     useUi.getState().goSpace();
     setMenu(null);
   };
-  const launchers: { label: string; cmd?: string }[] = [
-    { label: "Open Claude here", cmd: claudeCmd() },
-    { label: "Open Gemini here", cmd: geminiCmd() },
-    { label: "Open Codex here", cmd: codexCmd() },
-    { label: "Open OpenCode here", cmd: opencodeCmd() },
-    { label: "Open Grok here", cmd: grokCmd() },
-    ...(isWindows ? [{ label: "Open WSL here", cmd: WSL_CMD }] : []),
-    { label: "Open terminal here", cmd: undefined },
-  ];
   const reveal = () => {
     void revealPath(dir ? path : parentOf(path)).catch(() => {});
     setMenu(null);
@@ -295,7 +300,14 @@ function TreeNode({
               setMenu(null);
             }}
           />
-          <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+          <div
+            className="ctx-menu"
+            // keep it on screen — right-clicking near an edge used to clip the panel
+            style={{
+              left: Math.min(menu.x, window.innerWidth - 210),
+              top: Math.min(menu.y, Math.max(8, window.innerHeight - 330)),
+            }}
+          >
             {!dir && (
               <button
                 className="ctx-item"
@@ -310,34 +322,44 @@ function TreeNode({
             {dir && (
               <>
                 <button className="ctx-item" onClick={() => void startCreate("file")}>
-                  New file…
+                  <FilePlus size={14} />
+                  <span>New file…</span>
                 </button>
                 <button className="ctx-item" onClick={() => void startCreate("dir")}>
-                  New folder…
+                  <FolderPlus size={14} />
+                  <span>New folder…</span>
                 </button>
               </>
             )}
             <div className="ctx-sep" />
             <button className="ctx-item" onClick={() => copyPath(false)}>
-              Copy path
+              <Copy size={14} />
+              <span>Copy path</span>
             </button>
             <button className="ctx-item" onClick={() => copyPath(true)}>
-              Copy relative path
+              <Link2 size={14} />
+              <span>Copy relative path</span>
             </button>
             <div className="ctx-sep" />
             {dir && (
               <button className="ctx-item" onClick={openAsProject}>
-                Open as project
+                <FolderOpen size={14} />
+                <span>Open as project</span>
               </button>
             )}
-            {dir &&
-              launchers.map((l) => (
-                <button key={l.label} className="ctx-item" onClick={() => launchHere(l.cmd)}>
-                  {l.label}
-                </button>
-              ))}
+            {dir && (
+              <CtxSubmenu label="Open here" icon={<TerminalIcon size={14} />}>
+                {PROVIDERS.map((pr) => (
+                  <button key={pr.id} className="ctx-item" onClick={() => launchHere(pr.cmd())}>
+                    <pr.icon size={14} />
+                    <span>{pr.label}</span>
+                  </button>
+                ))}
+              </CtxSubmenu>
+            )}
             <button className="ctx-item" onClick={reveal}>
-              Reveal in Explorer
+              <ExternalLink size={14} />
+              <span>{isWindows ? "Reveal in Explorer" : isMac ? "Reveal in Finder" : "Open containing folder"}</span>
             </button>
             <div className="ctx-sep" />
             <button
@@ -347,10 +369,12 @@ function TreeNode({
                 setRenaming(true);
               }}
             >
-              Rename
+              <Pencil size={14} />
+              <span>Rename</span>
             </button>
             <button className="ctx-item danger" onClick={() => void doDelete()}>
-              Delete
+              <Trash2 size={14} />
+              <span>Delete</span>
             </button>
           </div>
         </>
@@ -434,7 +458,13 @@ export function FilesPanel() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<string[] | null>(null); // null = not searching (show the tree)
-  const cwd = ws?.cwd ?? "";
+  // follow the FOCUSED pane's folder, not the space's. an open space has no cwd of its own (and a
+  // guest pane in a project points somewhere else entirely), so keying off the space showed "open a
+  // project" even with panes sitting in real folders. `||` on purpose: an empty cwd is useless here,
+  // we want the first real folder.
+  const focusedId = useWorkspaces((s) => s.focusedSessionId);
+  const focused = ws?.sessions.find((s) => s.id === focusedId);
+  const cwd = focused?.cwd || ws?.cwd || ws?.sessions.find((s) => s.cwd)?.cwd || "";
   const view = useUi((s) => s.view);
 
   // git decoration for the tree, polled while the panel is actually on screen
@@ -464,19 +494,21 @@ export function FilesPanel() {
     };
   }, [cwd, view, refreshKey]);
 
-  // which files are already open as tabs — those rows get highlighted
-  const openPaths = useWorkspaces((s) => {
+  // which files are already open as tabs — those rows get highlighted.
+  // NB: derive the Set in a memo, never inside the selector. zustand compares the selector's result
+  // by reference, so returning a fresh Set each call reads as "changed" on every render and spins
+  // into an infinite re-render (which blanks the whole app).
+  const allWorkspaces = useWorkspaces((s) => s.workspaces);
+  const openPaths = useMemo(() => {
     const set = new Set<string>();
-    for (const w of s.workspaces)
+    for (const w of allWorkspaces)
       for (const ss of w.sessions) {
         const p = ss.file ?? ss.image;
         if (p) set.add(normPath(p));
       }
     return set;
-  });
-  const openKey = [...openPaths].sort().join("|");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const deco = useMemo(() => ({ status, open: openPaths }), [status, openKey]);
+  }, [allWorkspaces]);
+  const deco = useMemo(() => ({ status, open: openPaths }), [status, openPaths]);
 
   // debounced recursive filename search; clearing the box goes back to the tree
   useEffect(() => {
@@ -492,7 +524,7 @@ export function FilesPanel() {
   }, [q, cwd]);
 
   if (!ws || !cwd) {
-    return <div className="ft-empty">Open a project (a folder) to browse its files.</div>;
+    return <div className="ft-empty">No folder here yet — open a project, or start a pane in a folder.</div>;
   }
 
   return (

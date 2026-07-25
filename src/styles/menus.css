@@ -17,11 +17,16 @@
 .ctx-menu {
   position: fixed;
   z-index: 201;
-  min-width: 178px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
+  min-width: 190px;
+  /* lift the panel clearly off whatever is behind it — surface-2 alone read as washed out over a
+     dark terminal. a hairline top highlight + a real shadow is what sells it as floating. */
+  background: var(--surface-3);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: var(--radius-2);
-  box-shadow: var(--shadow-pop);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   padding: 5px;
   display: flex;
   flex-direction: column;
@@ -35,9 +40,9 @@
   gap: 10px;
   background: transparent;
   border: none;
-  color: var(--text-2);
+  color: var(--text-1); /* was text-2 — muted labels are what made this look washed out */
   text-align: left;
-  padding: 7px 9px;
+  padding: 6px 9px;
   border-radius: var(--radius-1);
   cursor: pointer;
   font: inherit;
@@ -49,21 +54,21 @@
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
-  color: var(--text-3);
+  color: var(--text-2);
   transition: color 0.1s var(--ease);
 }
 .ctx-item:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: #fff;
 }
 .ctx-item:hover svg {
-  color: var(--text-2);
+  color: #fff;
 }
 /* thin divider that groups related actions (T3-style) */
 .ctx-sep {
   height: 1px;
-  background: var(--border-1);
-  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.09);
+  margin: 5px 7px;
 }
 /* destructive actions stay neutral until hovered, then go red */
 .ctx-item.danger:hover {
@@ -72,4 +77,51 @@
 }
 .ctx-item.danger:hover svg {
   color: var(--status-error);
+}
+
+/* ---- nested submenu inside a context menu ("Open here ▸") ---- */
+.ctx-sub {
+  position: relative;
+}
+/* push the caret to the right edge so the row reads as "has more" */
+.ctx-sub-caret {
+  margin-left: auto;
+  opacity: 0.55;
+}
+.ctx-sub:hover > .ctx-item {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: #fff;
+}
+.ctx-sub:hover > .ctx-item svg {
+  color: #fff;
+}
+.ctx-sub-pop {
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  margin-left: 2px;
+  z-index: 1;
+}
+.ctx-sub-pop.up {
+  top: auto;
+  bottom: -4px;
+}
+/* no room on the right (the dock hugs the window edge) — open toward the left instead */
+.ctx-sub-pop.left {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 2px;
+}
+/* inline rename field inside a context menu */
+.ctx-rename {
+  width: 190px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
 }

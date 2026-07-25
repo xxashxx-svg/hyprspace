@@ -40,7 +40,7 @@ import {
   Copy,
   Folder,
   FolderCog,
-  LayoutGrid,
+  Layers,
   Zap,
   Atom,
   Rocket,
@@ -486,7 +486,7 @@ export function Settings() {
                       </div>
                       <div className="acct-stat">
                         <span className="acct-stat-ico">
-                          <LayoutGrid size={16} />
+                          <Layers size={16} />
                         </span>
                         <span className="acct-stat-body">
                           <span className="acct-stat-n">{openCount}</span>

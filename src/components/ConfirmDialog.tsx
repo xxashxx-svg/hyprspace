@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useConfirm } from "../stores/confirm";
+import { useConfirm, type ConfirmAnswer } from "../stores/confirm";
 import { useSettings } from "../stores/settings";
 
 // In-app confirmation modal — matches the app theme instead of the native OS dialog.
@@ -11,8 +11,8 @@ export function ConfirmDialog() {
   useEffect(() => setDontAsk(false), [req]); // fresh checkbox per dialog
 
   // remember the choice only when the user actually confirms
-  const done = (ok: boolean) => {
-    if (ok && dontAsk && req?.dontAskId) useSettings.getState().dismissConfirm(req.dontAskId);
+  const done = (ok: ConfirmAnswer) => {
+    if (ok === true && dontAsk && req?.dontAskId) useSettings.getState().dismissConfirm(req.dontAskId);
     answer(ok);
   };
 
@@ -46,6 +46,11 @@ export function ConfirmDialog() {
           <button className="btn" onClick={() => done(false)}>
             {req.cancelLabel ?? "Cancel"}
           </button>
+          {req.altLabel && (
+            <button className="btn danger" onClick={() => done("alt")}>
+              {req.altLabel}
+            </button>
+          )}
           <button
             className={`btn ${req.danger ? "danger" : "primary"}`}
             onClick={() => done(true)}

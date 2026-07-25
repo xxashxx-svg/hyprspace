@@ -1,4 +1,5 @@
 mod agent;
+mod agenthook;
 mod ai;
 mod devtools;
 mod license;
@@ -81,6 +82,7 @@ fn resume_pty(state: State<PtyManager>, id: String) {
 
 #[tauri::command]
 fn kill_pty(state: State<PtyManager>, id: String) -> Result<(), String> {
+    agenthook::cleanup(&id); // drop this pane's claude hook settings file
     state.kill(&id)
 }
 
@@ -492,6 +494,24 @@ pub fn run() {
         loophook::run_loop_notify(argv.get(2).cloned());
         return; // unreachable — run_loop_notify exits the process
     }
+    // claude hook → post the payload to the running app, then exit
+    if argv.get(1).map(String::as_str) == Some("agent-hook") {
+        let port = argv.get(2).and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
+        let pane = argv.get(3).cloned().unwrap_or_default();
+        if port != 0 {
+            agenthook::run_agent_hook(port, &pane);
+        }
+        return;
+    }
+    // claude status line → tee the usage payload to the app, print the user's own status line
+    if argv.get(1).map(String::as_str) == Some("status-line") {
+        let port = argv.get(2).and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
+        let pane = argv.get(3).cloned().unwrap_or_default();
+        if port != 0 {
+            agenthook::run_status_line(port, &pane);
+        }
+        return;
+    }
     if argv.get(1).map(String::as_str) == Some("loop-done") {
         loophook::run_loop_done(argv.get(2).cloned());
         return; // unreachable — run_loop_done exits the process
@@ -521,6 +541,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|_app| {
+            agenthook::start(_app.handle().clone());
             // macOS 26 leaves the native traffic-light buttons hidden even with decorations + the
             // Overlay title-bar style, so the window ends up with no close/min/max controls. Re-assert
             // the style, then explicitly un-hide the three standard window buttons through AppKit.
@@ -593,6 +614,7 @@ pub fn run() {
             devtools::read_image_file,
             devtools::path_exists,
             claude_image_path,
+            agenthook::agent_hook_settings,
             devtools::write_file,
             devtools::file_op,
             devtools::find_files,

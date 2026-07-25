@@ -7,21 +7,26 @@ export interface ConfirmReq {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  /** optional third choice (e.g. "Discard") — resolves "alt" instead of true/false */
+  altLabel?: string;
   dontAskId?: string; // set to offer a "don't ask again" checkbox; dismissed ids auto-confirm
 }
 
+/** true = confirmed, false = cancelled, "alt" = the optional third button */
+export type ConfirmAnswer = boolean | "alt";
+
 interface ConfirmState {
   req: ConfirmReq | null;
-  resolve: ((ok: boolean) => void) | null;
-  open: (req: ConfirmReq) => Promise<boolean>;
-  answer: (ok: boolean) => void;
+  resolve: ((ok: ConfirmAnswer) => void) | null;
+  open: (req: ConfirmReq) => Promise<ConfirmAnswer>;
+  answer: (ok: ConfirmAnswer) => void;
 }
 
 export const useConfirm = create<ConfirmState>((set, get) => ({
   req: null,
   resolve: null,
   open: (req) =>
-    new Promise<boolean>((resolve) => {
+    new Promise<ConfirmAnswer>((resolve) => {
       // if a confirm is somehow already open, dismiss it as "no" first
       get().resolve?.(false);
       set({ req, resolve });
@@ -34,7 +39,7 @@ export const useConfirm = create<ConfirmState>((set, get) => ({
 }));
 
 // in-app replacement for the native ask() dialog — callable from anywhere (actions, etc.)
-export function confirmDialog(req: ConfirmReq): Promise<boolean> {
+export function confirmDialog(req: ConfirmReq): Promise<ConfirmAnswer> {
   if (req.dontAskId && useSettings.getState().dismissedConfirms.includes(req.dontAskId)) {
     return Promise.resolve(true);
   }

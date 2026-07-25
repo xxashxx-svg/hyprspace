@@ -1,6 +1,7 @@
 // Shared app actions, callable from hotkeys and the command palette.
 // They read stores via getState() so they work outside React render.
 import { confirmDialog } from "./stores/confirm";
+import { isFileDirty, markDiscarded } from "./lib/dirtyFiles";
 import { useNotifications } from "./stores/notifications";
 import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
@@ -48,7 +49,7 @@ function activeWs() {
 }
 
 // open spaces launch into picked folder(s); projects launch in their own cwd
-async function launchInActive(command?: string) {
+export async function launchInActive(command?: string) {
   const ws = activeWs();
   if (!ws) return;
   if (ws.kind === "open") {
@@ -101,6 +102,20 @@ export async function closeSession(wsId: string, sessionId: string) {
   const ws = useWorkspaces.getState().workspaces.find((w) => w.id === wsId);
   const sess = ws?.sessions.find((s) => s.id === sessionId);
   if (!ws || !sess) return;
+  // an editor tab with unsaved edits: ask first. the editor flushes on unmount so nothing is lost
+  // either way, but writing to disk because you clicked × is a surprise — make it a choice.
+  if (sess.file && isFileDirty(sess.file)) {
+    const ans = await confirmDialog({
+      title: "Unsaved changes",
+      message: `"${sess.title || sess.file}" has unsaved changes.`,
+      confirmLabel: "Save & close",
+      cancelLabel: "Cancel",
+      altLabel: "Discard",
+    });
+    if (ans === false) return;
+    // tell the editor not to flush on the way out — otherwise unmount would re-save the buffer
+    if (ans === "alt") markDiscarded(sess.file);
+  }
   const isAi = sess.provider === "claude" || sess.provider === "gemini" || sess.provider === "grok";
   // a pane whose command matches a configured startup task is a running service — confirm before
   // killing. empty commands are plain terminals on both sides, never a service match.

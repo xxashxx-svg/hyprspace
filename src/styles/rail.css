@@ -14,11 +14,13 @@
   justify-content: space-between;
   padding: 6px 12px 6px;
 }
+/* quiet uppercase section label — it's a divider, not a row you interact with */
 .rail-title {
-  font-size: 12px;
-  letter-spacing: 0.01em;
-  color: color-mix(in srgb, var(--text-2) 82%, transparent);
+  font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 .rail-add {
   background: transparent;
@@ -339,26 +341,29 @@
   min-height: 0;
   overflow: hidden;
 }
+/* every nesting level uses the SAME step + the same hairline, so the tiers line up as one ladder
+   (project → branch → agent → sub-agent) instead of each inventing its own inset */
 .rail-sessions {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin: 1px 0 4px;
-  padding-left: 24px;
+  margin: 0 0 4px 15px;
+  padding-left: 9px;
+  border-left: 1px solid var(--border-1);
 }
 .rail-session {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
+  height: 26px;
   text-align: left;
-  padding: 6px 8px;
+  padding: 0 8px;
   border: none;
   background: transparent;
   color: var(--text-2);
   font: inherit;
   font-size: 12.5px;
-  border-radius: 7px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
@@ -468,17 +473,18 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
   border: none;
   background: transparent;
   color: var(--text-2);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   text-align: left;
   width: 100%;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .rail-item:hover {
@@ -535,6 +541,10 @@
 .rail-ico {
   flex: 0 0 auto;
   display: block;
+  color: var(--text-3);
+}
+.rail-item.active .rail-ico {
+  color: var(--text-2);
 }
 .rail-name {
   flex: 1;
@@ -542,15 +552,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* a plain trailing number — the pill made every row look like it had a notification */
 .rail-count {
   font-size: 10.5px;
   font-weight: 500;
   color: var(--text-3);
-  background: color-mix(in srgb, var(--text-3) 13%, transparent);
-  border-radius: 999px;
-  padding: 1px 6px;
-  min-width: 16px;
-  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding-right: 2px;
 }
 .rail-clear {
   position: absolute;
@@ -596,4 +604,193 @@
   font: inherit;
   font-size: 13px;
   outline: none;
+}
+
+/* ---- live agent state (claude hooks) + delegated sub-agents ---- */
+/* working = a stepped spinner, not a smooth one: N long-running agents shouldn't each pin the
+   compositor at refresh rate just to draw a rotating ring. */
+.rail-sess-dot.s-working {
+  background: transparent;
+  border: 2px solid var(--status-busy);
+  border-top-color: transparent;
+  animation: railSpin 1s steps(12, end) infinite;
+}
+@keyframes railSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-sess-dot.s-working {
+    animation: none;
+  }
+}
+.rail-sess-dot.s-waiting {
+  background: var(--status-awaiting);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-awaiting) 22%, transparent);
+}
+.rail-sess-dot.s-done {
+  background: var(--status-ok);
+}
+.rail-sess-dot.s-idle {
+  background: rgba(255, 255, 255, 0.22);
+}
+/* the one row you should look at */
+.rail-sess-flag {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--status-awaiting);
+}
+/* sub-agent children — indented under their parent with a lineage rail, quieter than a real pane */
+.rail-subagents {
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+}
+.rail-subagent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.rail-subagent:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+}
+
+/* ---- branch / worktree tier: project → branch → agent → sub-agent ---- */
+.rail-branch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.rail-branch-ico {
+  flex: 0 0 auto;
+}
+.rail-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+/* the checkout the project points at, as opposed to a worktree branched off it */
+.rail-branch-badge {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-1));
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.rail-branch .rail-count {
+  margin-left: auto;
+}
+/* panes belonging to a branch sit under it, with a hairline tying them together */
+.rail-branch-kids {
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid var(--border-1);
+}
+
+/* the name owns the slack; trailing meta never steals from it (a "needs you" flag was truncating
+   a pane's name down to "lualin…") */
+.rail-session .rail-sess-name,
+.rail-subagent .rail-sess-name,
+.rail-branch-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-sess-time,
+.rail-sess-flag,
+.rail-sess-sub {
+  flex: 0 0 auto;
+}
+
+/* viewer tabs (an image or a file open in the grid) are documents, not running work — quieter than
+   an agent row so they never compete for attention in a list whose job is "who needs me" */
+.rail-session.doc {
+  color: var(--text-3);
+}
+.rail-session.doc:hover,
+.rail-session.doc.active {
+  color: var(--text-2);
+}
+.rail-sess-doc-ico {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+
+/* ---- two-line agent rows: name on top, what it's doing underneath ---- */
+.rail-session {
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  align-items: flex-start;
+}
+/* the glyphs sit on the first line, not centred against a two-line block */
+.rail-session .rail-sess-ico {
+  margin-top: 2px;
+}
+.rail-sess-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 1px;
+}
+.rail-sess-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* the second line always ellipses rather than wrapping — a row must stay two lines tall */
+.rail-sess-act {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-session.active .rail-sess-act {
+  color: var(--text-2);
+}
+/* viewer tabs have no activity — keep them on one compact line */
+.rail-session.doc {
+  align-items: center;
+  padding: 0 8px;
+  height: 26px;
+}
+.rail-session.doc .rail-sess-ico {
+  margin-top: 0;
 }

@@ -6,17 +6,12 @@
   flex: 0 0 auto;
   background: var(--status-error);
 }
+/* full strength, like the tab-strip controls — the old 0.5 resting opacity is what made these read
+   as washed out next to them */
 .pane-head-right {
   display: flex;
   align-items: center;
-  gap: 2px;
-  opacity: 0.5;
-  transition: opacity 0.12s var(--ease);
-}
-/* reveal the pane controls on hover / when focused — quieter chrome at rest */
-.terminal-pane:hover .pane-head-right,
-.terminal-pane.focused .pane-head-right {
-  opacity: 1;
+  gap: 3px;
 }
 .pane-btn {
   display: inline-flex;
@@ -32,15 +27,15 @@
   transition: background 0.12s var(--ease), color 0.12s var(--ease), transform 0.08s var(--ease);
 }
 .pane-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-3);
   color: var(--text-1);
 }
 .pane-btn:active {
   transform: scale(0.9);
 }
 .pane-btn.close:hover {
-  background: rgba(239, 68, 68, 0.16);
-  color: #ff6b6b;
+  background: color-mix(in srgb, var(--status-error) 22%, transparent);
+  color: var(--status-error);
 }
 
 /* ---- pane actions menu (… button / right-click header) ---- */

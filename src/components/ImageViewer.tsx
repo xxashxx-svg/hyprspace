@@ -6,9 +6,11 @@ interface Props {
   path: string;
   active: boolean;
   onClose: () => void;
+  /** the tab strip already shows the filename and a close × — don't repeat them */
+  tabbed?: boolean;
 }
 
-export function ImageViewer({ path, active, onClose }: Props) {
+export function ImageViewer({ path, active, onClose, tabbed }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [actual, setActual] = useState(false); // click toggles fit ↔ 1:1
@@ -42,15 +44,20 @@ export function ImageViewer({ path, active, onClose }: Props) {
   return (
     <div className="image-viewer">
       <div className="iv-bar">
-        <span className="iv-name" title={path}>
-          {name}
-        </span>
+        {!tabbed && (
+          <span className="iv-name" title={path}>
+            {name}
+          </span>
+        )}
+        <span className="iv-gap" />
         <button className="iv-btn" title="Reveal in folder" onClick={() => void revealPath(dir).catch(() => {})}>
           <FolderOpen size={13} /> Reveal
         </button>
-        <button className="iv-btn iv-close" title="Close image" onClick={onClose}>
-          <X size={13} /> Close
-        </button>
+        {!tabbed && (
+          <button className="iv-btn iv-close" title="Close image" onClick={onClose}>
+            <X size={13} /> Close
+          </button>
+        )}
       </div>
       {err ? (
         <div className="iv-error">

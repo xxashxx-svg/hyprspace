@@ -9,18 +9,15 @@ import { useActionEditor } from "../stores/actionEditor";
 import { runAction } from "../lib/startup";
 import { isMac, isWindows } from "../platform";
 import { pickFolder, gitIsRepo, revealPath } from "../api";
-import { newClaude, newGemini, newCodex, newOpencode, newGrok, newWsl, newTerminal, newClaudeInWorktree } from "../actions";
+import { launchInActive, newTerminal, newClaudeInWorktree } from "../actions";
+import { PROVIDERS } from "../lib/providers";
 import {
   PanelRight,
   Plus,
   ChevronDown,
+  ChevronRight,
   Sparkles,
-  Gem,
-  Bot,
-  SquareCode,
-  Atom,
   Terminal,
-  SquareTerminal,
   GitBranch,
   GitCommitVertical,
   GitPullRequest,
@@ -28,7 +25,7 @@ import {
   Upload,
   FolderOpen,
   FolderPlus,
-  LayoutGrid,
+  Layers,
   ExternalLink,
   Rocket,
   Play,
@@ -41,11 +38,73 @@ import {
 const EMPTY_ACTIONS: Action[] = [];
 import { Logo } from "./Logo";
 import { NotificationPanel } from "./NotificationPanel";
+import { UsageMeter } from "./UsageMeter";
 import { LayoutPicker } from "./LayoutPicker";
 
 const win = getCurrentWindow();
 
-type MenuItem = { label: string; icon?: ReactNode; onClick: () => void };
+// `items` turns a row into a nested submenu — used to keep the New menu short now that there are
+// six agents to choose from.
+type MenuItem = {
+  label?: string;
+  icon?: ReactNode;
+  onClick?: () => void;
+  items?: MenuItem[];
+  head?: boolean; // a small uppercase section label
+  sep?: boolean; // a divider
+};
+
+// one row of a topbar dropdown; a row with children opens a panel beside it on hover
+function TbMenuRow({ item, close }: { item: MenuItem; close: () => void }) {
+  /* eslint-disable react-hooks/rules-of-hooks -- head/sep return before hooks, but an item never
+     changes kind across renders, so the hook order per row is stable */
+  const [open, setOpen] = useState(false);
+  const [left, setLeft] = useState(false); // the New button sits near the right edge
+  const rowRef = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const show = () => {
+    clearTimeout(timer.current);
+    const r = rowRef.current?.getBoundingClientRect();
+    if (r) setLeft(r.right + 190 > window.innerWidth);
+    setOpen(true);
+  };
+  const hide = () => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setOpen(false), 160); // survive the diagonal mouse travel
+  };
+  if (item.sep) return <div className="tb-menu-sep" />;
+  if (item.head) return <div className="tb-menu-head">{item.label}</div>;
+  if (!item.items) {
+    return (
+      <button
+        className="tb-menu-item"
+        onClick={() => {
+          close();
+          item.onClick?.();
+        }}
+      >
+        {item.icon}
+        {item.label}
+      </button>
+    );
+  }
+  return (
+    <div className="tb-sub" ref={rowRef} onMouseEnter={show} onMouseLeave={hide}>
+      <button className="tb-menu-item" onClick={show}>
+        {item.icon}
+        {item.label}
+        <ChevronRight size={13} className="tb-sub-caret" />
+      </button>
+      {open && (
+        <div className={`tb-menu-pop tb-sub-pop${left ? " left" : ""}`} onMouseEnter={show} onMouseLeave={hide}>
+          {item.items.map((c) => (
+            <TbMenuRow key={c.label} item={c} close={close} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // sidebar toggle glyph: the left rail is solid while the sidebar is out and hollow once it's tucked
 // away — carrying the state in the fill keeps it two shapes, which stays readable at 16px
@@ -72,7 +131,21 @@ function SidebarIcon({ open }: { open: boolean }) {
 }
 
 // A compact outlined dropdown button for the topbar — T3's action-menu style.
-function ActionMenu({ label, lead, items }: { label: string; lead?: ReactNode; items: MenuItem[] }) {
+function ActionMenu({
+  label,
+  lead,
+  items,
+  prime,
+  iconOnly,
+  title,
+}: {
+  label: string;
+  lead?: ReactNode;
+  items: MenuItem[];
+  prime?: boolean; // the one filled call-to-action button
+  iconOnly?: boolean; // collapse to a square icon button, label moves to the tooltip
+  title?: string;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -93,25 +166,19 @@ function ActionMenu({ label, lead, items }: { label: string; lead?: ReactNode; i
 
   return (
     <div className="tb-menu" ref={ref}>
-      <button className="tb-action" onClick={() => setOpen((o) => !o)}>
+      <button
+        className={`tb-action${prime ? " prime" : ""}${iconOnly ? " icon-only" : ""}`}
+        title={title ?? label}
+        onClick={() => setOpen((o) => !o)}
+      >
         {lead}
-        <span>{label}</span>
-        <ChevronDown size={13} className="tb-action-caret" />
+        {!iconOnly && <span>{label}</span>}
+        {!iconOnly && <ChevronDown size={13} className="tb-action-caret" />}
       </button>
       {open && (
         <div className="tb-menu-pop">
           {items.map((it) => (
-            <button
-              key={it.label}
-              className="tb-menu-item"
-              onClick={() => {
-                setOpen(false);
-                it.onClick();
-              }}
-            >
-              {it.icon}
-              {it.label}
-            </button>
+            <TbMenuRow key={it.label} item={it} close={() => setOpen(false)} />
           ))}
         </div>
       )}
@@ -185,15 +252,19 @@ export function Titlebar() {
   };
 
   const newItems: MenuItem[] = [
-    { label: "Launch workspace…", icon: <Rocket size={14} />, onClick: () => useUi.getState().openLaunch() },
-    { label: "Claude", icon: <Sparkles size={14} />, onClick: () => { void newClaude(); go(); } },
-    { label: "Gemini", icon: <Gem size={14} />, onClick: () => { void newGemini(); go(); } },
-    { label: "Codex", icon: <Bot size={14} />, onClick: () => { void newCodex(); go(); } },
-    { label: "OpenCode", icon: <SquareCode size={14} />, onClick: () => { void newOpencode(); go(); } },
-    { label: "Grok", icon: <Atom size={14} />, onClick: () => { void newGrok(); go(); } },
-    ...(isWindows
-      ? [{ label: "WSL (Linux)", icon: <SquareTerminal size={14} />, onClick: () => { void newWsl(); go(); } }]
-      : []),
+    { head: true, label: "In this space" },
+    {
+      label: "New agent",
+      icon: <Sparkles size={14} />,
+      items: PROVIDERS.filter((p) => p.id !== "terminal").map((p) => ({
+        label: p.label,
+        icon: <p.icon size={14} />,
+        onClick: () => {
+          void launchInActive(p.cmd());
+          go();
+        },
+      })),
+    },
     { label: "Terminal", icon: <Terminal size={14} />, onClick: () => { void newTerminal(); go(); } },
     {
       label: "Claude in worktree",
@@ -203,8 +274,9 @@ export function Titlebar() {
         go();
       },
     },
-  ];
-  const openItems: MenuItem[] = [
+    { label: "Launch workspace…", icon: <Rocket size={14} />, onClick: () => useUi.getState().openLaunch() },
+    { sep: true },
+    { head: true, label: "Spaces" },
     {
       label: "New project…",
       icon: <FolderPlus size={14} />,
@@ -223,7 +295,7 @@ export function Titlebar() {
     },
     {
       label: "New open space",
-      icon: <LayoutGrid size={14} />,
+      icon: <Layers size={14} />,
       onClick: () => {
         useWorkspaces.getState().addOpenSpace();
         go();
@@ -314,10 +386,10 @@ export function Titlebar() {
         {/* workspace action dropdowns — irrelevant on the settings screen, so hide them there */}
         {!settingsOpen && (
         <div className="tb-actions">
-          <ActionMenu label="New" lead={<Plus size={14} />} items={newItems} />
-          <ActionMenu label="Open" lead={<FolderOpen size={14} />} items={openItems} />
+          <ActionMenu iconOnly label="New" lead={<Plus size={16} />} items={newItems} />
           {view === "space" && repoCwd && (
             <ActionMenu
+              iconOnly
               label={gitAct ? gitAct.label : isRepo ? "Commit & push" : "Init repo"}
               lead={
                 gitAct ? (
@@ -329,7 +401,7 @@ export function Titlebar() {
                     <X size={14} className="tb-git-err" />
                   )
                 ) : (
-                  <GitBranch size={14} />
+                  <GitBranch size={16} />
                 )
               }
               items={
@@ -346,11 +418,12 @@ export function Titlebar() {
             />
           )}
           {view === "space" && projFolder && (
-            <ActionMenu label="Actions" lead={<Zap size={14} />} items={actionItems} />
+            <ActionMenu iconOnly label="Actions" lead={<Zap size={16} />} items={actionItems} />
           )}
           <LayoutPicker />
         </div>
         )}
+        <UsageMeter />
         <LoopsIndicator />
         <NotificationPanel />
         {view === "space" && (

@@ -17,10 +17,12 @@ import { useProjectConfigs } from "../stores/projectConfig";
 import { useUi } from "../stores/ui";
 import { useNotifications } from "../stores/notifications";
 import { claudeCmd } from "../actions";
-import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp, pathExists, claudeImagePath } from "../api";
+import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp, pathExists, claudeImagePath, agentHookSettings } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { noteUserInput, forgetSession } from "../ai/autoNameSession";
 import { useActivity } from "../stores/activity";
+import { useAgentStatus } from "../stores/agentStatus";
+import { useUsage } from "../stores/usage";
 import {
   Maximize2,
   Minimize2,
@@ -118,6 +120,8 @@ interface Props {
   active: boolean;
   focused: boolean;
   isMaxed: boolean;
+  /** in a tab group the strip above already shows the name + controls — don't draw a second header */
+  tabbed?: boolean;
   // id-param callbacks so PaneGrid can pass ONE stable reference per handler (not a fresh closure
   // per pane per render) — that's what lets the memo below actually skip re-renders.
   onFocus: (sid: string) => void;
@@ -140,6 +144,7 @@ function TerminalPaneInner({
   active,
   focused,
   isMaxed,
+  tabbed,
   onFocus,
   onClose,
   onToggleMax,
@@ -522,16 +527,23 @@ function TerminalPaneInner({
       .then(async () => {
         if (!command) return;
         let toRun = command;
+        if (isClaude) {
+          // wire this pane's claude to our hook listener so the sidebar can show live state and
+          // any sub-agents it spawns. best-effort: no settings file → just launch unhooked.
+          const settings = await agentHookSettings(sessionId).catch(() => null);
+          if (settings) toRun = injectClaudeArg(toRun, `--settings "${settings}"`);
+        }
         if (isClaude && started) {
           // each pane owns its conversation under its own id, so resume that exact chat reliably;
           // panes created before we owned the id fall back to the folder's latest, else fresh
           const mode = await claudeResumeMode(cwd, sessionId).catch(() => "fresh");
-          if (mode === "resume") toRun = injectClaudeArg(command, `--resume ${sessionId}`);
-          else if (mode === "continue") toRun = injectClaudeArg(command, "--continue");
-          else toRun = injectClaudeArg(command, `--session-id ${sessionId}`);
+          // NB: build on toRun, not `command` — otherwise this drops the --settings injected above
+          if (mode === "resume") toRun = injectClaudeArg(toRun, `--resume ${sessionId}`);
+          else if (mode === "continue") toRun = injectClaudeArg(toRun, "--continue");
+          else toRun = injectClaudeArg(toRun, `--session-id ${sessionId}`);
         } else if (isClaude) {
           // first launch: claim this pane's uuid as claude's session id so we can resume it later
-          toRun = injectClaudeArg(command, `--session-id ${sessionId}`);
+          toRun = injectClaudeArg(toRun, `--session-id ${sessionId}`);
         }
         setTimeout(() => {
           if (disposed) return;
@@ -642,7 +654,9 @@ function TerminalPaneInner({
       search.dispose();
       searchRef.current = null;
       dropOutput(sessionId);
-      forgetSession(sessionId); // drop the auto-namer's capture state for this pane
+      forgetSession(sessionId);
+      useAgentStatus.getState().forget(sessionId); // drop the auto-namer's capture state for this pane
+      useUsage.getState().forget(sessionId); // and its share of the usage meter
       if (paused) void resumePty(sessionId).catch(() => {}); // unstick the reader before the kill
       void killPty(sessionId);
       term.dispose(); // also disposes the webgl addon if attached
@@ -785,6 +799,7 @@ function TerminalPaneInner({
       className={`terminal-pane ${focused ? "focused" : ""} p-${provider}${guest ? " guest" : ""}`}
       onMouseDown={() => onFocus(sessionId)}
     >
+      {!tabbed && (
       <div
         className="pane-header"
         onPointerDown={(e) => onGripDown(e, wsId, sessionId)}
@@ -840,6 +855,7 @@ function TerminalPaneInner({
           </button>
         </span>
       </div>
+      )}
       {showSearch && searchRef.current && (
         <TerminalSearch
           search={searchRef.current}

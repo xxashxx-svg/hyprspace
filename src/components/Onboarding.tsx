@@ -11,7 +11,7 @@ import { kbd } from "../platform";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Logo } from "./Logo";
 import { Blurred } from "./Blurred";
-import { Check, Copy, RotateCw, FolderOpen, LayoutGrid, ArrowRight } from "lucide-react";
+import { Check, Copy, RotateCw, FolderOpen, Layers, ArrowRight } from "lucide-react";
 import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
@@ -244,7 +244,7 @@ function StepLaunch({ finish }: { finish: () => void }) {
           <span className="ob-launch-desc">picks a folder and starts a Claude agent in it</span>
         </button>
         <button className="ob-launch-card" onClick={openSpace}>
-          <LayoutGrid size={20} strokeWidth={1.75} />
+          <Layers size={20} strokeWidth={1.75} />
           <span className="ob-launch-title">Start an open space</span>
           <span className="ob-launch-desc">a scratch grid where every pane can live in a different folder</span>
         </button>

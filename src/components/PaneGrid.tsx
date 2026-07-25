@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
-import { X, Plus, Terminal as TerminalIcon } from "lucide-react";
+import { X, Plus, Maximize2, Minimize2, FolderSymlink, Terminal as TerminalIcon } from "lucide-react";
 import { useWorkspaces, toSlots } from "../stores/workspace";
 import type { Session } from "../stores/workspace";
 import { useUi } from "../stores/ui";
@@ -8,6 +8,7 @@ import { TerminalPane, PROVIDER_ICONS } from "./TerminalPane";
 import { ImageViewer } from "./ImageViewer";
 const PaneEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 import { PaneAddMenu } from "./PaneAddMenu";
+import { TabContextMenu } from "./TabContextMenu";
 import { Launchpad } from "./Launchpad";
 import { Logo } from "./Logo";
 import { closeSession } from "../actions";
@@ -62,6 +63,10 @@ export function PaneGrid() {
   const [tabMenu, setTabMenu] = useState<
     { x: number; y: number; wsId: string; anchorId: string; anchorCommand?: string; cwd: string } | null
   >(null);
+  // right-click a tab — the actions the old pane-header "…" menu used to hold
+  const [tabCtx, setTabCtx] = useState<{ x: number; y: number; wsId: string; sessionId: string } | null>(
+    null,
+  );
 
   // Lazy pane mounting: only mount (and spawn a PTY/agent for) spaces you've actually opened this
   // run. Otherwise EVERY persisted session across EVERY space spawns a live process at launch — with
@@ -176,7 +181,7 @@ export function PaneGrid() {
           const slots = toSlots(w.sessions);
           const layout = resolveLayout(slots.length, w.layouts?.[slots.length]);
           return slots.map((slot, si) => {
-            const tabbed = slot.sessions.length > 1;
+            const single = slot.sessions.length === 1; // drag/reorder is still per-pane
             const stored = slot.group ? w.activeTabByGroup?.[slot.group] : undefined;
             // fall back to the first pane if the stored active tab is gone
             const activeTab = stored && slot.sessions.some((ss) => ss.id === stored) ? stored : slot.sessions[0].id;
@@ -188,16 +193,24 @@ export function PaneGrid() {
             return (
               <div
                 key={slot.group ?? solo.id}
-                data-sid={tabbed ? undefined : solo.id}
-                className={`pane-cell${tabbed ? " tabbed" : ""}${!tabbed && dragId === solo.id ? " dragging" : ""}${!tabbed && overId === solo.id ? " drop-over" : ""}`}
+                data-sid={single ? solo.id : undefined}
+                className={`pane-cell tabbed${single && dragId === solo.id ? " dragging" : ""}${single && overId === solo.id ? " drop-over" : ""}`}
                 style={{
                   display: cellVisible ? undefined : "none",
                   gridColumn: cellVisible && !maxedHere ? place.gridColumn : undefined,
                   gridRow: cellVisible && !maxedHere ? place.gridRow : undefined,
                 }}
               >
-                {tabbed && slot.group && (
-                  <div className="pane-tabs">
+                <div
+                    className="pane-tabs"
+                    onPointerDown={single ? (e) => {
+                      // only the empty strip area drags — not a tab or a button
+                      if ((e.target as HTMLElement).closest(".pane-tab, button")) return;
+                      onGripDown(e, w.id, solo.id);
+                    } : undefined}
+                    onPointerMove={single ? onGripMove : undefined}
+                    onPointerUp={single ? onGripUp : undefined}
+                  >
                     {slot.sessions.map((ts) => {
                       const TIcon = PROVIDER_ICONS[ts.provider] ?? TerminalIcon;
                       return (
@@ -207,7 +220,14 @@ export function PaneGrid() {
                           // image tabs are named after the file, so two panes both show "1.png" —
                           // the full path in a tooltip is the only way to tell them apart
                           title={ts.image || ts.file || ts.title || ts.provider}
-                          onMouseDown={() => setActiveTab(w.id, slot.group!, ts.id)}
+                          onContextMenu={(e: RMouseEvent) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setTabCtx({ x: e.clientX, y: e.clientY, wsId: w.id, sessionId: ts.id });
+                          }}
+                          onMouseDown={() =>
+                            slot.group ? setActiveTab(w.id, slot.group, ts.id) : onPaneFocus(ts.id)
+                          }
                         >
                           <TIcon size={11} className="pane-tab-ico" />
                           <span className="pane-tab-title">{ts.title || ts.provider}</span>
@@ -220,31 +240,70 @@ export function PaneGrid() {
                               onPaneClose(w.id, ts.id);
                             }}
                           >
-                            <X size={11} />
+                            <X size={13} strokeWidth={2.6} />
                           </button>
                         </div>
                       );
                     })}
+                    {/* chrome-style: new-tab button sits right after the last tab, not off in the
+                        controls group */}
                     <button
                       className="pane-tab-add"
                       title="Open a pane in this folder"
                       onClick={(e: RMouseEvent) => {
                         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        const anchor = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
+                        const act = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
                         setTabMenu({
-                          x: Math.min(r.right - 196, window.innerWidth - 210),
+                          x: Math.min(r.left, window.innerWidth - 210),
                           y: r.bottom + 4,
                           wsId: w.id,
-                          anchorId: anchor.id,
-                          anchorCommand: anchor.command,
-                          cwd: anchor.cwd ?? w.cwd,
+                          anchorId: act.id,
+                          anchorCommand: act.command,
+                          cwd: act.cwd ?? w.cwd,
                         });
                       }}
                     >
-                      <Plus size={13} />
+                      <Plus size={14} />
                     </button>
+                    {/* identity + controls for the ACTIVE tab — deliberately the same folder label
+                        and the same .pane-btn group a solo pane's header shows, so a slot looks the
+                        same whether or not it happens to be tabbed */}
+                    <span className="pane-tabs-gap" />
+                  {(() => {
+                      const act = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
+                      const acwd = act.cwd ?? w.cwd ?? "";
+                      let dir = acwd.split(/[\\/]/).filter(Boolean).pop();
+                      // a pane auto-named after its folder ("lualink-rs" in a lualink-rs tab) would
+                      // print the same word twice — only keep the folder when it says something new
+                      if (dir && dir.toLowerCase() === (act.title ?? "").toLowerCase()) dir = undefined;
+                      return (
+                        <>
+                          {dir && (
+                            <span className="pane-cwd" title={acwd}>
+                              <FolderSymlink size={11} className="pane-cwd-ico" />
+                              {dir}
+                            </span>
+                          )}
+                          <span className="pane-head-right">
+                            <button
+                              className="pane-btn"
+                              title={maximizedId === act.id ? "Restore" : "Maximize"}
+                              onClick={() => onPaneToggleMax(act.id)}
+                            >
+                              {maximizedId === act.id ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                            </button>
+                            <button
+                              className="pane-btn close"
+                              title="Close pane"
+                              onClick={() => onPaneClose(w.id, act.id)}
+                            >
+                              <X size={13} />
+                            </button>
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
-                )}
                 {slot.sessions.map((sess: Session) => {
                   // one pane is on screen per visible slot: the maximized pane when maximizing,
                   // else the slot's active tab. hidden tabs stay mounted (display:none) so their PTY lives.
@@ -253,10 +312,10 @@ export function PaneGrid() {
                   // project (e.g. dragged in from an open space) — flag it so it's obvious at a glance
                   const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
                   const pane = sess.image ? (
-                    <ImageViewer path={sess.image} active={visible} onClose={() => onPaneClose(w.id, sess.id)} />
+                    <ImageViewer path={sess.image} active={visible} onClose={() => onPaneClose(w.id, sess.id)} tabbed />
                   ) : sess.file ? (
                     <Suspense fallback={null}>
-                      <PaneEditor path={sess.file} onClose={() => onPaneClose(w.id, sess.id)} />
+                      <PaneEditor path={sess.file} onClose={() => onPaneClose(w.id, sess.id)} tabbed />
                     </Suspense>
                   ) : (
                     <>
@@ -272,12 +331,13 @@ export function PaneGrid() {
                         active={visible}
                         focused={isActiveWs && focusedSessionId === sess.id && visible}
                         isMaxed={maximizedId === sess.id}
+                        tabbed
                         onFocus={onPaneFocus}
                         onClose={onPaneClose}
                         onToggleMax={onPaneToggleMax}
-                        onGripDown={tabbed ? noopGrip : onGripDown}
-                        onGripMove={tabbed ? noopGrip : onGripMove}
-                        onGripUp={tabbed ? noopGrip : onGripUp}
+                        onGripDown={noopGrip}
+                        onGripMove={noopGrip}
+                        onGripUp={noopGrip}
                       />
                       {fileDropId === sess.id && (
                         <div className="file-drop-overlay">
@@ -321,6 +381,7 @@ export function PaneGrid() {
           });
         })}
       </div>
+      {tabCtx && <TabContextMenu ctx={tabCtx} onClose={() => setTabCtx(null)} />}
       {tabMenu && (
         <PaneAddMenu
           x={tabMenu.x}

@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { pickAgentName } from "../lib/names";
+
+const AGENT_LABEL: Record<string, string> = {
+  claude: "Claude",
+  gemini: "Gemini",
+  codex: "Codex",
+  opencode: "OpenCode",
+  grok: "Grok",
+};
 
 export interface Session {
   id: string;
@@ -79,12 +86,14 @@ function deriveProviderTitle(
     provider = "wsl";
     title = "WSL";
   }
-  // agent panes default to their working-folder name (folder-based), so they're tellable apart;
-  // if that folder name is already taken (e.g. several agents in one folder) fall back to a short
-  // friendly name. the Codex namer (ai/autoNameSession) upgrades it to a task name once there's work.
+  // agent panes are named after their working folder so you can tell them apart at a glance.
+  // duplicates get a plain " 2", " 3" suffix — this used to invent human names (Gus, Wynn, Theo…)
+  // which just read as random. no folder (an open space) falls back to the agent's own name.
   if (provider === "claude" || provider === "gemini" || provider === "codex" || provider === "opencode" || provider === "grok") {
     const folder = effCwd.split(/[\\/]/).filter(Boolean).pop();
-    title = folder && !used.has(folder) ? folder : pickAgentName(used);
+    const base = folder || AGENT_LABEL[provider] || "Agent";
+    title = base;
+    for (let i = 2; used.has(title); i++) title = `${base} ${i}`;
   }
   return { provider, title };
 }
@@ -453,7 +462,36 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         return { ...s, provider };
       }),
     }));
-    set({ workspaces: migrated, activeId, hydrated: true });
+    // Migration: panes we'd previously auto-titled from the old friendly-name pool (Gus, Wynn, …)
+    // get renamed to their folder. Only exact pool matches are touched, so a name you typed
+    // yourself — or one the task-namer produced — is left alone.
+    const RETIRED_NAMES = new Set(
+      ("Gus Wynn Theo Remy Enzo Dara Zoe Faye Otto Ivy Cleo Cy Nico Juno Knox Nell Vera Milo Lena " +
+        "Rex Iris Hugo Maya Finn Ada Leo Nina Kai Ruby Sage").split(" "),
+    );
+    const renamed = migrated.map((w) => {
+      const used = new Set<string>();
+      return {
+        ...w,
+        sessions: w.sessions.map((s) => {
+          const stem = s.title?.replace(/ \d+$/, "") ?? "";
+          // generic = an old pool name, or the bare agent name ("Claude", "Claude 2"). Both tell you
+          // nothing the icon doesn't, and leaving them means the strip prints a name AND a folder.
+          const generic = RETIRED_NAMES.has(stem) || AGENT_LABEL[s.provider] === stem;
+          if (!generic) {
+            used.add(s.title);
+            return s;
+          }
+          const folder = (s.cwd ?? w.cwd ?? "").split(/[\\/]/).filter(Boolean).pop();
+          const base = folder || AGENT_LABEL[s.provider] || s.title;
+          let next = base;
+          for (let i = 2; used.has(next); i++) next = `${base} ${i}`;
+          used.add(next);
+          return { ...s, title: next };
+        }),
+      };
+    });
+    set({ workspaces: renamed, activeId, hydrated: true });
   },
   markHydrated: () => set({ hydrated: true }),
 }));

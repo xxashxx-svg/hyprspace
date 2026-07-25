@@ -113,3 +113,7 @@
   font-size: var(--text-xs);
   font-family: var(--font-mono);
 }
+/* pushes the remaining controls right once the filename is hidden (tabbed) */
+.iv-gap {
+  flex: 1 1 auto;
+}

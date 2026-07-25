@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.12.0 — 2026-07-26
+
+- New sidebar: agents now appear as a live tree under each project and branch, showing what each one is working on and any sub-agents it spawns.
+- Live usage meter in the titlebar — click the ring for your Claude session and weekly limits, plus Codex if you use it. Read from your local CLI, never from your account.
+- Every pane now looks the same, with tabs everywhere, a Chrome-style new-tab button, and a right-click menu on tabs.
+- Tidier titlebar: provider menus collapsed into submenus and the right-hand controls cleaned up.
+- Editor fixes: maximize now fills the pane, long lines wrap, and closing a file with unsaved edits asks before discarding.
+- Open spaces have a new icon, and panes no longer get random names.
+
 ## 0.11.18 — 2026-07-25
 
 Files now open as real tabs in the grid instead of a cramped side editor — click any file in the Files panel and it opens beside your terminals. The right dock opens on Files by default, and the tree got a proper upgrade: per-filetype icons, git status colours with M/A/D badges, a highlight on files you already have open, and indent guides. Image paste and the [Image #N] links are much more reliable too. Removed the background Services feature; your Actions still work and just open in a pane.

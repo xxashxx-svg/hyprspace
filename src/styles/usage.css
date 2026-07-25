@@ -1,0 +1,166 @@
+/* Live Claude usage — titlebar chip + popover (UsageMeter.tsx) */
+.um {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.um-chip {
+  /* an icon button like every other one up here — no fill, no border, no numbers */
+  width: 40px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.um-chip:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.um-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.um-chip.stale {
+  opacity: 0.5;
+}
+
+/* ring */
+.um-ring {
+  transform: rotate(-90deg);
+  flex: 0 0 auto;
+}
+.um-ring-tr {
+  stroke: rgba(255, 255, 255, 0.26);
+}
+.um-ring-fg {
+  stroke: var(--text-1);
+  transition: stroke-dasharray 0.35s var(--ease);
+}
+.um-ring.warn .um-ring-fg {
+  stroke: var(--status-busy);
+}
+.um-ring.crit .um-ring-fg {
+  stroke: var(--status-error);
+}
+
+/* popover */
+.um-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 244px;
+  z-index: 500;
+  display: grid;
+  gap: 11px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+}
+.um-grp {
+  display: grid;
+  gap: 5px;
+}
+.um-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.um-lbl {
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.um-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.um-val.warn {
+  color: var(--status-busy);
+}
+.um-val.crit {
+  color: var(--status-error);
+}
+
+/* bars */
+.um-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  display: flex;
+}
+.um-bar i {
+  height: 100%;
+  display: block;
+  background: var(--text-1);
+  transition: width 0.35s var(--ease);
+}
+.um-bar.warn i {
+  background: var(--status-busy);
+}
+.um-bar.crit i {
+  background: var(--status-error);
+}
+/* where the clock is — fill past this means you're outspending the window */
+.um-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text-1);
+  opacity: 0.9;
+}
+
+.um-stale {
+  font-size: 10.5px;
+  color: var(--text-2);
+  border-top: 1px solid var(--border-1);
+  padding-top: 8px;
+}
+.um-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+/* provider heading inside the popover — separates claude's windows from codex's */
+.um-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+  border-top: 1px solid var(--border-1);
+  padding-top: 10px;
+}
+.um-hdr.first {
+  border-top: 0;
+  padding-top: 0;
+}
+.um-plan {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-3);
+}
+.um-sub.stale {
+  color: var(--text-3);
+}

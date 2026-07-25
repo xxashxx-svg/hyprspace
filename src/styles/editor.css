@@ -1,9 +1,14 @@
 /* ---- code editor (dock → Editor tab) ---- */
+/* flex:1 + min-width:0 so it FILLS its pane. it used to only set height, which was fine in the
+   narrow dock but left it shrink-wrapped to its content once it became a grid pane — a maximized
+   file rendered in the left half of the window with dead space beside it. */
 .editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 0;
 }
 .editor-head {
   flex: 0 0 auto;
@@ -288,4 +293,8 @@
 .tb-ctl.close:hover {
   background: #e5484d;
   color: #fff;
+}
+/* pushes Save/Autosave to the right once the filename is hidden (tabbed) */
+.editor-head-gap {
+  flex: 1 1 auto;
 }

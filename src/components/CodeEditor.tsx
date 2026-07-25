@@ -5,6 +5,7 @@ import { syntaxHighlighting } from "@codemirror/language";
 import { basicSetup } from "codemirror";
 import { vscodeChrome, vscodeHighlight } from "../lib/editorTheme";
 import { readFile, writeFile } from "../api";
+import { markFileDirty, takeDiscarded } from "../lib/dirtyFiles";
 import { confirmDialog } from "../stores/confirm";
 import { Save, AlertCircle, FileCode, X } from "lucide-react";
 
@@ -36,9 +37,12 @@ async function langFor(path: string): Promise<Extension[]> {
 export function CodeEditor({
   path,
   onClose,
+  tabbed,
 }: {
   path: string;
   onClose: () => void;
+  /** in a tab group the strip already shows the filename + a close × — don't repeat them here */
+  tabbed?: boolean;
 }) {
   const elRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -55,6 +59,8 @@ export function CodeEditor({
   // "Discard" choice so the unmount flush doesn't resurrect what the user just threw away
   const dirtyRef = useRef(false);
   const discardRef = useRef(false);
+  // the on-disk text, so an edit that's been undone back to the original stops counting as a change
+  const baseRef = useRef("");
 
   const name = path.split(/[\\/]/).pop() ?? path;
 
@@ -86,9 +92,12 @@ export function CodeEditor({
     if (!view) return;
     setSaving(true);
     try {
-      await writeFile(path, view.state.doc.toString());
+      const text = view.state.doc.toString();
+      await writeFile(path, text);
+      baseRef.current = text; // disk now matches the buffer
       setDirty(false);
       dirtyRef.current = false;
+      markFileDirty(path, false);
     } catch (e) {
       setErr(String(e));
     }
@@ -105,10 +114,14 @@ export function CodeEditor({
     readFile(path)
       .then((content) => {
         if (disposed || !elRef.current) return;
+        baseRef.current = content;
         const state = EditorState.create({
           doc: content,
           extensions: [
             basicSetup,
+            // wrap long lines. panes are often half a screen wide, so without this a prose file
+            // (or any long line) runs off the right edge and is only reachable by scrolling sideways.
+            EditorView.lineWrapping,
             langComp.of([]),
             syntaxHighlighting(vscodeHighlight),
             vscodeChrome,
@@ -119,9 +132,16 @@ export function CodeEditor({
             ),
             EditorView.updateListener.of((u) => {
               if (!u.docChanged) return;
-              setDirty(true);
-              dirtyRef.current = true;
-              if (autosaveRef.current) {
+              // compare against disk, not "has it ever been touched". length first — it differs for
+              // almost every keystroke, so the full string compare only runs in the case that needs
+              // it (edited back to the original).
+              const doc = u.state.doc;
+              const changed =
+                doc.length !== baseRef.current.length || doc.toString() !== baseRef.current;
+              setDirty(changed);
+              dirtyRef.current = changed;
+              markFileDirty(path, changed);
+              if (changed && autosaveRef.current) {
                 clearTimeout(saveTimer.current);
                 saveTimer.current = setTimeout(() => void save.current(), 800);
               }
@@ -143,12 +163,13 @@ export function CodeEditor({
       // the editor can unmount from MANY paths (another file opened, dock tab switched, dock
       // hidden, Home) — never silently drop unsaved work: flush it, unless the user explicitly
       // chose Discard in the close dialog.
-      if (dirtyRef.current && !discardRef.current && viewRef.current) {
+      if (dirtyRef.current && !discardRef.current && !takeDiscarded(path) && viewRef.current) {
         const doc = viewRef.current.state.doc.toString();
         void writeFile(path, doc).catch(() => {});
       }
       dirtyRef.current = false;
       discardRef.current = false;
+      markFileDirty(path, false);
       viewRef.current?.destroy();
       viewRef.current = null;
     };
@@ -157,11 +178,17 @@ export function CodeEditor({
   return (
     <div className="editor">
       <div className="editor-head">
-        <FileCode size={13} className="editor-head-ico" />
-        <span className="editor-name" title={path}>
-          {name}
-          {dirty && <span className="editor-dirty" title="unsaved changes" />}
-        </span>
+        {!tabbed && <FileCode size={13} className="editor-head-ico" />}
+        {tabbed ? (
+          // the tab carries the name; keep only the unsaved marker so it stays visible
+          dirty && <span className="editor-dirty" title="unsaved changes" />
+        ) : (
+          <span className="editor-name" title={path}>
+            {name}
+            {dirty && <span className="editor-dirty" title="unsaved changes" />}
+          </span>
+        )}
+        <span className="editor-head-gap" />
         <label className="editor-autosave">
           <input type="checkbox" checked={autosave} onChange={(e) => setAutosave(e.target.checked)} />
           Autosave
@@ -169,9 +196,11 @@ export function CodeEditor({
         <button className="editor-save" onClick={() => void save.current()} disabled={!dirty || saving}>
           <Save size={12} /> {saving ? "Saving…" : "Save"}
         </button>
-        <button className="editor-icon-btn" onClick={() => void close()} title="Close file">
-          <X size={14} />
-        </button>
+        {!tabbed && (
+          <button className="editor-icon-btn" onClick={() => void close()} title="Close file">
+            <X size={14} />
+          </button>
+        )}
       </div>
       {err ? (
         <div className="editor-err">

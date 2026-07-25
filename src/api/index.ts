@@ -141,6 +141,10 @@ export function readImageFile(path: string): Promise<string> {
 export function pathExists(path: string): Promise<boolean> {
   return invoke("path_exists", { path });
 }
+// per-pane claude hook settings (live agent status + sub-agents). null when the listener is down.
+export function agentHookSettings(paneId: string): Promise<string | null> {
+  return invoke("agent_hook_settings", { paneId });
+}
 // resolve Claude Code's `[Image #N]` marker → the cached image file for this pane's session, or null.
 // sessionId is the pane id (we launch claude with --session-id <pane id>), which names its cache dir.
 export function claudeImagePath(cwd: string, n: number, sessionId?: string): Promise<string | null> {
@@ -361,6 +365,7 @@ export interface ProviderUsage {
   tokensWindow: string | null;
   primary: UsageWindow | null;
   secondary: UsageWindow | null;
+  updatedAt: number; // unix seconds; 0 when unknown
   daily: UsageDay[];
   dailyUnit: string | null; // "tokens" | "msgs" | "sessions"
   models: UsageModel[];

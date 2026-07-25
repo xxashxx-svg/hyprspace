@@ -8,11 +8,16 @@ import "@fontsource/jetbrains-mono/700.css";
 import "./styles/tokens.css";
 import "./App.css";
 import App from "./App";
+import { initAgentStatus } from "./stores/agentStatus";
+import { initUsage } from "./stores/usage";
 import { AuthGate } from "./components/AuthGate";
 
 // NO React.StrictMode — its double-mount corrupts the xterm terminal lifecycle.
 // AuthGate is the sign-in gate: nothing below it mounts until you're signed in, unless no
 // supabase project is configured (see .env.example), in which case it falls open.
+initAgentStatus();
+initUsage();
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <AuthGate>
     <App />

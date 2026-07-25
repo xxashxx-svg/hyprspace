@@ -5,7 +5,7 @@ import { useUi } from "../stores/ui";
 import { useAuth } from "../stores/auth";
 import { pickFolder } from "../api";
 import { kbd } from "../platform";
-import { Folder, FolderPlus, LayoutGrid, ChevronRight, Rocket } from "lucide-react";
+import { Folder, FolderPlus, Layers, ChevronRight, Rocket } from "lucide-react";
 import { Blurred } from "./Blurred";
 
 export function HomePage() {
@@ -92,7 +92,7 @@ export function HomePage() {
           </button>
           <button className="home-action" onClick={newOpen}>
             <span className="home-action-ico">
-              <LayoutGrid size={18} />
+              <Layers size={18} />
             </span>
             <span className="home-action-body">
               <span className="home-action-title">New open space</span>
@@ -118,7 +118,7 @@ export function HomePage() {
                   style={{ "--ws": w.color } as CSSProperties}
                 >
                   <span className="home-card-ico">
-                    {w.kind === "open" ? <LayoutGrid size={16} /> : <Folder size={16} />}
+                    {w.kind === "open" ? <Layers size={16} /> : <Folder size={16} />}
                   </span>
                   <span className="home-card-body">
                     <span className="home-card-name">{w.name}</span>

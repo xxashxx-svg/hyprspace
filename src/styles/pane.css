@@ -98,28 +98,51 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* close-tab affordance. it used to be text-3 at 0.7 opacity, which lands near #535353 on the tab —
+   effectively invisible. now: full opacity + a readable grey once shown, and a clear red target. */
 .pane-tab-x {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-left: 1px;
   border: none;
-  border-radius: 4px;
+  border-radius: 50%; /* a circle reads lighter than a filled square at this size */
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
   opacity: 0;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease), opacity 0.12s var(--ease);
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease),
+    opacity 0.12s var(--ease);
 }
+/* visible on the active tab, and on any tab you're pointing at */
 .pane-tab:hover .pane-tab-x,
 .pane-tab.active .pane-tab-x {
-  opacity: 0.7;
-}
-.pane-tab-x:hover {
   opacity: 1;
-  background: rgba(239, 68, 68, 0.16);
-  color: #ff6b6b;
+}
+/* on the active tab give it an actual resting chip — a bare thin glyph on a same-coloured tab is
+   what kept reading as "barely there", regardless of the text colour */
+.pane-tab.active .pane-tab-x {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.09);
+}
+.pane-tab:hover .pane-tab-x {
+  color: var(--text-1);
+}
+/* neutral fill + a red glyph: a solid red chip was far too loud for a per-tab control, and it
+   fought the tab's own background. the colour change alone carries "this closes something". */
+.pane-tab-x:hover,
+.pane-tab.active .pane-tab-x:hover {
+  background: rgba(255, 120, 110, 0.22);
+  color: #ff8b84;
+}
+.pane-tab-x:active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ff5f56;
 }
 .pane-tab-add {
   flex: 0 0 auto;
@@ -397,4 +420,28 @@
 }
 .term-search-btn.close {
   margin-left: auto;
+}
+
+/* ---- tab strip carries the slot's identity + controls (the pane below hides its own header,
+   so a tabbed slot has ONE header row instead of two both saying "Claude") ---- */
+.pane-tabs-gap {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+/* the folder label in the strip is the same .pane-cwd the solo header uses; just give it room */
+.pane-tabs .pane-cwd {
+  flex: 0 0 auto;
+  align-self: center;
+  padding-right: 6px;
+}
+.pane-tabs .pane-head-right {
+  align-self: center;
+  padding-bottom: 3px;
+}
+/* the strip replaced the pane header, so it's also the drag handle for a single-pane slot */
+.pane-cell.tabbed .pane-tabs {
+  cursor: grab;
+}
+.pane-cell.tabbed.dragging .pane-tabs {
+  cursor: grabbing;
 }

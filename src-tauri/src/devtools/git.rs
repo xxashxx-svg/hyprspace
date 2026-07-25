@@ -17,6 +17,24 @@ pub struct FileChange {
     removed: u32,
 }
 
+// Absolute path of the repo containing `cwd`, or "" when it isn't a repo. The Files tree needs this
+// because `git status --porcelain` reports paths relative to the REPO ROOT, while the tree can be
+// rooted at any subfolder (it follows the focused pane) — the root lets us line the two up.
+#[tauri::command]
+pub async fn git_root(cwd: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if cwd.is_empty() {
+            return Ok(String::new());
+        }
+        match git(&cwd, &["rev-parse", "--show-toplevel"]) {
+            Ok(out) => Ok(out.trim().to_string()),
+            Err(_) => Ok(String::new()), // not a repo — no decoration, no error
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn git_changes(cwd: String) -> Result<Vec<FileChange>, String> {
     tauri::async_runtime::spawn_blocking(move || git_changes_blocking(cwd))

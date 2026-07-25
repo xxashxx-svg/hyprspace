@@ -1,17 +1,9 @@
-import { Sparkles, Gem, Bot, SquareCode, Atom, Terminal as TerminalIcon, SplitSquareHorizontal } from "lucide-react";
+import { SplitSquareHorizontal } from "lucide-react";
 import { useWorkspaces } from "../stores/workspace";
-import { claudeCmd, codexCmd, geminiCmd, opencodeCmd, grokCmd } from "../actions";
+import { PROVIDERS } from "../lib/providers";
 
 // the provider picker shared by the pane header + button and a slot's tab-strip +. each item opens a
 // new pane as a tab in the anchor's slot (same folder); "Open as new tile" keeps the old split behavior.
-const PROVIDERS = [
-  { label: "Terminal", icon: TerminalIcon, cmd: () => undefined },
-  { label: "Claude", icon: Sparkles, cmd: () => claudeCmd() },
-  { label: "Codex", icon: Bot, cmd: () => codexCmd() },
-  { label: "Gemini", icon: Gem, cmd: () => geminiCmd() },
-  { label: "OpenCode", icon: SquareCode, cmd: () => opencodeCmd() },
-  { label: "Grok", icon: Atom, cmd: () => grokCmd() },
-] as const;
 
 interface Props {
   x: number;
@@ -42,7 +34,7 @@ export function PaneAddMenu({ x, y, wsId, anchorId, anchorCommand, cwd, onClose 
         <div className="pane-menu-label">open in {folder ?? "this folder"}</div>
         {PROVIDERS.map((p) => (
           <button
-            key={p.label}
+            key={p.id}
             className="pane-menu-item"
             onClick={() => {
               useWorkspaces.getState().addTab(wsId, anchorId, p.cmd(), cwd);

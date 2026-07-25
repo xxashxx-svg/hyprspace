@@ -61,6 +61,9 @@ pub struct ProviderUsage {
     // rolling-window limits (Codex exposes these)
     primary: Option<UsageWindow>,
     secondary: Option<UsageWindow>,
+    // when the file we read those windows out of was last written — codex only records them during
+    // a session, so without this a three-week-old number looks identical to a live one
+    updated_at: i64,
     // small recent-activity sparkline
     daily: Vec<UsageDay>,
     daily_unit: Option<String>, // "tokens" | "msgs" | "sessions"
@@ -338,7 +341,7 @@ fn codex_usage() -> ProviderUsage {
         .count() as u64;
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
     let mut by_day: std::collections::BTreeMap<String, u64> = Default::default();
-    for (idx, f) in files.iter().enumerate() {
+    for f in files.iter() {
         let Some(tc) = last_token_count(f) else {
             continue;
         };
@@ -356,13 +359,20 @@ fn codex_usage() -> ProviderUsage {
             let e = by_day.entry(d.to_string()).or_insert(0);
             *e = e.saturating_add(ttu["total_tokens"].as_u64().unwrap_or(0));
         }
-        if idx == 0 {
+        // Windows come from the newest rollout that actually carries them, not simply the newest
+        // rollout: codex writes `rate_limits` on every session but leaves primary/secondary null
+        // unless the server sent limits that turn, so the latest file is often empty.
+        if u.primary.is_none() && u.secondary.is_none() {
             let rl = &tc["rate_limits"];
-            u.primary = window_from(&rl["primary"]);
-            u.secondary = window_from(&rl["secondary"]);
-            if u.plan.is_none() {
-                if let Some(pt) = rl["plan_type"].as_str() {
-                    u.plan = Some(format!("ChatGPT {}", title_case(pt)));
+            let (p, s) = (window_from(&rl["primary"]), window_from(&rl["secondary"]));
+            if p.is_some() || s.is_some() {
+                u.primary = p;
+                u.secondary = s;
+                u.updated_at = mtime_secs(f) as i64; // age of the reading, not of the newest session
+                if u.plan.is_none() {
+                    if let Some(pt) = rl["plan_type"].as_str() {
+                        u.plan = Some(format!("ChatGPT {}", title_case(pt)));
+                    }
                 }
             }
         }
