@@ -1,17 +1,34 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { listDir, revealPath, fileOp, findFiles, type DirEntry } from "../api";
+import { listDir, revealPath, fileOp, findFiles, gitChanges, type DirEntry } from "../api";
 import { joinPath } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
 import { confirmDialog } from "../stores/confirm";
 import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { isWindows } from "../platform";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ChevronRight, Folder, File as FileIcon, RefreshCw, ListFilter, X } from "lucide-react";
+import { ChevronRight, Folder, RefreshCw, ListFilter, X } from "lucide-react";
+import { fileIcon } from "../lib/fileIcons";
 
 const WSL_CMD = "wsl";
+
+// git decoration + open-file highlight for the tree. context (not props) because TreeNode recurses;
+// `status` is keyed by repo-relative path with forward slashes, which is what git porcelain gives us.
+const TreeDeco = createContext<{ status: Map<string, string>; open: Set<string> }>({
+  status: new Map(),
+  open: new Set(),
+});
+// porcelain code -> the class suffix + badge letter we show
+function decoOf(code: string | undefined): { cls: string; badge: string } | null {
+  if (!code) return null;
+  if (code.includes("?")) return { cls: "new", badge: "U" };
+  if (code.includes("A")) return { cls: "new", badge: "A" };
+  if (code.includes("D")) return { cls: "del", badge: "D" };
+  if (code.includes("R")) return { cls: "mod", badge: "R" };
+  return { cls: "mod", badge: "M" };
+}
 
 const parentOf = (path: string) => path.replace(/[\\/][^\\/]+[\\/]?$/, "") || path;
 
@@ -66,6 +83,11 @@ function TreeNode({
   rootCwd: string; // the tree's root, for "Copy relative path"
   onChanged: () => void; // parent re-lists after a rename/delete of this node
 }) {
+  const deco = useContext(TreeDeco);
+  const rel = path.length > rootCwd.length ? path.slice(rootCwd.length + 1).split("\\").join("/") : "";
+  const git = dir ? null : decoOf(deco.status.get(rel));
+  const isOpen = !dir && deco.open.has(normPath(path));
+  const Ico = dir ? Folder : fileIcon(name);
   const [open, setOpen] = useState(false);
   const [kids, setKids] = useState<DirEntry[] | null>(() => peekDir(path));
   const [loading, setLoading] = useState(false);
@@ -87,7 +109,7 @@ function TreeNode({
   };
   const toggle = async () => {
     if (!dir) {
-      useUi.getState().openInEditor(path); // click a file → open it in the editor tab
+      useWorkspaces.getState().openPathTab(path); // click a file → open it as a tab in the grid
       return;
     }
     if (open) {
@@ -174,7 +196,7 @@ function TreeNode({
 
   const pad = depth * 12 + 8;
   return (
-    <div className="ft-node" ref={aaRef}>
+    <div className="ft-node" ref={aaRef} style={{ ["--ft-guide" as string]: `${depth * 12 + 14}px` }}>
       {renaming ? (
         <div className="ft-row" style={{ paddingLeft: pad }}>
           {dir ? (
@@ -182,7 +204,7 @@ function TreeNode({
           ) : (
             <span className="ft-spacer" />
           )}
-          {dir ? <Folder size={14} className="ft-ico" /> : <FileIcon size={14} className="ft-ico file" />}
+          <Ico size={14} className={`ft-ico${dir ? "" : " file"}`} />
           <input
             className="ft-rename"
             autoFocus
@@ -197,7 +219,7 @@ function TreeNode({
         </div>
       ) : (
         <button
-          className="ft-row"
+          className={`ft-row${isOpen ? " open-file" : ""}`}
           style={{ paddingLeft: pad }}
           onClick={() => void toggle()}
           onContextMenu={(e) => {
@@ -211,8 +233,9 @@ function TreeNode({
           ) : (
             <span className="ft-spacer" />
           )}
-          {dir ? <Folder size={14} className="ft-ico" /> : <FileIcon size={14} className="ft-ico file" />}
-          <span className="ft-name">{name}</span>
+          <Ico size={14} className={`ft-ico${dir ? "" : " file"}`} />
+          <span className={`ft-name${git ? ` g-${git.cls}` : ""}`}>{name}</span>
+          {git && <span className={`ft-git g-${git.cls}`}>{git.badge}</span>}
           {dir && liveDirs?.has(normPath(path)) && (
             <span className="ft-live" title="A session is running here" />
           )}
@@ -228,11 +251,7 @@ function TreeNode({
           )}
           {creating && (
             <div className="ft-row" style={{ paddingLeft: pad + 12 + 8 }}>
-              {creating === "dir" ? (
-                <Folder size={14} className="ft-ico" />
-              ) : (
-                <FileIcon size={14} className="ft-ico file" />
-              )}
+              <Folder size={14} className="ft-ico" style={{ opacity: creating === "dir" ? 1 : 0 }} />
               <input
                 className="ft-rename"
                 autoFocus
@@ -281,7 +300,7 @@ function TreeNode({
               <button
                 className="ctx-item"
                 onClick={() => {
-                  useUi.getState().openInEditor(path);
+                  useWorkspaces.getState().openPathTab(path);
                   setMenu(null);
                 }}
               >
@@ -416,6 +435,48 @@ export function FilesPanel() {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<string[] | null>(null); // null = not searching (show the tree)
   const cwd = ws?.cwd ?? "";
+  const view = useUi((s) => s.view);
+
+  // git decoration for the tree, polled while the panel is actually on screen
+  const [status, setStatus] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!cwd) return;
+    let alive = true;
+    const tick = () => {
+      if (document.hidden || view !== "space") return;
+      void gitChanges(cwd)
+        .then((cs) => {
+          if (!alive) return;
+          const next = new Map(cs.map((c) => [c.path, c.status]));
+          // only take a new identity when something actually changed — this feeds every row
+          setStatus((prev) => {
+            if (prev.size === next.size && [...next].every(([k, v]) => prev.get(k) === v)) return prev;
+            return next;
+          });
+        })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [cwd, view, refreshKey]);
+
+  // which files are already open as tabs — those rows get highlighted
+  const openPaths = useWorkspaces((s) => {
+    const set = new Set<string>();
+    for (const w of s.workspaces)
+      for (const ss of w.sessions) {
+        const p = ss.file ?? ss.image;
+        if (p) set.add(normPath(p));
+      }
+    return set;
+  });
+  const openKey = [...openPaths].sort().join("|");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const deco = useMemo(() => ({ status, open: openPaths }), [status, openKey]);
 
   // debounced recursive filename search; clearing the box goes back to the tree
   useEffect(() => {
@@ -435,6 +496,7 @@ export function FilesPanel() {
   }
 
   return (
+    <TreeDeco.Provider value={deco}>
     <div className="ft">
       <div className="ft-head">
         <span className="ft-root" title={cwd}>
@@ -480,9 +542,12 @@ export function FilesPanel() {
                   key={rel}
                   className="ft-row ft-hit"
                   title={rel}
-                  onClick={() => useUi.getState().openInEditor(joinPath(cwd, rel))}
+                  onClick={() => useWorkspaces.getState().openPathTab(joinPath(cwd, rel))}
                 >
-                  <FileIcon size={14} className="ft-ico file" />
+                  {(() => {
+                    const H = fileIcon(base);
+                    return <H size={14} className="ft-ico file" />;
+                  })()}
                   <span className="ft-name">{base}</span>
                   {dirPart && <span className="ft-hit-dir">{dirPart}</span>}
                 </button>
@@ -492,5 +557,6 @@ export function FilesPanel() {
         </div>
       )}
     </div>
+    </TreeDeco.Provider>
   );
 }

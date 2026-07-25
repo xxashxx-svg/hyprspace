@@ -48,10 +48,6 @@ const InitRepoDialog = lazy(() =>
 );
 const ActionDialog = lazy(() => import("./components/ActionDialog").then((m) => ({ default: m.ActionDialog })));
 const PreviewPanel = lazy(() => import("./components/PreviewPanel").then((m) => ({ default: m.PreviewPanel })));
-const ServicesDialog = lazy(() =>
-  import("./components/ServicesDialog").then((m) => ({ default: m.ServicesDialog })),
-);
-const ServiceLogs = lazy(() => import("./components/ServiceLogs").then((m) => ({ default: m.ServiceLogs })));
 
 const win = getCurrentWindow();
 
@@ -88,8 +84,6 @@ export default function App() {
   // open flags for the lazy dialogs — hoisted here so their chunks only load on first open
   const paletteOpen = useUi((s) => s.paletteOpen);
   const newProjectOpen = useUi((s) => s.newProjectOpen);
-  const servicesFor = useUi((s) => s.servicesFor);
-  const serviceLogsFor = useUi((s) => s.serviceLogsFor);
   const onboardingOpen = useUi((s) => s.onboardingOpen);
   const onboarded = useSettings((s) => s.onboarded);
   const settingsHydrated = useSettings((s) => s.hydrated);
@@ -337,8 +331,6 @@ export default function App() {
         {initRepoOpen && <InitRepoDialog />}
         {actionOpen && <ActionDialog />}
         {newProjectOpen && <NewProjectDialog />}
-        {servicesFor && <ServicesDialog />}
-        {serviceLogsFor && <ServiceLogs />}
       </Suspense>
       <ConfirmDialog />
       {/* custom edge/corner resize grips — macOS keeps native decorations, so skip them there */}

@@ -74,23 +74,6 @@ export function killPty(id: string): Promise<void> {
   return invoke("kill_pty", { id });
 }
 
-// ---- background services: run a command headless and stream its stdout+stderr as log lines ----
-// the backend batches lines (~30ms) and sends them joined with '\n' so a chatty dev server
-// doesn't cost one IPC hop per line — onLines gets the whole batch, one store write per batch
-export function serviceStart(
-  id: string,
-  cwd: string,
-  command: string,
-  env: Record<string, string>,
-  onLines: (lines: string[]) => void,
-): Promise<void> {
-  const channel = new Channel<string>();
-  channel.onmessage = (msg) => onLines((typeof msg === "string" ? msg : String(msg)).split("\n"));
-  return invoke("service_start", { id, cwd, command, env, onEvent: channel });
-}
-export function serviceStop(id: string): Promise<void> {
-  return invoke("service_stop", { id });
-}
 
 // ---- loop agents: run ONE provider turn (args = full argv; prompt piped over stdin) ----
 // streams stdout+stderr lines to onLine for the turn's life; the loop runner drives the loop around it.

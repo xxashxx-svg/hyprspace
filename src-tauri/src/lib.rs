@@ -6,12 +6,10 @@ mod loophook;
 mod oauth;
 mod persist;
 mod pty;
-mod services;
 
 use std::collections::HashMap;
 
 use agent::AgentManager;
-use services::ServiceManager;
 use persist::Store;
 use pty::PtyManager;
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -86,28 +84,6 @@ fn kill_pty(state: State<PtyManager>, id: String) -> Result<(), String> {
     state.kill(&id)
 }
 
-#[tauri::command]
-async fn service_start(
-    state: State<'_, ServiceManager>,
-    id: String,
-    cwd: String,
-    command: String,
-    env: HashMap<String, String>,
-    on_event: Channel<String>,
-) -> Result<(), String> {
-    let mgr = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.start(id, cwd, command, env, on_event))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn service_stop(state: State<'_, ServiceManager>, id: String) -> Result<(), String> {
-    let mgr = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.stop(&id))
-        .await
-        .map_err(|e| e.to_string())
-}
 
 // agent_start also reads keychain secrets (an OS credential-manager RPC) — definitely not UI-thread work
 #[tauri::command]
@@ -571,7 +547,6 @@ pub fn run() {
             Ok(())
         })
         .manage(PtyManager::default())
-        .manage(ServiceManager::default())
         .manage(AgentManager::default())
         .manage(Store::new())
         .invoke_handler(tauri::generate_handler![
@@ -581,8 +556,6 @@ pub fn run() {
             pause_pty,
             resume_pty,
             kill_pty,
-            service_start,
-            service_stop,
             agent_start,
             agent_stop,
             clipboard_image_to_temp,
@@ -648,7 +621,6 @@ pub fn run() {
             match event {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     app.state::<PtyManager>().kill_all();
-                    app.state::<ServiceManager>().kill_all();
                     app.state::<AgentManager>().kill_all();
                 }
                 _ => {}

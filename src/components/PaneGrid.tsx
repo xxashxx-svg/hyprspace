@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { X, Plus, Terminal as TerminalIcon } from "lucide-react";
 import { useWorkspaces, toSlots } from "../stores/workspace";
@@ -6,6 +6,7 @@ import type { Session } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { TerminalPane, PROVIDER_ICONS } from "./TerminalPane";
 import { ImageViewer } from "./ImageViewer";
+const PaneEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 import { PaneAddMenu } from "./PaneAddMenu";
 import { Launchpad } from "./Launchpad";
 import { Logo } from "./Logo";
@@ -205,7 +206,7 @@ export function PaneGrid() {
                           className={`pane-tab${ts.id === activeTab ? " active" : ""}`}
                           // image tabs are named after the file, so two panes both show "1.png" —
                           // the full path in a tooltip is the only way to tell them apart
-                          title={ts.image || ts.title || ts.provider}
+                          title={ts.image || ts.file || ts.title || ts.provider}
                           onMouseDown={() => setActiveTab(w.id, slot.group!, ts.id)}
                         >
                           <TIcon size={11} className="pane-tab-ico" />
@@ -253,6 +254,10 @@ export function PaneGrid() {
                   const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
                   const pane = sess.image ? (
                     <ImageViewer path={sess.image} active={visible} onClose={() => onPaneClose(w.id, sess.id)} />
+                  ) : sess.file ? (
+                    <Suspense fallback={null}>
+                      <PaneEditor path={sess.file} onClose={() => onPaneClose(w.id, sess.id)} />
+                    </Suspense>
                   ) : (
                     <>
                       <TerminalPane
@@ -305,7 +310,7 @@ export function PaneGrid() {
                       style={{ display: visible ? undefined : "none" }}
                       // an image pane has no TerminalPane to claim focus, so without this clicking one
                       // leaves focus on the last terminal and Ctrl+Shift+W closes the WRONG pane
-                      onMouseDown={sess.image ? () => onPaneFocus(sess.id) : undefined}
+                      onMouseDown={sess.image || sess.file ? () => onPaneFocus(sess.id) : undefined}
                     >
                       {pane}
                     </div>

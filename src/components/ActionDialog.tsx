@@ -25,7 +25,6 @@ const blank = (): Partial<Action> => ({
   openPreview: false,
   runOnOpen: false,
   runOnWorktree: false,
-  background: false,
 });
 
 // Add/Edit an Action — a project-scoped command you run from the top bar, palette, or a keybinding.
@@ -57,7 +56,6 @@ export function ActionDialog() {
       openPreview: !!f.openPreview,
       runOnOpen: !!f.runOnOpen,
       runOnWorktree: !!f.runOnWorktree,
-      background: !!f.background,
     };
     const cur = useProjectConfigs.getState().getConfig(folder).startup;
     const next = editing ? cur.map((a) => (a.id === action.id ? action : a)) : [...cur, action];
@@ -155,10 +153,6 @@ export function ActionDialog() {
         <label className="cd-inline">
           <input type="checkbox" checked={!!f.openPreview} onChange={(e) => set({ openPreview: e.target.checked })} />
           <span className="cd-inline-label">Open the preview when this action runs</span>
-        </label>
-        <label className="cd-inline">
-          <input type="checkbox" checked={!!f.background} onChange={(e) => set({ background: e.target.checked })} />
-          <span className="cd-inline-label">Run in the background (headless — watch its logs)</span>
         </label>
         <label className="cd-inline">
           <input type="checkbox" checked={!!f.runOnOpen} onChange={(e) => set({ runOnOpen: e.target.checked })} />

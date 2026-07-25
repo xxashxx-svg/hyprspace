@@ -1,18 +1,14 @@
-import { Suspense, lazy, memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
 import { gitChanges, gitDiff, gitBranchInfo, gitFileOp, gitCommit, type BranchInfo } from "../api";
 import type { FileChange } from "../api/types";
 import { SkillsPanel } from "./SkillsPanel";
-import { ServicesPanel } from "./ServicesPanel";
 import { FilesPanel } from "./FilesPanel";
 import { confirmDialog } from "../stores/confirm";
 import { kbd } from "../platform";
 import { useNotifications } from "../stores/notifications";
-import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, Server, FolderTree, FileCode } from "lucide-react";
-
-// codemirror + language packs are heavy — load the editor only when the tab is opened
-const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
+import { ChevronRight, GitBranch, Zap, Plus, Minus, Undo2, FolderTree } from "lucide-react";
 
 // porcelain code → a coarse class for the status chip color
 function statusClass(code: string): string {
@@ -258,8 +254,6 @@ function SourceControl({ cwd }: { cwd: string }) {
 export function ReviewDock() {
   const open = useUi((s) => s.dockOpen);
   const tab = useUi((s) => s.dockTab);
-  const openFile = useUi((s) => s.openFile);
-  const editorMax = useUi((s) => s.editorMax);
   const view = useUi((s) => s.view);
   const ws = useWorkspaces((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
   const focusedId = useWorkspaces((s) => s.focusedSessionId);
@@ -282,7 +276,7 @@ export function ReviewDock() {
 
   return (
     <div
-      className={`dock${closing ? " closing" : ""}${editorMax && tab === "editor" && openFile ? " max" : ""}`}
+      className={`dock${closing ? " closing" : ""}`}
       onAnimationEnd={() => {
         if (closing) setRender(false);
       }}
@@ -303,28 +297,12 @@ export function ReviewDock() {
           Files
         </button>
         <button
-          className={`dock-tab${tab === "services" ? " active" : ""}`}
-          onClick={() => useUi.getState().setDockTab("services")}
-        >
-          <Server size={13} />
-          Services
-        </button>
-        <button
           className={`dock-tab${tab === "skills" ? " active" : ""}`}
           onClick={() => useUi.getState().setDockTab("skills")}
         >
           <Zap size={13} />
           Skills
         </button>
-        {openFile && (
-          <button
-            className={`dock-tab${tab === "editor" ? " active" : ""}`}
-            onClick={() => useUi.getState().setDockTab("editor")}
-          >
-            <FileCode size={13} />
-            Editor
-          </button>
-        )}
         <button className="dock-x" title={`Hide dock (${kbd("Ctrl+Shift+G")})`} onClick={() => useUi.getState().setDock(false)}>
           <ChevronRight size={16} />
         </button>
@@ -333,16 +311,6 @@ export function ReviewDock() {
         <SourceControl cwd={cwd} />
       ) : tab === "files" ? (
         <FilesPanel />
-      ) : tab === "services" ? (
-        <ServicesPanel />
-      ) : tab === "editor" ? (
-        openFile ? (
-          <Suspense fallback={null}>
-            <CodeEditor key={openFile} path={openFile} />
-          </Suspense>
-        ) : (
-          <FilesPanel />
-        )
       ) : (
         <SkillsPanel cwd={cwd} />
       )}

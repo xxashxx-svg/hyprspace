@@ -24,7 +24,6 @@ import {
   ChevronRight,
   Repeat,
   Copy,
-  Server,
   Pencil,
 } from "lucide-react";
 
@@ -471,17 +470,6 @@ export function Rail() {
                     >
                       <Copy size={14} />
                       <span>Copy path</span>
-                    </button>
-                    <div className="ctx-sep" />
-                    <button
-                      className="ctx-item"
-                      onClick={() => {
-                        if (w) useUi.getState().openServices({ folder: cwd, wsId: w.id, name: w.name });
-                        setMenu(null);
-                      }}
-                    >
-                      <Server size={14} />
-                      <span>Services</span>
                     </button>
                   </>
                 )}

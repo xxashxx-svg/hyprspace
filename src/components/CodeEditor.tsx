@@ -5,9 +5,8 @@ import { syntaxHighlighting } from "@codemirror/language";
 import { basicSetup } from "codemirror";
 import { vscodeChrome, vscodeHighlight } from "../lib/editorTheme";
 import { readFile, writeFile } from "../api";
-import { useUi } from "../stores/ui";
-import { confirmDialog, useConfirm } from "../stores/confirm";
-import { Save, AlertCircle, FileCode, Maximize2, Minimize2, X } from "lucide-react";
+import { confirmDialog } from "../stores/confirm";
+import { Save, AlertCircle, FileCode, X } from "lucide-react";
 
 // language support by file extension (the few that cover most of what people edit here) —
 // each pack is imported on demand so its grammar only loads when a matching file is opened
@@ -32,15 +31,21 @@ async function langFor(path: string): Promise<Extension[]> {
   return [];
 }
 
-export function CodeEditor({ path }: { path: string }) {
+// Lives in two places: the dock's Editor tab, and (inPane) as a tab inside a grid slot. In pane
+// mode the pane owns closing + maximizing, so we skip the dock's full-screen control.
+export function CodeEditor({
+  path,
+  onClose,
+}: {
+  path: string;
+  onClose: () => void;
+}) {
   const elRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [autosave, setAutosave] = useState(false);
-  const editorMax = useUi((s) => s.editorMax);
-  const toggleEditorMax = useUi((s) => s.toggleEditorMax);
 
   // keep the latest autosave flag + save fn reachable from the long-lived editor extensions
   const autosaveRef = useRef(autosave);
@@ -71,20 +76,8 @@ export function CodeEditor({ path }: { path: string }) {
         discardRef.current = true;
       }
     }
-    useUi.getState().closeFile();
+    onClose();
   };
-
-  // Esc drops out of full screen (but never closes the file, and never steals a dialog's Esc)
-  useEffect(() => {
-    if (!editorMax) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (useConfirm.getState().req) return; // a confirm dialog owns this Esc
-      toggleEditorMax();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [editorMax, toggleEditorMax]);
 
   // a ref so the editor's long-lived keymap/listener always call the latest path-bound save
   const save = useRef(async () => {});
@@ -175,13 +168,6 @@ export function CodeEditor({ path }: { path: string }) {
         </label>
         <button className="editor-save" onClick={() => void save.current()} disabled={!dirty || saving}>
           <Save size={12} /> {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          className="editor-icon-btn"
-          onClick={toggleEditorMax}
-          title={editorMax ? "Exit full screen (Esc)" : "Full screen"}
-        >
-          {editorMax ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
         <button className="editor-icon-btn" onClick={() => void close()} title="Close file">
           <X size={14} />

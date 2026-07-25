@@ -188,3 +188,53 @@
   font-size: 11.5px;
   padding: 3px 8px;
 }
+
+/* ---- git decoration + open-file highlight (VS Code's palette, via tokens) ---- */
+.ft-name.g-mod {
+  color: #e2c08d;
+}
+.ft-name.g-new {
+  color: #73c991;
+}
+.ft-name.g-del {
+  color: #c74e39;
+  text-decoration: line-through;
+}
+/* the M/A/D/U badge, right-aligned like the source-control list */
+.ft-git {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  flex: 0 0 auto;
+}
+.ft-git.g-mod {
+  color: #e2c08d;
+}
+.ft-git.g-new {
+  color: #73c991;
+}
+.ft-git.g-del {
+  color: #c74e39;
+}
+/* a file that's already open as a tab reads as "current" */
+.ft-row.open-file {
+  background: var(--accent-dim);
+}
+.ft-row.open-file .ft-name {
+  color: var(--text-1);
+}
+/* indent guides — one hairline per nesting level, so deep trees stay readable.
+   (drawn on the node wrapper so it spans the row AND its expanded children) */
+.ft-node {
+  position: relative;
+}
+.ft-node .ft-node::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 var(--ft-guide, 14px);
+  width: 1px;
+  background: var(--border-1);
+  pointer-events: none;
+}

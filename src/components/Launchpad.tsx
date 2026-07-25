@@ -2,14 +2,13 @@ import { useEffect, type ComponentType } from "react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { useProjectConfigs, folderKey } from "../stores/projectConfig";
-import { useServices, serviceId } from "../stores/services";
 import { useLaunchPresets, type LaunchPreset } from "../stores/launchPresets";
 import { launchTask, maybeAutostart } from "../lib/startup";
 import { pickFolders } from "../api";
 import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd } from "../actions";
 import { isWindows } from "../platform";
 import { Logo } from "./Logo";
-import { Terminal as TerminalIcon, Play, ScrollText, Layers, Bookmark } from "lucide-react";
+import { Terminal as TerminalIcon, Play, Layers, Bookmark } from "lucide-react";
 import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
@@ -139,50 +138,21 @@ export function Launchpad({ wsId, name, kind, cwd }: Props) {
   );
 }
 
-// configured startup services for the open project, as quick Run chips. background services show a
-// live dot + open their logs on click instead of spawning a pane.
+// the open project's configured actions, as quick Run chips
 function Services({ wsId, folder }: { wsId: string; folder: string }) {
   const cfg = useProjectConfigs((s) => s.configs[folderKey(folder)]);
   const tasks = cfg?.startup ?? [];
-  const running = useServices((s) => s.running);
-  const known = useServices((s) => s.known);
   if (tasks.length === 0) return null;
-  const openLogs = (t: { id: string; name: string }) =>
-    useUi.getState().openServiceLogs({ id: serviceId(t.id), name: t.name || "service" });
   return (
     <div className="empty-services">
-      <span className="empty-services-label">Services</span>
+      <span className="empty-services-label">Actions</span>
       <div className="empty-services-row">
-        {tasks.map((t) => {
-          if (!t.background) {
-            return (
-              <button key={t.id} className="empty-svc-chip" onClick={() => launchTask(wsId, t)}>
-                <Play size={11} />
-                {t.name || "service"}
-              </button>
-            );
-          }
-          const sid = serviceId(t.id);
-          const on = !!running[sid];
-          const hasLogs = on || !!known[sid];
-          return (
-            <div className={`empty-svc-chip bg${on ? " on" : ""}`} key={t.id}>
-              <button
-                className="empty-svc-main"
-                title={on ? "Running in background — view logs" : "Run in background"}
-                onClick={() => (on ? openLogs(t) : launchTask(wsId, t))}
-              >
-                {on ? <span className="svc-dot on" /> : <Play size={11} />}
-                {t.name || "service"}
-              </button>
-              {hasLogs && (
-                <button className="empty-svc-logs" title="View logs" onClick={() => openLogs(t)}>
-                  <ScrollText size={11} />
-                </button>
-              )}
-            </div>
-          );
-        })}
+        {tasks.map((t) => (
+          <button key={t.id} className="empty-svc-chip" onClick={() => launchTask(wsId, t)}>
+            <Play size={11} />
+            {t.name || "action"}
+          </button>
+        ))}
       </div>
     </div>
   );

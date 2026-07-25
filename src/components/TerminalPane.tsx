@@ -34,6 +34,7 @@ import {
   Atom,
   Terminal as TerminalIcon,
   Image as ImageIcon,
+  FileCode,
   MoreHorizontal,
   Copy,
   FolderOpen,
@@ -55,6 +56,7 @@ export const PROVIDER_ICONS = {
   wsl: SquareTerminal,
   terminal: TerminalIcon,
   image: ImageIcon,
+  editor: FileCode,
 } as const;
 
 // friendly name for the brief "Starting …" boot indicator
@@ -67,6 +69,7 @@ const PROVIDER_LABEL = {
   wsl: "WSL",
   terminal: "terminal",
   image: "image",
+  editor: "editor",
 } as const;
 
 // Each claude pane owns its session id (= the pane's uuid), so on relaunch it resumes its OWN
@@ -109,7 +112,7 @@ interface Props {
   cwd: string;
   guest?: boolean;
   command?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image" | "editor";
   title?: string;
   started?: boolean;
   active: boolean;
@@ -249,7 +252,7 @@ function TerminalPaneInner({
       if (disposed) return;
       const st = useWorkspaces.getState();
       const w = st.workspaces.find((x) => x.sessions.some((ss) => ss.id === sessionId));
-      if (w) st.openImageTab(w.id, sessionId, abs);
+      if (w) st.openPathTab(abs, { wsId: w.id, sessionId });
     };
 
     // provideLinks MUST answer synchronously. xterm caches a provider's reply against whichever row

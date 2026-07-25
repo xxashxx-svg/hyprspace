@@ -11,7 +11,6 @@ export interface Action {
   name: string;
   command: string; // typed into the pane's shell; "" = a plain terminal
   folder?: string; // subfolder relative to the project folder; "" = the root
-  background?: boolean; // run hidden as a background service (output captured to logs) vs. a pane
   keybinding?: string; // optional shortcut, e.g. "Ctrl+Alt+T"
   previewUrl?: string; // optional URL to open in the embedded preview when this action runs
   openPreview?: boolean; // open previewUrl when the action runs

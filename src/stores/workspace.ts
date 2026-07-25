@@ -6,9 +6,11 @@ export interface Session {
   title: string;
   command?: string;
   cwd?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image" | "editor";
   // set → this tab is an image viewer holding that file path (not a terminal)
   image?: string;
+  // set → this tab is a code editor on that file (not a terminal)
+  file?: string;
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
   // the claude conversation this pane is currently on — starts as `id`, but follows a manual
@@ -17,6 +19,9 @@ export interface Session {
   // sessions sharing a group id stack as tabs in one grid slot (opt-in via the pane + button)
   group?: string;
 }
+
+// which viewer a path opens in — images get the image viewer, everything else the code editor
+const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 
 export interface Workspace {
   id: string;
@@ -120,7 +125,10 @@ interface WorkspaceState {
   reorderWorkspaces: (fromId: string, toId: string) => void;
   addSession: (wsId: string, command?: string, cwd?: string) => void;
   addTab: (wsId: string, anchorSessionId: string, command?: string, cwd?: string) => void;
-  openImageTab: (wsId: string, anchorSessionId: string, path: string) => void;
+  // open a file as a viewer tab (image → image viewer, anything else → code editor). `anchor` pins
+  // it into a specific pane's slot (ctrl+click in a terminal); without one it lands on the focused
+  // pane of the active space.
+  openPathTab: (path: string, anchor?: { wsId: string; sessionId: string }) => void;
   setActiveTab: (wsId: string, group: string, sessionId: string) => void;
   renameSession: (sessionId: string, title: string) => void;
   removeSession: (wsId: string, sessionId: string) => void;
@@ -271,35 +279,60 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
 
   // ctrl+click an image path in a terminal → open it as an image-viewer tab in that pane's slot.
   // same group logic as addTab; dedupes on the image path so the same file doesn't stack twice.
-  openImageTab: (wsId, anchorSessionId, path) =>
+  openPathTab: (path, anchor) =>
     set((s) => {
-      const w = s.workspaces.find((x) => x.id === wsId);
-      const anchor = w?.sessions.find((ss) => ss.id === anchorSessionId);
-      if (!w || !anchor) return {};
-      const group = anchor.group ?? anchor.id; // group id == the anchor session id, so the slot's react key never changes when it goes solo->tabbed or when the first tab is closed
-      const dupe = w.sessions.find((ss) => ss.group === group && ss.image === path);
+      const w = anchor
+        ? s.workspaces.find((x) => x.id === anchor.wsId)
+        : s.workspaces.find((x) => x.id === s.activeId);
+      if (!w) return {};
+      // anchor on the given pane, else the focused one, else the first — that's whose slot it joins
+      const anchorSess =
+        (anchor && w.sessions.find((ss) => ss.id === anchor.sessionId)) ??
+        w.sessions.find((ss) => ss.id === s.focusedSessionId) ??
+        w.sessions[0];
+      const isImg = IMAGE_EXT.test(path);
+      const title = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+      const mk = (group?: string): Session => ({
+        id: uid(),
+        title,
+        cwd: anchorSess?.cwd ?? w.cwd,
+        provider: isImg ? "image" : "editor",
+        ...(isImg ? { image: path } : { file: path }),
+        group,
+      });
+
+      // nothing to anchor to (empty space) — the viewer becomes its own solo pane
+      if (!anchorSess) {
+        const tab = mk();
+        return {
+          workspaces: s.workspaces.map((x) => (x.id === w.id ? { ...x, sessions: [...x.sessions, tab] } : x)),
+          focusedSessionId: tab.id,
+        };
+      }
+
+      const group = anchorSess.group ?? anchorSess.id; // group id == anchor session id, so the slot's react key never changes
+      // already open in this slot → just focus it instead of stacking a duplicate
+      const dupe = w.sessions.find((ss) => ss.group === group && (ss.image ?? ss.file) === path);
       if (dupe) {
         return {
           workspaces: s.workspaces.map((x) =>
-            x.id === wsId
+            x.id === w.id
               ? { ...x, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [group]: dupe.id } }
               : x,
           ),
           focusedSessionId: dupe.id,
         };
       }
-      const id = uid();
-      const title = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-      const tab: Session = { id, title, cwd: anchor.cwd ?? w.cwd, provider: "image", image: path, group };
+      const tab = mk(group);
       const workspaces = s.workspaces.map((x) => {
-        if (x.id !== wsId) return x;
+        if (x.id !== w.id) return x;
         const sessions = [...x.sessions];
-        const ai = sessions.findIndex((ss) => ss.id === anchorSessionId);
-        if (!anchor.group) sessions[ai] = { ...sessions[ai], group }; // pull the anchor into the group
+        const ai = sessions.findIndex((ss) => ss.id === anchorSess.id);
+        if (!anchorSess.group) sessions[ai] = { ...sessions[ai], group }; // pull the anchor into the group
         sessions.splice(ai + 1, 0, tab);
-        return { ...x, sessions, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [group]: id } };
+        return { ...x, sessions, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [group]: tab.id } };
       });
-      return { workspaces, focusedSessionId: id };
+      return { workspaces, focusedSessionId: tab.id };
     }),
 
   setActiveTab: (wsId, group, sessionId) =>

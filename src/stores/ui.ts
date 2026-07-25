@@ -12,13 +12,9 @@ interface UiState {
   settingsOpen: boolean; // in-app settings screen
   settingsTab: string;
   newProjectOpen: boolean; // the New Project wizard
-  servicesFor: { folder: string; wsId: string; name: string } | null; // the Services config modal
-  serviceLogsFor: { id: string; name: string } | null; // the background-service log viewer
   paletteOpen: boolean;
   dockOpen: boolean;
-  dockTab: "changes" | "skills" | "services" | "files" | "editor";
-  openFile: string | null; // absolute path open in the editor tab
-  editorMax: boolean; // editor expanded over the whole workspace area
+  dockTab: "changes" | "skills" | "files";
   paneDragging: boolean; // a terminal pane is mid-drag (rail shows spaces as drop targets)
   paneDragOverWs: string | null; // the space the dragged pane is hovering over in the rail
   goHome: () => void;
@@ -38,18 +34,11 @@ interface UiState {
   closeNewProject: () => void;
   openLaunch: () => void;
   closeLaunch: () => void;
-  openServices: (t: { folder: string; wsId: string; name: string }) => void;
-  closeServices: () => void;
-  openServiceLogs: (t: { id: string; name: string }) => void;
-  closeServiceLogs: () => void;
   togglePalette: () => void;
   setPalette: (b: boolean) => void;
   toggleDock: () => void;
   setDock: (b: boolean) => void;
-  setDockTab: (t: "changes" | "skills" | "services" | "files" | "editor") => void;
-  openInEditor: (path: string) => void;
-  closeFile: () => void;
-  toggleEditorMax: () => void;
+  setDockTab: (t: "changes" | "skills" | "files") => void;
   onboardingOpen: boolean;
   openOnboarding: () => void;
   closeOnboarding: () => void;
@@ -69,13 +58,9 @@ export const useUi = create<UiState>()((set) => ({
   settingsOpen: false,
   settingsTab: "appearance",
   newProjectOpen: false,
-  servicesFor: null,
-  serviceLogsFor: null,
   paletteOpen: false,
   dockOpen: false,
-  dockTab: "skills",
-  openFile: null,
-  editorMax: false,
+  dockTab: "files", // the dock opens on Files — the tab you actually browse from
   paneDragging: false,
   paneDragOverWs: null,
   goHome: () => set({ view: "home" }),
@@ -96,19 +81,12 @@ export const useUi = create<UiState>()((set) => ({
   // open the full-page launcher, remembering the page to return to on Cancel/Esc
   openLaunch: () => set((s) => (s.view === "launch" ? {} : { view: "launch", launchReturn: s.view })),
   closeLaunch: () => set((s) => ({ view: s.launchReturn })),
-  openServices: (t) => set({ servicesFor: t }),
-  closeServices: () => set({ servicesFor: null }),
-  openServiceLogs: (t) => set({ serviceLogsFor: t }),
-  closeServiceLogs: () => set({ serviceLogsFor: null }),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setPalette: (b) => set({ paletteOpen: b }),
   toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),
   setDock: (b) => set({ dockOpen: b }),
   setDockTab: (t) => set({ dockTab: t, dockOpen: true }),
-  openInEditor: (path) => set({ openFile: path, dockTab: "editor", dockOpen: true }),
   // closing lands you back on the file tree, since the editor tab disappears with the file
-  closeFile: () => set({ openFile: null, editorMax: false, dockTab: "files" }),
-  toggleEditorMax: () => set((s) => ({ editorMax: !s.editorMax })),
   onboardingOpen: false,
   openOnboarding: () => set({ onboardingOpen: true, settingsOpen: false }),
   closeOnboarding: () => set({ onboardingOpen: false }),

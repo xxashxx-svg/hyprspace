@@ -3,8 +3,7 @@ import { useProjectConfigs, folderKey, type Action } from "../stores/projectConf
 import { useActionEditor } from "../stores/actionEditor";
 import { useWorkspaces, type Session } from "../stores/workspace";
 import { useUi } from "../stores/ui";
-import { useServices, serviceId } from "../stores/services";
-import { runAction, startServices, taskFromFile } from "../lib/startup";
+import { runAction, runFolderActions, taskFromFile } from "../lib/startup";
 import { closeSession } from "../actions";
 import { pickFile } from "../api";
 import { Play, Plus, X, Trash2, Upload, Square, ScrollText, Keyboard } from "lucide-react";
@@ -12,8 +11,8 @@ import { Play, Plus, X, Trash2, Upload, Square, ScrollText, Keyboard } from "luc
 const uid = () => crypto.randomUUID();
 const EMPTY_SESSIONS: Session[] = [];
 
-// a task's live run: a background service or a pane; `running` false = stopped but logs still around
-type Run = { bg: boolean; key: string; running: boolean };
+// a task's live run — the pane it's running in
+type Run = { key: string };
 
 // Editor for one folder's project config. `wsId` (when a project at this folder is open) enables
 // the Start buttons; without it (e.g. in Settings) it's config-only.
@@ -47,36 +46,20 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
     if (f) setTasks([...startup, taskFromFile(f)]);
   };
 
-  // run-state: a background service (headless, logs captured) or a pane. `running` is the live state;
-  // a background service that has stopped but still has logs is reported with running=false so its
-  // output stays reachable.
+  // run-state: the pane this action is currently running in, if any
   const sessions = useWorkspaces((s) => s.workspaces.find((w) => w.id === wsId)?.sessions ?? EMPTY_SESSIONS);
-  const bgRunning = useServices((s) => s.running);
-  const bgKnown = useServices((s) => s.known);
   const runState = (t: Action): Run | null => {
-    if (t.background) {
-      const sid = serviceId(t.id);
-      if (bgRunning[sid]) return { bg: true, key: sid, running: true };
-      if (bgKnown[sid]) return { bg: true, key: sid, running: false }; // stopped — logs still viewable
-      return null;
-    }
     const sess = wsId ? sessions.find((s) => (s.command ?? "") === (t.command ?? "")) : undefined;
-    return sess ? { bg: false, key: sess.id, running: true } : null;
+    return sess ? { key: sess.id } : null;
   };
-  const viewLogs = (run: Run, t: Action) => {
-    if (run.bg) {
-      useUi.getState().openServiceLogs({ id: run.key, name: t.name || "service" });
-      return;
-    }
+  const viewLogs = (run: Run) => {
     if (!wsId) return;
     useWorkspaces.getState().setActive(wsId);
     useWorkspaces.getState().setFocused(run.key);
-    useUi.getState().closeServices();
     useUi.getState().goSpace();
   };
   const stopRun = (run: Run) => {
-    if (run.bg) useServices.getState().stop(run.key);
-    else if (wsId) void closeSession(wsId, run.key);
+    if (wsId) void closeSession(wsId, run.key);
   };
 
   return (
@@ -86,7 +69,7 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
           {name || folder}
         </span>
         {wsId && startup.length > 0 && (
-          <button className="svc-startall" onClick={() => startServices(wsId, { force: true })}>
+          <button className="svc-startall" onClick={() => runFolderActions(wsId, { force: true })}>
             <Play size={11} /> Start all
           </button>
         )}
@@ -103,9 +86,9 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
         {startup.map((a) => {
           const run = runState(a);
           return (
-            <div className={`act-card${run?.running ? " running" : ""}`} key={a.id}>
+            <div className={`act-card${run ? " running" : ""}`} key={a.id}>
               <button className="act-card-main" title="Edit action" onClick={() => editAction(a)}>
-                <span className={`act-card-dot${run?.running ? " on" : ""}`} />
+                <span className={`act-card-dot${run ? " on" : ""}`} />
                 <span className="act-card-text">
                   <span className="act-card-name">{a.name || "Untitled action"}</span>
                   <span className="act-card-cmd">{a.command || "(no command)"}</span>
@@ -117,13 +100,13 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
                 )}
               </button>
               <div className="act-card-btns">
-                {wsId && run && (run.bg || run.running) && (
-                  <button className="svc-run on" title="View logs" onClick={() => viewLogs(run, a)}>
+                {wsId && run && (
+                  <button className="svc-run on" title="Go to its pane" onClick={() => viewLogs(run)}>
                     <ScrollText size={13} />
                   </button>
                 )}
                 {wsId &&
-                  (run?.running ? (
+                  (run ? (
                     <button className="svc-stop" title="Stop" onClick={() => stopRun(run)}>
                       <Square size={13} />
                     </button>
@@ -188,7 +171,7 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
       <div className="svc-hint">
         Actions are commands you run on demand — from the top-bar <b>Actions</b> menu, the command
         palette, or a keybinding. Turn on <b>Run on open / worktree</b> in an action to auto-run it.
-        <b> Background</b> actions run headless (watch their logs); otherwise they get a terminal pane.
+        Each one opens in its own terminal pane.
       </div>
     </div>
   );
