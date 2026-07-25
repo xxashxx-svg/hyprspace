@@ -156,7 +156,15 @@ export default function App() {
     const doSave = () => {
       pending = false;
       const { workspaces, activeId } = useWorkspaces.getState();
-      const blob = JSON.stringify({ workspaces, activeId });
+      // image tabs are viewer-only and their file is usually a temp clip that gets swept later —
+      // persisting them means reopening the app to tabs that can only say "couldn't open image".
+      // they're one ctrl+click to get back, so drop them from the saved layout.
+      const saved = workspaces.map((w) =>
+        w.sessions.some((s) => s.image)
+          ? { ...w, sessions: w.sessions.filter((s) => !s.image) }
+          : w,
+      );
+      const blob = JSON.stringify({ workspaces: saved, activeId });
       if (blob === lastSig) return;
       lastSig = blob;
       void saveState("workspaces", blob).catch((e) => console.error("workspaces save failed:", e));
@@ -236,7 +244,14 @@ export default function App() {
     const sidAt = (px: number, py: number): string | null => {
       const dpr = window.devicePixelRatio || 1;
       const el = document.elementFromPoint(px / dpr, py / dpr) as HTMLElement | null;
-      return el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
+      const sid = el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
+      if (!sid) return null;
+      // an image pane has no PTY — dropping on it would write to a dead session id
+      const sess = useWorkspaces
+        .getState()
+        .workspaces.flatMap((w) => w.sessions)
+        .find((s) => s.id === sid);
+      return sess?.image ? null : sid;
     };
     // the services config dropzone (drop a .bat/script/.exe to add it as a startup task)
     const svcDropAt = (px: number, py: number): HTMLElement | null => {

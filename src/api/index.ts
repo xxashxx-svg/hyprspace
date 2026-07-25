@@ -158,9 +158,10 @@ export function readImageFile(path: string): Promise<string> {
 export function pathExists(path: string): Promise<boolean> {
   return invoke("path_exists", { path });
 }
-// resolve Claude Code's `[Image #N]` marker → the cached image file for this pane's session, or null
-export function claudeImagePath(cwd: string, n: number): Promise<string | null> {
-  return invoke("claude_image_path", { cwd, n });
+// resolve Claude Code's `[Image #N]` marker → the cached image file for this pane's session, or null.
+// sessionId is the pane id (we launch claude with --session-id <pane id>), which names its cache dir.
+export function claudeImagePath(cwd: string, n: number, sessionId?: string): Promise<string | null> {
+  return invoke("claude_image_path", { cwd, n, sessionId: sessionId ?? null });
 }
 // Files-panel ops: create-file / create-dir / rename (to = new full path) / delete
 export function fileOp(op: "create-file" | "create-dir" | "rename" | "delete", path: string, to?: string): Promise<void> {

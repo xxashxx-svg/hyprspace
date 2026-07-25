@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, X } from "lucide-react";
+import { FolderOpen, RotateCw, X } from "lucide-react";
 import { readImageFile, revealPath } from "../api";
 
 interface Props {
@@ -8,12 +8,20 @@ interface Props {
   onClose: () => void;
 }
 
-export function ImageViewer({ path, onClose }: Props) {
+export function ImageViewer({ path, active, onClose }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [actual, setActual] = useState(false); // click toggles fit ↔ 1:1
+  const [nonce, setNonce] = useState(0); // bumped by Retry to re-read the file
 
+  // only hold the bytes while this tab is on screen. hidden tabs stay mounted, and a data URL is
+  // ~1.33x the file, so a few open images would otherwise sit on tens of MB each for nothing.
   useEffect(() => {
+    if (!active) {
+      setSrc(null);
+      setErr(null);
+      return;
+    }
     let alive = true;
     setSrc(null);
     setErr(null);
@@ -24,7 +32,7 @@ export function ImageViewer({ path, onClose }: Props) {
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, active, nonce]);
 
   const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
   // reveal-in-folder wants the containing directory (reveal_path opens a folder, not a file)
@@ -49,10 +57,13 @@ export function ImageViewer({ path, onClose }: Props) {
           <div className="iv-error-msg">couldn't open image</div>
           <div className="iv-error-path">{path}</div>
           <div className="iv-error-detail">{err}</div>
+          <button className="iv-btn iv-retry" onClick={() => setNonce((n) => n + 1)}>
+            <RotateCw size={13} /> Retry
+          </button>
         </div>
       ) : (
         <div className={`iv-stage${actual ? " actual" : ""}`}>
-          {src && (
+          {src ? (
             <img
               className="iv-img"
               src={src}
@@ -60,6 +71,8 @@ export function ImageViewer({ path, onClose }: Props) {
               onClick={() => setActual((a) => !a)}
               onError={() => setErr("failed to decode image")}
             />
+          ) : (
+            active && <div className="iv-loading">loading…</div>
           )}
         </div>
       )}

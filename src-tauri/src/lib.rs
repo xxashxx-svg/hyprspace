@@ -193,16 +193,34 @@ async fn clipboard_image_to_temp(app: tauri::AppHandle) -> Result<Option<String>
         Ok(img) => (img.rgba().to_vec(), img.width(), img.height()),
         Err(_) => return Ok(None), // no image on the clipboard — caller falls back to a normal paste
     };
+    // an empty clipboard image isn't an error, just nothing to paste; and cap the pixel count so a
+    // giant copy (a 20000x20000 export = 1.6GB of rgba) can't OOM-abort the whole app mid-encode
+    if w == 0 || h == 0 {
+        return Ok(None);
+    }
+    if w as u64 * h as u64 > 40_000_000 {
+        return Err("that image is too large to paste".into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let buf = image::RgbaImage::from_raw(w, h, rgba)
             .ok_or_else(|| "clipboard image had an unexpected size".to_string())?;
         let dir = std::env::temp_dir().join("hyprspace-clip");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        // keep the dir from growing forever — drop clips older than a few hours
+        // keep the dir from growing forever. 7 days, not hours: an open image tab (and an unsent
+        // prompt) references the file by path, so deleting it out from under a still-open tab is
+        // what makes an image go "couldn't open" later. only ever touch our own clip-*.png.
         if let Ok(rd) = std::fs::read_dir(&dir) {
             let cutoff = std::time::SystemTime::now()
-                .checked_sub(std::time::Duration::from_secs(6 * 3600));
+                .checked_sub(std::time::Duration::from_secs(7 * 24 * 3600));
             for e in rd.flatten() {
+                let ours = e
+                    .file_name()
+                    .to_str()
+                    .map(|n| n.starts_with("clip-") && n.ends_with(".png"))
+                    .unwrap_or(false);
+                if !ours {
+                    continue;
+                }
                 if let (Some(cutoff), Ok(meta)) = (cutoff, e.metadata()) {
                     if meta.modified().map(|m| m < cutoff).unwrap_or(false) {
                         let _ = std::fs::remove_file(e.path());
@@ -252,12 +270,13 @@ fn claude_project_dir(cwd: &str) -> Option<std::path::PathBuf> {
     if home.is_empty() {
         return None;
     }
+    // claude encodes a cwd by replacing EVERY non-alphanumeric char with '-', not just separators.
+    // verified against ~/.claude/projects: all 131 dirs are [A-Za-z0-9-] only, and
+    // C:\Users\x\.hyprspace\... lands at C--Users-x--hyprspace-... (the dot becomes a dash too).
+    // getting this wrong silently breaks resume for any path with a dot/space — i.e. every worktree.
     let enc: String = cwd
         .chars()
-        .map(|c| match c {
-            ':' | '/' | '\\' => '-',
-            _ => c,
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     Some(
         std::path::Path::new(&home)
@@ -272,33 +291,48 @@ fn claude_project_dir(cwd: &str) -> Option<std::path::PathBuf> {
 // pane cwd's newest session (its .jsonl stem IS the session id + the image-cache dir name), then look
 // up <N>.* there. Returns the file path, or None if there's no such image yet.
 #[tauri::command]
-async fn claude_image_path(cwd: String, n: u32) -> Option<String> {
+async fn claude_image_path(cwd: String, n: u32, session_id: Option<String>) -> Option<String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = std::env::var("USERPROFILE")
             .or_else(|_| std::env::var("HOME"))
             .ok()
             .filter(|h| !h.is_empty())?;
-        let proj = claude_project_dir(&cwd)?;
-        // newest .jsonl in the project dir → the active claude session id
-        let session_id = std::fs::read_dir(&proj)
-            .ok()?
-            .flatten()
-            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
-            .filter_map(|e| {
-                let modified = e.metadata().ok()?.modified().ok()?;
-                let stem = e.path().file_stem()?.to_string_lossy().into_owned();
-                Some((modified, stem))
-            })
-            .max_by_key(|(m, _)| *m)
-            .map(|(_, stem)| stem)?;
-        let dir = std::path::Path::new(&home)
-            .join(".claude")
-            .join("image-cache")
-            .join(&session_id);
+        let cache = std::path::Path::new(&home).join(".claude").join("image-cache");
+        // the pane pins its own id as claude's --session-id, so that's the right cache dir. only
+        // guess (newest transcript in the folder) when it isn't there — e.g. a session forked by
+        // /clear, or a pane that was already running before this existed. guessing is what made
+        // two panes in one folder open each other's images.
+        let by_pane = session_id
+            .as_deref()
+            .map(|s| cache.join(s))
+            .filter(|d| d.is_dir());
+        let dir = match by_pane {
+            Some(d) => d,
+            None => {
+                let proj = claude_project_dir(&cwd)?;
+                let newest = std::fs::read_dir(&proj)
+                    .ok()?
+                    .flatten()
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+                    .filter_map(|e| {
+                        let modified = e.metadata().ok()?.modified().ok()?;
+                        let stem = e.path().file_stem()?.to_string_lossy().into_owned();
+                        Some((modified, stem))
+                    })
+                    .max_by_key(|(m, _)| *m)
+                    .map(|(_, stem)| stem)?;
+                cache.join(newest)
+            }
+        };
         let target = n.to_string();
         for e in std::fs::read_dir(&dir).ok()?.flatten() {
             let p = e.path();
             if p.is_file() && p.file_stem().and_then(|s| s.to_str()) == Some(target.as_str()) {
+                // skip a 0-byte file: claude may still be writing it, and caching that miss beats
+                // handing the viewer a truncated png it can't decode
+                if e.metadata().map(|m| m.len() == 0).unwrap_or(false) {
+                    return None;
+                }
                 return Some(p.to_string_lossy().replace('\\', "/"));
             }
         }

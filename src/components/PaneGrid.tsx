@@ -186,7 +186,7 @@ export function PaneGrid() {
             const place = layout.place(si);
             return (
               <div
-                key={solo.id}
+                key={slot.group ?? solo.id}
                 data-sid={tabbed ? undefined : solo.id}
                 className={`pane-cell${tabbed ? " tabbed" : ""}${!tabbed && dragId === solo.id ? " dragging" : ""}${!tabbed && overId === solo.id ? " drop-over" : ""}`}
                 style={{
@@ -203,6 +203,9 @@ export function PaneGrid() {
                         <div
                           key={ts.id}
                           className={`pane-tab${ts.id === activeTab ? " active" : ""}`}
+                          // image tabs are named after the file, so two panes both show "1.png" —
+                          // the full path in a tooltip is the only way to tell them apart
+                          title={ts.image || ts.title || ts.provider}
                           onMouseDown={() => setActiveTab(w.id, slot.group!, ts.id)}
                         >
                           <TIcon size={11} className="pane-tab-ico" />
@@ -296,7 +299,14 @@ export function PaneGrid() {
                   // its TerminalPane/PTY is never unmounted (was a Fragment→div swap that killed claude).
                   // hidden tabs are display:none so their PTY lives.
                   return (
-                    <div key={sess.id} className="pane-tab-body" style={{ display: visible ? undefined : "none" }}>
+                    <div
+                      key={sess.id}
+                      className="pane-tab-body"
+                      style={{ display: visible ? undefined : "none" }}
+                      // an image pane has no TerminalPane to claim focus, so without this clicking one
+                      // leaves focus on the last terminal and Ctrl+Shift+W closes the WRONG pane
+                      onMouseDown={sess.image ? () => onPaneFocus(sess.id) : undefined}
+                    >
                       {pane}
                     </div>
                   );

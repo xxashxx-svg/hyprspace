@@ -95,7 +95,8 @@ function stripSession(w: Workspace, sessionId: string): Workspace {
   const members = sessions.filter((ss) => ss.group === group);
   const activeTabByGroup = { ...(w.activeTabByGroup ?? {}) };
   if (members.length <= 1) {
-    if (members[0]) sessions = sessions.map((ss) => (ss.id === members[0].id ? { ...ss, group: undefined } : ss));
+    // keep the survivor's `group` — a 1-member group already renders untabbed, and clearing it would
+    // change the slot's react key and remount (= kill) the surviving pane's PTY
     delete activeTabByGroup[group];
   } else if (activeTabByGroup[group] === sessionId) {
     const idx = siblings.findIndex((ss) => ss.id === sessionId);
@@ -252,7 +253,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       const anchor = w?.sessions.find((ss) => ss.id === anchorSessionId);
       if (!w || !anchor) return {};
       const id = uid();
-      const group = anchor.group ?? uid();
+      const group = anchor.group ?? anchor.id; // group id == the anchor session id, so the slot's react key never changes when it goes solo->tabbed or when the first tab is closed
       const effCwd = cwd ?? anchor.cwd ?? w.cwd ?? "";
       const used = new Set(s.workspaces.flatMap((x) => x.sessions.map((ss) => ss.title)));
       const { provider, title } = deriveProviderTitle(command, effCwd, used);
@@ -275,7 +276,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       const w = s.workspaces.find((x) => x.id === wsId);
       const anchor = w?.sessions.find((ss) => ss.id === anchorSessionId);
       if (!w || !anchor) return {};
-      const group = anchor.group ?? uid();
+      const group = anchor.group ?? anchor.id; // group id == the anchor session id, so the slot's react key never changes when it goes solo->tabbed or when the first tab is closed
       const dupe = w.sessions.find((ss) => ss.group === group && ss.image === path);
       if (dupe) {
         return {
@@ -386,7 +387,22 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       };
     }),
 
-  setFocused: (id) => set({ focusedSessionId: id }),
+  // focusing a session that's a HIDDEN tab has to reveal it too, or the rail/palette/cycle-pane
+  // click looks like it did nothing. no-op for a visible pane (the group already points at it).
+  setFocused: (id) =>
+    set((s) => {
+      const w = s.workspaces.find((x) => x.sessions.some((ss) => ss.id === id));
+      const me = w?.sessions.find((ss) => ss.id === id);
+      if (!w || !me?.group || w.activeTabByGroup?.[me.group] === id) return { focusedSessionId: id };
+      return {
+        focusedSessionId: id,
+        workspaces: s.workspaces.map((x) =>
+          x.id === w.id
+            ? { ...x, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [me.group!]: id } }
+            : x,
+        ),
+      };
+    }),
 
   hydrate: (workspaces, activeId) => {
     // Migration: ensure every session has a 'provider' field (older saves won't have it)

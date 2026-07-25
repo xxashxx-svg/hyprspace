@@ -109,7 +109,9 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
 // only lights up for a file that's actually there. Cheap, so it can run on hover.
 #[tauri::command]
 pub async fn path_exists(path: String) -> bool {
-    tauri::async_runtime::spawn_blocking(move || Path::new(&path).exists())
+    // is_file, not exists: a *directory* named "foo.png" would otherwise light up as a clickable
+    // image and then fail to open
+    tauri::async_runtime::spawn_blocking(move || Path::new(&path).is_file())
         .await
         .unwrap_or(false)
 }

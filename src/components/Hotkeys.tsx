@@ -101,6 +101,25 @@ export function Hotkeys() {
         }
       }
 
+      // Ctrl+PageUp/PageDown cycles the tabs inside the focused pane's slot. Lives here, not in
+      // TerminalPane's key handler: an image tab has no xterm to receive keys, and Ctrl+Tab is
+      // already taken (captured above) for cycling spaces.
+      if (e.code === "PageUp" || e.code === "PageDown") {
+        const st = useWorkspaces.getState();
+        const sid = st.focusedSessionId;
+        const w = sid ? st.workspaces.find((x) => x.sessions.some((ss) => ss.id === sid)) : undefined;
+        const me = w?.sessions.find((ss) => ss.id === sid);
+        if (!w || !me?.group) return; // solo pane — let the terminal have the key
+        const sibs = w.sessions.filter((ss) => ss.group === me.group);
+        if (sibs.length < 2) return;
+        take();
+        const i = sibs.findIndex((ss) => ss.id === me.id);
+        const next = sibs[(i + (e.code === "PageUp" ? -1 : 1) + sibs.length) % sibs.length];
+        st.setActiveTab(w.id, me.group, next.id);
+        st.setFocused(next.id);
+        return;
+      }
+
       if (e.code === "Tab") {
         take();
         cycleSpace(e.shiftKey ? -1 : 1);

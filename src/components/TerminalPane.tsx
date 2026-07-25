@@ -77,9 +77,21 @@ function injectClaudeArg(cmd: string, arg: string): string {
   return cmd.replace(/^claude\b/, `claude ${arg}`);
 }
 
-// image-file paths in terminal output become ctrl+clickable — matches windows/posix absolute +
-// relative paths ending in an image extension (a run of non-space/quote chars before the ext)
-const IMG_RE = /[^\s"'<>|]+\.(?:png|jpe?g|gif|webp|bmp|svg)\b/gi;
+// image-file paths in terminal output become ctrl+clickable — windows/posix absolute + relative.
+// three branches: "quoted" and 'quoted' (so a path with spaces still matches — %TEMP% contains the
+// windows username, which is often "First Last"), then a bare run of non-space chars.
+const IMG_EXT = "(?:png|jpe?g|gif|webp|bmp|svg)";
+const IMG_RE = new RegExp(
+  `"([^"\\n]+\\.${IMG_EXT})"|'([^'\\n]+\\.${IMG_EXT})'|[^\\s"'<>|]+\\.${IMG_EXT}\\b`,
+  "gi",
+);
+
+// what we actually type into the prompt for a pasted image. a path with a space (windows accounts
+// are often "First Last", so %TEMP% contains one) would otherwise be read as two arguments and the
+// agent silently never sees the image — quote it so it stays one token.
+function pastePath(p: string): string {
+  return (p.includes(" ") ? `"${p}"` : p) + " ";
+}
 
 // resolve a matched path against the pane cwd: absolute stays as-is, relative joins onto cwd
 // (separator-aware, so a windows cwd keeps backslashes and a posix cwd keeps forward slashes)
@@ -187,105 +199,156 @@ function TerminalPaneInner({
     // scan the whole LOGICAL line (xterm soft-wraps long paths across rows, so a single-row scan
     // misses them) and only light up paths that actually exist on disk. existence is cached ~10s so
     // hovering doesn't spam IPC.
+    // Read one LOGICAL line (xterm soft-wraps, so a long path spans rows) as a string plus an
+    // offset→cell mapper. translateToString emits CHARACTERS while the buffer advances by cell
+    // WIDTH, so a wide char (CJK, ✅, a ZWJ emoji) desyncs index from column — walk the cells to
+    // build a real map, and keep the cheap arithmetic for plain narrow lines.
+    const MAX_ROWS = 8; // a real path never spans more; caps the work on a huge one-line log
+    const logicalLine = (lineNo: number) => {
+      const buf = term.buffer.active;
+      let start = lineNo;
+      for (let g = 0; g < MAX_ROWS && start > 1 && buf.getLine(start - 1)?.isWrapped; g++) start--;
+      const head = buf.getLine(start - 1);
+      if (!head) return null;
+      const rows = [head];
+      let text = head.translateToString(false);
+      for (let i = start; rows.length < MAX_ROWS; i++) {
+        const cont = buf.getLine(i);
+        if (!cont || !cont.isWrapped) break;
+        rows.push(cont);
+        text += cont.translateToString(false);
+      }
+      const cols = term.cols;
+      let at: (off: number) => { x: number; y: number };
+      if (text.length === rows.length * cols) {
+        at = (off) => ({ x: (off % cols) + 1, y: start + Math.floor(off / cols) });
+      } else {
+        const map: { x: number; y: number }[] = [];
+        const cell = head.getCell(0);
+        for (let r = 0; r < rows.length && cell; r++) {
+          for (let x = 0; x < cols; ) {
+            rows[r].getCell(x, cell);
+            const w = cell.getWidth();
+            if (w === 0) {
+              x++; // trailing half of a wide char — no string content of its own
+              continue;
+            }
+            const chars = cell.getChars() || " ";
+            for (let k = 0; k < chars.length; k++) map.push({ x: x + 1, y: start + r });
+            x += w;
+          }
+        }
+        at = (off) => map[Math.min(Math.max(off, 0), map.length - 1)] ?? { x: 1, y: start };
+      }
+      return { text, at };
+    };
+
+    // the pane can be dragged to another space after mount, so resolve its workspace when the click
+    // actually happens rather than trusting the wsId captured in this closure
+    const openImg = (abs: string) => {
+      if (disposed) return;
+      const st = useWorkspaces.getState();
+      const w = st.workspaces.find((x) => x.sessions.some((ss) => ss.id === sessionId));
+      if (w) st.openImageTab(w.id, sessionId, abs);
+    };
+
+    // provideLinks MUST answer synchronously. xterm caches a provider's reply against whichever row
+    // is hovered when the reply lands, so an awaited cb can attach row A's links to row B and the
+    // link then never shows until you move away and back. So: decide from cache now, and kick off
+    // the check only to warm it. Unknown paths underline optimistically and are re-validated on
+    // click, so we never open something that isn't there.
     const existCache = new Map<string, { ok: boolean; at: number }>();
     const checkExists = async (abs: string) => {
       const hit = existCache.get(abs);
       if (hit && Date.now() - hit.at < 10_000) return hit.ok;
       const ok = await pathExists(abs).catch(() => false);
+      if (existCache.size > 500) existCache.clear(); // bounded; it only holds hovered paths
       existCache.set(abs, { ok, at: Date.now() });
       return ok;
     };
     const imgLinks = term.registerLinkProvider({
       provideLinks(lineNo, cb) {
-        const buf = term.buffer.active;
-        // walk back to the start of this logical line (a wrapped continuation belongs to the path
-        // that began on an earlier row), then stitch the row + its continuations into one string
-        let start = lineNo;
-        while (start > 1 && buf.getLine(start - 1)?.isWrapped) start--;
-        const head = buf.getLine(start - 1);
-        if (!head) return cb(undefined);
-        let text = head.translateToString(false);
-        for (let i = start; ; i++) {
-          const cont = buf.getLine(i);
-          if (!cont || !cont.isWrapped) break;
-          text += cont.translateToString(false);
-        }
-        const cols = term.cols;
-        // map a 0-based offset in the logical line → xterm's 1-based { x, y } (rows are cols wide)
-        const at = (off: number) => ({ x: (off % cols) + 1, y: start + Math.floor(off / cols) });
-        const cands: { abs: string; range: ILink["range"] }[] = [];
+        const ll = logicalLine(lineNo);
+        if (!ll) return cb(undefined);
+        const out: ILink[] = [];
         IMG_RE.lastIndex = 0;
         let m: RegExpExecArray | null;
-        while ((m = IMG_RE.exec(text))) {
-          cands.push({
-            abs: resolveImgPath(m[0], cwd),
-            range: { start: at(m.index), end: at(m.index + m[0].length - 1) },
+        while ((m = IMG_RE.exec(ll.text))) {
+          // a quoted match (group 1/2) keeps spaces; otherwise strip markdown/log punctuation the
+          // greedy class swallows, or `![a](docs/x.png)` resolves as `![a](docs/x.png` and dies
+          const quoted = m[1] ?? m[2];
+          let raw = quoted ?? m[0];
+          let idx = m.index + (quoted ? 1 : 0);
+          if (!quoted) {
+            // `![alt](docs/x.png)` — the alt text is inside the match, so cut at the last `](`
+            // first. done before the leading strip so a real name like `shot (1).png` survives.
+            const md = raw.lastIndexOf("](");
+            if (md >= 0) {
+              raw = raw.slice(md + 2);
+              idx += md + 2;
+            }
+            const lead = /^[[\](){}<>!*_,;:'"]+/.exec(raw)?.[0].length ?? 0;
+            raw = raw.slice(lead);
+            idx += lead;
+          }
+          if (!raw || /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) continue; // a URL isn't a file path
+          const abs = resolveImgPath(raw, cwd);
+          const hit = existCache.get(abs);
+          const fresh = hit && Date.now() - hit.at < 10_000;
+          if (fresh && !hit.ok) continue; // known missing — don't underline
+          if (!fresh) void checkExists(abs); // warm for the next hover
+          out.push({
+            text: abs,
+            range: { start: ll.at(idx), end: ll.at(idx + raw.length - 1) },
+            decorations: { underline: true, pointerCursor: true },
+            activate(event) {
+              if (!event.ctrlKey && !event.metaKey) return;
+              void checkExists(abs).then((ok) => ok && openImg(abs));
+            },
           });
         }
-        if (!cands.length) return cb(undefined);
-        void Promise.all(
-          cands.map(async (c): Promise<ILink | null> =>
-            (await checkExists(c.abs))
-              ? {
-                  text: c.abs,
-                  range: c.range,
-                  decorations: { underline: true, pointerCursor: true },
-                  activate(event) {
-                    if (!event.ctrlKey && !event.metaKey) return;
-                    useWorkspaces.getState().openImageTab(wsId, sessionId, c.abs);
-                  },
-                }
-              : null,
-          ),
-        ).then((links) => {
-          const hits = links.filter((l): l is ILink => l !== null);
-          cb(hits.length ? hits : undefined);
-        });
+        cb(out.length ? out : undefined);
       },
     });
     // ctrl/cmd + click Claude Code's `[Image #N]` marker → open the pasted image. Claude keeps these
-    // at ~/.claude/image-cache/<session>/N.png; the backend resolves N → that file for this pane's
-    // session. cached per N (stable once written; a miss is re-checked in case the file's mid-write).
+    // at ~/.claude/image-cache/<session>/N.png. Hits get a TTL too, not just misses: after /clear the
+    // pane is on a fresh claude session whose numbering restarts at 1, so a permanently-cached
+    // [Image #1] would keep opening the previous conversation's screenshot.
     const markerCache = new Map<number, { path: string | null; at: number }>();
+    const markerFresh = (h: { path: string | null; at: number } | undefined) =>
+      !!h && Date.now() - h.at < (h.path ? 60_000 : 4000);
     const resolveMarker = async (n: number) => {
       const hit = markerCache.get(n);
-      if (hit && (hit.path || Date.now() - hit.at < 4000)) return hit.path;
-      const path = await claudeImagePath(cwd, n).catch(() => null);
+      if (markerFresh(hit)) return hit!.path;
+      const path = await claudeImagePath(cwd, n, sessionId).catch(() => null);
       markerCache.set(n, { path, at: Date.now() });
       return path;
     };
     const markerLinks = term.registerLinkProvider({
       provideLinks(lineNo, cb) {
-        const line = term.buffer.active.getLine(lineNo - 1);
-        if (!line) return cb(undefined);
-        const text = line.translateToString(false);
-        const cands: { n: number; range: ILink["range"] }[] = [];
+        const ll = logicalLine(lineNo); // stitched, so a marker split across a wrap still matches
+        if (!ll) return cb(undefined);
+        const out: ILink[] = [];
         const re = /\[Image #(\d+)\]/g;
         let m: RegExpExecArray | null;
-        while ((m = re.exec(text))) {
-          const sx = m.index + 1;
-          cands.push({ n: parseInt(m[1], 10), range: { start: { x: sx, y: lineNo }, end: { x: sx + m[0].length - 1, y: lineNo } } });
+        while ((m = re.exec(ll.text))) {
+          const n = parseInt(m[1], 10);
+          const hit = markerCache.get(n);
+          const fresh = markerFresh(hit);
+          if (fresh && !hit!.path) continue; // known to resolve to nothing
+          if (!fresh) void resolveMarker(n); // warm for the next hover
+          const range = { start: ll.at(m.index), end: ll.at(m.index + m[0].length - 1) };
+          out.push({
+            text: `[Image #${n}]`,
+            range,
+            decorations: { underline: true, pointerCursor: true },
+            activate(event) {
+              if (!event.ctrlKey && !event.metaKey) return;
+              void resolveMarker(n).then((p) => p && openImg(p));
+            },
+          });
         }
-        if (!cands.length) return cb(undefined);
-        void Promise.all(
-          cands.map(async (c): Promise<ILink | null> => {
-            const path = await resolveMarker(c.n);
-            return path
-              ? {
-                  text: path,
-                  range: c.range,
-                  decorations: { underline: true, pointerCursor: true },
-                  activate(event) {
-                    if (!event.ctrlKey && !event.metaKey) return;
-                    useWorkspaces.getState().openImageTab(wsId, sessionId, path);
-                  },
-                }
-              : null;
-          }),
-        ).then((links) => {
-          const hits = links.filter((l): l is ILink => l !== null);
-          cb(hits.length ? hits : undefined);
-        });
+        cb(out.length ? out : undefined);
       },
     });
     searchRef.current = search;
@@ -297,25 +360,18 @@ function TerminalPaneInner({
     // Ctrl+Shift+F search · Ctrl+C copies selection (else SIGINT) · Ctrl+V / Ctrl+Shift+V paste
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
-      // Ctrl+Tab / Ctrl+Shift+Tab cycles the tabs in this pane's slot (only if it's a tabbed group)
-      if (e.ctrlKey && !e.altKey && e.code === "Tab") {
-        const st = useWorkspaces.getState();
-        const w = st.workspaces.find((x) => x.sessions.some((ss) => ss.id === sessionId));
-        const me = w?.sessions.find((ss) => ss.id === sessionId);
-        if (!w || !me?.group) return true; // solo pane → let the terminal have Tab
-        const sibs = w.sessions.filter((ss) => ss.group === me.group);
-        const idx = sibs.findIndex((ss) => ss.id === sessionId);
-        const next = sibs[(idx + (e.shiftKey ? -1 : 1) + sibs.length) % sibs.length];
-        st.setActiveTab(w.id, me.group, next.id);
-        return false;
-      }
+      // (tab cycling lives in Hotkeys as Ctrl+PageUp/PageDown — Ctrl+Tab never reaches here, it's
+      // captured at the document level for cycling spaces, and image tabs have no xterm at all)
       // Alt+V = image-aware paste. HyprSpace reads the clipboard image itself and drops a temp
       // file path into the prompt (the agents read images by path), which sidesteps the CLI's
       // flaky first clipboard read so it lands on the first try. No image → forward Alt+V as-is.
       if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyV") {
-        const fallback = () => void writePty(sessionId, Uint8Array.from([0x1b, 0x76])); // ESC v
+        // encoding a screenshot takes a moment, so the pane can be gone by the time this lands
+        const fallback = () => {
+          if (!disposed) void writePty(sessionId, Uint8Array.from([0x1b, 0x76])).catch(() => {}); // ESC v
+        };
         clipboardImageToTemp()
-          .then((path) => (path ? term.paste(path + " ") : fallback()))
+          .then((path) => (path && !disposed ? term.paste(pastePath(path)) : fallback()))
           .catch(fallback);
         return false;
       }
@@ -334,18 +390,16 @@ function TerminalPaneInner({
         return !e.shiftKey; // nothing selected: plain Ctrl+C interrupts; Ctrl+Shift+C no-ops
       }
       if (e.code === "KeyV") {
-        // text first (like Orca): if the clipboard has text, paste it; only when there's none do we
-        // fall back to an image — drop it to a temp file and paste the path (agents read images by path)
+        // text first (like Orca), image only when there's no text. note readText REJECTS when the
+        // clipboard holds no text (it doesn't resolve empty), so the image fallback has to hang off
+        // .catch as well as the empty-string case — otherwise pasting a screenshot does nothing.
+        const pasteImage = () =>
+          clipboardImageToTemp().then((path) => {
+            if (path && !disposed) term.paste(pastePath(path));
+          });
         void readText()
-          .then((t) => {
-            if (t) {
-              term.paste(t);
-              return;
-            }
-            return clipboardImageToTemp().then((path) => {
-              if (path) term.paste(path + " ");
-            });
-          })
+          .then((t) => (t ? void term.paste(t) : pasteImage()))
+          .catch(pasteImage)
           .catch(() => {});
         return false;
       }
