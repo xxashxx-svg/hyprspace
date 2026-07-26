@@ -16,6 +16,7 @@ use pty::PtyManager;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::Manager;
 use tauri::State;
+use tauri_plugin_window_state::StateFlags;
 
 // async + spawn_blocking: ConPTY open + shell spawn are blocking syscalls (tens of ms each), and
 // the launcher fans out N of these in one commit — serialized on the UI thread they froze the window
@@ -534,7 +535,15 @@ pub fn run() {
     }
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // decorations are a config decision (frameless on Windows/Linux, native Overlay title bar on
+        // macOS), never something the user changes at runtime — so don't let the window-state plugin
+        // persist and replay them. it used to restore a stale `decorated: false` from before the macOS
+        // config existed, which stripped the title bar's style mask and took the traffic lights with it.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::all() & !StateFlags::DECORATIONS)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -542,29 +551,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|_app| {
             agenthook::start(_app.handle().clone());
-            // macOS 26 leaves the native traffic-light buttons hidden even with decorations + the
-            // Overlay title-bar style, so the window ends up with no close/min/max controls. Re-assert
-            // the style, then explicitly un-hide the three standard window buttons through AppKit.
-            #[cfg(target_os = "macos")]
-            {
-                use objc2_app_kit::{NSWindow, NSWindowButton};
-                use tauri::{Manager, TitleBarStyle};
-                for win in _app.webview_windows().values() {
-                    let _ = win.set_title_bar_style(TitleBarStyle::Overlay);
-                    if let Ok(ptr) = win.ns_window() {
-                        let ns: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
-                        for b in [
-                            NSWindowButton::CloseButton,
-                            NSWindowButton::MiniaturizeButton,
-                            NSWindowButton::ZoomButton,
-                        ] {
-                            if let Some(btn) = unsafe { ns.standardWindowButton(b) } {
-                                btn.setHidden(false);
-                            }
-                        }
-                    }
-                }
-            }
             Ok(())
         })
         .manage(PtyManager::default())
