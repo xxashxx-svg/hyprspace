@@ -41,6 +41,7 @@ export interface Workspace {
   aiNamed?: boolean; // AI already titled it → don't re-title (a manual rename still wins)
   layouts?: Record<number, string>; // chosen pane-layout preset id per pane-count (else auto/default)
   activeTabByGroup?: Record<string, string>; // group id → the tab (session id) shown in that slot
+  lastOpenedAt?: number; // when you last entered it — home's "Continue" ordering
 }
 
 const COLORS = ["#3fb6e0", "#46c98a", "#e0a23f", "#b06ae0", "#e5484d", "#7dc4e8"];
@@ -213,7 +214,12 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       ),
     })),
 
-  setActive: (id) => set({ activeId: id }),
+  setActive: (id) =>
+    set((s) => ({
+      activeId: id,
+      // stamp it so home can offer the spaces you were actually just in
+      workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, lastOpenedAt: Date.now() } : w)),
+    })),
 
   // remember the chosen pane-layout preset for this space at this pane-count
   setLayout: (id, count, presetId) =>

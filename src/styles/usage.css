@@ -164,3 +164,6 @@
 .um-sub.stale {
   color: var(--text-3);
 }
+.um-val.muted {
+  color: var(--text-3);
+}

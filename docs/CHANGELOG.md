@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.13.0 — 2026-07-26
+
+- Redesigned home: the four big action cards are now a single compact row, your spaces are a clean list with a "Continue" section for the ones you were last in, and the coloured folder tiles are gone in favour of the same neutral look as the rest of the app.
+- Status dots on home now mean something — amber while an agent is working, blue when one needs you, green when a space is live.
+- Usage meter: a limit window that has already reset no longer shows its old number (it was stuck at 100% in red); it now says so and updates on the next turn.
+- Usage meter: weekly and monthly limits are no longer judged against a 5-hour clock, which was making them turn red far too early.
+
 ## 0.12.0 — 2026-07-26
 
 - New sidebar: agents now appear as a live tree under each project and branch, showing what each one is working on and any sub-agents it spawns.

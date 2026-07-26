@@ -20,6 +20,7 @@ const CODEX_POLL_MS = 60_000;
 // Pace needs the window's real length — judging a 7-day window against 5 hours makes everything
 // look critical — so without a known length we fall back to flat thresholds.
 function tone(pct: number, w?: UsageWindow): "" | "warn" | "crit" {
+  if (expired(w)) return "";
   if (pct >= 90) return "crit";
   const windowMs = w?.windowMs;
   const left = w?.resetsAt ? w.resetsAt - Date.now() : undefined;
@@ -32,6 +33,11 @@ function tone(pct: number, w?: UsageWindow): "" | "warn" | "crit" {
 }
 
 const RANK: Record<string, number> = { "": 0, warn: 1, crit: 2 };
+
+// Once resets_at passes, the window has rolled over and whatever we last heard is the OLD window's
+// final number — usually near 100%. Claude only tells us the new figure on the next turn, so until
+// then we know nothing and must say so rather than showing a stale 100% in red.
+const expired = (w?: UsageWindow) => !!w?.resetsAt && w.resetsAt <= Date.now();
 
 function resetLabel(w?: UsageWindow): string {
   if (!w?.resetsAt) return "";
@@ -91,15 +97,22 @@ function Section({
         {block.plan && <span className="um-plan">{block.plan}</span>}
       </div>
       {block.windows.map(({ key, label, win }) => {
+        const gone = expired(win);
         const t = tone(win.pct, win);
         return (
           <div className="um-grp" key={key}>
             <div className="um-row">
               <span className="um-lbl">{label}</span>
-              <span className={`um-val ${t}`}>{Math.round(win.pct)}%</span>
+              <span className={`um-val ${t}${gone ? " muted" : ""}`}>
+                {gone ? "—" : `${Math.round(win.pct)}%`}
+              </span>
             </div>
-            <Bar pct={win.pct} tone={t} tick={key === "five_hour" ? tick : undefined} />
-            {win.resetsAt && !note && <div className="um-sub">resets in {resetLabel(win)}</div>}
+            <Bar pct={gone ? 0 : win.pct} tone={t} tick={gone || key !== "five_hour" ? undefined : tick} />
+            {gone ? (
+              <div className="um-sub stale">window reset · updates next turn</div>
+            ) : (
+              win.resetsAt && !note && <div className="um-sub">resets in {resetLabel(win)}</div>
+            )}
           </div>
         );
       })}
@@ -175,7 +188,8 @@ export function UsageMeter() {
   // the ring follows the most urgent window across every provider — otherwise it would sit calmly on
   // claude's session limit while codex was the thing about to run out.
   const worst = useMemo(() => {
-    const all = [...(claude?.windows ?? []), ...(codex?.windows ?? [])];
+    // an expired window tells us nothing, so it can't be the thing the ring reports
+    const all = [...(claude?.windows ?? []), ...(codex?.windows ?? [])].filter((w) => !expired(w.win));
     if (!all.length) return null;
     return all
       .map((w) => ({ ...w, t: tone(w.win.pct, w.win) }))
@@ -184,11 +198,12 @@ export function UsageMeter() {
       );
   }, [claude, codex]);
 
-  if (!worst) return null;
+  const anyWindow = (claude?.windows.length ?? 0) + (codex?.windows.length ?? 0) > 0;
+  if (!worst && !anyWindow) return null;
 
   const five = sum?.five;
   const elapsed =
-    five?.resetsAt && five.windowMs
+    five?.resetsAt && five.windowMs && !expired(five)
       ? Math.max(0, Math.min(100, ((five.windowMs - (five.resetsAt - Date.now())) / five.windowMs) * 100))
       : undefined;
 
@@ -199,13 +214,17 @@ export function UsageMeter() {
   return (
     <div className="um" ref={ref}>
       <button
-        className={`um-chip ${worst.t}${sum?.stale ? " stale" : ""}`}
-        title={`${worst.label} — ${Math.round(worst.win.pct)}% used${
-          worst.win.resetsAt ? `, resets in ${resetLabel(worst.win)}` : ""
-        }`}
+        className={`um-chip ${worst?.t ?? ""}${!worst || sum?.stale ? " stale" : ""}`}
+        title={
+          worst
+            ? `${worst.label} — ${Math.round(worst.win.pct)}% used${
+                worst.win.resetsAt ? `, resets in ${resetLabel(worst.win)}` : ""
+              }`
+            : "Usage window reset — updates on the next turn"
+        }
         onClick={() => setOpen((o) => !o)}
       >
-        <Ring pct={worst.win.pct} tone={worst.t} />
+        <Ring pct={worst?.win.pct ?? 0} tone={worst?.t ?? ""} />
       </button>
 
       {open && (
