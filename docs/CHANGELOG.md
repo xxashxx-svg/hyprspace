@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.13.1 — 2026-07-26
+
+- Sidebar is quieter: the amber "needs you" label is gone — an agent waiting on you is already shown by the blue dot and the line underneath, and waiting rows now keep their timestamp like every other row.
+- The primary branch is no longer marked with a blue pill. It simply reads brighter than its worktrees, with a small dot beside it.
+
 ## 0.13.0 — 2026-07-26
 
 - Redesigned home: the four big action cards are now a single compact row, your spaces are a clean list with a "Continue" section for the ones you were last in, and the coloured folder tiles are gone in favour of the same neutral look as the rest of the app.

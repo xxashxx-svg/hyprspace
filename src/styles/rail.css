@@ -636,14 +636,6 @@
   background: rgba(255, 255, 255, 0.22);
 }
 /* the one row you should look at */
-.rail-sess-flag {
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--status-awaiting);
-}
 /* sub-agent children — indented under their parent with a lineage rail, quieter than a real pane */
 .rail-subagents {
   margin-left: 9px;
@@ -697,16 +689,17 @@
   font-size: 11px;
 }
 /* the checkout the project points at, as opposed to a worktree branched off it */
-.rail-branch-badge {
+/* the space's own branch reads a step brighter than the worktrees under it, with a small dot to
+   mark it — hierarchy through contrast rather than a coloured pill */
+.rail-branch.primary .rail-branch-name {
+  color: var(--text-2);
+}
+.rail-branch-dot {
   flex: 0 0 auto;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  padding: 1px 5px;
-  border-radius: 4px;
-  color: color-mix(in srgb, var(--accent) 72%, var(--text-1));
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-2);
 }
 .rail-branch .rail-count {
   margin-left: auto;
@@ -730,7 +723,6 @@
   white-space: nowrap;
 }
 .rail-sess-time,
-.rail-sess-flag,
 .rail-sess-sub {
   flex: 0 0 auto;
 }
