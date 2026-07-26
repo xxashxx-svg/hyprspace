@@ -94,3 +94,86 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- feature vignettes: tiny looping animations inside the workspace bento ---- */
+@keyframes hs-fill {
+  0% { width: 4%; }
+  55%, 100% { width: var(--w, 34%); }
+}
+/* two panes trading places — one lifts as it travels, the way a dragged pane does */
+@keyframes hs-swap-a {
+  0%, 12% { transform: translate(0, 0) scale(1); box-shadow: none; }
+  34%, 66% {
+    transform: translate(calc(100% + 6px), 0) scale(1.03);
+    box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.85);
+  }
+  88%, 100% { transform: translate(0, 0) scale(1); box-shadow: none; }
+}
+@keyframes hs-swap-b {
+  0%, 12% { transform: translate(0, 0); }
+  34%, 66% { transform: translate(calc(-100% - 6px), 0); }
+  88%, 100% { transform: translate(0, 0); }
+}
+@keyframes hs-blink { 50% { opacity: 0; } }
+@keyframes hs-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+.hs-fill { animation: hs-fill 4s ease-in-out infinite; }
+.hs-fill-slow { animation: hs-fill 5.5s ease-in-out infinite; }
+.hs-swap-a { animation: hs-swap-a 4.2s ease-in-out infinite; }
+.hs-swap-b { animation: hs-swap-b 4.2s ease-in-out infinite; }
+.hs-blink { animation: hs-blink 1s steps(1) infinite; }
+.hs-pulse { animation: hs-pulse 1.4s ease-in-out infinite; }
+
+/* ---------------------------------------------------------------- page background
+   Three stacked layers, all non-interactive and behind everything:
+   a fine grid that fades out toward the edges, one soft brand glow behind the hero
+   so the app window reads as lit rather than pasted on, and a grain pass that stops
+   large dark areas from banding on cheap panels. */
+.site-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* dot matrix — texture rather than structure, so it never competes with the screenshots */
+.site-bg::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 22px 22px;
+  /* strongest behind the hero, gone by the time you reach the fold */
+  mask-image: radial-gradient(110% 75% at 50% 5%, #000 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(110% 75% at 50% 5%, #000 0%, transparent 75%);
+}
+
+/* grain — an inline SVG so there's no image request */
+.site-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.032;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* the glow sits in its own element so it can be positioned against the hero */
+.site-glow {
+  position: fixed;
+  top: -18vh;
+  left: 50%;
+  z-index: -1;
+  height: 78vh;
+  width: min(1280px, 130vw);
+  translate: -50% 0;
+  pointer-events: none;
+  /* white, not brand — the dots already carry the hero, and a colour cast fought the neutral app */
+  background: radial-gradient(
+    50% 50% at 50% 50%,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.035) 45%,
+    transparent 72%
+  );
+  filter: blur(30px);
+}

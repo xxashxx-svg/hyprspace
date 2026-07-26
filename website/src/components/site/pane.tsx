@@ -1,18 +1,18 @@
 import type { ReactNode } from "react"
-import { Columns2, Expand, MoreHorizontal, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type Status = "running" | "waiting" | "done"
 
 const dot: Record<Status, string> = {
-  running: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]",
-  waiting: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
-  done: "bg-zinc-500",
+  running: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
+  waiting: "bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.6)]",
+  done: "bg-emerald-400",
 }
 
 /**
- * One HyprSpace terminal pane — the app's real pane chrome: agent icon, the pane's
- * given name · its folder, then the split / more / expand / close cluster.
+ * One HyprSpace pane. Every pane is a tab strip now — the active tab, a Chrome-style new-tab
+ * button, and the folder on the right when it differs from the tab's name.
  */
 export function Pane({
   icon,
@@ -36,18 +36,20 @@ export function Pane({
         className,
       )}
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2">
-        <img src={icon} alt="" className="size-4 shrink-0" />
-        <span className="truncate text-[13px] font-semibold text-zinc-100">{name}</span>
-        <span className="shrink-0 text-[12px] text-zinc-600">·</span>
-        <span className="truncate text-[12px] text-zinc-500">{folder}</span>
-        <span className={cn("ml-1 size-1.5 shrink-0 rounded-full", dot[status])} />
-        <span className="ml-auto flex shrink-0 items-center gap-2 text-zinc-600">
-          <Columns2 className="size-3.5" />
-          <MoreHorizontal className="size-3.5" />
-          <Expand className="size-3.5" />
-          <X className="size-3.5" />
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-white/[0.06] px-1.5">
+        {/* the active tab */}
+        <span className="flex min-w-0 items-center gap-2 rounded-md bg-white/[0.06] px-2.5 py-1">
+          <img src={icon} alt="" className="size-3.5 shrink-0" />
+          <span className="truncate text-[12.5px] text-zinc-100">{name}</span>
+          <span className={cn("size-1.5 shrink-0 rounded-full", dot[status])} />
+          <X className="size-3 shrink-0 text-zinc-600" />
         </span>
+
+        <span className="flex size-6 shrink-0 items-center justify-center text-zinc-600">
+          <Plus className="size-3.5" />
+        </span>
+
+        <span className="ml-auto shrink-0 truncate pr-1 text-[11px] text-zinc-600">{folder}</span>
       </div>
       <div className="min-w-0 flex-1 overflow-hidden p-3.5">{children}</div>
     </div>
