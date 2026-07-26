@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.13.2 — 2026-07-27
+
+- macOS: the close, minimise and zoom buttons are back. The window-state plugin was restoring a `decorated: false` saved back when the Mac build was frameless, which stripped the title bar every launch — and re-saved it on exit, so it could never recover on its own. Decorations are no longer persisted at all.
+- Thanks to @iprincemax72-maker for tracking this one down.
+
 ## 0.13.1 — 2026-07-26
 
 - Sidebar is quieter: the amber "needs you" label is gone — an agent waiting on you is already shown by the blue dot and the line underneath, and waiting rows now keep their timestamp like every other row.

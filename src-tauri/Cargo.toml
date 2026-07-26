@@ -1,6 +1,6 @@
 [package]
 name = "hyprspace-tauri"
-version = "0.13.1"
+version = "0.13.2"
 description = "A multi-terminal AI workspace — tile coding agents across projects, then automate them."
 authors = ["HyprSpace contributors"]
 license = "MIT"
