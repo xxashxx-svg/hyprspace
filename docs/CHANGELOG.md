@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.14.0 — 2026-07-27
+
+- Automations rebuilt: every run now happens in a real Claude pane on your subscription — no API key needed, and the run is a normal tab you can watch
+- Scheduled automations now fire on schedule every time, not just once per launch
+- Stop and the time budget now actually end the agent, and runs never replay when the app restarts
+- Early preview: pair your phone in Settings → Mobile to watch panes, usage, and automations
+
 ## 0.13.2 — 2026-07-27
 
 - macOS: the close, minimise and zoom buttons are back. The window-state plugin was restoring a `decorated: false` saved back when the Mac build was frameless, which stripped the title bar every launch — and re-saved it on exit, so it could never recover on its own. Decorations are no longer persisted at all.
