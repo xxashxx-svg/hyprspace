@@ -12,6 +12,10 @@ import {
 import { useWorkspaces } from "../stores/workspace";
 import { providerUsageOne } from "../api";
 import { relTime } from "../lib/time";
+import claudeLogo from "../assets/brand/claude.svg";
+import openaiLogo from "../assets/brand/openai.svg";
+
+const LOGO: Record<string, string> = { claude: claudeLogo, codex: openaiLogo };
 
 const CODEX_POLL_MS = 60_000;
 
@@ -93,8 +97,13 @@ function Section({
   return (
     <>
       <div className={`um-hdr${first ? " first" : ""}`}>
-        <span>{block.label}</span>
-        {block.plan && <span className="um-plan">{block.plan}</span>}
+        {LOGO[block.id] && <img className="um-logo" src={LOGO[block.id]} alt="" />}
+        <span className="um-name">{block.label}</span>
+        {block.plan && (
+          <span className="um-plan" title={block.plan}>
+            {block.plan}
+          </span>
+        )}
       </div>
       {block.windows.map(({ key, label, win }) => {
         const gone = expired(win);
@@ -182,7 +191,12 @@ export function UsageMeter() {
       ...(sum.five ? [{ key: "five_hour", label: "Session · 5h", win: sum.five }] : []),
       ...sum.others,
     ];
-    return windows.length ? { id: "claude", label: "Claude", windows } : null;
+    // The header chip: the model in use. Names carry marketing suffixes ("Opus 5 (1M context)") and
+    // panes can be on different models, so trim the parenthetical and count the rest rather than
+    // joining them — a long string here stretched the whole popover.
+    const seen = [...new Set(sum.models.map((m) => m.replace(/\s*\(.*\)\s*$/, "").trim()))];
+    const plan = seen.length ? seen[0] + (seen.length > 1 ? ` +${seen.length - 1}` : "") : undefined;
+    return windows.length ? { id: "claude", label: "Claude", plan, windows } : null;
   }, [sum]);
 
   // the ring follows the most urgent window across every provider — otherwise it would sit calmly on

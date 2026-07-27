@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useLoops } from "../stores/loops";
-import { startLoop, isLoopActive } from "../lib/loops";
+import { startLoop, isLoopActive } from "../lib/automations";
 
-// Mounts once. Hydrates saved loops, then auto-starts every enabled automation — that's what the
-// "Auto-start on open" toggle promises, whatever the mode (until-done/manual just run their course).
+// Mounts once. Hydrates saved automations, then arms every enabled SCHEDULED one — that's what the
+// "Arm automatically when HyprSpace opens" toggle promises. Manual automations never auto-run.
 export function LoopRunner() {
   useEffect(() => {
     let cancelled = false;
@@ -13,7 +13,7 @@ export function LoopRunner() {
       .then(() => {
         if (cancelled) return;
         for (const def of Object.values(useLoops.getState().loops)) {
-          if (def.enabled && !isLoopActive(def.id)) {
+          if (def.enabled && (def.mode === "cron" || def.mode === "interval") && !isLoopActive(def.id)) {
             startLoop(def.id);
           }
         }

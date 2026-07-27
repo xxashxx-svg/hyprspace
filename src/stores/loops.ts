@@ -1,20 +1,13 @@
-// Loops — HyprSpace's headline feature: agents that run on a schedule, on an interval, or in a
-// re-prompt-until-done loop. A loop is a saved definition (persisted as "loops"); its live runtime
-// state (running / iteration / last output) is in-memory only.
+// Automations — agents that run on a schedule, on an interval, or when you hit Run. An automation
+// is a saved definition (persisted as "loops"); its live runtime state (running / last output) is
+// in-memory only. The engine that drives them is lib/automations.ts.
 import { create } from "zustand";
 import { saveState, loadState } from "../api";
 
-export type LoopMode = "cron" | "interval" | "until-done" | "manual";
-export type SessionMode = "fresh" | "continue"; // fresh claude -p each iteration vs one long-lived session
-export type RunMode = "headless" | "pane";
+export type LoopMode = "cron" | "interval" | "until-done" | "manual"; // until-done is legacy — treated as manual
 
-// when a loop is allowed to stop — at least one hard limit is always required (no infinite loops)
+// when a run is allowed to give up — the engine enforces a wall-clock budget (defaulted if unset)
 export interface LoopStop {
-  maxIterations: number; // hard cap, always set (the mandatory stop)
-  untilCheck?: string; // shell command run after each iteration; exit 0 = done, stop
-  sentinel?: string; // if the agent's output contains this token (e.g. "LOOP_DONE"), stop
-  noProgress: boolean; // auto-stop if N iterations in a row change nothing / keep erroring
-  tokenBudget?: number; // best-effort cap on total tokens (input+output+cache) across the loop; claude only
   timeBudgetMin?: number; // wall-clock cap in minutes
 }
 
@@ -27,19 +20,15 @@ export interface ScheduleCfg {
 export interface LoopDef {
   id: string;
   name: string;
-  enabled: boolean;
-  folder: string; // cwd the loop runs in
-  // "claude" = headless `claude -p` on an Anthropic API key; "claude-sub" = the same headless
-  // `claude -p` but on your logged-in subscription (no key — the spawn-the-CLI path the panes use).
-  // gemini/codex are headless too. ("claude-hooks" is a legacy value, migrated to "claude-sub".)
-  provider: "claude" | "claude-sub" | "claude-hooks" | "gemini" | "codex" | "opencode" | "grok";
-  model?: string; // model override
-  prompt: string; // the instruction sent each iteration
+  enabled: boolean; // scheduled automations with this set arm themselves when the app opens
+  folder: string; // cwd the run happens in
+  // pane-based claude on your logged-in CLI is the only backend — old headless/codex defs are
+  // migrated onto it on load
+  provider: "claude";
+  prompt: string; // the task, typed into the agent's TUI once it's up
   mode: LoopMode;
   schedule?: ScheduleCfg; // for mode "cron"
   intervalSec?: number; // for mode "interval"
-  session: SessionMode; // fresh per iteration, or continue one session
-  run: RunMode; // headless (logs + pill) or its own pane
   worktree: boolean; // run edits in a throwaway git worktree + surface a reviewable diff
   permissionMode?: string; // claude --permission-mode (acceptEdits / plan / bypass / default)
   stop: LoopStop;
@@ -47,39 +36,18 @@ export interface LoopDef {
 
 export type LoopStatus = "idle" | "running" | "paused" | "stopped" | "done" | "error" | "crashloop";
 
-// one entry in the live agentic transcript. tool events flip running → ok/error and gain a duration
-// once their result comes back; thinking/text/result carry the model's words.
-export type LoopEventKind = "iteration" | "tool" | "thinking" | "text" | "result" | "system";
-export interface LoopEvent {
-  id: string;
-  iteration: number;
-  kind: LoopEventKind;
-  ts: number;
-  tool?: string; // raw tool name ("Bash", "Edit", "Read"…) — the UI maps it to a friendly label + icon
-  arg?: string; // the command / file path / pattern
-  status?: "running" | "ok" | "error";
-  durationMs?: number;
-  text?: string; // thinking, assistant text, or the final result
-}
-
-// in-memory runtime for a loop while the app is open
+// in-memory runtime for an automation while the app is open
 export interface LoopRun {
   status: LoopStatus;
-  iteration: number;
   startedAt?: number;
   lastRunAt?: number;
-  nextRunAt?: number; // for scheduled/interval loops
-  lastResult?: string; // short summary of the last iteration
-  tokensUsed?: number; // running total of tokens across the loop (claude only)
-  costUsed?: number; // running total in USD (claude reports total_cost_usd per turn)
-  stale: number; // consecutive no-change iterations (drives the crash-loop guard)
+  nextRunAt?: number; // for scheduled/interval automations
+  lastResult?: string; // short summary of what the agent last did
   worktreePath?: string; // isolated git worktree the run is editing in (when worktree mode is on)
-  // diff summary computed when the run ends (what the agent actually touched)
-  filesChanged?: number;
-  additions?: number;
-  deletions?: number;
-  logs: string[]; // captured output lines (capped) — feeds the classic logs panel
-  events: LoopEvent[]; // structured transcript (capped) — feeds the live agentic view
+  // the pane the run is happening in, so the UI can offer to jump straight to it
+  wsId?: string;
+  paneId?: string;
+  logs: string[]; // engine log lines (capped)
 }
 
 // one finished run, kept across restarts (persisted as "loop-history", capped per automation)
@@ -89,7 +57,7 @@ export interface LoopHistoryEntry {
   endedAt: number;
   status: LoopStatus;
   iterations: number;
-  note?: string; // why it stopped ("check passed", "3 consecutive failures", …)
+  note?: string; // why it stopped ("hit the 60-minute budget", …)
   lastResult?: string;
   tokensUsed?: number;
   costUsed?: number;
@@ -100,15 +68,13 @@ export interface LoopHistoryEntry {
 }
 
 const LOG_CAP = 4000;
-const EVENT_CAP = 1500;
 const HISTORY_CAP = 50; // per automation
-export const loopRunId = (id: string) => `loop:${id}`;
 
 function blankRun(): LoopRun {
-  return { status: "idle", iteration: 0, stale: 0, logs: [], events: [] };
+  return { status: "idle", logs: [] };
 }
 
-// a sane default loop, so "new loop" starts valid (a stop condition is mandatory)
+// a sane default automation, so "new automation" starts valid
 export function newLoop(folder: string): LoopDef {
   return {
     id: crypto.randomUUID(),
@@ -117,14 +83,12 @@ export function newLoop(folder: string): LoopDef {
     folder,
     provider: "claude",
     prompt: "",
-    mode: "until-done",
-    session: "fresh",
-    run: "headless",
+    mode: "manual",
     worktree: true,
     permissionMode: "acceptEdits",
     intervalSec: 60,
     schedule: { everyMin: 60 },
-    stop: { maxIterations: 10, noProgress: true },
+    stop: { timeBudgetMin: 60 },
   };
 }
 
@@ -136,20 +100,17 @@ interface LoopState {
   load: () => Promise<void>;
   upsert: (def: LoopDef) => void;
   remove: (id: string) => void;
-  // runtime mutators (used by the loop runner)
+  // runtime mutators (used by the engine)
   setRun: (id: string, patch: Partial<LoopRun>) => void;
   appendLog: (id: string, line: string) => void;
   appendLogs: (id: string, lines: string[]) => void;
-  pushEvent: (id: string, ev: LoopEvent) => void;
-  pushEvents: (id: string, evs: LoopEvent[]) => void;
-  patchEvent: (id: string, eventId: string, patch: Partial<LoopEvent>) => void;
   resetRun: (id: string) => void;
   addHistory: (loopId: string, entry: LoopHistoryEntry) => void;
 }
 
-// upsert fires per keystroke of the loops editor, and each persist is a full-store crash-safe disk
-// write — debounce it (trailing), same as settingsSync. structural ops flush right away, and the
-// hide/close listeners below make sure a pending write never gets lost.
+// upsert fires per keystroke of the automation editor, and each persist is a full-store crash-safe
+// disk write — debounce it (trailing), same as settingsSync. structural ops flush right away, and
+// the hide/close listeners below make sure a pending write never gets lost.
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 function persistNow() {
   clearTimeout(persistTimer);
@@ -177,10 +138,12 @@ export const useLoops = create<LoopState>()((set, get) => {
         try {
           const c = JSON.parse(raw);
           if (c && typeof c === "object") {
-            // migrate the retired interactive-TUI backend onto the clean headless one
-            for (const d of Object.values(c as Record<string, LoopDef & { goalMode?: boolean }>)) {
-              if (d && (d.provider as string) === "claude-hooks") d.provider = "claude-sub";
-              if (d) delete d.goalMode;
+            // migrate old defs onto the pane-based claude engine: retired providers fold to claude,
+            // and the retired stop guards (maxIterations & co) reduce to the wall-clock budget
+            for (const d of Object.values(c as Record<string, LoopDef>)) {
+              if (!d) continue;
+              d.provider = "claude";
+              d.stop = { timeBudgetMin: d.stop && typeof d.stop === "object" ? d.stop.timeBudgetMin : undefined };
             }
             set({ loops: c as Record<string, LoopDef> });
           }
@@ -229,25 +192,6 @@ export const useLoops = create<LoopState>()((set, get) => {
         return { runs: { ...s.runs, [id]: { ...cur, logs } } };
       }),
     appendLog: (id, line) => get().appendLogs(id, [line]),
-    pushEvents: (id, evs) =>
-      set((s) => {
-        if (evs.length === 0) return {};
-        const cur = s.runs[id] ?? blankRun();
-        const events = [...cur.events, ...evs];
-        if (events.length > EVENT_CAP) events.splice(0, events.length - EVENT_CAP);
-        return { runs: { ...s.runs, [id]: { ...cur, events } } };
-      }),
-    pushEvent: (id, ev) => get().pushEvents(id, [ev]),
-    patchEvent: (id, eventId, patch) =>
-      set((s) => {
-        const cur = s.runs[id];
-        if (!cur) return {};
-        const i = cur.events.findIndex((e) => e.id === eventId);
-        if (i < 0) return {}; // already aged out of the cap — nothing to update
-        const events = cur.events.slice();
-        events[i] = { ...events[i], ...patch };
-        return { runs: { ...s.runs, [id]: { ...cur, events } } };
-      }),
     resetRun: (id) => set((s) => ({ runs: { ...s.runs, [id]: blankRun() } })),
     addHistory: (loopId, entry) => {
       set((s) => {

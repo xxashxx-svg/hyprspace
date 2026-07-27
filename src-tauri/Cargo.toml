@@ -32,6 +32,8 @@ tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
 ed25519-dalek = "2"
 base64 = "0.22"
+# just the websocket handshake digest for the mobile bridge (bridge.rs)
+sha1 = "0.10"
 # just PNG encode/decode, for turning a pasted clipboard image into a temp file
 image = { version = "0.25", default-features = false, features = ["png"] }
 

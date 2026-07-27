@@ -18,6 +18,9 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 const FLUSH_MS: u64 = 4;
 const FLUSH_BYTES: usize = 16 * 1024;
 const READ_BUF: usize = 64 * 1024;
+// per-session replay buffer for the mobile bridge: a phone that subscribes mid-session needs
+// enough recent bytes to redraw a screen. one screen of a TUI is a few KB, so 64K is generous.
+const SCROLLBACK_BYTES: usize = 64 * 1024;
 
 // control messages go over the SAME channel as Json; raw output goes as Raw (ArrayBuffer in JS)
 #[derive(Serialize)]
@@ -66,6 +69,40 @@ struct Session {
     writer: SharedWriter, // shared so the reader thread can answer terminal queries (headless mode)
     killer: Box<dyn ChildKiller + Send + Sync>,
     gate: Arc<PauseGate>,
+    replay: Replay, // recent bytes + current size, so a mobile peer can redraw on subscribe
+}
+
+/// What the bridge (mobile mirror) hears about a session. Data is already coalesced.
+pub enum Tap<'a> {
+    Data(&'a [u8]),
+    Size(u16, u16),
+    Exit(i32),
+}
+
+pub type TapFn = Arc<dyn Fn(&str, Tap<'_>) + Send + Sync>;
+
+/// Rolling tail of a session's output plus its live size. Cheap enough to always keep — it's one
+/// extend_from_slice on bytes we're already copying for the frontend channel.
+#[derive(Clone, Default)]
+struct Replay {
+    buf: Arc<Mutex<Vec<u8>>>,
+    size: Arc<Mutex<(u16, u16)>>,
+}
+
+impl Replay {
+    fn push(&self, chunk: &[u8]) {
+        let mut b = self.buf.lock().unwrap_or_else(|e| e.into_inner());
+        b.extend_from_slice(chunk);
+        if b.len() > SCROLLBACK_BYTES {
+            // drop the oldest half rather than one byte at a time, and cut at the next newline so
+            // the replay doesn't start mid-escape-sequence and paint garbage on the phone
+            let mut cut = b.len() - SCROLLBACK_BYTES / 2;
+            if let Some(nl) = b[cut..].iter().position(|&c| c == b'\n') {
+                cut += nl + 1;
+            }
+            b.drain(..cut);
+        }
+    }
 }
 
 // Headless PTY mode (no xterm): a TUI like claude's emits terminal queries on startup — cursor
@@ -107,6 +144,7 @@ fn answer_terminal_queries(chunk: &[u8], writer: &SharedWriter, trust_sent: &mut
 #[derive(Default, Clone)]
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
+    tap: Arc<Mutex<Option<TapFn>>>,
 }
 
 impl PtyManager {
@@ -114,6 +152,23 @@ impl PtyManager {
     // panic elsewhere must not brick PTY I/O for the rest of the session.
     fn sessions(&self) -> MutexGuard<'_, HashMap<String, Session>> {
         self.sessions.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Register the single listener that mirrors every session's output (the mobile bridge).
+    pub fn set_tap(&self, f: TapFn) {
+        *self.tap.lock().unwrap_or_else(|e| e.into_inner()) = Some(f);
+    }
+
+    fn tapped(&self) -> Option<TapFn> {
+        self.tap.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Recent output + current size for a session — what a phone needs to draw the pane on subscribe.
+    pub fn replay(&self, id: &str) -> Option<(Vec<u8>, u16, u16)> {
+        let r = self.sessions().get(id)?.replay.clone();
+        let buf = r.buf.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let (cols, rows) = *r.size.lock().unwrap_or_else(|e| e.into_inner());
+        Some((buf, cols, rows))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -186,10 +241,22 @@ impl PtyManager {
 
         // coalescer thread: leading-edge flush (snappy echo) + batching under load
         let data_ch = on_event.clone();
+        let replay = Replay { buf: Arc::new(Mutex::new(Vec::new())), size: Arc::new(Mutex::new((cols, rows))) };
+        let co_replay = replay.clone();
+        let co_tap = self.tapped();
+        let co_id = id.clone();
         thread::spawn(move || {
             let mut acc: Vec<u8> = Vec::with_capacity(FLUSH_BYTES);
             let interval = Duration::from_millis(FLUSH_MS);
             let mut last_flush = Instant::now();
+            // one place to fan a flushed batch out: frontend channel, replay tail, mobile bridge
+            let emit = |batch: Vec<u8>| {
+                co_replay.push(&batch);
+                if let Some(t) = &co_tap {
+                    t(&co_id, Tap::Data(&batch));
+                }
+                let _ = data_ch.send(InvokeResponseBody::Raw(batch));
+            };
             loop {
                 match rx.recv_timeout(interval) {
                     Ok(chunk) => {
@@ -197,21 +264,21 @@ impl PtyManager {
                         // flush right away if we've been quiet (interactive echo) or hit the size cap;
                         // otherwise let a fast stream keep accumulating until the next tick.
                         if acc.len() >= FLUSH_BYTES || last_flush.elapsed() >= interval {
-                            let _ = data_ch.send(InvokeResponseBody::Raw(std::mem::take(&mut acc)));
+                            emit(std::mem::take(&mut acc));
                             acc.reserve(FLUSH_BYTES);
                             last_flush = Instant::now();
                         }
                     }
                     Err(RecvTimeoutError::Timeout) => {
                         if !acc.is_empty() {
-                            let _ = data_ch.send(InvokeResponseBody::Raw(std::mem::take(&mut acc)));
+                            emit(std::mem::take(&mut acc));
                             acc.reserve(FLUSH_BYTES);
                             last_flush = Instant::now();
                         }
                     }
                     Err(RecvTimeoutError::Disconnected) => {
                         if !acc.is_empty() {
-                            let _ = data_ch.send(InvokeResponseBody::Raw(acc));
+                            emit(acc);
                         }
                         break;
                     }
@@ -221,16 +288,21 @@ impl PtyManager {
 
         // wait thread: off-thread child.wait() (PseudoConsoleClose can block), then emit exit
         let exit_ch = on_event.clone();
+        let exit_tap = self.tapped();
+        let exit_id = id.clone();
         thread::spawn(move || {
             let code = match child.wait() {
                 Ok(status) => status.exit_code() as i32,
                 Err(_) => -1,
             };
+            if let Some(t) = &exit_tap {
+                t(&exit_id, Tap::Exit(code));
+            }
             send_ctrl(&exit_ch, &Control::Exit { code });
         });
 
         self.sessions()
-            .insert(id, Session { master: pair.master, writer, killer, gate });
+            .insert(id, Session { master: pair.master, writer, killer, gate, replay });
         Ok(())
     }
 
@@ -255,11 +327,20 @@ impl PtyManager {
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let g = self.sessions();
-        let s = g.get(id).ok_or("no such session")?;
-        s.master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| e.to_string())
+        {
+            let g = self.sessions();
+            let s = g.get(id).ok_or("no such session")?;
+            s.master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .map_err(|e| e.to_string())?;
+            *s.replay.size.lock().unwrap_or_else(|e| e.into_inner()) = (cols, rows);
+        }
+        // mobile mirrors the desktop's geometry rather than resizing the PTY itself, so it needs to
+        // hear about this. notify outside the sessions lock — the tap fans out to network peers.
+        if let Some(t) = self.tapped() {
+            t(id, Tap::Size(cols, rows));
+        }
+        Ok(())
     }
 
     pub fn kill(&self, id: &str) -> Result<(), String> {

@@ -4,7 +4,7 @@ import { useWorkspaces } from "../stores/workspace";
 import { useLoops, newLoop } from "../stores/loops";
 import { useProjectConfigs, folderKey } from "../stores/projectConfig";
 import { runAction } from "../lib/startup";
-import { pauseLoop } from "../lib/loops";
+import { pauseLoop } from "../lib/automations";
 import { searchOutput } from "../terminal/buffers";
 import { isWindows, kbd } from "../platform";
 import { Search } from "lucide-react";
@@ -91,7 +91,7 @@ export function CommandPalette() {
           const def = newLoop(folder);
           def.name = "New automation";
           useLoops.getState().upsert(def);
-          useUi.getState().goLoops();
+          useUi.getState().focusLoop(def.id);
         },
       },
       {

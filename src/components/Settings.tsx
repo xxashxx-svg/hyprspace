@@ -19,6 +19,7 @@ import { SkillsManager } from "./SkillsManager";
 import { UsagePanel } from "./UsagePanel";
 import { Blurred } from "./Blurred";
 import { StartupSettings } from "./StartupSettings";
+import { MobileSettings } from "./MobileSettings";
 import { useWorkspaces } from "../stores/workspace";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
@@ -45,6 +46,7 @@ import {
   Atom,
   Rocket,
   ArrowLeft,
+  Smartphone,
 } from "lucide-react";
 
 const FONTS: { label: string; value: string }[] = [
@@ -71,6 +73,7 @@ type Tab =
   | "mcp"
   | "skills"
   | "terminal"
+  | "mobile"
   | "updates"
   | "about";
 
@@ -84,6 +87,7 @@ const ICONS: Record<Tab, ReactNode> = {
   mcp: <Plug strokeWidth={1.75} />,
   skills: <Zap strokeWidth={1.75} />,
   terminal: <SquareTerminal strokeWidth={1.75} />,
+  mobile: <Smartphone strokeWidth={1.75} />,
   updates: <ArrowDownToLine strokeWidth={1.75} />,
   about: <Info strokeWidth={1.75} />,
 };
@@ -98,6 +102,7 @@ const TABS: { id: Tab; label: string; desc: string }[] = [
   { id: "mcp", label: "MCP", desc: "Model Context Protocol servers" },
   { id: "skills", label: "Skills", desc: "Snippets and Claude skills" },
   { id: "terminal", label: "Terminal", desc: "Cursor style and behavior" },
+  { id: "mobile", label: "Mobile", desc: "Sync your spaces and terminals to your phone" },
   { id: "updates", label: "Updates", desc: "Version and update checks" },
   { id: "about", label: "About", desc: "About HyprSpace" },
 ];
@@ -648,6 +653,8 @@ export function Settings() {
             )}
 
             {tab === "startup" && <StartupSettings />}
+
+            {tab === "mobile" && <MobileSettings />}
 
             {tab === "providers" && (
               <>

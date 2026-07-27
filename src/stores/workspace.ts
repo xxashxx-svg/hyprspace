@@ -25,6 +25,9 @@ export interface Session {
   claudeSessionId?: string;
   // sessions sharing a group id stack as tabs in one grid slot (opt-in via the pane + button)
   group?: string;
+  // an automation's run pane: mounts even in a space you haven't opened, and is never persisted
+  // (a saved one would relaunch its agent on the next app start)
+  ephemeral?: boolean;
 }
 
 // which viewer a path opens in — images get the image viewer, everything else the code editor
@@ -125,7 +128,14 @@ interface WorkspaceState {
   activeId: string | null;
   focusedSessionId: string | null;
   hydrated: boolean;
-  addWorkspace: (name?: string, cwd?: string) => string;
+  /** spaces whose panes are mounted. Lazy by design — a dozen unopened spaces would spawn many GB
+   *  of agent processes at startup — so anything that needs a space's panes running (opening it, or
+   *  an automation firing into it) has to say so explicitly. An array, not a Set: selectors must
+   *  return a stable reference or the grid re-renders forever. */
+  activatedIds: string[];
+  activateWorkspace: (id: string) => void;
+  /** `activate: false` adds it without making it the active space — used by automations */
+  addWorkspace: (name?: string, cwd?: string, opts?: { activate?: boolean }) => string;
   addOpenSpace: (name?: string) => string;
   removeWorkspace: (id: string) => void;
   renameWorkspace: (id: string, name: string) => void;
@@ -133,8 +143,12 @@ interface WorkspaceState {
   setActive: (id: string) => void;
   setLayout: (id: string, count: number, presetId: string) => void;
   reorderWorkspaces: (fromId: string, toId: string) => void;
-  addSession: (wsId: string, command?: string, cwd?: string) => void;
-  addTab: (wsId: string, anchorSessionId: string, command?: string, cwd?: string) => void;
+  /** returns the new pane's id. `focus: false` launches it without stealing the view — used by
+   *  automations, which must never yank you out of what you're doing. */
+  addSession: (wsId: string, command?: string, cwd?: string, opts?: { focus?: boolean; ephemeral?: boolean }) => string;
+  /** stack a pane as a tab in the anchor's slot. returns the new pane's id; `focus: false` leaves
+   *  the slot showing whatever it was showing — used by automations. */
+  addTab: (wsId: string, anchorSessionId: string, command?: string, cwd?: string, opts?: { focus?: boolean; ephemeral?: boolean }) => string;
   // open a file as a viewer tab (image → image viewer, anything else → code editor). `anchor` pins
   // it into a specific pane's slot (ctrl+click in a terminal); without one it lands on the focused
   // pane of the active space.
@@ -154,10 +168,11 @@ interface WorkspaceState {
 export const useWorkspaces = create<WorkspaceState>()((set) => ({
   workspaces: [],
   activeId: null,
+  activatedIds: [],
   focusedSessionId: null,
   hydrated: false,
 
-  addWorkspace: (name, cwd = "") => {
+  addWorkspace: (name, cwd = "", opts) => {
     const id = uid();
     set((s) => {
       const color = COLORS[s.workspaces.length % COLORS.length];
@@ -169,7 +184,10 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         kind: "project",
         sessions: [],
       };
-      return { workspaces: [...s.workspaces, ws], activeId: id };
+      return {
+        workspaces: [...s.workspaces, ws],
+        ...(opts?.activate === false ? {} : { activeId: id }),
+      };
     });
     return id;
   },
@@ -214,9 +232,13 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       ),
     })),
 
+  activateWorkspace: (id) =>
+    set((s) => (s.activatedIds.includes(id) ? {} : { activatedIds: [...s.activatedIds, id] })),
+
   setActive: (id) =>
     set((s) => ({
       activeId: id,
+      activatedIds: s.activatedIds.includes(id) ? s.activatedIds : [...s.activatedIds, id],
       // stamp it so home can offer the spaces you were actually just in
       workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, lastOpenedAt: Date.now() } : w)),
     })),
@@ -243,16 +265,19 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       return { workspaces: arr };
     }),
 
-  addSession: (wsId, command, cwd) =>
+  addSession: (wsId, command, cwd, opts) => {
+    const id = uid();
     set((s) => {
-      const id = uid();
       const effCwd = cwd ?? s.workspaces.find((w) => w.id === wsId)?.cwd ?? "";
       const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
       const { provider, title } = deriveProviderTitle(command, effCwd, used);
 
       const workspaces = s.workspaces.map((w) => {
         if (w.id !== wsId) return w;
-        const sessions = [...w.sessions, { id, title, command, cwd: cwd ?? w.cwd, provider }];
+        const sessions = [
+          ...w.sessions,
+          { id, title, command, cwd: cwd ?? w.cwd, provider, ...(opts?.ephemeral ? { ephemeral: true } : {}) },
+        ];
         // instant placeholder: name an untouched open space after its folder. The AI namer
         // (ai/autoName) upgrades this to a descriptive title once there's real activity.
         let name = w.name;
@@ -265,32 +290,41 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         }
         return { ...w, name, sessions };
       });
-      return { workspaces, focusedSessionId: id };
-    }),
+      return { workspaces, focusedSessionId: opts?.focus === false ? s.focusedSessionId : id };
+    });
+    return id;
+  },
 
   // open a new pane stacked as a tab in the anchor's slot, inheriting its folder. if the anchor
   // isn't grouped yet we mint a group id and stamp it on BOTH panes so they form the group together.
-  addTab: (wsId, anchorSessionId, command, cwd) =>
+  addTab: (wsId, anchorSessionId, command, cwd, opts) => {
+    const id = uid();
     set((s) => {
       const w = s.workspaces.find((x) => x.id === wsId);
       const anchor = w?.sessions.find((ss) => ss.id === anchorSessionId);
       if (!w || !anchor) return {};
-      const id = uid();
       const group = anchor.group ?? anchor.id; // group id == the anchor session id, so the slot's react key never changes when it goes solo->tabbed or when the first tab is closed
       const effCwd = cwd ?? anchor.cwd ?? w.cwd ?? "";
       const used = new Set(s.workspaces.flatMap((x) => x.sessions.map((ss) => ss.title)));
       const { provider, title } = deriveProviderTitle(command, effCwd, used);
-      const tab: Session = { id, title, command, cwd: anchor.cwd ?? w.cwd, provider, group };
+      const tab: Session = { id, title, command, cwd: effCwd, provider, group, ...(opts?.ephemeral ? { ephemeral: true } : {}) };
       const workspaces = s.workspaces.map((x) => {
         if (x.id !== wsId) return x;
         const sessions = [...x.sessions];
         const ai = sessions.findIndex((ss) => ss.id === anchorSessionId);
         if (!anchor.group) sessions[ai] = { ...sessions[ai], group }; // pull the anchor into the group
         sessions.splice(ai + 1, 0, tab); // insert right after the anchor
-        return { ...x, sessions, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [group]: id } };
+        // a background tab must not become the slot's visible one
+        const activeTabByGroup =
+          opts?.focus === false
+            ? (x.activeTabByGroup ?? {})
+            : { ...(x.activeTabByGroup ?? {}), [group]: id };
+        return { ...x, sessions, activeTabByGroup };
       });
-      return { workspaces, focusedSessionId: id };
-    }),
+      return { workspaces, focusedSessionId: opts?.focus === false ? s.focusedSessionId : id };
+    });
+    return id;
+  },
 
   // ctrl+click an image path in a terminal → open it as an image-viewer tab in that pane's slot.
   // same group logic as addTab; dedupes on the image path so the same file doesn't stack twice.

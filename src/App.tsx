@@ -9,6 +9,8 @@ import { taskFromFile } from "./lib/startup";
 import { useUi } from "./stores/ui";
 import { useSettings } from "./stores/settings";
 import { initSettingsSync } from "./stores/settingsSync";
+import { initBridge } from "./stores/bridge";
+import { initMobileBridge } from "./mobileBridge";
 import { useGit } from "./stores/git";
 import { useActionEditor } from "./stores/actionEditor";
 import { usePreview } from "./stores/preview";
@@ -152,10 +154,11 @@ export default function App() {
       const { workspaces, activeId } = useWorkspaces.getState();
       // image tabs are viewer-only and their file is usually a temp clip that gets swept later —
       // persisting them means reopening the app to tabs that can only say "couldn't open image".
-      // they're one ctrl+click to get back, so drop them from the saved layout.
+      // they're one ctrl+click to get back, so drop them from the saved layout. ephemeral panes
+      // (automation runs) are dropped too — saving one would relaunch its agent on next start.
       const saved = workspaces.map((w) =>
-        w.sessions.some((s) => s.image)
-          ? { ...w, sessions: w.sessions.filter((s) => !s.image) }
+        w.sessions.some((s) => s.image || s.ephemeral)
+          ? { ...w, sessions: w.sessions.filter((s) => !s.image && !s.ephemeral) }
           : w,
       );
       const blob = JSON.stringify({ workspaces: saved, activeId });
@@ -216,6 +219,20 @@ export default function App() {
     return () => {
       cancelled = true;
       dispose?.();
+    };
+  }, []);
+
+  // ---- mobile bridge: LAN server for the phone app, plus the state mirror it reads ----
+  useEffect(() => {
+    let cancelled = false;
+    let disposers: (() => void)[] = [];
+    void initBridge().then((stop) => {
+      if (cancelled) return void stop();
+      disposers = [stop, initMobileBridge()];
+    });
+    return () => {
+      cancelled = true;
+      disposers.forEach((d) => d());
     };
   }, []);
 

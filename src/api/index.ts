@@ -75,10 +75,10 @@ export function killPty(id: string): Promise<void> {
 }
 
 
-// ---- loop agents: run ONE provider turn (args = full argv; prompt piped over stdin) ----
-// streams stdout+stderr lines to onLine for the turn's life; the loop runner drives the loop around it.
-// `secrets` maps an env-var name → a keychain secret name (e.g. { ANTHROPIC_API_KEY: "anthropic" }).
-// Rust reads each from the OS keychain and injects it into the child env — the value never enters JS.
+// ---- headless agent runner: ONE provider turn (args = full argv; prompt piped over stdin) ----
+// streams stdout+stderr lines to onLine for the turn's life. Used by the pane auto-namer
+// (ai/autoNameSession.ts). `secrets` maps an env-var name → an OS-keychain secret name; Rust reads
+// each and injects it into the child env — the value never enters JS (current callers pass {}).
 export function agentStart(
   id: string,
   cwd: string,
@@ -96,16 +96,40 @@ export function agentStop(id: string): Promise<void> {
   return invoke("agent_stop", { id });
 }
 
-// OS keychain — store/check/clear a named secret (write-only from the UI; the value never comes back)
-export function secretSet(name: string, value: string): Promise<void> {
-  return invoke("secret_set", { name, value });
+// ---- mobile bridge: the LAN server the Android app talks to (src-tauri/src/bridge.rs) ----
+export interface BridgePeer {
+  id: number;
+  name: string;
+  addr: string;
+  since: number; // unix seconds
 }
-export function secretHas(name: string): Promise<boolean> {
-  return invoke("secret_has", { name });
+export interface BridgeInfo {
+  running: boolean;
+  port: number;
+  protocol: number;
+  host: string;
+  address: string | null; // the LAN ip a phone should dial
+  peers: BridgePeer[];
 }
-export function secretClear(name: string): Promise<void> {
-  return invoke("secret_clear", { name });
+export function bridgeStatus(): Promise<BridgeInfo> {
+  return invoke("bridge_status");
 }
+// the token is minted + persisted by the frontend (stores/bridge.ts); Rust only compares against it
+export function bridgeStart(port: number, token: string): Promise<BridgeInfo> {
+  return invoke("bridge_start", { port, token });
+}
+export function bridgeStop(): Promise<void> {
+  return invoke("bridge_stop");
+}
+// push the state mirror (spaces / panes / agent status / automations) out to connected phones
+export function bridgePublish(state: string): Promise<void> {
+  return invoke("bridge_publish", { state });
+}
+// answer a `bridge://req` the phone made
+export function bridgeReply(peer: number, id: number, ok: boolean, data: unknown): Promise<void> {
+  return invoke("bridge_reply", { peer, id, ok, data });
+}
+
 export function getHomeDir(): Promise<string> {
   return invoke("get_home_dir");
 }
@@ -220,25 +244,6 @@ export function gitChanges(cwd: string): Promise<FileChange[]> {
 
 export function gitDiff(cwd: string, path: string): Promise<string> {
   return invoke("git_diff", { cwd, path });
-}
-
-export function detectRunCmd(cwd: string): Promise<string> {
-  return invoke("detect_run_cmd", { cwd });
-}
-
-// run a one-shot shell command in cwd; resolves with its exit code (-1 if it can't start).
-// the Loops "until check passes" guard uses this (exit 0 = the goal is met → stop).
-export function runCheck(cwd: string, command: string): Promise<number> {
-  return invoke("run_check", { cwd, command });
-}
-
-// drop an automation run's temp hook/notify files (settings, markers) once it ends
-export function cleanupHookRun(runId: string): Promise<void> {
-  return invoke("cleanup_hook_run", { runId });
-}
-// settings file with a Notification hook for an interactive-terminal loop (pings when Claude needs you)
-export function prepareNotifySettings(runId: string): Promise<{ settings: string; marker: string; done: string }> {
-  return invoke("prepare_notify_settings", { runId });
 }
 
 // git write ops for the topbar "Commit & push" menu + the Source Control panel

@@ -1,0 +1,117 @@
+/* Settings → Mobile (pairing + connected phones). Reuses the .set-* rows; only the QR block and
+   the little field/peer bits are local. */
+
+.mob-pair {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+}
+
+/* white quiet zone baked into the svg — a camera needs the contrast, and the app is dark */
+.mob-qr {
+  flex: 0 0 auto;
+  border-radius: var(--radius-2);
+  background: #fff;
+  padding: 8px;
+  box-shadow: var(--shadow-1);
+}
+
+.mob-pair-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mob-pair-title {
+  font-size: var(--text-md);
+  color: var(--text-1);
+}
+
+.mob-pair-desc {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  margin-bottom: var(--space-2);
+}
+
+.mob-field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mob-field-key {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 0 0 62px;
+}
+
+.mob-field code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  padding: 2px 6px;
+}
+
+/* the pairing code is long — let it wrap rather than blow the layout out */
+.mob-token {
+  word-break: break-all;
+}
+
+.mob-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.mob-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mob-port {
+  width: 84px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  padding: 5px 8px;
+  text-align: center;
+  outline: none;
+}
+
+.mob-port:focus {
+  border-color: var(--accent);
+}
+
+.mob-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.mob-peer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mob-live {
+  font-size: var(--text-xs);
+  color: var(--status-ok);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

@@ -6,7 +6,7 @@
 HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
 Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
 resume, drag-to-swap, a multi-agent **launcher** (fan out N agents in a folder at once), scheduled
-**Loops**, an integrated **code editor**, a command palette, and a git review dock. Neutral,
+**Automations**, an integrated **code editor**, a command palette, and a git review dock. Neutral,
 T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
@@ -78,7 +78,8 @@ src/                         React frontend
   components/                UI: Titlebar, Rail (sidebar), PaneGrid, TerminalPane, HomePage,
                              ReviewDock, Settings, NewProjectDialog, CommandPalette,
                              LaunchWorkspace (multi-agent launcher), CodeEditor (dock editor),
-                             LoopsPage + LoopsManager + LoopRunner (Loops), StartupSettings, Logo, …
+                             LoopsPage + AutomationEditor + LoopRunView + LoopRunner (Automations),
+                             StartupSettings, Logo, …
   stores/                    Zustand: workspace, ui, settings, settingsSync, git, activity, skills,
                              auth, updater, notifications, confirm, loops, launchPresets,
                              projectConfig, services
@@ -89,15 +90,14 @@ src/                         React frontend
   themes.ts                  theme definitions applied over styles/tokens.css
   ai/                        autoNameSession.ts — titles a pane from the user's first prompt (Codex)
   lib/                       small helpers (projects.ts = where new projects go, time.ts) +
-                             loops.ts (the Loops engine)
+                             automations.ts (the Automations engine) + startup.ts (startup actions)
 
 src-tauri/                   Rust backend
   src/lib.rs                 all #[tauri::command] registrations + app lifecycle (kill_all on exit)
   src/pty.rs                 PtyManager — ConPTY/portable-pty, byte coalescing
-  src/agent.rs               AgentManager — runs ONE provider turn (claude -p …) for the Loops engine
-  src/loophook.rs            "Claude (hooks)" loop backend — one self-looping `claude -p` session
-                             driven by a Stop hook that decides continue-vs-stop each turn
-  src/services.rs            ServiceManager — per-folder startup services (background processes)
+  src/agent.rs               AgentManager — one headless provider turn (used by the pane auto-namer)
+  src/agenthook.rs           loopback listener feeding claude's hooks + status line into the app
+                             (live agent state, usage meter, automation completion)
   src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
                              providers.rs, mcp.rs, skills.rs, usage.rs (per-provider usage read from
                              local CLI files, display-only) (+ mod.rs re-exports + shared helpers)
@@ -132,13 +132,14 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
   panes get friendly names (`lib/names.ts`).
 - **Editor.** `CodeEditor` (CodeMirror) lives in the Review dock's "Editor" tab; clicking a file in
   the Files tree opens it (`read_file`/`write_file` in `devtools/fs.rs`), with save / autosave.
-- **Loops.** Scheduled / interval / until-done / manual agents. A `LoopDef` (persisted `"loops"`,
-  `stores/loops.ts`) is driven by the engine in `lib/loops.ts`, which runs each iteration through the
-  headless agent runner (`agent.rs`). Pluggable backends: **Claude** (on a user Anthropic API key from
-  the OS keychain — never the subscription), **Codex**, **Gemini**. Every loop **must** declare a stop
-  limit (mandatory max-iterations; optional sentinel / `untilCheck` command / time budget / no-progress
-  auto-stop) — it can't run forever. Optional worktree isolation + Review-changes. On the dedicated
-  **Loops** page (rail); runs only while the app is open. See ARCHITECTURE.
+- **Automations.** Scheduled / interval / manual agents. A `LoopDef` (persisted `"loops"`,
+  `stores/loops.ts`) is driven by the engine in `lib/automations.ts`, which runs each fire in a
+  **real claude pane** (ephemeral background tab, on the subscription — no API key, no headless
+  path): it launches the constant `claudeCmd`, waits for the TUI's status line, **types the task in
+  as keystrokes** (never onto a shell command line), and watches the pane's agent hooks for the
+  turn to end. Every run has a wall-clock budget (defaulted) and hitting it **closes the pane** — it
+  can't run forever. Optional worktree isolation + Review-changes. On the dedicated **Automations**
+  page (rail); runs only while the app is open. See ARCHITECTURE.
 - **IPC discipline.** Components call `src/api/index.ts` wrappers, never `invoke()` directly. Sync
   Tauri commands run on the UI thread, so anything filesystem-heavy is `async fn` + `spawn_blocking`.
 - **Windows note.** `claude` is a `.cmd` shim, so it's spawned via `cmd /c claude …` so PATHEXT
@@ -160,9 +161,10 @@ Full design details (session/cwd pinning, the Loops engine + hook backend, PTY c
   not a dev change.
 - **Persisted state names** are sanitized to a token in `persist.rs`, and large blobs are capped on
   save so the store can't grow unbounded.
-- **A Loop can never run forever.** `LoopStop.maxIterations` is mandatory by construction, and the
-  engine also auto-stops on no-progress (3 consecutive unchanged/empty iterations → `crashloop`),
-  an optional sentinel token in the output, and an optional time budget. Don't add an infinite path.
+- **An Automation can never run forever.** Every run gets a wall-clock budget (`stop.timeBudgetMin`,
+  defaulted to 60 minutes when unset), and hitting it — like Stop — **closes the run's pane**, so
+  the agent dies with the run. Don't add an infinite path, and don't let a stop path leave the
+  pane's agent alive.
 
 ## Docs index
 - [docs/README.md](./docs/README.md) — index of everything below

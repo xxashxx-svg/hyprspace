@@ -122,6 +122,8 @@ export interface UsageSummary {
   five?: UsageWindow;
   /** every other window this plan reports, already ordered and labelled */
   others: { key: string; label: string; win: UsageWindow }[];
+  /** the models actually in use right now — the panel's honest answer to "what's burning this" */
+  models: string[];
   at: number; // freshest report that carried windows
   stale: boolean;
 }
@@ -153,9 +155,20 @@ export function summarize(
     .concat(Object.keys(windows).filter((k) => k !== "five_hour" && !ORDER.includes(k)))
     .map((key) => ({ key, label: windowLabel(key), win: windows[key] }));
 
+  // distinct models across panes that are still live; most-recent first
+  const models = [
+    ...new Set(
+      all
+        .filter(([, u]) => now - u.at < STALE_MS && u.model)
+        .sort((a, b) => b[1].at - a[1].at)
+        .map(([, u]) => u.model as string),
+    ),
+  ];
+
   return {
     five,
     others,
+    models,
     at: newest[1].at,
     stale: now - newest[1].at >= STALE_MS,
   };

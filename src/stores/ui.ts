@@ -4,7 +4,6 @@ interface UiState {
   view: "home" | "space" | "loops" | "launch"; // home dashboard, a workspace, the loops page, or the multi-agent launcher
   launchReturn: "home" | "space" | "loops"; // where the launcher's Cancel/Esc sends you back to
   openLoopId: string | null; // the loop selected in the Loops page master-detail
-  loopsTab: "runs" | "manage"; // the live runs view vs the classic config manager
   railCollapsed: boolean;
   maximizedId: string | null; // session id of the zoomed-to-fullscreen pane
   fileDropId: string | null; // session id of the pane a file drag is currently over
@@ -20,8 +19,7 @@ interface UiState {
   goHome: () => void;
   goSpace: () => void;
   goLoops: () => void;
-  focusLoop: (id: string) => void; // open a specific loop in the Loops page (runs view)
-  setLoopsTab: (t: "runs" | "manage") => void;
+  focusLoop: (id: string) => void; // open a specific loop in the Loops page
   toggleRail: () => void;
   toggleMaximized: (id: string) => void;
   clearMaximized: () => void;
@@ -50,7 +48,6 @@ export const useUi = create<UiState>()((set) => ({
   view: "home", // land on the dashboard
   launchReturn: "home",
   openLoopId: null,
-  loopsTab: "runs",
   railCollapsed: false,
   maximizedId: null,
   fileDropId: null,
@@ -66,8 +63,7 @@ export const useUi = create<UiState>()((set) => ({
   goHome: () => set({ view: "home" }),
   goSpace: () => set({ view: "space" }),
   goLoops: () => set({ view: "loops" }),
-  focusLoop: (id) => set({ view: "loops", loopsTab: "runs", openLoopId: id }),
-  setLoopsTab: (t) => set({ loopsTab: t }),
+  focusLoop: (id) => set({ view: "loops", openLoopId: id }),
   toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
   toggleMaximized: (id) => set((s) => ({ maximizedId: s.maximizedId === id ? null : id })),
   clearMaximized: () => set({ maximizedId: null }),

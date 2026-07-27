@@ -1,9 +1,9 @@
 mod agent;
 mod agenthook;
 mod ai;
+mod bridge;
 mod devtools;
 mod license;
-mod loophook;
 mod oauth;
 mod persist;
 mod pty;
@@ -11,6 +11,7 @@ mod pty;
 use std::collections::HashMap;
 
 use agent::AgentManager;
+use bridge::Bridge;
 use persist::Store;
 use pty::PtyManager;
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -112,46 +113,6 @@ async fn agent_stop(state: State<'_, AgentManager>, id: String) -> Result<(), St
     tauri::async_runtime::spawn_blocking(move || mgr.stop(&id))
         .await
         .map_err(|e| e.to_string())
-}
-
-// ---- OS keychain: store loop-agent API keys (Windows Credential Manager / macOS Keychain) ----
-const KEYCHAIN_SVC: &str = "hyprspace";
-
-// keychain calls are out-of-process RPCs (Credential Manager / Keychain) that can stall on slow
-// credential providers — spawn_blocking so a slow keychain never blocks the window
-#[tauri::command]
-async fn secret_set(name: String, value: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        keyring::Entry::new(KEYCHAIN_SVC, &name)
-            .and_then(|e| e.set_password(&value))
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn secret_has(name: String) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        keyring::Entry::new(KEYCHAIN_SVC, &name)
-            .and_then(|e| e.get_password())
-            .is_ok()
-    })
-    .await
-    .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn secret_clear(name: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let entry = keyring::Entry::new(KEYCHAIN_SVC, &name).map_err(|e| e.to_string())?;
-        match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -484,17 +445,7 @@ fn fix_path_env() {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Stop-hook helper: when a "Claude (hooks)" loop fires its Stop hook, Claude re-invokes THIS
-    // binary as `loop-hook <config>`. Handle it and exit before any Tauri/window setup.
     let argv: Vec<String> = std::env::args().collect();
-    if argv.get(1).map(String::as_str) == Some("loop-hook") {
-        loophook::run_loop_hook(argv.get(2).cloned());
-        return; // unreachable — run_loop_hook exits the process
-    }
-    if argv.get(1).map(String::as_str) == Some("loop-notify") {
-        loophook::run_loop_notify(argv.get(2).cloned());
-        return; // unreachable — run_loop_notify exits the process
-    }
     // claude hook → post the payload to the running app, then exit
     if argv.get(1).map(String::as_str) == Some("agent-hook") {
         let port = argv.get(2).and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
@@ -512,10 +463,6 @@ pub fn run() {
             agenthook::run_status_line(port, &pane);
         }
         return;
-    }
-    if argv.get(1).map(String::as_str) == Some("loop-done") {
-        loophook::run_loop_done(argv.get(2).cloned());
-        return; // unreachable — run_loop_done exits the process
     }
 
     // adopt the user's real shell PATH so a GUI launch on macOS/Linux can find the provider CLIs
@@ -551,10 +498,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|_app| {
             agenthook::start(_app.handle().clone());
+            bridge::attach(_app.handle()); // PTY → mobile mirror tap (idle until a phone connects)
             Ok(())
         })
         .manage(PtyManager::default())
         .manage(AgentManager::default())
+        .manage(Bridge::default())
         .manage(Store::new())
         .invoke_handler(tauri::generate_handler![
             create_pty,
@@ -566,9 +515,6 @@ pub fn run() {
             agent_start,
             agent_stop,
             clipboard_image_to_temp,
-            secret_set,
-            secret_has,
-            secret_clear,
             get_home_dir,
             shell_name,
             claude_has_history,
@@ -582,8 +528,6 @@ pub fn run() {
             license::entitlement_verify,
             devtools::git_changes,
             devtools::git_diff,
-            devtools::detect_run_cmd,
-            devtools::run_check,
             devtools::git_commit,
             devtools::git_push,
             devtools::git_create_pr,
@@ -601,6 +545,11 @@ pub fn run() {
             devtools::path_exists,
             claude_image_path,
             agenthook::agent_hook_settings,
+            bridge::bridge_status,
+            bridge::bridge_start,
+            bridge::bridge_stop,
+            bridge::bridge_publish,
+            bridge::bridge_reply,
             devtools::write_file,
             devtools::file_op,
             devtools::find_files,
@@ -615,11 +564,8 @@ pub fn run() {
             devtools::skill_delete,
             devtools::worktree_create,
             devtools::worktree_remove,
-            devtools::worktree_list,
             ai::ai_name_space,
             oauth::oauth_listen,
-            loophook::cleanup_hook_run,
-            loophook::prepare_notify_settings
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -630,6 +576,7 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     app.state::<PtyManager>().kill_all();
                     app.state::<AgentManager>().kill_all();
+                    app.state::<Bridge>().stop(); // close the LAN port and hang up on any phone
                 }
                 _ => {}
             }

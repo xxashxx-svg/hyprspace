@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "HyprSpace",
+    "slug": "hyprspace",
+    "scheme": "hyprspace",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#161616",
+    "primaryColor": "#1b4ed8",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hyprspace.mobile"
+    },
+    "android": {
+      "package": "com.hyprspace.mobile",
+      "versionCode": 1,
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#161616",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#161616"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "HyprSpace uses the camera once, to scan the pairing QR code shown by the desktop app."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
+  }
+}

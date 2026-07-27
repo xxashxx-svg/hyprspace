@@ -72,10 +72,12 @@ export function PaneGrid() {
   // run. Otherwise EVERY persisted session across EVERY space spawns a live process at launch — with
   // a dozen spaces that's many GB of Claude processes and a freeze. Once opened, a space stays
   // mounted so its state is kept and panes can move between opened spaces without a restart.
-  const [activated, setActivated] = useState<Set<string>>(() => (activeId ? new Set([activeId]) : new Set()));
+  // (ephemeral automation panes are the one exception — they mount without activating the space.)
+  const activated = useWorkspaces((s) => s.activatedIds);
+  const activateWorkspace = useWorkspaces((s) => s.activateWorkspace);
   useEffect(() => {
-    if (activeId) setActivated((p) => (p.has(activeId) ? p : new Set(p).add(activeId)));
-  }, [activeId]);
+    if (activeId) activateWorkspace(activeId);
+  }, [activeId, activateWorkspace]);
 
   // ONE stable reference per handler (store actions + setState setters are stable, drag is a ref),
   // so memoized TerminalPanes don't re-render when a sibling is focused or a drag updates overId.
@@ -176,9 +178,12 @@ export function PaneGrid() {
         }}
       >
         {workspaces.flatMap((w) => {
-          if (!activated.has(w.id)) return []; // not opened yet this run — don't mount or spawn it
+          // a space you haven't opened this run mounts nothing — EXCEPT ephemeral automation panes,
+          // which must spawn to run; mounting just those avoids spawning every saved pane in it
+          const sessions = activated.includes(w.id) ? w.sessions : w.sessions.filter((s) => s.ephemeral);
+          if (!sessions.length) return [];
           const isActiveWs = w.id === activeId;
-          const slots = toSlots(w.sessions);
+          const slots = toSlots(sessions);
           const layout = resolveLayout(slots.length, w.layouts?.[slots.length]);
           return slots.map((slot, si) => {
             const single = slot.sessions.length === 1; // drag/reorder is still per-pane

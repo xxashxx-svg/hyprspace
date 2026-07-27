@@ -9,12 +9,6 @@ use serde::Serialize;
 use serde_json::Value;
 use base64::Engine;
 
-#[derive(Serialize)]
-pub struct Worktree {
-    path: String,
-    branch: String,
-}
-
 // Create an isolated worktree off the workspace repo so an agent can work without
 // colliding with others. Worktrees live under ~/.hyprspace/worktrees/<repo>-<branch>
 // (outside the repo, so they don't pollute its own git status).
@@ -72,33 +66,6 @@ pub async fn worktree_remove(cwd: String, path: String) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn worktree_list(cwd: String) -> Result<Vec<Worktree>, String> {
-    tauri::async_runtime::spawn_blocking(move || worktree_list_blocking(cwd))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-fn worktree_list_blocking(cwd: String) -> Vec<Worktree> {
-    if cwd.is_empty() {
-        return vec![];
-    }
-    let out = git(&cwd, &["worktree", "list", "--porcelain"]).unwrap_or_default();
-    let mut res = vec![];
-    let mut path = String::new();
-    for line in out.lines() {
-        if let Some(p) = line.strip_prefix("worktree ") {
-            path = p.to_string();
-        } else if let Some(b) = line.strip_prefix("branch ") {
-            res.push(Worktree {
-                path: path.clone(),
-                branch: b.replace("refs/heads/", ""),
-            });
-        }
-    }
-    res
 }
 
 // Best-guess command to run the project (for the Run panel).

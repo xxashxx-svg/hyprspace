@@ -53,19 +53,67 @@
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  width: 244px;
+  width: 268px;
   z-index: 500;
   display: grid;
-  gap: 11px;
-  padding: 12px;
+  grid-template-columns: minmax(0, 1fr); /* a long chip must never widen the panel */
+  overflow: hidden;
+  gap: 0;
+  padding: 4px;
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: var(--radius-2);
   box-shadow: var(--shadow-2);
 }
+
+/* one provider = one card, so two providers read as two things rather than one long list */
+.um-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 11px 9px;
+  border-top: 1px solid var(--border-1);
+  margin-top: 4px;
+}
+.um-hdr.first {
+  border-top: 0;
+  margin-top: 0;
+}
+.um-logo {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.um-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.um-plan {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+}
+
 .um-grp {
   display: grid;
-  gap: 5px;
+  gap: 7px;
+  padding: 7px 11px 11px;
 }
 .um-row {
   display: flex;
@@ -74,17 +122,21 @@
   gap: 8px;
 }
 .um-lbl {
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--text-2);
-  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
+/* the number is the point of the panel — give it real size */
 .um-val {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1;
   color: var(--text-1);
+  letter-spacing: -0.02em;
 }
 .um-val.warn {
   color: var(--status-busy);
@@ -92,74 +144,56 @@
 .um-val.crit {
   color: var(--status-error);
 }
+.um-val.muted {
+  color: var(--text-3);
+}
 
 /* bars */
 .um-bar {
   position: relative;
-  height: 6px;
+  height: 7px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   overflow: hidden;
   display: flex;
 }
 .um-bar i {
   height: 100%;
   display: block;
-  background: var(--text-1);
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--text-2), var(--text-1));
   transition: width 0.35s var(--ease);
 }
 .um-bar.warn i {
-  background: var(--status-busy);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--status-busy) 70%, transparent), var(--status-busy));
 }
 .um-bar.crit i {
-  background: var(--status-error);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--status-error) 70%, transparent), var(--status-error));
 }
-/* where the clock is — fill past this means you're outspending the window */
+/* where the clock is — a notch, outlined so it stays visible over both track and fill */
 .um-tick {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  border-radius: 1px;
   background: var(--text-1);
-  opacity: 0.9;
+  box-shadow: 0 0 0 1px var(--surface-2);
 }
 
+.um-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: -1px;
+}
 .um-stale {
   font-size: 10.5px;
   color: var(--text-2);
   border-top: 1px solid var(--border-1);
-  padding-top: 8px;
-}
-.um-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-2);
-}
-
-/* provider heading inside the popover — separates claude's windows from codex's */
-.um-hdr {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  font-weight: 600;
-  border-top: 1px solid var(--border-1);
-  padding-top: 10px;
-}
-.um-hdr.first {
-  border-top: 0;
-  padding-top: 0;
-}
-.um-plan {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--text-3);
+  margin-top: 4px;
+  padding: 9px 11px 4px;
 }
 .um-sub.stale {
   color: var(--text-3);

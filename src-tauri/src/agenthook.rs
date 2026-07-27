@@ -6,8 +6,8 @@
 // listener emits a Tauri event, so the sidebar learns about a state change the moment it happens.
 //
 // Why not the transcript: pane sessions run with transcript saving off, so sidechain records never
-// land on disk. Why not marker files (what loophook.rs does): that's poll-based, which is fine for a
-// single loop run and far too laggy for a dozen live panes.
+// land on disk. Why not marker files (what the retired loophook.rs did): that's poll-based, which is
+// fine for a single loop run and far too laggy for a dozen live panes.
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;

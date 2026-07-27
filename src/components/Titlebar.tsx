@@ -195,7 +195,7 @@ function LoopsIndicator() {
     return n;
   });
   const running = useLoops((s) => Object.values(s.runs).some((r) => r.status === "running"));
-  // "name · iteration" when exactly one automation is active, null otherwise
+  // the automation's name when exactly one is active, null otherwise
   const soloLabel = useLoops((s) => {
     let id: string | null = null;
     for (const [k, r] of Object.entries(s.runs)) {
@@ -205,8 +205,7 @@ function LoopsIndicator() {
       }
     }
     if (!id) return null;
-    const iter = s.runs[id].iteration;
-    return `${s.loops[id]?.name || "automation"}${iter ? ` · ${iter}` : ""}`;
+    return s.loops[id]?.name || "automation";
   });
   if (activeCount === 0) return null;
   const label = soloLabel ?? `${activeCount} automations`;

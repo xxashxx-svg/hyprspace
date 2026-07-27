@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import {
@@ -13,16 +13,16 @@ import {
   Pencil,
   Copy,
   Trash2,
+  Eye,
 } from "lucide-react";
-import { useLoops, newLoop, loopRunId } from "../stores/loops";
+import { useLoops, newLoop } from "../stores/loops";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
-import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/loops";
-import { secretHas, revealPath } from "../api";
+import { startLoop, stopLoop, pauseLoop, revealLoopWorktree } from "../lib/automations";
+import { revealPath } from "../api";
 import { relTime } from "../lib/time";
 import { LoopRunView } from "./LoopRunView";
-import { LoopTerminal } from "./LoopTerminal";
-import { LoopsManager } from "./LoopsManager";
+import { AutomationEditor } from "./AutomationEditor";
 
 // "1m 30s" / "45s" / "2h 05m"
 function fmtDur(ms: number): string {
@@ -79,12 +79,12 @@ const STATUS_LABEL: Record<string, string> = {
   crashloop: "stopped · no progress",
 };
 
-// The dedicated Loops page. Two faces: "Runs" — a master-detail of loops with the live agentic
-// transcript on the right; and "Manage" — the classic editor (templates, API key, full config cards).
+// The dedicated Automations page: a master-detail of automations with the run view (or the
+// editor) on the right.
 export function LoopsPage() {
   const loops = useLoops((s) => s.loops);
-  // `runs` re-mints on every batched stream flush — the heavy live view renders inside LoopRunView,
-  // so the page itself only selects the coarse per-run bits it shows (status dots + iteration counts)
+  // `runs` re-mints on every log flush — the live view renders inside LoopRunView, so the page
+  // itself only selects the coarse per-run bits it shows (status dots)
   const statuses = useLoops(
     useShallow((s) => {
       const m: Record<string, string> = {};
@@ -92,24 +92,12 @@ export function LoopsPage() {
       return m;
     }),
   );
-  const iters = useLoops(
-    useShallow((s) => {
-      const m: Record<string, number> = {};
-      for (const [k, r] of Object.entries(s.runs)) m[k] = r.iteration;
-      return m;
-    }),
-  );
-  const tab = useUi((s) => s.loopsTab);
   const openLoopId = useUi((s) => s.openLoopId);
   const ids = Object.keys(loops);
   const [listRef] = useAutoAnimate();
   const [loopMenu, setLoopMenu] = useState<{ x: number; y: number; id: string } | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const [hasKey, setHasKey] = useState(true);
-  useEffect(() => {
-    void secretHas("anthropic").then(setHasKey).catch(() => {});
-  }, [tab]);
+  const [editingId, setEditingId] = useState<string | null>(null); // inline rename in the list
+  const [editing, setEditing] = useState(false); // the detail pane is showing the editor
 
   const activeCwd = useWorkspaces((s) => {
     const w = s.workspaces.find((x) => x.id === s.activeId);
@@ -135,57 +123,51 @@ export function LoopsPage() {
     def.name = "New automation";
     useLoops.getState().upsert(def);
     useUi.getState().focusLoop(def.id);
-    useUi.getState().setLoopsTab("manage"); // drop into config to fill it in
+    setEditing(true); // drop straight into the editor to fill it in
   };
 
   const def = sel ? loops[sel] : null;
   // narrow per-field selects for the detail head — status/iteration change per iteration, not per line
   const worktreePath = useLoops((s) => (sel ? s.runs[sel]?.worktreePath : undefined));
-  const nextRunAt = useLoops((s) => (sel ? s.runs[sel]?.nextRunAt : undefined));
+  const runPaneId = useLoops((s) => (sel ? s.runs[sel]?.paneId : undefined));
+  const runWsId = useLoops((s) => (sel ? s.runs[sel]?.wsId : undefined));
+
+  // jump to the pane the run is happening in: open its space, make it the visible tab, focus it
+  const watchRun = () => {
+    if (!runWsId || !runPaneId) return;
+    const W = useWorkspaces.getState();
+    W.setActive(runWsId);
+    const ws = W.workspaces.find((w) => w.id === runWsId);
+    const pane = ws?.sessions.find((x) => x.id === runPaneId);
+    if (ws && pane?.group) W.setActiveTab(runWsId, pane.group, runPaneId);
+    W.setFocused(runPaneId);
+    useUi.getState().goSpace();
+  };
   const status = (sel && statuses[sel]) || "idle";
   const active = status === "running" || status === "paused";
-  // interactive (pane) claude runs on the logged-in CLI — no API key needed (matches the engine)
-  const needsKey = !!def && def.provider === "claude" && def.run !== "pane" && !hasKey;
-  const canStart = !!def && !!def.prompt.trim() && !!def.folder && !needsKey;
+  // runs happen in a pane on the logged-in claude CLI — no API key involved
+  const canStart = !!def && !!def.prompt.trim() && !!def.folder;
   const startHint = !def
     ? ""
-    : needsKey
-      ? "Add an Anthropic API key in Manage first"
-      : !def.prompt.trim() || !def.folder
-        ? "Set a prompt and folder in Manage first"
-        : "Run";
+    : !def.prompt.trim() || !def.folder
+      ? "Set a prompt and folder in the editor first"
+      : "Run";
 
   return (
     <div className="loops-page">
-      <div className={`loops-page-inner${tab === "runs" ? " wide" : ""}`}>
+      <div className="loops-page-inner wide">
         <div className="loops-page-head">
           <Repeat size={20} strokeWidth={1.75} />
           <div>
             <h1>Automations</h1>
             <p>Agents that run on a schedule, on an interval, or until the job's done.</p>
           </div>
-          <div className="loops-tabs">
-            <button
-              className={`loops-tab${tab === "runs" ? " active" : ""}`}
-              onClick={() => useUi.getState().setLoopsTab("runs")}
-            >
-              Runs
-            </button>
-            <button
-              className={`loops-tab${tab === "manage" ? " active" : ""}`}
-              onClick={() => useUi.getState().setLoopsTab("manage")}
-            >
-              Manage
-            </button>
-          </div>
         </div>
 
-        {tab === "manage" ? (
-          <LoopsManager />
-        ) : ids.length === 0 ? (
+        {ids.length === 0 ? (
           <div className="loops-empty-runs">
             <p>No automations yet — create one to start automating.</p>
-            <button className="btn" onClick={() => useUi.getState().setLoopsTab("manage")}>
+            <button className="btn" onClick={addLoop}>
               <Plus size={14} /> Create an automation
             </button>
           </div>
@@ -232,9 +214,6 @@ export function LoopsPage() {
                     <span className={`loop-dot s-${st}`} />
                     <span className="loops-master-name">{d.name || "Untitled loop"}</span>
                     {st === "running" && <Loader2 size={12} className="rail-loop-spin" />}
-                    <span className="rail-loop-count">
-                      {iters[d.id] ?? 0}/{d.stop.maxIterations}
-                    </span>
                   </button>
                 );
               })}
@@ -253,15 +232,13 @@ export function LoopsPage() {
                     <div className="loops-detail-actions">
                       {active ? (
                         <>
-                          {def.run !== "pane" && (
-                            <button
-                              className="svc-run"
-                              title={status === "paused" ? "Resume" : "Pause"}
-                              onClick={() => pauseLoop(sel, status !== "paused")}
-                            >
-                              <Pause size={13} />
-                            </button>
-                          )}
+                          <button
+                            className="svc-run"
+                            title={status === "paused" ? "Resume" : "Pause"}
+                            onClick={() => pauseLoop(sel, status !== "paused")}
+                          >
+                            <Pause size={13} />
+                          </button>
                           <button className="svc-stop" title="Stop" onClick={() => stopLoop(sel)}>
                             <Square size={13} />
                           </button>
@@ -269,6 +246,11 @@ export function LoopsPage() {
                       ) : (
                         <button className="svc-run" title={startHint} disabled={!canStart} onClick={() => startLoop(sel)}>
                           <Play size={13} />
+                        </button>
+                      )}
+                      {runPaneId && runWsId && (
+                        <button className="loop-review" title="Open the pane this run is using" onClick={watchRun}>
+                          <Eye size={12} /> Watch
                         </button>
                       )}
                       {worktreePath && (
@@ -282,28 +264,17 @@ export function LoopsPage() {
                       )}
                       <button
                         className="svc-run"
-                        title="Edit configuration"
-                        onClick={() => useUi.getState().setLoopsTab("manage")}
+                        title={editing ? "Close editor" : "Edit"}
+                        onClick={() => setEditing((v) => !v)}
                       >
                         <Settings2 size={13} />
                       </button>
                     </div>
                   </div>
-                  {def.run === "pane" ? (
-                    active ? (
-                      nextRunAt ? (
-                        <div className="loop-run-empty">
-                          Scheduled — the interactive session launches at the next fire (while
-                          HyprSpace is open).
-                        </div>
-                      ) : (
-                        <LoopTerminal id={loopRunId(sel)} />
-                      )
-                    ) : (
-                      <div className="loop-run-empty">
-                        Interactive terminal automation — press ▶ to launch the session here.
-                      </div>
-                    )
+                  {/* the run lives in a real pane now — this is its log, and the pane itself is in
+                      the sidebar under the project it ran in */}
+                  {editing ? (
+                    <AutomationEditor id={sel} onClose={() => setEditing(false)} />
                   ) : (
                     <LoopRunView id={sel} />
                   )}
@@ -357,7 +328,7 @@ export function LoopsPage() {
                   className="ctx-item"
                   onClick={() => {
                     useUi.getState().focusLoop(loopMenu.id);
-                    useUi.getState().setLoopsTab("manage");
+                    setEditing(true);
                     close();
                   }}
                 >
