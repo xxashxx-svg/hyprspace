@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { killAllPtys } from "../api";
 
 export type UpdatePhase =
   | "idle"
@@ -19,6 +20,28 @@ interface UpdaterState {
   install: () => Promise<void>;
   dismiss: () => void;
 }
+
+/**
+ * Say what actually went wrong. "Update failed — try again" was useless: retrying doesn't help when
+ * the installer couldn't replace a running binary, which is the common case here — panes keep child
+ * processes (the agent CLIs, PowerShell, OpenConsole.exe) holding the install folder open.
+ */
+function installError(e: unknown): string {
+  const msg = String((e as { message?: string })?.message ?? e);
+  if (/signature|verif|corrupt|malformed/i.test(msg)) {
+    return "That download didn't verify — it may be incomplete. Try again.";
+  }
+  if (/permission|denied|access|busy|in use|os error 5|os error 32/i.test(msg)) {
+    return "Couldn't replace the app while it's running. Close every pane and try again.";
+  }
+  if (/network|connect|timed? ?out|dns|tls|certificate/i.test(msg)) {
+    return "Couldn't download the update — check your connection.";
+  }
+  // anything unrecognised: show it rather than hide it. A cryptic message still beats a useless one.
+  return msg.length > 3 && msg !== "undefined" ? `Update failed: ${trimMsg(msg)}` : "Update failed — try again";
+}
+
+const trimMsg = (s: string) => (s.length > 120 ? s.slice(0, 119) + "…" : s);
 
 export const useUpdater = create<UpdaterState>()((set, get) => ({
   phase: "idle",
@@ -70,7 +93,12 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
     try {
       let total = 0;
       let got = 0;
-      await u.downloadAndInstall((e) => {
+      // Download and install as SEPARATE steps, so the PTYs can be torn down in between.
+      // The installer replaces hyprspace-tauri.exe in place and can't while the panes' ConPTY hosts
+      // (OpenConsole.exe) hold the install folder open — that's what made this fail with a busy
+      // workspace. Killing them only after the bytes have landed means a failed download never
+      // costs you your panes for nothing.
+      await u.download((e) => {
         if (e.event === "Started") {
           total = e.data.contentLength ?? 0;
           set({ detail: "Downloading…", pct: total ? 0 : -1 });
@@ -78,15 +106,18 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
           got += e.data.chunkLength;
           const p = total ? Math.round((got / total) * 100) : -1;
           set({ detail: total ? `Downloading ${p}%` : "Downloading…", pct: p });
-        } else if (e.event === "Finished") {
-          set({ detail: "Installing…", pct: -1 });
         }
       });
+      set({ detail: "Closing panes…", pct: -1 });
+      // the sessions themselves are persisted and come back on relaunch (claude panes --resume)
+      await killAllPtys().catch(() => {}); // best-effort: a failure here shouldn't block the install
+      set({ detail: "Installing…", pct: -1 });
+      await u.install();
       set({ detail: "Restarting…", pct: -1 });
       await relaunch();
     } catch (e) {
       console.error("update failed:", e);
-      set({ phase: "error", detail: "Update failed — try again", pct: -1 });
+      set({ phase: "error", detail: installError(e), pct: -1 });
     }
   },
 

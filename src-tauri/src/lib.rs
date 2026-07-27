@@ -88,6 +88,17 @@ fn kill_pty(state: State<PtyManager>, id: String) -> Result<(), String> {
     state.kill(&id)
 }
 
+// Everything the exit path does, on demand. The updater needs this: the NSIS installer replaces
+// hyprspace-tauri.exe in place, and it CAN'T while the ConPTY hosts our panes spawn
+// (OpenConsole.exe) still hold the install folder open — the install just fails. The frontend calls
+// this after the download has landed and before installing, so panes are only lost once the update
+// is certain to proceed.
+#[tauri::command]
+fn kill_all_ptys(pty: State<PtyManager>, agents: State<AgentManager>) {
+    pty.kill_all();
+    agents.kill_all();
+}
+
 
 // agent_start also reads keychain secrets (an OS credential-manager RPC) — definitely not UI-thread work
 #[tauri::command]
@@ -512,6 +523,7 @@ pub fn run() {
             pause_pty,
             resume_pty,
             kill_pty,
+            kill_all_ptys,
             agent_start,
             agent_stop,
             clipboard_image_to_temp,

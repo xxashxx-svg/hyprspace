@@ -74,6 +74,13 @@ export function killPty(id: string): Promise<void> {
   return invoke("kill_pty", { id });
 }
 
+// Tear down every PTY + agent process at once — what the exit path does. The updater calls this
+// before installing: the NSIS installer can't replace a running binary while the panes' ConPTY
+// hosts still hold the install folder open.
+export function killAllPtys(): Promise<void> {
+  return invoke("kill_all_ptys");
+}
+
 
 // ---- headless agent runner: ONE provider turn (args = full argv; prompt piped over stdin) ----
 // streams stdout+stderr lines to onLine for the turn's life. Used by the pane auto-namer
