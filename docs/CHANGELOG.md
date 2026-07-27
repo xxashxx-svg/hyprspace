@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.15.0 — 2026-07-27
+
+- The HyprSpace Android app is here. Scan the QR in Settings -> Mobile to see your spaces, mirror any terminal live, and type into it from your phone. Grab HyprSpace-android.apk below.
+- Settings -> Mobile now lists every address this machine is reachable on, so you can pair over a VPN (Tailscale and the like) instead of only the local network.
+- Added an "away" address that rides along in the pairing QR: the phone falls back to it when you are off your home wifi, and switches back on its own when you return.
+- macOS builds are published again alongside Windows.
+
 ## 0.14.0 — 2026-07-27
 
 - Automations rebuilt: every run now happens in a real Claude pane on your subscription — no API key needed, and the run is a normal tab you can watch
