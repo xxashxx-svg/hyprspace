@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.15.1 — 2026-07-27
+
+- Fixed "Update failed" when updating with panes open. The installer could not replace the app while your terminals' background processes still held its folder open, so updating now closes them first — your sessions are saved and come back on restart.
+- Update errors now say what actually went wrong instead of just "try again".
+
 ## 0.15.0 — 2026-07-27
 
 - The HyprSpace Android app is here. Scan the QR in Settings -> Mobile to see your spaces, mirror any terminal live, and type into it from your phone. Grab HyprSpace-android.apk below.
