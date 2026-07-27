@@ -128,6 +128,40 @@ context menu) calls `openInEditor` (`stores/ui.ts`), which reads the file via `r
 (`devtools/fs.rs`, capped at 2 MB, rejects binary) and shows it with syntax highlighting; **Ctrl/⌘+S**
 or the autosave toggle writes it back via `write_file`. Themed to the app tokens with one-dark colors.
 
+## Mobile bridge (`bridge.rs` + `mobileBridge.ts` ↔ [`mobile/`](../mobile/README.md))
+
+How the Android companion app sees your desktop. Off by default; **Settings → Mobile** turns it on and
+shows the pairing QR.
+
+**Transport.** `bridge.rs` is a hand-rolled WebSocket server on the LAN (6768 by default, walking up
+to 8 ports if that's taken). Hand-rolled because the framing we need is ~100 lines and it keeps a
+network-facing dependency tree out of an app that otherwise has none; `sha1` for the handshake digest
+is the only addition. A connection must send `hello` with the pairing token within 8s or it's dropped,
+and `PROTOCOL` must match on both sides — a version mismatch is reported rather than half-working.
+The token is minted and persisted by the frontend (`stores/bridge.ts`, `crypto.getRandomValues`);
+Rust only ever compares against it, in constant time.
+
+**State is pushed, never introspected.** Rust knows nothing about spaces or panes. `mobileBridge.ts`
+subscribes to the workspace / agent-status / usage / automations stores, debounces 250 ms, and calls
+`bridge_publish` with a snapshot whenever it actually changed. The bridge stores the last one verbatim
+and fans it out, so a phone's lists move the moment the desktop's do — and a phone connecting later
+gets the current picture immediately.
+
+**Terminals.** `PtyManager` keeps a rolling 64 KB tail per session plus its current size, and holds
+one tap that the bridge registers at startup (`bridge::attach`). On `sub` the phone gets the tail
+replayed in 16 KB chunks (so it paints a screen at once) and then live coalesced output; keystrokes
+come back as `in` and go straight to `PtyManager::write`. The phone renders at the *desktop's*
+cols/rows and scales to fit — it never resizes the PTY, which would reflow the desktop's own view out
+from under whoever's sitting at it.
+
+**Nothing here may stall a terminal.** The tap runs on the PTY coalescer thread, so each peer has a
+bounded outbound queue and a full one **drops frames** rather than applying backpressure. A phone on
+bad wifi degrades its own mirror and nothing else.
+
+**Anything else** (launch a pane, wake a space, git changes/diff/commit, run an automation) is a
+generic `req` → Tauri event → `mobileBridge.ts` handler → `bridge_reply`, so the phone reuses the same
+`src/api` wrappers the UI does and Rust stays a relay.
+
 ## Code structure & animation notes
 
 - **CSS is split per area.** `src/App.css` is just an ordered `@import` index of `src/styles/*.css`

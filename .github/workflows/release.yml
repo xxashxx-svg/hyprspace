@@ -17,6 +17,10 @@ on:
       tag:
         description: "Release tag, e.g. v0.2.4"
         required: true
+      android:
+        description: "Also build + attach the Android app (mobile/)"
+        type: boolean
+        default: false
 
 env:
   RELEASES_REPO: xxashxx-svg/hyprspace
@@ -77,3 +81,67 @@ jobs:
               --title "HyprSpace ${tag#v}" --notes "Automated release." \
               dist/*.dmg dist/*.app.tar.gz dist/latest.json
           fi
+
+  # The Android companion app (mobile/). Independent of the desktop's version — it ships on its own
+  # cadence — so this only runs when you ask for it, and attaches the APK to the same release under a
+  # stable name the desktop's "get the app" link can point at.
+  #
+  # Secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD (see mobile/README.md).
+  # WITHOUT them the build still succeeds but is debug-signed, which CANNOT update an
+  # existing install — so a real release must have them set.
+  android:
+    if: inputs.android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        working-directory: mobile
+        # the desktop's node_modules too: the terminal WebView is generated from its @xterm/xterm,
+        # so both halves render with the same emulator (mobile/scripts/build-term.mjs)
+        run: |
+          npm install --prefix ..
+          npm install
+      - name: Restore the signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # checked here rather than in `if:` — a step's own env isn't visible to its condition
+          if [ -z "$KEYSTORE" ]; then
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — this APK will be debug-signed and CANNOT update an existing install. Fine for a test build, not for a release."
+            exit 0
+          fi
+          mkdir -p ~/.hyprspace-signing ~/.gradle
+          echo "$KEYSTORE" | base64 -d > ~/.hyprspace-signing/hyprspace-mobile.jks
+          chmod 700 ~/.hyprspace-signing && chmod 600 ~/.hyprspace-signing/hyprspace-mobile.jks
+          {
+            echo "HYPRSPACE_STORE_FILE=$HOME/.hyprspace-signing/hyprspace-mobile.jks"
+            echo "HYPRSPACE_KEY_ALIAS=hyprspace"
+            echo "HYPRSPACE_STORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "HYPRSPACE_KEY_PASSWORD=$KEYSTORE_PASSWORD"
+          } > ~/.gradle/gradle.properties
+          chmod 600 ~/.gradle/gradle.properties
+      - name: Build the APK
+        working-directory: mobile
+        run: npm run apk
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: mobile
+        run: |
+          tag="${{ inputs.tag }}"
+          version=$(node -p "require('./app.json').expo.version")
+          # a stable name as well as the versioned one, so a "download the app" link never goes stale
+          cp "build/HyprSpace-$version.apk" "build/HyprSpace-android.apk"
+          gh release upload "$tag" --repo "$RELEASES_REPO" --clobber \
+            "build/HyprSpace-$version.apk" "build/HyprSpace-android.apk"

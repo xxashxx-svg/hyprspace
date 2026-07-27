@@ -7,7 +7,7 @@
 //
 //   node scripts/build-term.mjs      (also runs via `npm run term`)
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,8 +15,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const out = join(here, "..", "src", "terminal", "termHtml.ts");
 
-const js = readFileSync(join(root, "node_modules", "@xterm", "xterm", "lib", "xterm.js"), "utf8");
-const css = readFileSync(join(root, "node_modules", "@xterm", "xterm", "css", "xterm.css"), "utf8");
+const xterm = join(root, "node_modules", "@xterm", "xterm");
+// runs as a postinstall hook too, where the desktop's deps may not be installed. The generated file
+// is committed, so skipping is fine — say so and move on rather than failing the install.
+if (!existsSync(xterm)) {
+  console.log("build-term: no @xterm/xterm in the desktop app — keeping the committed termHtml.ts");
+  process.exit(0);
+}
+
+const js = readFileSync(join(xterm, "lib", "xterm.js"), "utf8");
+const css = readFileSync(join(xterm, "css", "xterm.css"), "utf8");
 
 // a literal </script> inside the bundle would end the tag early; \/ is the same string to JS
 const safeJs = js.replace(/<\/script/gi, "<\\/script");

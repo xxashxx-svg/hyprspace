@@ -103,12 +103,18 @@ export interface BridgePeer {
   addr: string;
   since: number; // unix seconds
 }
+export interface LocalAddr {
+  label: string; // the interface's own name, so a VPN address is recognisable ("tailscale0")
+  ip: string;
+  preferred: boolean; // the address the OS would route out of — right for a phone on the same wifi
+}
 export interface BridgeInfo {
   running: boolean;
   port: number;
   protocol: number;
   host: string;
   address: string | null; // the LAN ip a phone should dial
+  addresses: LocalAddr[]; // every address this machine is reachable on (LAN, VPN, virtual adapters)
   peers: BridgePeer[];
 }
 export function bridgeStatus(): Promise<BridgeInfo> {

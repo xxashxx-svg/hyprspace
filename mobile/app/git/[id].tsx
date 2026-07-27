@@ -5,7 +5,7 @@ import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } 
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useConn, useSpace } from "../../src/store";
 import { req } from "../../src/rpc";
-import { c, font, r, sp, t } from "../../src/theme";
+import { c, font, sp, t } from "../../src/theme";
 import { Btn, Card, Empty, Label, Loading, Row, s as u } from "../../src/ui";
 
 interface FileChange {
@@ -231,5 +231,4 @@ const g = StyleSheet.create({
   diffLine: { fontSize: 10, fontFamily: font.mono, lineHeight: 15 },
   pad: { padding: sp[4], gap: sp[3] },
   btnRow: { flexDirection: "row", gap: sp[2] },
-  card: { borderRadius: r.two },
 });

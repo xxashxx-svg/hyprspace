@@ -19,7 +19,7 @@ import {
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { WebView } from "react-native-webview";
 import { useConn, usePane } from "../../src/store";
-import { req, toBase64, watchPane, writePane } from "../../src/rpc";
+import { req, resyncPane, toBase64, watchPane, writePane } from "../../src/rpc";
 import { TERM_HTML } from "../../src/terminal/termHtml";
 import { c, font, providerLabel, r, sp, stateColor, stateLabel, t } from "../../src/theme";
 import { Dot } from "../../src/ui";
@@ -42,6 +42,9 @@ const KEYS: { label: string; bytes: string }[] = [
 
 const ZOOMS = [0.75, 1, 1.35, 1.8];
 
+// how long the agent's TUI gets to settle a pasted prompt before Enter follows it (see submit)
+const SETTLE_MS = 300;
+
 export default function TermScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const nav = useNavigation();
@@ -50,6 +53,7 @@ export default function TermScreen() {
   const web = useRef<WebView>(null);
   const ready = useRef(false);
   const queue = useRef<string[]>([]);
+  const sent = useRef(""); // what the PTY has already been told about the composer's contents
   const [text, setText] = useState("");
   const [zoom, setZoom] = useState(1);
   const [gone, setGone] = useState(false);
@@ -110,26 +114,62 @@ export default function TermScreen() {
   }, [zoom, run]);
 
   const onWebReady = () => {
+    const reloaded = ready.current; // a second "ready" means Android threw the WebView away
     ready.current = true;
     const pending = queue.current;
     queue.current = [];
     for (const js of pending) web.current?.injectJavaScript(`${js};true;`);
     web.current?.injectJavaScript(`window.hsZoom(${zoom});true;`);
+    // the reloaded page is blank and our subscription is still live, so nothing would redraw it
+    // until the agent next printed something. ask for the replay again. (Not on first load — the
+    // subscription's own replay is already on its way, and a second one would double it.)
+    if (reloaded && id) resyncPane(id);
   };
 
   const send = (bytes: string) => {
     if (!id) return;
     writePane(id, bytes);
+    // the TUI just consumed the input line, so our idea of what it holds has to reset with it
+    if (bytes === "\r") {
+      setText("");
+      sent.current = "";
+    }
     run("window.hsBottom()");
   };
 
+  // Live typing: every edit goes to the PTY as it happens, so the agent sees you type exactly as it
+  // would at the desktop — no "compose then send" step.
+  //
+  // We diff against what we've already sent rather than forwarding raw keys, because Android IMEs
+  // don't emit clean keystrokes: autocorrect and gesture typing rewrite whole words at once. Taking
+  // the common prefix and sending (backspaces + the new tail) turns any such rewrite into the same
+  // edit a human would have made.
+  const onType = (next: string) => {
+    setText(next);
+    if (!id) return;
+    const prev = sent.current;
+    let same = 0;
+    while (same < prev.length && same < next.length && prev[same] === next[same]) same++;
+    // \x7f is DEL — what a terminal expects from backspace
+    const back = "\x7f".repeat(prev.length - same);
+    // a soft-keyboard newline means submit, and TUIs want CR for that
+    const added = next.slice(same).replace(/\n/g, "\r");
+    sent.current = next;
+    if (back || added) {
+      writePane(id, back + added);
+      run("window.hsBottom()");
+    }
+  };
+
+  // Enter on its own — the text is already in the agent's input line, so this just commits it.
+  // The small delay covers the one case where a whole block arrived at once (a paste): the TUI
+  // needs a beat to settle it, and an early CR submits a truncated prompt.
   const submit = () => {
-    if (!id || !text.trim()) return;
-    // text then Enter as two writes, like the desktop composer — a TUI needs a moment to reflow a
-    // pasted block before it sees the submit
-    writePane(id, text);
+    if (!id) return;
+    const pasted = text.length > 40;
     setText("");
-    setTimeout(() => writePane(id, "\r"), 60);
+    sent.current = "";
+    setTimeout(() => writePane(id, "\r"), pasted ? SETTLE_MS : 0);
     run("window.hsBottom()");
   };
 
@@ -204,20 +244,22 @@ export default function TermScreen() {
         <TextInput
           style={m.input}
           value={text}
-          onChangeText={setText}
-          placeholder={online ? "Type a prompt…" : "Offline"}
+          onChangeText={onType}
+          placeholder={online ? "Type — it goes straight in" : "Offline"}
           placeholderTextColor={c.text3}
           editable={online}
           multiline
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete="off"
+          spellCheck={false}
         />
         <Pressable
           onPress={submit}
-          disabled={!text.trim() || !online}
-          style={({ pressed }) => [m.send, (!text.trim() || !online) && m.sendOff, pressed && m.keyOn]}
+          disabled={!online}
+          style={({ pressed }) => [m.send, !online && m.sendOff, pressed && m.keyOn]}
         >
-          <Text style={m.sendText}>Send</Text>
+          <Text style={m.sendText}>⏎</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

@@ -1,6 +1,6 @@
 {
   "name": "hyprspace-mobile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -12,6 +12,7 @@
     "expo-router": "~57.0.8",
     "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.0",
     "react-native-safe-area-context": "~5.7.0",
@@ -25,13 +26,18 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/build-term.mjs",
     "term": "node scripts/build-term.mjs",
     "icons": "node scripts/build-icons.mjs",
-    "apk": "eas build -p android --profile preview"
+    "apk": "node scripts/build-apk.mjs",
+    "apk:debug": "node scripts/build-apk.mjs debug",
+    "keystore": "node scripts/make-keystore.mjs",
+    "prebuild": "expo prebuild -p android --clean --no-install",
+    "version": "node scripts/version.mjs"
   },
   "private": true
 }

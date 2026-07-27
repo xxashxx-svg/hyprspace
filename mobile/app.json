@@ -3,7 +3,7 @@
     "name": "HyprSpace",
     "slug": "hyprspace",
     "scheme": "hyprspace",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,8 +15,13 @@
     },
     "android": {
       "package": "com.hyprspace.mobile",
-      "versionCode": 1,
-      "edgeToEdgeEnabled": true,
+      "versionCode": 200,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#161616",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -52,7 +57,9 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning",
+      "./plugins/withGradleProps"
     ]
   }
 }

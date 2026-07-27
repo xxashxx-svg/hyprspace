@@ -3,9 +3,14 @@
 import { useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Copy, Check, RefreshCw, Smartphone, WifiOff } from "lucide-react";
 import { DEFAULT_BRIDGE_PORT, pairingUrl, peerLabel, useBridge } from "../stores/bridge";
 import { relTime } from "../lib/time";
+
+// the stable name the release workflow attaches, so this link never goes stale between versions
+const ANDROID_APK_URL =
+  "https://github.com/xxashxx-svg/hyprspace/releases/latest/download/HyprSpace-android.apk";
 
 // draw the QR ourselves rather than pulling a renderer: one <svg> path of dark modules, so it
 // inherits the theme's text color and stays crisp at any size
@@ -33,11 +38,12 @@ function Qr({ text, size = 208 }: { text: string; size?: number }) {
 }
 
 export function MobileSettings() {
-  const { enabled, port, token, info, setEnabled, setPort, regenToken } = useBridge();
+  const { enabled, port, token, address, remote, info, setEnabled, setPort, setAddress, setRemote, regenToken } =
+    useBridge();
   const [copied, setCopied] = useState<"url" | "token" | null>(null);
   const [portText, setPortText] = useState(String(port));
 
-  const url = pairingUrl(info, token, port);
+  const url = pairingUrl(info, token, port, address, remote);
   const running = !!info?.running;
   const reachable = running && !!info?.address;
 
@@ -58,7 +64,10 @@ export function MobileSettings() {
               <div className="set-desc">
                 Runs a small server on your local network so the HyprSpace app on your phone can see
                 your spaces, mirror a terminal live, and type into it. Nothing leaves your wifi and no
-                account is involved.
+                account is involved.{" "}
+                <button className="mob-link" onClick={() => void openUrl(ANDROID_APK_URL)}>
+                  Get the Android app
+                </button>
               </div>
             </div>
             <div className="set-control">
@@ -109,13 +118,28 @@ export function MobileSettings() {
                 <div className="mob-pair-side">
                   <div className="mob-pair-title">Scan this in the HyprSpace app</div>
                   <div className="mob-pair-desc">
-                    Your phone has to be on the same wifi as this computer.
+                    Your phone has to be on the same wifi as this computer — unless you add a way in
+                    from outside below, which the app falls back to automatically.
                   </div>
                   <div className="mob-field">
                     <span className="mob-field-key">Address</span>
-                    <code>
-                      {info.address}:{info.port}
-                    </code>
+                    {(info.addresses ?? []).length > 1 ? (
+                      <select
+                        className="mob-select"
+                        value={address || info.address || ""}
+                        onChange={(e) => setAddress(e.target.value)}
+                      >
+                        {(info.addresses ?? []).map((a) => (
+                          <option key={a.ip} value={a.ip}>
+                            {a.ip} — {a.label}
+                            {a.preferred ? " (this network)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <code>{info.address}</code>
+                    )}
+                    <code>:{info.port}</code>
                   </div>
                   <div className="mob-field">
                     <span className="mob-field-key">Code</span>
@@ -151,6 +175,36 @@ export function MobileSettings() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {enabled && (
+        <div className="set-section">
+          <div className="set-label">Reaching it from outside</div>
+          <div className="set-group">
+            <div className="set-row">
+              <div className="set-row-info">
+                <div className="set-key">Away address</div>
+                <div className="set-desc">
+                  Goes in the QR as a second way in, so the phone still finds this machine off your
+                  wifi. A VPN address works best — install Tailscale on both and use the 100.x.x.x one
+                  it gives this machine; it'll show in the dropdown above too. A tunnel's public URL
+                  (<code>wss://…</code>) works as well.{" "}
+                  <strong>Don't just forward the port</strong> — plain <code>ws://</code> over the
+                  internet sends your pairing code and everything your agents print in the clear.
+                </div>
+              </div>
+              <div className="set-control">
+                <input
+                  className="mob-remote"
+                  value={remote}
+                  spellCheck={false}
+                  placeholder="100.90.1.2 or wss://box.example.com"
+                  onChange={(e) => setRemote(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}

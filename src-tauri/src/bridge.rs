@@ -31,9 +31,15 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::pty::{PtyManager, Tap};
 
-/// Bumped whenever the message shape changes incompatibly. The phone refuses to connect on a
-/// mismatch instead of half-working — a silently incompatible mirror is worse than no mirror.
+/// Bumped whenever the message shape changes incompatibly.
 pub const PROTOCOL: u32 = 1;
+
+/// The oldest phone we'll still talk to. This exists because the Android app is sideloaded and does
+/// NOT auto-update: if the desktop only ever accepted its own exact version, every protocol bump
+/// would silently brick every phone out there until each was manually reinstalled. So the desktop
+/// accepts a range and keeps handling old clients, and only raises this floor when supporting an old
+/// shape genuinely stops being possible.
+pub const MIN_PROTOCOL: u32 = 1;
 
 pub const DEFAULT_PORT: u16 = 6768;
 
@@ -160,6 +166,15 @@ pub struct PeerInfo {
 }
 
 #[derive(Serialize, Clone)]
+pub struct LocalAddr {
+    /// the network interface's own name, so a VPN address is recognisable ("tailscale0", "Ethernet")
+    pub label: String,
+    pub ip: String,
+    /// the address the OS would route out of — the right default for a phone on the same wifi
+    pub preferred: bool,
+}
+
+#[derive(Serialize, Clone)]
 pub struct BridgeInfo {
     pub running: bool,
     pub port: u16,
@@ -167,6 +182,8 @@ pub struct BridgeInfo {
     pub host: String,
     /// LAN address the phone should dial, when we can work one out
     pub address: Option<String>,
+    /// every address this machine is reachable on — lets pairing offer a VPN route as well as the LAN
+    pub addresses: Vec<LocalAddr>,
     pub peers: Vec<PeerInfo>,
 }
 
@@ -201,8 +218,8 @@ fn hostname() -> String {
 }
 
 /// The IP a phone on the same wifi should dial. A connected UDP socket sends nothing — it just makes
-/// the OS pick the default route's interface, which beats guessing among a machine's many addresses
-/// (Hyper-V, WSL and VPN adapters all show up in a naive enumeration).
+/// the OS pick the default route's interface, which is the right default among a machine's many
+/// addresses (Hyper-V, WSL and VPN adapters all show up in a naive enumeration).
 fn lan_ip() -> Option<String> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("8.8.8.8:80").ok()?;
@@ -211,6 +228,44 @@ fn lan_ip() -> Option<String> {
         return None;
     }
     Some(ip.to_string())
+}
+
+/// Every address a phone could reach this machine on, so pairing isn't stuck with the default route.
+/// That matters for getting at your desktop from outside: a VPN (Tailscale/WireGuard) address only
+/// shows up here, never as the default route, and it's the one that works from anywhere.
+///
+/// Virtual-adapter addresses (WSL, Hyper-V, Docker) are listed too — they're harmless and we can't
+/// reliably tell them apart from a real one — but the default route is marked so the UI can preselect
+/// the address that's right for the common case.
+fn local_addresses() -> Vec<LocalAddr> {
+    let preferred = lan_ip();
+    let mut out: Vec<LocalAddr> = Vec::new();
+    let Ok(ifaces) = if_addrs::get_if_addrs() else {
+        // no enumeration (permissions, exotic platform) — the default route is still better than nothing
+        if let Some(ip) = preferred {
+            out.push(LocalAddr { label: "This machine".into(), ip, preferred: true });
+        }
+        return out;
+    };
+    for i in ifaces {
+        if i.is_loopback() {
+            continue;
+        }
+        let ip = match i.addr {
+            if_addrs::IfAddr::V4(v4) => v4.ip.to_string(),
+            // link-local v6 carries a scope id that a phone can't use — skip it
+            if_addrs::IfAddr::V6(v6) if !v6.ip.is_unicast_link_local() => format!("[{}]", v6.ip),
+            _ => continue,
+        };
+        if out.iter().any(|a| a.ip == ip) {
+            continue;
+        }
+        let preferred = preferred.as_deref() == Some(ip.as_str());
+        out.push(LocalAddr { label: i.name.clone(), ip, preferred });
+    }
+    // the one the OS would route out of goes first — it's what a phone on the same wifi wants
+    out.sort_by_key(|a| !a.preferred);
+    out
 }
 
 /// Compare without an early return, so the time taken doesn't leak how much of the token matched.
@@ -238,6 +293,7 @@ impl Bridge {
             protocol: PROTOCOL,
             host: hostname(),
             address: if g.running { lan_ip() } else { None },
+            addresses: if g.running { local_addresses() } else { vec![] },
             peers: g
                 .peers
                 .iter()
@@ -421,8 +477,17 @@ impl Bridge {
             let _ = write_frame(&mut sock, 8, &[]);
             return;
         }
-        if their_protocol != PROTOCOL {
-            let msg = json!({ "t": "error", "code": "protocol", "need": PROTOCOL }).to_string();
+        // too old to understand, or newer than us (a phone updated ahead of the desktop) — either way
+        // say which side needs updating rather than just failing
+        if their_protocol < MIN_PROTOCOL || their_protocol > PROTOCOL {
+            let msg = json!({
+                "t": "error",
+                "code": "protocol",
+                "need": PROTOCOL,
+                "min": MIN_PROTOCOL,
+                "stale": if their_protocol > PROTOCOL { "desktop" } else { "phone" },
+            })
+            .to_string();
             let _ = write_frame(&mut sock, 1, msg.as_bytes());
             let _ = write_frame(&mut sock, 8, &[]);
             return;
@@ -460,6 +525,9 @@ impl Bridge {
         let welcome = json!({
             "t": "welcome",
             "protocol": PROTOCOL,
+            // the phone compares this against its own: lower means there's a newer app to install,
+            // which it mentions without breaking anything that currently works
+            "minProtocol": MIN_PROTOCOL,
             "app": "hyprspace",
             "version": version,
             "host": hostname(),

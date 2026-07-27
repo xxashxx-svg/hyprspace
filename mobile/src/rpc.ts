@@ -4,13 +4,16 @@
 // watching, and request/response calls for anything that needs the desktop app itself. Reconnects on
 // its own with backoff, because a phone loses wifi constantly.
 
-import { useConn, type Snap } from "./store";
+import { endpointUrl, useConn, validHost, type Snap } from "./store";
 
 /** Must match PROTOCOL in bridge.rs — a mismatch is reported instead of half-working. */
 export const PROTOCOL = 1;
 
 const REQ_TIMEOUT = 20_000;
 const PING_EVERY = 25_000;
+// how long one address gets before we try the next. A wrong-network address doesn't refuse — it
+// hangs until the OS gives up, which is far too long to sit through when you've just left the house.
+const DIAL_TIMEOUT = 6_000;
 
 export interface PaneHandlers {
   onData: (bytes: Uint8Array) => void;
@@ -26,6 +29,7 @@ let retries = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 let wanted = false; // false = the user disconnected; don't reconnect behind their back
+let attempt = 0; // which endpoint to dial next — advanced on every failed connection
 
 const pending = new Map<number, { ok: (v: unknown) => void; fail: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 const panes = new Map<string, Set<PaneHandlers>>();
@@ -96,6 +100,15 @@ export function watchPane(pane: string, h: PaneHandlers): () => void {
   };
 }
 
+/**
+ * Ask for a pane's replay again. `sub` is idempotent on the desktop, so this just re-sends the recent
+ * tail — what you need when the terminal you were drawing into got thrown away (Android reclaiming a
+ * WebView) and would otherwise sit blank until the next byte of output.
+ */
+export function resyncPane(pane: string) {
+  send({ t: "sub", pane });
+}
+
 /** Type into a pane. `text` goes through as-is — control bytes included. */
 export function writePane(pane: string, text: string) {
   send({ t: "in", pane, d: toBase64(new TextEncoder().encode(text)) });
@@ -122,15 +135,23 @@ function handleText(raw: string) {
   }
   const pane = typeof m.pane === "string" ? m.pane : "";
   switch (m.t) {
-    case "welcome":
+    case "welcome": {
       retries = 0;
-      useConn.getState().online({
+      const conn = useConn.getState();
+      conn.online({
         host: String(m.host ?? "desktop"),
         version: String(m.version ?? ""),
+        // the desktop speaks a newer protocol but still accepts us — everything works, there's just
+        // a newer app to install. Worth surfacing, not worth blocking on.
+        desktopProtocol: Number(m.protocol ?? PROTOCOL),
       });
+      // this one works — put it first so the next launch doesn't retry a dead address
+      void conn.preferEndpoint(conn.activeEndpoint);
+      attempt = 0;
       // re-arm any pane we were watching before the socket dropped
       for (const p of panes.keys()) send({ t: "sub", pane: p });
       break;
+    }
 
     case "state":
       useConn.getState().setSnap((m.d as Snap | null) ?? null);
@@ -169,7 +190,9 @@ function handleText(raw: string) {
         code === "auth"
           ? "That pairing code was rejected. Re-scan the QR in Settings → Mobile on the desktop."
           : code === "protocol"
-            ? `This app and the desktop app speak different versions (desktop needs v${m.need}). Update whichever is older.`
+            ? m.stale === "desktop"
+              ? "Your desktop HyprSpace is older than this app — update it and try again."
+              : "This app is too old for that desktop. Install the newer APK from its releases page."
             : "The desktop refused the connection.",
       );
       ws?.close();
@@ -191,16 +214,39 @@ function scheduleRetry() {
 }
 
 function open() {
-  const { host, port, token, deviceName } = useConn.getState();
-  if (!host || !token) return;
+  const { endpoints, token, deviceName } = useConn.getState();
+  if (!endpoints.length || !token) return;
+
+  // Never hand a malformed URL to the native WebSocket — it throws on a background thread and kills
+  // the app (see validHost). A value saved by an older build could still be bad, so check here too.
+  const usable = endpoints.filter((e) => validHost(e.host) && e.port > 0 && e.port < 65536);
+  if (!usable.length) {
+    wanted = false;
+    useConn.getState().failed("None of the saved addresses are valid. Re-pair with the QR on your desktop.");
+    return;
+  }
+
+  // Walk the list rather than hammering one address: on the LAN the first entry connects instantly,
+  // and away from home it fails fast and we fall through to the VPN/tunnel entry.
+  const target = usable[attempt % usable.length];
   cleanupSocket();
   useConn.getState().connecting();
+  useConn.getState().setActiveEndpoint(target.label);
 
-  const sock = new WebSocket(`ws://${host}:${port}/`);
+  const sock = new WebSocket(endpointUrl(target));
   sock.binaryType = "arraybuffer";
   ws = sock;
 
+  // A wrong-network address doesn't refuse, it hangs until the OS gives up (~30s+ on Android), which
+  // would make walking out of the house feel broken. Give each one a short go, then try the next.
+  const dial = setTimeout(() => {
+    if (ws === sock && sock.readyState === 0) {
+      sock.close(); // onclose advances `attempt`
+    }
+  }, DIAL_TIMEOUT);
+
   sock.onopen = () => {
+    clearTimeout(dial);
     sock.send(JSON.stringify({ t: "hello", token, protocol: PROTOCOL, name: deviceName }));
     pingTimer = setInterval(() => send({ t: "ping" }), PING_EVERY);
   };
@@ -212,6 +258,7 @@ function open() {
     // RN gives no useful detail here; onclose follows and drives the retry
   };
   sock.onclose = () => {
+    clearTimeout(dial);
     if (ws === sock) ws = null;
     if (pingTimer) {
       clearInterval(pingTimer);
@@ -219,6 +266,7 @@ function open() {
     }
     failAllPending("lost the connection");
     if (wanted) {
+      attempt++; // next dial tries the other way in
       useConn.getState().offline();
       scheduleRetry();
     }

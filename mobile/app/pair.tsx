@@ -1,7 +1,7 @@
 // Pair with a desktop: scan the QR from Settings → Mobile, or type the address + code by hand.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { parsePairing, useConn } from "../src/store";
 import { connect } from "../src/rpc";
@@ -22,6 +22,33 @@ export default function Pair() {
     connect();
     router.replace("/");
   };
+
+  // Opened via the pairing link itself (`hyprspace://pair?host=…&port=…&token=…`) — the same string
+  // the desktop's QR encodes. Pair straight away instead of making you retype what you just tapped.
+  const params = useLocalSearchParams<{
+    host?: string;
+    port?: string;
+    token?: string;
+    remote?: string;
+  }>();
+  const autoPaired = useRef(false);
+  useEffect(() => {
+    if (autoPaired.current || !params.host || !params.token) return;
+    // rebuild the payload for parsePairing — every param has to survive the trip, `remote` included,
+    // or the phone ends up with only the LAN address and no way in from outside
+    const parsed = parsePairing(
+      `host=${encodeURIComponent(params.host)}&port=${params.port ?? 6768}` +
+        `&token=${encodeURIComponent(params.token)}` +
+        (params.remote ? `&remote=${encodeURIComponent(params.remote)}` : ""),
+    );
+    if (!parsed) {
+      setErr("That pairing link is missing something — check the address and code.");
+      return;
+    }
+    autoPaired.current = true;
+    void save(parsed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.host, params.port, params.token]);
 
   const onScan = (data: string) => {
     if (!scanning) return;

@@ -36,6 +36,8 @@ base64 = "0.22"
 sha1 = "0.10"
 # just PNG encode/decode, for turning a pasted clipboard image into a temp file
 image = { version = "0.25", default-features = false, features = ["png"] }
+# list every local network address, so pairing can offer a VPN/Tailscale one as well as the LAN
+if-addrs = "0.15"
 
 # OS keychain for loop-agent API keys (Windows Credential Manager / macOS Keychain).
 # per-target so each platform pulls only its native backend.

@@ -12,6 +12,8 @@ T3-Code-inspired dark UI.
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
 - **Platforms:** Windows (primary, built locally) + macOS (built in CI). Linux mostly works but isn't shipped.
+- **Companion app:** [`mobile/`](./mobile/README.md) — an Expo/React Native Android app that pairs
+  over your LAN and mirrors spaces, panes and live terminals. Its own app, its own versioning.
 
 ---
 
@@ -82,9 +84,10 @@ src/                         React frontend
                              StartupSettings, Logo, …
   stores/                    Zustand: workspace, ui, settings, settingsSync, git, activity, skills,
                              auth, updater, notifications, confirm, loops, launchPresets,
-                             projectConfig, services
+                             projectConfig, services, bridge (mobile)
   api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
                              never invoke() directly
+  mobileBridge.ts            state mirror + action handler for the phone app (see mobile/)
   actions.ts                 shared actions (launch panes, worktrees, close) + provider cmd builders
   platform.ts                OS detection + platform-conditional bits (modifier keys, shells)
   themes.ts                  theme definitions applied over styles/tokens.css
@@ -98,6 +101,7 @@ src-tauri/                   Rust backend
   src/agent.rs               AgentManager — one headless provider turn (used by the pane auto-namer)
   src/agenthook.rs           loopback listener feeding claude's hooks + status line into the app
                              (live agent state, usage meter, automation completion)
+  src/bridge.rs              LAN WebSocket server the Android app talks to (off by default)
   src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
                              providers.rs, mcp.rs, skills.rs, usage.rs (per-provider usage read from
                              local CLI files, display-only) (+ mod.rs re-exports + shared helpers)
@@ -108,6 +112,7 @@ src-tauri/                   Rust backend
   tauri.conf.json            app config, version, updater endpoint + pubkey, capabilities
   capabilities/default.json  Tauri permission grants
 
+mobile/                      the Android companion app — its own Expo + React Native app (see its README)
 docs/                        documentation (start at docs/README.md)
 website/                     the marketing site — its own Vite + React + Tailwind app (bun)
 CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contributors)

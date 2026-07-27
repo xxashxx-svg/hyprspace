@@ -7,6 +7,7 @@ repo map, quick reference). Everything here is the deeper material it links to.
 |---|---|
 | [../CLAUDE.md](../CLAUDE.md) | **Read first.** What the app is, critical constraints, repo map, architecture overview, dev/build quick ref. |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | How the tricky subsystems work: Loops + the headless agent runner, the multi-agent launcher, the integrated editor, startup services, PTY lifecycle, stores, persistence, auth. |
+| [../mobile/README.md](../mobile/README.md) | The Android companion app — what it does, how it pairs, how to run and build it. |
 | [VERSIONING.md](./VERSIONING.md) | When to bump major/minor/patch. |
 | [BUILD-MAC.md](./BUILD-MAC.md) | Building the macOS `.dmg` locally. |
 | [CHANGELOG.md](./CHANGELOG.md) | Release notes per version. |

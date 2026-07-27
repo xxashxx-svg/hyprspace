@@ -41,6 +41,46 @@ minor. Big shift / it's a new era → major.
   (`tauri.conf.json`, `package.json`, `Cargo.toml`), tags `v<new>`, and writes the manifest with
   the same number, so the in‑app version, git tag, and update feed can't drift.
 
+## The Android app ([`mobile/`](../mobile/README.md))
+
+The phone app ships through a different channel (a GitHub release asset, not the Tauri updater), so
+it has **its own version line** — `deploy.ps1` doesn't touch it. Same digit meanings as above; bump
+it with:
+
+```bash
+cd mobile
+npm run version -- patch|minor|major     # then: npm run apk
+```
+
+That moves two numbers together, and you should never edit either by hand:
+
+| Field | Example | What it's for |
+|---|---|---|
+| `expo.version` | `0.2.0` | what people see — adapted SemVer, same rules as the desktop |
+| `expo.android.versionCode` | `200` | Android's own counter, derived as `major*10000 + minor*100 + patch` |
+
+**`versionCode` is the one that bites.** Android flatly refuses to install an update whose code isn't
+higher than what's on the device, and Play rejects a reused one. Deriving it from the version means
+the two can't drift; the script refuses a bump that wouldn't increase it.
+
+### Protocol version — the part that isn't SemVer
+
+`PROTOCOL` (in `src-tauri/src/bridge.rs` and `mobile/src/rpc.ts`) versions the *wire format*, and
+moves independently of both app versions. It matters more than usual here because **a sideloaded APK
+does not auto-update**: if the desktop only accepted its own exact protocol, every bump would
+silently brick every phone in the wild until each was manually reinstalled.
+
+So the desktop accepts a **range**, `MIN_PROTOCOL..=PROTOCOL`:
+
+- **Adding** a message or an optional field → change nothing. Old phones ignore what they don't know.
+- **Changing or removing** something old clients rely on → bump `PROTOCOL` and keep handling the old
+  shape. The phone notices the desktop is ahead and mentions there's a newer APK, without breaking.
+- **Raising `MIN_PROTOCOL`** is the only breaking move — it cuts off every phone below it, which then
+  shows "install the newer APK". Do it rarely, and only when supporting the old shape has genuinely
+  become impossible.
+
+Both sides report which half is out of date, so a mismatch never presents as a mystery failure.
+
 ## How this compares to the wider world
 
 - **Libraries / packages** (React, npm, crates) use *strict* SemVer — break the public API → major.

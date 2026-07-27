@@ -86,12 +86,14 @@ const PROVIDER_CMD: Record<string, () => string | undefined> = {
   terminal: () => undefined,
 };
 
-// send a prompt to a pane the way the desktop composer does: the text, then Enter. The small gap
-// lets an agent TUI finish reflowing the pasted block before it sees the submit.
+// Send a prompt to a pane: the text, then Enter as a separate write. The gap is load-bearing — an
+// agent TUI needs a beat to settle the pasted block, and an Enter that arrives early submits an
+// empty or truncated prompt. 300ms is what the automation engine already proved works against a
+// real claude TUI (lib/automations.ts).
 async function sendPrompt(pane: string, text: string) {
   const enc = new TextEncoder();
   await writePty(pane, enc.encode(text));
-  await new Promise((r) => setTimeout(r, 60));
+  await new Promise((r) => setTimeout(r, 300));
   await writePty(pane, enc.encode("\r"));
 }
 

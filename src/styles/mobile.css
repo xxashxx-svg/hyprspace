@@ -115,3 +115,49 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+
+/* address picker + the away-address field, in the pairing card */
+.mob-select,
+.mob-remote {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-1);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: 4px 6px;
+  outline: none;
+  max-width: 100%;
+}
+
+.mob-remote {
+  width: 260px;
+}
+
+.mob-select:focus,
+.mob-remote:focus {
+  border-color: var(--accent);
+}
+
+/* the away-address explanation carries inline code + a warning; keep it readable */
+.set-desc code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+/* inline "get the app" link inside a description line */
+.mob-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent-hover);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mob-link:hover {
+  color: var(--text-1);
+}
