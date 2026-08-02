@@ -4,13 +4,13 @@ import { Copy, ExternalLink, Maximize2, Pencil, X, XCircle } from "lucide-react"
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { revealPath } from "../api";
+import { parentOf } from "../lib/projects";
 import { closeSession } from "../actions";
-import { isMac, isWindows } from "../platform";
+import { revealLabel } from "../platform";
 import { PROVIDERS } from "../lib/providers";
 import { CtxSubmenu } from "./CtxSubmenu";
 import { maybeAutostart } from "../lib/startup";
 
-const parentOf = (p: string) => p.replace(/[\\/][^\\/]+[\\/]?$/, "") || p;
 
 // Right-click a pane tab. Carries what the pane header's "…" menu used to, now that a tab strip
 // replaced that header on every pane.
@@ -36,7 +36,6 @@ export function TabContextMenu({
   const target = sess.image ?? sess.file ?? "";
   const folder = target ? parentOf(target) : sess.cwd || ws.cwd || "";
   const siblings = sess.group ? ws.sessions.filter((x) => x.group === sess.group) : [sess];
-  const revealLabel = isWindows ? "Reveal in Explorer" : isMac ? "Reveal in Finder" : "Open containing folder";
 
   const run = (fn: () => void) => {
     fn();

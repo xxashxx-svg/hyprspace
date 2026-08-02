@@ -55,8 +55,11 @@
   --line-tight: 1.3;
   --line-normal: 1.5;
 
-  --font-ui: "DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  --font-ui: "DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", "Cantarell", sans-serif;
+  /* the Nerd Font is bundled (fonts.css) so it wins everywhere; the tail is per-OS fallback —
+     Cascadia/Consolas on Windows, Menlo on mac, DejaVu/Liberation on Linux */
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", "Menlo",
+    "DejaVu Sans Mono", "Liberation Mono", monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }
 

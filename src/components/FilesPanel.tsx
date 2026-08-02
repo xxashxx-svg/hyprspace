@@ -3,7 +3,7 @@ import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useWorkspaces } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { listDir, revealPath, fileOp, findFiles, gitChanges, type DirEntry } from "../api";
-import { joinPath } from "../lib/projects";
+import { joinPath, parentOf } from "../lib/projects";
 import { maybeAutostart } from "../lib/startup";
 import { confirmDialog } from "../stores/confirm";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -23,7 +23,7 @@ import {
   X,
   Terminal as TerminalIcon,
 } from "lucide-react";
-import { isMac, isWindows } from "../platform";
+import { revealLabel } from "../platform";
 import { fileIcon } from "../lib/fileIcons";
 import { PROVIDERS } from "../lib/providers";
 import { CtxSubmenu } from "./CtxSubmenu";
@@ -44,7 +44,6 @@ function decoOf(code: string | undefined): { cls: string; badge: string } | null
   return { cls: "mod", badge: "M" };
 }
 
-const parentOf = (path: string) => path.replace(/[\\/][^\\/]+[\\/]?$/, "") || path;
 
 const normPath = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
 
@@ -359,7 +358,7 @@ function TreeNode({
             )}
             <button className="ctx-item" onClick={reveal}>
               <ExternalLink size={14} />
-              <span>{isWindows ? "Reveal in Explorer" : isMac ? "Reveal in Finder" : "Open containing folder"}</span>
+              <span>{revealLabel}</span>
             </button>
             <div className="ctx-sep" />
             <button

@@ -44,13 +44,15 @@ interface SettingsState {
   markHydrated: () => void;
 }
 
+// bundled Nerd Font first, then per-OS fallbacks: Cascadia/Consolas (Windows), Menlo (mac),
+// DejaVu/Liberation (Linux — one of the two ships on essentially every distro)
 export const DEFAULT_FONT =
-  '"JetBrainsMono Nerd Font", "Cascadia Code", "JetBrains Mono", "Consolas", monospace';
+  '"JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", monospace';
 
 export const useSettings = create<SettingsState>()((set) => ({
   theme: "t3",
   fontSize: 13,
-  fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", monospace',
+  fontFamily: DEFAULT_FONT,
   cursorStyle: "block",
   cursorBlink: true,
   copyOnSelect: false,

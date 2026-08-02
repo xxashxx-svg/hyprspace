@@ -6,6 +6,7 @@ import { useUi } from "../stores/ui";
 import { runAction, runFolderActions, taskFromFile } from "../lib/startup";
 import { closeSession } from "../actions";
 import { pickFile } from "../api";
+import { scriptExt, binaryLabel } from "../platform";
 import { Play, Plus, X, Trash2, Upload, Square, ScrollText, Keyboard } from "lucide-react";
 
 const uid = () => crypto.randomUUID();
@@ -80,7 +81,7 @@ export function ServicesEditor({ folder, name, wsId }: { folder: string; name?: 
         <button className="svc-drop" data-folder={folder} onClick={() => void browseFile()}>
           <Upload size={15} />
           <span>
-            Drop a <b>.bat</b> / script / <b>.exe</b> to add it, or click to browse
+            Drop a <b>{scriptExt}</b> / script / <b>{binaryLabel}</b> to add it, or click to browse
           </span>
         </button>
         {startup.map((a) => {

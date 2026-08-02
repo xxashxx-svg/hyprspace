@@ -4,7 +4,7 @@ import { useWorkspaces } from "../stores/workspace";
 import { useSettings, type ClaudePermission, type CodexMode } from "../stores/settings";
 import { useNotifications } from "../stores/notifications";
 import { pickFolder, createProjectDir, gitInit, gitIsRepo } from "../api";
-import { projectsBaseDir } from "../lib/projects";
+import { projectsBaseDir, DEFAULT_GITIGNORE } from "../lib/projects";
 import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd, WSL_CMD } from "../actions";
 import { isWindows } from "../platform";
 import {
@@ -24,18 +24,6 @@ import {
 
 const SEP = isWindows ? "\\" : "/";
 const MAX = 6;
-
-const GITIGNORE = `node_modules/
-dist/
-build/
-target/
-__pycache__/
-.venv/
-*.log
-.env
-.env.local
-.DS_Store
-`;
 
 type ProvKey = "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal";
 const PROVIDERS: { key: ProvKey; name: string; icon: ReactNode }[] = [
@@ -153,7 +141,7 @@ export function NewProjectDialog() {
       await createProjectDir(
         folder,
         addReadme ? `# ${name.trim()}\n` : null,
-        addGitignore ? GITIGNORE : null,
+        addGitignore ? DEFAULT_GITIGNORE : null,
       );
       const id = useWorkspaces.getState().addWorkspace(name.trim(), folder);
       if (initGit && !alreadyRepo) await gitInit(folder).catch(() => {});

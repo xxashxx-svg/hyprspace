@@ -7,7 +7,7 @@ import { useLoops } from "../stores/loops";
 import { useProjectConfigs, folderKey, type Action } from "../stores/projectConfig";
 import { useActionEditor } from "../stores/actionEditor";
 import { runAction } from "../lib/startup";
-import { isMac, isWindows } from "../platform";
+import { isMac, openFolderLabel } from "../platform";
 import { pickFolder, gitIsRepo, revealPath } from "../api";
 import { launchInActive, newTerminal, newClaudeInWorktree } from "../actions";
 import { PROVIDERS } from "../lib/providers";
@@ -283,7 +283,7 @@ export function Titlebar() {
     },
     { label: "Open project folder…", icon: <FolderOpen size={14} />, onClick: () => void openProjectFolder() },
     {
-      label: isWindows ? "Open folder in Explorer" : isMac ? "Open folder in Finder" : "Open folder",
+      label: openFolderLabel,
       icon: <ExternalLink size={14} />,
       onClick: () => {
         const w = useWorkspaces.getState();
