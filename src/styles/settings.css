@@ -249,12 +249,15 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  --set-col: 720px; /* the content column width — the header lines up with it */
 }
 .settings-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 22px 28px 18px;
+  /* left pad tracks the centered column below, so the title sits above the cards instead of way off
+     at the window edge. falls back to the plain 28px once the window is too narrow to center. */
+  padding: 22px 28px 18px max(28px, calc(32px + (100% - 64px - var(--set-col)) / 2));
   border-bottom: 1px solid var(--border-1);
 }
 .settings-header-title {
@@ -277,7 +280,7 @@
 /* centered content column floating in the wider surface — the Cursor feel */
 .settings-page {
   width: 100%;
-  max-width: 600px;
+  max-width: var(--set-col);
   margin: 0 auto;
   display: flex;
   flex-direction: column;

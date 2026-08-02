@@ -183,7 +183,7 @@ export function MobileSettings() {
         <div className="set-section">
           <div className="set-label">Reaching it from outside</div>
           <div className="set-group">
-            <div className="set-row">
+            <div className="set-row mob-remote-row">
               <div className="set-row-info">
                 <div className="set-key">Away address</div>
                 <div className="set-desc">
