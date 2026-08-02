@@ -7,7 +7,6 @@ export const DOWNLOAD_MAC = `${RELEASES}/latest/download/HyprSpace-macos-aarch64
 // AppImage rather than the .deb: it's the self-updating build, and it runs on any distro
 export const DOWNLOAD_LINUX = `${RELEASES}/latest/download/HyprSpace-linux-x86_64.AppImage`
 
-// The Linux job is written but has never run, so no release carries that asset yet and the URL
-// above 404s. Until the first release with Linux artifacts is out, the site offers Linux users the
-// source build instead, which does work today. Flip this in the same change that publishes it.
-export const LINUX_RELEASED = false
+// v0.15.1 carries the AppImage and the .deb, so the download above resolves. Set this back to false
+// only if a release ever ships without Linux artifacts, so the site cannot offer a 404.
+export const LINUX_RELEASED = true
