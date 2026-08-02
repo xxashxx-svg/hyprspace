@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Check, Copy } from "lucide-react"
-import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, RELEASES, REPO } from "@/site"
+import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, LINUX_RELEASED, RELEASES, REPO } from "@/site"
 
 /* ---------------------------------------------------------------- release pill */
 
@@ -77,12 +77,17 @@ const TABS = [
     label: "macOS",
     cmd: `curl -L -o HyprSpace.dmg ${DOWNLOAD_MAC} && open HyprSpace.dmg`,
   },
-  {
-    key: "linux",
-    label: "Linux",
-    // AppImages arrive without the execute bit, so chmod is part of the one-liner
-    cmd: `curl -L -o HyprSpace.AppImage ${DOWNLOAD_LINUX} && chmod +x HyprSpace.AppImage && ./HyprSpace.AppImage`,
-  },
+  // only once a release actually carries the AppImage, otherwise this curl 404s (see LINUX_RELEASED)
+  ...(LINUX_RELEASED
+    ? [
+        {
+          key: "linux",
+          label: "Linux",
+          // AppImages arrive without the execute bit, so chmod is part of the one-liner
+          cmd: `curl -L -o HyprSpace.AppImage ${DOWNLOAD_LINUX} && chmod +x HyprSpace.AppImage && ./HyprSpace.AppImage`,
+        },
+      ]
+    : []),
   {
     key: "src",
     label: "From source",
@@ -106,7 +111,8 @@ export function Install() {
 
   return (
     <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0c0c0e]">
-      <div className="flex items-center gap-1 border-b border-white/[0.07] px-2 py-1.5">
+      {/* wraps because there are four tabs now: at phone widths they do not fit on one row */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-white/[0.07] px-2 py-1.5">
         {TABS.map((t, i) => (
           <button
             key={t.key}
@@ -127,7 +133,9 @@ export function Install() {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto px-4 py-3.5 font-mono text-[12.5px] leading-relaxed text-zinc-300">
+      {/* wrap rather than scroll: this is the install section, so the command is the content. A
+          horizontal scrollbar hides most of a long URL behind a gesture nobody makes. */}
+      <pre className="px-4 py-3.5 font-mono text-[12.5px] leading-relaxed break-all whitespace-pre-wrap text-zinc-300">
         <span className="mr-2 select-none text-zinc-600">$</span>
         {TABS[tab].cmd}
       </pre>

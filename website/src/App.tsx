@@ -29,7 +29,7 @@ import {
   Section,
   Wrap,
 } from "@/components/site/primitives"
-import { DOWNLOAD_MAC, DOWNLOAD_WIN, RELEASES, REPO } from "@/site"
+import { DOWNLOAD_MAC, DOWNLOAD_WIN, LINUX_RELEASED, RELEASES, REPO } from "@/site"
 
 import claudeIcon from "@/assets/brand/claude.svg"
 import openaiIcon from "@/assets/brand/openai.svg"
@@ -153,14 +153,28 @@ function Hero() {
 function InstallBand() {
   return (
     <Section id="install" className="pt-4">
-      <Wrap className="max-w-[760px]">
-        <Reveal className="text-center">
-          <Eyebrow>Install</Eyebrow>
-          <h2 className="mt-3.5 text-[clamp(24px,3vw,32px)] font-medium">One command. No account.</h2>
-        </Reveal>
-        <Reveal className="mt-8" delay={80}>
-          <Install />
-        </Reveal>
+      <Wrap>
+        {/* Command on the left, copy on the right — the mirror of Subscription below, so the two
+            splits alternate instead of reading as the same block twice. On mobile the heading comes
+            first; the command is the payload, not the introduction. */}
+        {/* minmax(0,…) is load-bearing: a grid item's min-width is `auto`, so the command block
+            would otherwise refuse to shrink below the min-content width of the longest install
+            command and swallow the row. */}
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-14">
+          <Reveal className="order-2 min-w-0 lg:order-1">
+            <Install />
+          </Reveal>
+          <Reveal className="order-1 lg:order-2" delay={80}>
+            <Eyebrow>Install</Eyebrow>
+            <h2 className="mt-3.5 text-[clamp(26px,3.2vw,36px)] leading-[1.15] font-medium">
+              One command. No account.
+            </h2>
+            <p className="mt-4 max-w-[42ch] text-[16px] text-zinc-400">
+              Take the installer for your platform, or build it from source. You sign into the agent
+              CLIs you already pay for, and nothing else.
+            </p>
+          </Reveal>
+        </div>
       </Wrap>
     </Section>
   )
@@ -274,9 +288,28 @@ function Closing() {
               <Github className="size-4" /> Source
             </ButtonLink>
           </div>
-          <p className="mt-5 font-mono text-[12px] text-zinc-500">
-            Windows 10 &amp; 11 · macOS (Apple Silicon) · free during the beta · Linux soon
-          </p>
+          {/* Platforms as columns rather than a dot-separated run-on, and driven by LINUX_RELEASED
+              so it cannot claim something the releases page does not actually have. */}
+          {/* block-level flex, not inline-flex: the CTA row above is inline-flex, so an inline strip
+              would sit on the same line as the buttons instead of under them */}
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-5 font-mono text-[11.5px] text-zinc-500">
+            <span>
+              <span className="text-zinc-300">Windows</span> 10 and 11
+            </span>
+            <span className="h-3.5 w-px bg-white/[0.12]" />
+            <span>
+              <span className="text-zinc-300">macOS</span> Apple Silicon
+            </span>
+            {LINUX_RELEASED && (
+              <>
+                <span className="h-3.5 w-px bg-white/[0.12]" />
+                <span>
+                  <span className="text-zinc-300">Linux</span> AppImage and deb
+                </span>
+              </>
+            )}
+          </div>
+          <p className="mt-3.5 font-mono text-[11.5px] text-zinc-600">free during the beta</p>
         </Reveal>
       </Wrap>
     </Section>

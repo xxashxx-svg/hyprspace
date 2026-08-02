@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Apple, Download, Github, Menu, Terminal, X } from "lucide-react"
 import { AppIcon, Wrap } from "./primitives"
-import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, REPO } from "@/site"
+import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, LINUX_RELEASED, REPO } from "@/site"
 
 const LINKS: [string, string][] = [
   ["Install", "#install"],
@@ -23,9 +23,14 @@ export function usePlatform() {
   }, [])
   const win = { href: DOWNLOAD_WIN, label: "Download for Windows", Icon: Download }
   const osx = { href: DOWNLOAD_MAC, label: "Download for macOS", Icon: Apple }
-  const lin = { href: DOWNLOAD_LINUX, label: "Download for Linux", Icon: Terminal }
+  // no packaged Linux build published yet, so point Linux visitors at the source build rather than
+  // an asset URL that 404s (see LINUX_RELEASED)
+  const lin = LINUX_RELEASED
+    ? { href: DOWNLOAD_LINUX, label: "Download for Linux", Icon: Terminal }
+    : { href: REPO, label: "Build from source", Icon: Terminal }
   const mine = os === "mac" ? osx : os === "linux" ? lin : win
-  return { ...mine, short: "Download", others: [win, osx, lin].filter((b) => b !== mine) }
+  const all = LINUX_RELEASED ? [win, osx, lin] : [win, osx]
+  return { ...mine, short: "Download", others: all.filter((b) => b !== mine) }
 }
 
 /** the bar is invisible over the hero and only materialises once you start scrolling */
