@@ -108,9 +108,11 @@ function Hero() {
           <ButtonLink href={dl.href}>
             <dl.Icon className="size-4" /> {dl.label}
           </ButtonLink>
-          <ButtonLink href={dl.other.href} variant="line">
-            <dl.other.Icon className="size-4" /> {dl.other.label}
-          </ButtonLink>
+          {dl.others.map((o) => (
+            <ButtonLink key={o.href} href={o.href} variant="line">
+              <o.Icon className="size-4" /> {o.label}
+            </ButtonLink>
+          ))}
         </div>
 
         <div className="mt-9 flex flex-wrap items-center justify-center gap-2">

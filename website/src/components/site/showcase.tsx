@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Check, Copy } from "lucide-react"
-import { DOWNLOAD_MAC, DOWNLOAD_WIN, RELEASES, REPO } from "@/site"
+import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, RELEASES, REPO } from "@/site"
 
 /* ---------------------------------------------------------------- release pill */
 
@@ -76,6 +76,12 @@ const TABS = [
     key: "mac",
     label: "macOS",
     cmd: `curl -L -o HyprSpace.dmg ${DOWNLOAD_MAC} && open HyprSpace.dmg`,
+  },
+  {
+    key: "linux",
+    label: "Linux",
+    // AppImages arrive without the execute bit, so chmod is part of the one-liner
+    cmd: `curl -L -o HyprSpace.AppImage ${DOWNLOAD_LINUX} && chmod +x HyprSpace.AppImage && ./HyprSpace.AppImage`,
   },
   {
     key: "src",

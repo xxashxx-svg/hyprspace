@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
-import { Apple, Download, Github, Menu, X } from "lucide-react"
+import { Apple, Download, Github, Menu, Terminal, X } from "lucide-react"
 import { AppIcon, Wrap } from "./primitives"
-import { DOWNLOAD_MAC, DOWNLOAD_WIN, REPO } from "@/site"
+import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, REPO } from "@/site"
 
 const LINKS: [string, string][] = [
   ["Install", "#install"],
@@ -11,17 +11,21 @@ const LINKS: [string, string][] = [
 /**
  * Which build to offer. The nav used to hand everyone the Windows installer, which meant a Mac
  * visitor downloaded a .exe — so this picks by platform and the hero uses it to order its buttons.
+ * `others` carries the remaining platforms, so the hero can offer them after the visitor's own.
  */
 export function usePlatform() {
-  const [mac, setMac] = useState(false)
+  const [os, setOs] = useState<"win" | "mac" | "linux">("win")
   useEffect(() => {
     const ua = navigator.userAgent
-    setMac(/Mac|iPhone|iPad/.test(ua))
+    // Android's UA also says "Linux", and it wants the companion app, not a desktop AppImage
+    const linux = /Linux|X11/.test(ua) && !/Android/.test(ua)
+    setOs(/Mac|iPhone|iPad/.test(ua) ? "mac" : linux ? "linux" : "win")
   }, [])
   const win = { href: DOWNLOAD_WIN, label: "Download for Windows", Icon: Download }
   const osx = { href: DOWNLOAD_MAC, label: "Download for macOS", Icon: Apple }
-  // `other` lets the hero show both buttons with the visitor's platform first
-  return mac ? { ...osx, short: "Download", other: win } : { ...win, short: "Download", other: osx }
+  const lin = { href: DOWNLOAD_LINUX, label: "Download for Linux", Icon: Terminal }
+  const mine = os === "mac" ? osx : os === "linux" ? lin : win
+  return { ...mine, short: "Download", others: [win, osx, lin].filter((b) => b !== mine) }
 }
 
 /** the bar is invisible over the hero and only materialises once you start scrolling */

@@ -415,7 +415,15 @@ fn fix_path_env() {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    // $SHELL is set for any normal desktop session; the fallback only matters for odd launchers, so
+    // pick each platform's actual default login shell (zsh on mac since Catalina, bash on Linux)
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+        if cfg!(target_os = "macos") {
+            "/bin/zsh".to_string()
+        } else {
+            "/bin/bash".to_string()
+        }
+    });
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         // -ilc so both the login file (.zprofile → brew) and the interactive rc (.zshrc → nvm) get

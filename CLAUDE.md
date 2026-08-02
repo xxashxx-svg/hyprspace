@@ -11,7 +11,9 @@ T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
-- **Platforms:** Windows (primary, built locally) + macOS (built in CI). Linux mostly works but isn't shipped.
+- **Platforms:** Windows (primary, built locally) + macOS and Linux (both built in CI). Linux ships as
+  an AppImage (self-updating) plus a `.deb` (no auto-update — Tauri's updater is AppImage-only).
+  Platform-conditional UI wording lives in `src/platform.ts`; don't inline OS ternaries in components.
 - **Companion app:** [`mobile/`](./mobile/README.md) — an Expo/React Native Android app that pairs
   over your LAN and mirrors spaces, panes and live terminals. Its own app, its own versioning.
 
@@ -176,3 +178,4 @@ Full design details (session/cwd pinning, the Loops engine + hook backend, PTY c
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — how the tricky subsystems work
 - [docs/VERSIONING.md](./docs/VERSIONING.md) — when to bump which digit
 - [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) — building the macOS app locally
+- [docs/BUILD-LINUX.md](./docs/BUILD-LINUX.md) — building the Linux AppImage/`.deb`, WebKitGTK notes

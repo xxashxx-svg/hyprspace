@@ -10,6 +10,7 @@ repo map, quick reference). Everything here is the deeper material it links to.
 | [../mobile/README.md](../mobile/README.md) | The Android companion app — what it does, how it pairs, how to run and build it. |
 | [VERSIONING.md](./VERSIONING.md) | When to bump major/minor/patch. |
 | [BUILD-MAC.md](./BUILD-MAC.md) | Building the macOS `.dmg` locally. |
+| [BUILD-LINUX.md](./BUILD-LINUX.md) | Building the Linux AppImage + `.deb`, and what differs on WebKitGTK. |
 | [CHANGELOG.md](./CHANGELOG.md) | Release notes per version. |
 
 ## Conventions for keeping docs current
