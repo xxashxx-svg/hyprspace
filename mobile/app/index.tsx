@@ -87,7 +87,15 @@ export default function Home() {
         {spaces.length === 0 ? (
           <Card>
             {status === "online" ? (
-              <Empty title="No spaces yet" hint="Create one on the desktop and it'll show up here." />
+              <Empty title="No spaces yet" hint="Create a project here or on the desktop — either way it shows up on both.">
+                <Btn
+                  kind="primary"
+                  onPress={() => router.push("/new-project")}
+                  style={{ marginTop: sp[3], minWidth: 180 }}
+                >
+                  New project
+                </Btn>
+              </Empty>
             ) : (
               <Loading label="Waiting for the desktop…" />
             )}
@@ -118,6 +126,10 @@ export default function Home() {
       <View>
         <Label>More</Label>
         <Card>
+          <Row onPress={() => router.push("/new-project")}>
+            <Text style={[u.title, { flex: 1 }]}>New project</Text>
+            <Text style={h.chev}>›</Text>
+          </Row>
           <Row onPress={() => router.push("/automations")}>
             <Text style={[u.title, { flex: 1 }]}>Automations</Text>
             <Text style={u.sub}>{snap?.automations.length ?? 0}</Text>

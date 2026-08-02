@@ -66,6 +66,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="index" options={{ title: "HyprSpace" }} />
           <Stack.Screen name="pair" options={{ title: "Pair with desktop" }} />
+          <Stack.Screen name="new-project" options={{ title: "New project" }} />
           <Stack.Screen name="space/[id]" options={{ title: "Space" }} />
           <Stack.Screen name="term/[id]" options={{ title: "Terminal" }} />
           <Stack.Screen name="git/[id]" options={{ title: "Changes" }} />

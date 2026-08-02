@@ -9,12 +9,18 @@ import { listen } from "@tauri-apps/api/event";
 import {
   bridgePublish,
   bridgeReply,
+  createProjectDir,
+  getHomeDir,
   gitBranchInfo,
   gitChanges,
   gitCommit,
   gitDiff,
+  gitInit,
+  gitIsRepo,
+  listDir,
   writePty,
 } from "./api";
+import { DEFAULT_GITIGNORE, joinPath, parentOf, projectsBaseDir } from "./lib/projects";
 import { useWorkspaces } from "./stores/workspace";
 import { useAgentStatus, displayState } from "./stores/agentStatus";
 import { useUsage, summarize } from "./stores/usage";
@@ -76,6 +82,9 @@ function snapshot() {
   };
 }
 
+// same ceiling the desktop dialog uses per provider, so a bad payload can't spawn 500 PTYs
+const MAX_PANES = 6;
+
 const PROVIDER_CMD: Record<string, () => string | undefined> = {
   claude: claudeCmd,
   gemini: geminiCmd,
@@ -134,6 +143,79 @@ async function handle(r: Req): Promise<unknown> {
     case "pane.prompt":
       await sendPrompt(str("pane"), str("text"));
       return { ok: true };
+
+    // ---- project creation from the phone -------------------------------------------------------
+    // The phone never does path math: it can't know whether this desktop uses \ or /, so it sends a
+    // parent + a name and we join. Same reason browsing is a request rather than the phone guessing
+    // what's above a folder.
+
+    // sensible places to start browsing — home, and the configured projects folder
+    case "fs.roots": {
+      const [home, projects] = await Promise.all([
+        getHomeDir().catch(() => ""),
+        projectsBaseDir().catch(() => ""),
+      ]);
+      return { home, projects };
+    }
+
+    case "fs.browse": {
+      const from = str("path") || (await projectsBaseDir().catch(() => "")) || (await getHomeDir());
+      // descending is `into`, not a path the phone built: it can't know our separator
+      const path = str("into") ? joinPath(from, str("into")) : from;
+      const entries = await listDir(path);
+      return {
+        path,
+        parent: parentOf(path),
+        // so the phone can PREVIEW "<folder><sep><name>" without guessing. Real joins still happen here.
+        sep: path.includes("\\") ? "\\" : "/",
+        // folders first, then files, each alphabetical — the phone renders the list as given
+        entries: [...entries].sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)),
+      };
+    }
+
+    // does this folder already exist / is it already a repo? lets the phone warn before creating
+    case "project.inspect": {
+      const folder = str("folder") || joinPath(str("parent"), str("name").trim());
+      if (!folder) throw new Error("no folder");
+      const repo = await gitIsRepo(folder).catch(() => false);
+      return { folder, repo };
+    }
+
+    // The desktop's New Project flow (NewProjectDialog.create), driven remotely. Deliberately the
+    // same order — folder, workspace, git, panes — so a project made from the phone is
+    // indistinguishable from one made here. The state push that follows is what syncs it back.
+    case "project.create": {
+      const name = str("name").trim();
+      if (!name) throw new Error("a project needs a name");
+      // `folder` for an existing folder, else parent + name for a fresh one
+      const folder = str("folder") || joinPath(str("parent"), name);
+      if (!folder) throw new Error("a project needs a folder");
+
+      await createProjectDir(folder, p.readme ? `# ${name}\n` : null, p.gitignore ? DEFAULT_GITIGNORE : null);
+      // `activate: false` so a project made from the phone doesn't yank the desktop away from
+      // whatever it's showing — the same courtesy space.activate and addSession({focus:false})
+      // already observe. It still appears in the rail instantly via the state push. Pass open:true
+      // to deliberately switch the desktop's view.
+      const id = ws().addWorkspace(name, folder, { activate: false });
+      if (p.git) await gitInit(folder).catch(() => {});
+
+      // panes: { claude: 2, terminal: 1, … } — same provider map space.launch uses
+      const panes = (p.panes ?? {}) as Record<string, unknown>;
+      let launched = 0;
+      // PTYs only mount for an ACTIVATED space, so without this the panes would sit in state and
+      // never start (addWorkspace sets activeId, which is a different thing)
+      if (Object.values(panes).some((n) => (Number(n) || 0) > 0)) ws().activateWorkspace(id);
+      for (const [prov, n] of Object.entries(panes)) {
+        const build = PROVIDER_CMD[prov];
+        if (!build) continue; // unknown provider from a newer phone build — skip, don't fail the whole create
+        for (let i = 0; i < Math.min(Number(n) || 0, MAX_PANES); i++) {
+          ws().addSession(id, build(), folder, { focus: false });
+          launched++;
+        }
+      }
+      if (p.open) ws().setActive(id);
+      return { ws: id, folder, panes: launched };
+    }
 
     case "git.changes":
       return { files: await gitChanges(str("cwd")) };

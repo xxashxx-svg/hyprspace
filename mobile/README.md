@@ -12,6 +12,7 @@ watches them, types into them, and starts new ones.
 |---|---|
 | **Spaces & panes** | Every space, with each pane's live agent state (working / needs you / done) and what it's doing right now. Panes waiting on you float to the top of the home screen. |
 | **Terminal** | A real mirror — xterm.js rendering the actual PTY stream at the desktop's own cols/rows. Typing goes straight through as you type, like sitting at the machine; the key row covers `esc` `tab` `↑↓` `^C` and the rest a phone keyboard doesn't have. |
+| **New project** | Create a project from your phone: browse the desktop's folders, name it, pick which agents to launch, and it appears on the desktop the moment it's made. |
 | **Launch** | Start a Claude / Codex / Gemini / shell pane in any space from your phone. |
 | **Changes** | The repo's changed files and their diffs, plus commit (and push). |
 | **Automations** | What's scheduled, what's running, and run/stop. |
@@ -143,6 +144,7 @@ app/                 expo-router screens
   _layout.tsx        stack, theme, connection lifecycle, the offline banner
   index.tsx          home — spaces, and panes waiting on you
   pair.tsx           QR scan / manual pairing
+  new-project.tsx    create a project — folder browser, agents, git/README/.gitignore
   space/[id].tsx     one space: panes, launch, repo
   term/[id].tsx      the terminal mirror + composer + key row
   git/[id].tsx       changed files, diffs, commit

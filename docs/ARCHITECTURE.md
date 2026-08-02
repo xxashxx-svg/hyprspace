@@ -158,9 +158,28 @@ from under whoever's sitting at it.
 bounded outbound queue and a full one **drops frames** rather than applying backpressure. A phone on
 bad wifi degrades its own mirror and nothing else.
 
-**Anything else** (launch a pane, wake a space, git changes/diff/commit, run an automation) is a
-generic `req` → Tauri event → `mobileBridge.ts` handler → `bridge_reply`, so the phone reuses the same
-`src/api` wrappers the UI does and Rust stays a relay.
+**Anything else** (launch a pane, wake a space, git changes/diff/commit, run an automation, create a
+project) is a generic `req` → Tauri event → `mobileBridge.ts` handler → `bridge_reply`, so the phone
+reuses the same `src/api` wrappers the UI does and Rust stays a relay.
+
+**The phone never does path math.** It can't know whether the desktop uses `\` or `/`, so browsing is
+a round trip: `fs.browse` takes either an absolute `path` or an `into` (a child folder's *name*) and
+the desktop joins it with `joinPath`. It answers with the resolved `path`, its `parent`, and the
+desktop's `sep` — `sep` is for rendering a `folder<sep>name` preview only, never for building a path
+to send back. `project.create` follows the same rule: the phone sends `parent` + `name` (or an
+existing `folder`) and the desktop resolves it.
+
+`project.create` runs the desktop's own New Project sequence in the same order — `createProjectDir` →
+`addWorkspace` → `gitInit` → N × `addSession` — so a project made from the phone is
+indistinguishable from one made at the desk, and the state push that follows is what makes it appear
+on both at once. Two things it does deliberately:
+
+- **`addWorkspace(…, { activate: false })`** — a project created from the phone must not yank the
+  desktop away from whatever it's showing. It still appears in the rail immediately. Pass
+  `open: true` to switch the desktop's view on purpose.
+- **`activateWorkspace(id)` when panes were asked for** — PTYs only mount for an *activated* space.
+  `addWorkspace` sets `activeId`, which is a different thing; without the explicit activate the panes
+  would sit in state and never start.
 
 ## Code structure & animation notes
 
