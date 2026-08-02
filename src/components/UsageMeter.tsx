@@ -41,7 +41,7 @@ const RANK: Record<string, number> = { "": 0, warn: 1, crit: 2 };
 // Once resets_at passes, the window has rolled over and whatever we last heard is the OLD window's
 // final number — usually near 100%. Claude only tells us the new figure on the next turn, so until
 // then we know nothing and must say so rather than showing a stale 100% in red.
-const expired = (w?: UsageWindow) => !!w?.resetsAt && w.resetsAt <= Date.now();
+const expired = (w?: UsageWindow) => !!w && (!!w.stale || (!!w.resetsAt && w.resetsAt <= Date.now()));
 
 function resetLabel(w?: UsageWindow): string {
   if (!w?.resetsAt) return "";
@@ -74,10 +74,16 @@ function Ring({ pct, tone }: { pct: number; tone: string }) {
 }
 
 function Bar({ pct, tone, tick }: { pct: number; tone: string; tick?: number }) {
+  // the pace notch only says anything when there's spend to compare it against, and down at the
+  // track's rounded ends it just reads as a stray speck — so keep it to the stretch where it means
+  // something
+  const showTick = tick !== undefined && pct > 0 && tick > 5 && tick < 95;
   return (
     <div className={`um-bar ${tone}`}>
       <i style={{ width: `${pct}%` }} />
-      {tick !== undefined && <span className="um-tick" style={{ left: `${tick}%` }} />}
+      {showTick && (
+        <span className="um-tick" style={{ left: `${tick}%` }} title="how far through this window you are" />
+      )}
     </div>
   );
 }

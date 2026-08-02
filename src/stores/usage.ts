@@ -12,6 +12,8 @@ export interface UsageWindow {
   /** how long the window is. Pace ("are you spending faster than the clock?") is meaningless
    *  without it — a 7-day window judged against 5 hours reads as catastrophic at 20%. */
   windowMs?: number;
+  /** the pct is the PREVIOUS window's, so we don't actually know this window's number yet */
+  stale?: boolean;
 }
 
 export interface PaneUsage {
@@ -150,10 +152,16 @@ export function summarize(
   if (!withWindows.length) return null;
   const newest = withWindows.reduce((a, b) => (b[1].at > a[1].at ? b : a));
   const windows = newest[1].windows;
-  const five = windows.five_hour;
+  // A report saying "resets at R" describes the window [R - windowMs, R]. If it reached us BEFORE
+  // that window began it can't be describing it — it's the old window's final number (usually a
+  // rate-limited 100%) carrying an already-rolled-forward reset. Claude only corrects it on the next
+  // turn, and with no pane taking one that red 100% would sit there for hours.
+  const mark = (w: UsageWindow): UsageWindow =>
+    w.resetsAt && w.windowMs && newest[1].at < w.resetsAt - w.windowMs ? { ...w, stale: true } : w;
+  const five = windows.five_hour ? mark(windows.five_hour) : undefined;
   const others = ORDER.filter((k) => k !== "five_hour" && windows[k])
     .concat(Object.keys(windows).filter((k) => k !== "five_hour" && !ORDER.includes(k)))
-    .map((key) => ({ key, label: windowLabel(key), win: windows[key] }));
+    .map((key) => ({ key, label: windowLabel(key), win: mark(windows[key]) }));
 
   // distinct models across panes that are still live; most-recent first
   const models = [
