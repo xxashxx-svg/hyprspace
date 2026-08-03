@@ -14,6 +14,11 @@ import { Logo } from "./Logo";
 import { closeSession } from "../actions";
 import { resolveLayout } from "../lib/grid";
 
+// the proxy is capped rather than full-size: a third-of-the-screen card in your hand would cover
+// the very drop targets you're aiming at
+const GHOST_MAX_W = 300;
+const GHOST_MAX_H = 190;
+
 function cellSidAt(x: number, y: number): string | null {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
   return el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
@@ -39,15 +44,46 @@ export function PaneGrid() {
   const fileDropId = useUi((s) => s.fileDropId);
   const skillDropId = useUi((s) => s.skillDropId);
 
-  const drag = useRef<{ id: string; ws: string; sx: number; sy: number; active: boolean } | null>(
-    null,
-  );
+  const drag = useRef<{
+    id: string;
+    ws: string;
+    sx: number;
+    sy: number;
+    active: boolean;
+    // where inside the pane you grabbed it, so the ghost stays under that same point instead of
+    // snapping its corner to the cursor
+    gx: number;
+    gy: number;
+  } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  // The thing you actually "pick up". The live pane can't be lifted: giving .terminal-pane a
+  // transform/shadow/z-index promotes it to its own compositing layer and WebView2 then
+  // mis-composites xterm's WebGL canvas (see the note in pane.css). So a proxy flies instead and
+  // the real pane never moves. Set once when the drag starts; the position is written straight to
+  // the DOM in the rAF below, so a pointermove never re-renders the grid.
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const [ghost, setGhost] = useState<{
+    title: string;
+    provider: Session["provider"];
+    folder?: string;
+    w: number;
+    h: number;
+  } | null>(null);
   // drag hit-testing rides rAF: pointermove can fire way faster than the frame rate, and each
   // pass costs two elementFromPoint calls — coalesce to one pass per frame on the latest coords
   const dragRaf = useRef(0);
   const dragPos = useRef({ x: 0, y: 0 });
+  const dragRect = useRef<{ w: number; h: number } | null>(null);
+  const ghostK = useRef(1);
+  // Written straight to the node, never through state: at 60fps a setState per move would re-render
+  // the whole grid (and every live terminal in it) while you drag.
+  const moveGhost = useCallback((x: number, y: number, d: { gx: number; gy: number }) => {
+    const g = ghostRef.current;
+    if (!g) return;
+    const k = ghostK.current;
+    g.style.transform = `translate3d(${x - d.gx * k}px, ${y - d.gy * k}px, 0)`;
+  }, []);
   useEffect(() => () => {
     if (dragRaf.current) cancelAnimationFrame(dragRaf.current);
   }, []);
@@ -90,7 +126,20 @@ export function PaneGrid() {
     (e: RPointerEvent<HTMLDivElement>, wsId: string, sid: string) => {
       if (e.button !== 0) return;
       e.currentTarget.setPointerCapture?.(e.pointerId);
-      drag.current = { id: sid, ws: wsId, sx: e.clientX, sy: e.clientY, active: false };
+      // measure the cell now, while it's still laid out — the ghost is sized from it, and the grab
+      // offset is what keeps it under your cursor rather than jumping
+      const cell = e.currentTarget.closest<HTMLElement>(".pane-cell");
+      const r = cell?.getBoundingClientRect();
+      drag.current = {
+        id: sid,
+        ws: wsId,
+        sx: e.clientX,
+        sy: e.clientY,
+        active: false,
+        gx: r ? e.clientX - r.left : 0,
+        gy: r ? e.clientY - r.top : 0,
+      };
+      dragRect.current = r ? { w: r.width, h: r.height } : null;
       setFocused(sid);
     },
     [setFocused],
@@ -104,6 +153,24 @@ export function PaneGrid() {
         d.active = true;
         setDragId(d.id);
         useUi.getState().setPaneDrag(true);
+        // read from the store rather than closing over `active`, so this handler keeps a stable
+        // identity and memoized panes don't re-render when a drag starts
+        const st = useWorkspaces.getState();
+        const sess = st.workspaces.find((w) => w.id === d.ws)?.sessions.find((s) => s.id === d.id);
+        const r = dragRect.current;
+        // a full-size proxy would cover the drop targets you're aiming at, so shrink it and scale
+        // the grab offset by the same factor to keep the same point under the cursor
+        const k = r ? Math.min(GHOST_MAX_W / r.w, GHOST_MAX_H / r.h, 1) : 1;
+        ghostK.current = k;
+        setGhost({
+          title: sess?.title || sess?.provider || "Pane",
+          provider: sess?.provider ?? "terminal",
+          folder: sess?.cwd?.split(/[\\/]/).filter(Boolean).pop(),
+          w: r ? r.w * k : GHOST_MAX_W,
+          h: r ? r.h * k : GHOST_MAX_H,
+        });
+        // place it before the first paint so it never flashes at the origin
+        moveGhost(e.clientX, e.clientY, d);
       }
       dragPos.current = { x: e.clientX, y: e.clientY };
       if (dragRaf.current) return;
@@ -112,6 +179,7 @@ export function PaneGrid() {
         const cur = drag.current;
         if (!cur?.active) return; // drag ended before the frame
         const { x, y } = dragPos.current;
+        moveGhost(x, y, cur);
         // hovering a different space in the rail → it becomes the drop target
         const overWs = railWsAt(x, y);
         if (overWs && overWs !== cur.ws) {
@@ -124,7 +192,7 @@ export function PaneGrid() {
         }
       });
     },
-    [setDragId, setOverId],
+    [setDragId, setOverId, moveGhost], // moveGhost is a stable useCallback([]), so this stays constant
   );
   const onGripUp = useCallback(
     (e: RPointerEvent<HTMLDivElement>) => {
@@ -146,13 +214,35 @@ export function PaneGrid() {
       }
       setDragId(null);
       setOverId(null);
+      setGhost(null);
+      dragRect.current = null;
       useUi.getState().setPaneDrag(false);
     },
     [moveToWs, reorder, setDragId, setOverId],
   );
 
+  const GhostIcon = ghost ? (PROVIDER_ICONS[ghost.provider] ?? TerminalIcon) : TerminalIcon;
+
   return (
     <div className={`pane-stage${dragId ? " dragging-active" : ""}`}>
+      {/* The pane in your hand. position:fixed escapes the grid (no transformed ancestor), and
+          pointer-events:none is load-bearing — the drop hit-test is elementFromPoint, so a ghost
+          that could be hit would shadow every target underneath it. */}
+      {ghost && (
+        <div
+          ref={ghostRef}
+          className="pane-ghost"
+          style={{ width: ghost.w, height: ghost.h }}
+          aria-hidden
+        >
+          <div className="pane-ghost-head">
+            <GhostIcon size={12} className="pane-ghost-ico" />
+            <span className="pane-ghost-title">{ghost.title}</span>
+            {ghost.folder && <span className="pane-ghost-cwd">· {ghost.folder}</span>}
+          </div>
+          <div className="pane-ghost-body" />
+        </div>
+      )}
       {!active && (
         <div className="pane-empty">
           <div className="empty-logo">

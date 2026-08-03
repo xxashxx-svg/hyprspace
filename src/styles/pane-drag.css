@@ -3,8 +3,95 @@
 .pane-stage.dragging-active * {
   cursor: grabbing !important;
 }
+/* The slot the pane came out of. It reads as an empty socket rather than a half-dead terminal:
+   the old flat opacity made it look like the pane had broken, not like you were holding it. */
 .pane-cell.dragging .terminal-pane {
+  opacity: 0.22;
+  filter: saturate(0.5);
+}
+.pane-cell.dragging::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: var(--radius-2);
+  border: 1.5px dashed var(--border-2);
+  background: linear-gradient(var(--surface-1), var(--surface-1));
   opacity: 0.5;
+}
+
+/* ---- the pane you're actually holding ---- */
+.pane-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 600; /* above every panel/menu (the app's ceiling is 500) */
+  pointer-events: none; /* MUST stay none: drop targeting is elementFromPoint */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  /* the lift: a long, soft shadow is what sells "off the surface" more than any scale does */
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 18px 44px -12px rgba(0, 0, 0, 0.72),
+    0 4px 12px -4px rgba(0, 0, 0, 0.55);
+  animation: ghostLift 0.13s var(--ease) both;
+  will-change: transform;
+}
+@keyframes ghostLift {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1.03; /* held slightly nearer than the page */
+  }
+}
+.pane-ghost-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--border-1);
+  font-size: var(--text-xs);
+}
+.pane-ghost-ico {
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.pane-ghost-title {
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pane-ghost-cwd {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Not a screenshot: xterm draws into a WebGL canvas that can't be cheaply snapshotted, and a
+   blurry thumbnail would look worse than an honest surface. Faint rules suggest terminal rows. */
+.pane-ghost-body {
+  flex: 1;
+  min-height: 0;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--surface-1) 0 3px,
+      transparent 3px 9px
+    ),
+    var(--bg-base);
+  opacity: 0.85;
 }
 .pane-cell.drop-over .terminal-pane {
   outline: 2px solid var(--accent);
