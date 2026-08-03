@@ -73,17 +73,10 @@ function Ring({ pct, tone }: { pct: number; tone: string }) {
   );
 }
 
-function Bar({ pct, tone, tick }: { pct: number; tone: string; tick?: number }) {
-  // the pace notch only says anything when there's spend to compare it against, and down at the
-  // track's rounded ends it just reads as a stray speck — so keep it to the stretch where it means
-  // something
-  const showTick = tick !== undefined && pct > 0 && tick > 5 && tick < 95;
+function Bar({ pct, tone }: { pct: number; tone: string }) {
   return (
     <div className={`um-bar ${tone}`}>
       <i style={{ width: `${pct}%` }} />
-      {showTick && (
-        <span className="um-tick" style={{ left: `${tick}%` }} title="how far through this window you are" />
-      )}
     </div>
   );
 }
@@ -92,12 +85,10 @@ function Bar({ pct, tone, tick }: { pct: number; tone: string; tick?: number }) 
 function Section({
   block,
   first,
-  tick,
   note,
 }: {
   block: ProviderBlock;
   first?: boolean;
-  tick?: number;
   note?: string;
 }) {
   return (
@@ -122,7 +113,7 @@ function Section({
                 {gone ? "—" : `${Math.round(win.pct)}%`}
               </span>
             </div>
-            <Bar pct={gone ? 0 : win.pct} tone={t} tick={gone || key !== "five_hour" ? undefined : tick} />
+            <Bar pct={gone ? 0 : win.pct} tone={t} />
             {gone ? (
               <div className="um-sub stale">window reset · updates next turn</div>
             ) : (
@@ -221,12 +212,6 @@ export function UsageMeter() {
   const anyWindow = (claude?.windows.length ?? 0) + (codex?.windows.length ?? 0) > 0;
   if (!worst && !anyWindow) return null;
 
-  const five = sum?.five;
-  const elapsed =
-    five?.resetsAt && five.windowMs && !expired(five)
-      ? Math.max(0, Math.min(100, ((five.windowMs - (five.resetsAt - Date.now())) / five.windowMs) * 100))
-      : undefined;
-
   // codex only records its windows mid-session, so a number can easily be weeks old — say so
   const codexAge = codex?.updatedAt ? relTime(codex.updatedAt) : undefined;
   const codexNote = codexAge ? (codexAge === "now" ? "just updated" : `as of ${codexAge} ago`) : undefined;
@@ -249,7 +234,7 @@ export function UsageMeter() {
 
       {open && (
         <div className="um-pop">
-          {claude && <Section block={claude} first tick={elapsed} />}
+          {claude && <Section block={claude} first />}
           {claude && sum?.stale && <div className="um-stale">no agent has reported in a while</div>}
           {codex && <Section block={codex} first={!claude} note={codexNote} />}
         </div>

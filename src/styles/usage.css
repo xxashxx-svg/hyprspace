@@ -171,16 +171,6 @@
 .um-bar.crit i {
   background: linear-gradient(90deg, color-mix(in srgb, var(--status-error) 70%, transparent), var(--status-error));
 }
-/* where the clock is — a notch, outlined so it stays visible over both track and fill */
-.um-tick {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--text-1);
-  box-shadow: 0 0 0 1px var(--surface-2);
-}
 
 .um-sub {
   font-family: var(--font-mono);
