@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.16.0 — 2026-08-03
+
+- Drag a pane and you now carry it. The pane you grabbed follows your cursor, and the slot it left reads as empty instead of a half-faded terminal.
+- Images open in a real viewer: scroll to zoom anchored on your cursor, drag to pan, plus fit and 1:1 controls and +/-/0/1 shortcuts.
+- Settings pages line up with their headings, and the Mobile away-address field is no longer squeezed into a truncated sliver.
+- Linux: HyprSpace now ships as a self-updating AppImage plus a .deb.
+
 ## 0.15.1 — 2026-07-27
 
 - Fixed "Update failed" when updating with panes open. The installer could not replace the app while your terminals' background processes still held its folder open, so updating now closes them first — your sessions are saved and come back on restart.
