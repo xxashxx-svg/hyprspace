@@ -165,8 +165,9 @@ function InstallBand() {
             <Install />
           </Reveal>
           <Reveal className="order-1 lg:order-2" delay={80}>
-            <Eyebrow>Install</Eyebrow>
-            <h2 className="mt-3.5 text-[clamp(26px,3.2vw,36px)] leading-[1.15] font-medium">
+            {/* no eyebrow: "One command. No account." already says what this section is, and the
+                #install anchor does the navigational work a label would. */}
+            <h2 className="text-[clamp(26px,3.2vw,36px)] leading-[1.15] font-medium">
               One command. No account.
             </h2>
             <p className="mt-4 max-w-[42ch] text-[16px] text-zinc-400">
