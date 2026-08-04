@@ -45,7 +45,12 @@ T3-Code-inspired dark UI.
    work. When the user asks to ship, look at what changed since the last release
    (`git log <lastTag>..HEAD`) and write a few short user-facing bullets — pass them as the
    `deploy.ps1` notes; it records them in `docs/CHANGELOG.md` and the in-app "What's new".
-8. **Code style:** human/casual, minimal comments (comment only tricky logic, keep it short and
+8. **Analytics stay boring and honest.** `src/lib/analytics.ts` sends ONE event (`app_opened`) with a
+   random install id, version and OS — off in dev, off without `VITE_POSTHOG_KEY`, off at one click in
+   Settings. This repo is public: if you add a property, the Settings copy and the file's header
+   comment must change in the same commit. Never send prompts, terminal output, paths, project names,
+   or anything joined to an account.
+9. **Code style:** human/casual, minimal comments (comment only tricky logic, keep it short and
    lowercase-casual). Match the surrounding code.
 
 ---

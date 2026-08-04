@@ -13,6 +13,7 @@ type Snap = {
   lineHeight: number;
   terminalTheme: string;
   gpuRender: boolean;
+  analytics: boolean;
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
   codexMode: CodexMode;
@@ -34,6 +35,7 @@ function snapshot(): Snap {
     lineHeight: s.lineHeight,
     terminalTheme: s.terminalTheme,
     gpuRender: s.gpuRender,
+    analytics: s.analytics,
     claudePermission: s.claudePermission,
     geminiYolo: s.geminiYolo,
     codexMode: s.codexMode,

@@ -15,6 +15,7 @@ interface SettingsState {
   lineHeight: number; // terminal row spacing (1.0 = tight, 1.2 = airy)
   terminalTheme: string; // terminal color scheme id (see terminal/palettes.ts); "adaptive" = match app
   gpuRender: boolean; // WebGL renderer (GPU, seamless block art) vs the DOM renderer (ClearType text)
+  analytics: boolean; // one anonymous app_opened ping (install id + version + OS). See lib/analytics.ts.
   claudePermission: ClaudePermission;
   geminiYolo: boolean;
   codexMode: CodexMode;
@@ -32,6 +33,7 @@ interface SettingsState {
   setLineHeight: (n: number) => void;
   setTerminalTheme: (id: string) => void;
   setGpuRender: (b: boolean) => void;
+  setAnalytics: (b: boolean) => void;
   setClaudePermission: (m: ClaudePermission) => void;
   setGeminiYolo: (b: boolean) => void;
   setCodexMode: (m: CodexMode) => void;
@@ -58,6 +60,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   copyOnSelect: false,
   lineHeight: 1.1, // comfortable middle — 1.0 felt congested, 1.2 felt airy
   terminalTheme: "adaptive", // follow the app theme by default; pick a named scheme in Settings
+  analytics: true, // on by default, off in one click — a count of installs nobody can trace to a person
   gpuRender: true, // GPU/WebGL by default — block art (Claude logo, progress bars) tiles seamlessly
   // at any line height; the DOM/ClearType renderer is the opt-out for folks who prefer subpixel text
   claudePermission: "acceptEdits",
@@ -81,6 +84,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   setLineHeight: (n) => set({ lineHeight: Math.min(1.8, Math.max(1.0, Math.round(n * 100) / 100)) }),
   setTerminalTheme: (id) => set({ terminalTheme: id }),
   setGpuRender: (b) => set({ gpuRender: b }),
+  setAnalytics: (b) => set({ analytics: b }),
   setClaudePermission: (m) => set({ claudePermission: m }),
   setGeminiYolo: (b) => set({ geminiYolo: b }),
   setCodexMode: (m) => set({ codexMode: m }),
