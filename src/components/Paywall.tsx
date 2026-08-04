@@ -5,8 +5,10 @@ import { useAuth } from "../stores/auth";
 import { useEntitlement } from "../stores/entitlement";
 import { Logo } from "./Logo";
 
-// where "Subscribe" sends the user — your Polar checkout link / storefront. Wire when going paid.
-const SUBSCRIBE_URL = "https://hyprspace.app/subscribe";
+// Where "Subscribe" sends the user. Points at the site's root rather than /subscribe: that path
+// doesn't exist yet (it 404s), and the root at least lands them somewhere real. Swap this for the
+// Polar checkout link when going paid.
+const SUBSCRIBE_URL = "https://hyprspace.dev";
 
 // Shown only when the backend says paid + this account isn't entitled. Reuses the auth-gate styles
 // so it feels like the sign-in screen.
