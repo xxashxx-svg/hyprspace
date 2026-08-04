@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.17.0 — 2026-08-05
+
+- HyprSpace no longer asks you to sign in. It runs the CLIs you are already signed into, on your own machine, so an account was never the point. Sign in from Settings > Account only if you want to.
+- Anonymous usage stats, and a switch to turn them off in Settings > Terminal. One ping when the app starts, carrying a random install id, the version and your OS. Never your prompts, terminal output, file paths or project names, and never linked to an account.
+
 ## 0.16.0 — 2026-08-03
 
 - Drag a pane and you now carry it. The pane you grabbed follows your cursor, and the slot it left reads as empty instead of a half-faded terminal.
