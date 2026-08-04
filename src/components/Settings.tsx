@@ -256,7 +256,9 @@ export function Settings() {
   const terminalTheme = useSettings((s) => s.terminalTheme);
   const setTerminalTheme = useSettings((s) => s.setTerminalTheme);
   const gpuRender = useSettings((s) => s.gpuRender);
+  const analytics = useSettings((s) => s.analytics);
   const setGpuRender = useSettings((s) => s.setGpuRender);
+  const setAnalytics = useSettings((s) => s.setAnalytics);
   const autoNameAgents = useSettings((s) => s.autoNameAgents);
   const setAutoNameAgents = useSettings((s) => s.setAutoNameAgents);
   const dismissedConfirms = useSettings((s) => s.dismissedConfirms);
@@ -323,7 +325,6 @@ export function Settings() {
 
   const authUser = useAuth((s) => s.user);
   const signingIn = useAuth((s) => s.signingIn);
-  const signInGoogle = useAuth((s) => s.signInWithGoogle);
   const signOut = useAuth((s) => s.signOut);
   const workspaces = useWorkspaces((s) => s.workspaces);
   const activeId = useWorkspaces((s) => s.activeId);
@@ -512,13 +513,16 @@ export function Settings() {
                 </>
               ) : (
                 <Group label="Account">
-                  <Row label="Status" desc="You're not signed in.">
+                  <Row
+                    label="Status"
+                    desc="You're not signed in. HyprSpace works without an account — it runs your own CLIs on your own machine. Sign in only if you want your account carried across devices."
+                  >
                     <button
                       className="btn primary"
                       disabled={signingIn}
-                      onClick={() => void signInGoogle()}
+                      onClick={() => useUi.getState().openSignIn()}
                     >
-                      {signingIn ? "Waiting…" : "Sign in with Google"}
+                      {signingIn ? "Waiting…" : "Sign in"}
                     </button>
                   </Row>
                 </Group>
@@ -826,6 +830,18 @@ export function Settings() {
                       className={`toggle ${gpuRender ? "on" : ""}`}
                       onClick={() => setGpuRender(!gpuRender)}
                       aria-pressed={gpuRender}
+                    >
+                      <span className="toggle-knob" />
+                    </button>
+                  </Row>
+                  <Row
+                    label="Anonymous usage stats"
+                    desc="One ping when the app starts, carrying a random install id, the version and your OS. Never your prompts, terminal output, file paths or project names, and never linked to an account. It exists so we can tell how many people use HyprSpace."
+                  >
+                    <button
+                      className={`toggle ${analytics ? "on" : ""}`}
+                      onClick={() => setAnalytics(!analytics)}
+                      aria-pressed={analytics}
                     >
                       <span className="toggle-knob" />
                     </button>

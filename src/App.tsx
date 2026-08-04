@@ -15,6 +15,8 @@ import { useGit } from "./stores/git";
 import { useActionEditor } from "./stores/actionEditor";
 import { usePreview } from "./stores/preview";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { SignInScreen } from "./components/AuthGate";
+import { track } from "./lib/analytics";
 import { Updater } from "./components/Updater";
 import { Hotkeys } from "./components/Hotkeys";
 import { ReviewDock } from "./components/ReviewDock";
@@ -83,6 +85,7 @@ let booted = false;
 export default function App() {
   const view = useUi((s) => s.view);
   const settingsOpen = useUi((s) => s.settingsOpen);
+  const signInOpen = useUi((s) => s.signInOpen);
   // open flags for the lazy dialogs — hoisted here so their chunks only load on first open
   const paletteOpen = useUi((s) => s.paletteOpen);
   const newProjectOpen = useUi((s) => s.newProjectOpen);
@@ -100,6 +103,8 @@ export default function App() {
   useEffect(() => {
     if (booted) return;
     booted = true;
+    // one anonymous ping per launch — this is the whole of the "how many people use this" signal
+    void track("app_opened");
     let cancelled = false;
     (async () => {
       // we no longer seed a default "Home" workspace — the sidebar starts empty and the user adds
@@ -342,6 +347,7 @@ export default function App() {
         {settingsHydrated && (onboardingOpen || !onboarded) && <Onboarding />}
         {paletteOpen && <CommandPalette />}
         {settingsOpen && <Settings />}
+        {signInOpen && <SignInScreen />}
         {previewOpen && <PreviewPanel />}
         {commitOpen && <CommitDialog />}
         {prOpen && <PrDialog />}

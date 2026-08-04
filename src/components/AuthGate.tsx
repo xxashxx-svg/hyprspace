@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAuth } from "../stores/auth";
+import { useUi } from "../stores/ui";
 import { supabaseReady } from "../lib/supabase";
 import { applyTheme } from "../themes";
 import { loadState } from "../api";
@@ -18,32 +18,20 @@ function GoogleMark() {
   );
 }
 
-// Hard account gate: nothing below mounts (no workspaces, no PTYs) until you're signed in.
-// Email/password (with an emailed code to verify the address) or Google. No key fallback.
+/**
+ * Boots auth and gets out of the way. HyprSpace runs entirely on your machine against CLIs you're
+ * already signed into, so demanding an account before you can open a terminal is friction that buys
+ * the user nothing. An account is only meaningful for things that need a server to know who you are
+ * (the dormant entitlement check today, hosted runs later), so sign-in is offered, never required.
+ *
+ * Still restores the session on launch: Settings shows your account, and the entitlement check wants
+ * it when it eventually goes live.
+ */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const ready = useAuth((s) => s.ready);
-  const session = useAuth((s) => s.session);
-  const signingIn = useAuth((s) => s.signingIn);
-  const error = useAuth((s) => s.error);
-  const notice = useAuth((s) => s.notice);
-  const pendingEmail = useAuth((s) => s.pendingEmail);
   const init = useAuth((s) => s.init);
-  const signInGoogle = useAuth((s) => s.signInWithGoogle);
-  const signInEmail = useAuth((s) => s.signInWithEmail);
-  const signUpEmail = useAuth((s) => s.signUpWithEmail);
-  const verifyCode = useAuth((s) => s.verifyCode);
-  const resendCode = useAuth((s) => s.resendCode);
-  const cancelVerify = useAuth((s) => s.cancelVerify);
-  const clearMessages = useAuth((s) => s.clearMessages);
-
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [code, setCode] = useState("");
-
   useEffect(() => {
     void init();
-    // the gate renders before <App>, so apply the saved theme here or it'd show stale colors
+    // this runs before <App>, so apply the saved theme here or the first paint shows stale colors
     loadState("settings")
       .then((raw) => {
         if (!raw) return;
@@ -57,11 +45,39 @@ export function AuthGate({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [init]);
 
-  // no supabase project configured (fresh clone, no .env) → skip sign-in entirely
-  if (!supabaseReady) return <EntitlementGate>{children}</EntitlementGate>;
+  return <EntitlementGate>{children}</EntitlementGate>;
+}
 
-  // signed in → run the (currently dormant) subscription gate, then the app
-  if (session) return <EntitlementGate>{children}</EntitlementGate>;
+// The sign-in screen itself — full-window, opened deliberately from Settings → Account.
+// Email/password (with an emailed code to verify the address) or Google.
+export function SignInScreen() {
+  const ready = useAuth((s) => s.ready);
+  const session = useAuth((s) => s.session);
+  const signingIn = useAuth((s) => s.signingIn);
+  const error = useAuth((s) => s.error);
+  const notice = useAuth((s) => s.notice);
+  const pendingEmail = useAuth((s) => s.pendingEmail);
+  const close = useUi((s) => s.closeSignIn);
+  const signInGoogle = useAuth((s) => s.signInWithGoogle);
+  const signInEmail = useAuth((s) => s.signInWithEmail);
+  const signUpEmail = useAuth((s) => s.signUpWithEmail);
+  const verifyCode = useAuth((s) => s.verifyCode);
+  const resendCode = useAuth((s) => s.resendCode);
+  const cancelVerify = useAuth((s) => s.cancelVerify);
+  const clearMessages = useAuth((s) => s.clearMessages);
+
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [code, setCode] = useState("");
+
+  // signing in is the whole point of this screen, so close it the moment it succeeds
+  useEffect(() => {
+    if (session) close();
+  }, [session, close]);
+
+  // nothing to sign in to without a supabase project (fresh clone, no .env)
+  if (!supabaseReady || session) return null;
   if (!ready) return <div className="license-boot" />; // brief blank while we restore the session
 
   const onField = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -78,7 +94,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <div className="auth-gate">
         <div className="auth-bar" data-tauri-drag-region>
-          <button className="auth-quit" title="Quit" onClick={() => void getCurrentWindow().close()}>
+          <button className="auth-quit" title="Close" onClick={close}>
             ×
           </button>
         </div>
@@ -142,7 +158,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   return (
     <div className="auth-gate">
       <div className="auth-bar" data-tauri-drag-region>
-        <button className="auth-quit" title="Quit" onClick={() => void getCurrentWindow().close()}>
+        <button className="auth-quit" title="Close" onClick={close}>
           ×
         </button>
       </div>

@@ -13,8 +13,9 @@ import { initUsage } from "./stores/usage";
 import { AuthGate } from "./components/AuthGate";
 
 // NO React.StrictMode — its double-mount corrupts the xterm terminal lifecycle.
-// AuthGate is the sign-in gate: nothing below it mounts until you're signed in, unless no
-// supabase project is configured (see .env.example), in which case it falls open.
+// AuthGate no longer gates: it restores the session, applies the saved theme, and mounts the app.
+// An account is never required — HyprSpace runs your own CLIs on your own machine. Sign-in is
+// offered from Settings → Account, and the (dormant) entitlement check still runs underneath.
 initAgentStatus();
 initUsage();
 

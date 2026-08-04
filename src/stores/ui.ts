@@ -9,6 +9,7 @@ interface UiState {
   fileDropId: string | null; // session id of the pane a file drag is currently over
   skillDropId: string | null; // pane a skill chip is being dragged over
   settingsOpen: boolean; // in-app settings screen
+  signInOpen: boolean; // the sign-in screen, opened on purpose — an account is never required
   settingsTab: string;
   newProjectOpen: boolean; // the New Project wizard
   paletteOpen: boolean;
@@ -27,6 +28,8 @@ interface UiState {
   setSkillDrop: (id: string | null) => void;
   openSettings: (tab?: string) => void;
   closeSettings: () => void;
+  openSignIn: () => void;
+  closeSignIn: () => void;
   setSettingsTab: (t: string) => void;
   openNewProject: () => void;
   closeNewProject: () => void;
@@ -53,6 +56,7 @@ export const useUi = create<UiState>()((set) => ({
   fileDropId: null,
   skillDropId: null,
   settingsOpen: false,
+  signInOpen: false,
   settingsTab: "appearance",
   newProjectOpen: false,
   paletteOpen: false,
@@ -71,6 +75,8 @@ export const useUi = create<UiState>()((set) => ({
   setSkillDrop: (id) => set({ skillDropId: id }),
   openSettings: (tab) => set((s) => ({ settingsOpen: true, settingsTab: tab ?? s.settingsTab })),
   closeSettings: () => set({ settingsOpen: false }),
+  openSignIn: () => set({ signInOpen: true }),
+  closeSignIn: () => set({ signInOpen: false }),
   setSettingsTab: (t) => set({ settingsTab: t }),
   openNewProject: () => set({ newProjectOpen: true }),
   closeNewProject: () => set({ newProjectOpen: false }),
