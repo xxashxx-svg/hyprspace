@@ -402,7 +402,11 @@ export function PaneGrid() {
                 {slot.sessions.map((sess: Session) => {
                   // one pane is on screen per visible slot: the maximized pane when maximizing,
                   // else the slot's active tab. hidden tabs stay mounted (display:none) so their PTY lives.
-                  const visible = cellVisible && (maxedHere ? sess.id === maximizedId : sess.id === activeTab);
+                  // maximize pins the SLOT (via cellVisible/slotHasMax); the tab strip keeps
+                  // choosing what shows inside it. Pinning to maximizedId here froze the body on
+                  // the maximized session — ctrl+clicking an image opened + selected its tab while
+                  // the terminal kept rendering, and tab clicks while maximized did nothing.
+                  const visible = cellVisible && sess.id === activeTab;
                   // a "guest" pane sits in a project space but points at a different folder than the
                   // project (e.g. dragged in from an open space) — flag it so it's obvious at a glance
                   const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
