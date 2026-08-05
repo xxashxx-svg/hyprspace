@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.17.1 — 2026-08-05
+
+- Fixed: with a pane maximized, opening an image with ctrl+click (or switching tabs at all) kept showing the terminal — the maximized pane now follows its tab strip, so images open and tabs switch while fullscreen.
+
 ## 0.17.0 — 2026-08-05
 
 - HyprSpace no longer asks you to sign in. It runs the CLIs you are already signed into, on your own machine, so an account was never the point. Sign in from Settings > Account only if you want to.
