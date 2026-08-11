@@ -123,7 +123,7 @@ export function TabContextMenu({
                   // bring the tab forward first — the maximized slot shows its ACTIVE tab, so
                   // maximizing a background tab without activating it would fullscreen the wrong one
                   if (sess.group) useWorkspaces.getState().setActiveTab(ctx.wsId, sess.group, sess.id);
-                  useUi.getState().toggleMaximized(sess.id);
+                  useUi.getState().toggleMaximized(ctx.wsId, sess.id);
                 })
               }
             >

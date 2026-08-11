@@ -39,7 +39,7 @@ export function PaneGrid() {
   const reorder = useWorkspaces((s) => s.reorderSessions);
   const moveToWs = useWorkspaces((s) => s.moveSessionToWorkspace);
 
-  const maximizedId = useUi((s) => s.maximizedId);
+  const maximizedByWs = useUi((s) => s.maximizedByWs);
   const toggleMaximized = useUi((s) => s.toggleMaximized);
   const fileDropId = useUi((s) => s.fileDropId);
   const skillDropId = useUi((s) => s.skillDropId);
@@ -89,6 +89,8 @@ export function PaneGrid() {
   }, []);
 
   const active = workspaces.find((w) => w.id === activeId) ?? null;
+  // the ACTIVE project's fullscreen pane; other projects keep their own, untouched
+  const maximizedId = active ? maximizedByWs[active.id] : undefined;
   const maxedHere = !!maximizedId && !!active && active.sessions.some((s) => s.id === maximizedId);
   // the grid tiles SLOTS, not sessions — a tabbed slot (a group) counts as one cell
   const activeCount = active ? toSlots(active.sessions).length : 0;
@@ -119,7 +121,10 @@ export function PaneGrid() {
   // so memoized TerminalPanes don't re-render when a sibling is focused or a drag updates overId.
   const onPaneFocus = useCallback((sid: string) => setFocused(sid), [setFocused]);
   const onPaneClose = useCallback((wsId: string, sid: string) => void closeSession(wsId, sid), []);
-  const onPaneToggleMax = useCallback((sid: string) => toggleMaximized(sid), [toggleMaximized]);
+  const onPaneToggleMax = useCallback(
+    (wsId: string, sid: string) => toggleMaximized(wsId, sid),
+    [toggleMaximized],
+  );
   // tabbed slots aren't drag targets in v1 — their panes get inert grip handlers
   const noopGrip = useCallback(() => {}, []);
   const onGripDown = useCallback(
@@ -281,7 +286,8 @@ export function PaneGrid() {
             // fall back to the first pane if the stored active tab is gone
             const activeTab = stored && slot.sessions.some((ss) => ss.id === stored) ? stored : slot.sessions[0].id;
             // when maximized, only the slot holding the maximized pane stays on screen
-            const slotHasMax = maxedHere && slot.sessions.some((ss) => ss.id === maximizedId);
+            const wsMaxId = maximizedByWs[w.id]; // this row's workspace, not necessarily the active one
+            const slotHasMax = maxedHere && slot.sessions.some((ss) => ss.id === wsMaxId);
             const cellVisible = isActiveWs && (!maxedHere || slotHasMax);
             const solo = slot.sessions[0];
             const place = layout.place(si);
@@ -382,10 +388,10 @@ export function PaneGrid() {
                           <span className="pane-head-right">
                             <button
                               className="pane-btn"
-                              title={maximizedId === act.id ? "Restore" : "Maximize"}
-                              onClick={() => onPaneToggleMax(act.id)}
+                              title={wsMaxId === act.id ? "Restore" : "Maximize"}
+                              onClick={() => onPaneToggleMax(w.id, act.id)}
                             >
-                              {maximizedId === act.id ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                              {wsMaxId === act.id ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
                             </button>
                             <button
                               className="pane-btn close"
@@ -429,7 +435,7 @@ export function PaneGrid() {
                         started={sess.started}
                         active={visible}
                         focused={isActiveWs && focusedSessionId === sess.id && visible}
-                        isMaxed={maximizedId === sess.id}
+                        isMaxed={wsMaxId === sess.id}
                         tabbed
                         onFocus={onPaneFocus}
                         onClose={onPaneClose}

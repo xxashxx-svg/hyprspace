@@ -152,7 +152,7 @@ export function closeFocused() {
 export function toggleMaxFocused() {
   const ws = activeWs();
   const fid = useWorkspaces.getState().focusedSessionId;
-  if (ws && fid && ws.sessions.some((s) => s.id === fid)) useUi.getState().toggleMaximized(fid);
+  if (ws && fid && ws.sessions.some((s) => s.id === fid)) useUi.getState().toggleMaximized(ws.id, fid);
 }
 
 export function switchSpaceByIndex(i: number) {

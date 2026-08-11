@@ -5,7 +5,9 @@ interface UiState {
   launchReturn: "home" | "space" | "loops"; // where the launcher's Cancel/Esc sends you back to
   openLoopId: string | null; // the loop selected in the Loops page master-detail
   railCollapsed: boolean;
-  maximizedId: string | null; // session id of the zoomed-to-fullscreen pane
+  // Which pane is fullscreen, PER PROJECT. A single global id meant maximizing in one project
+  // silently wiped the other's — you'd come back and find it tiled again.
+  maximizedByWs: Record<string, string>; // wsId → session id shown fullscreen there
   fileDropId: string | null; // session id of the pane a file drag is currently over
   skillDropId: string | null; // pane a skill chip is being dragged over
   settingsOpen: boolean; // in-app settings screen
@@ -22,8 +24,8 @@ interface UiState {
   goLoops: () => void;
   focusLoop: (id: string) => void; // open a specific loop in the Loops page
   toggleRail: () => void;
-  toggleMaximized: (id: string) => void;
-  clearMaximized: () => void;
+  toggleMaximized: (wsId: string, id: string) => void;
+  clearMaximized: (wsId: string) => void;
   setFileDrop: (id: string | null) => void;
   setSkillDrop: (id: string | null) => void;
   openSettings: (tab?: string) => void;
@@ -52,7 +54,7 @@ export const useUi = create<UiState>()((set) => ({
   launchReturn: "home",
   openLoopId: null,
   railCollapsed: false,
-  maximizedId: null,
+  maximizedByWs: {},
   fileDropId: null,
   skillDropId: null,
   settingsOpen: false,
@@ -69,8 +71,20 @@ export const useUi = create<UiState>()((set) => ({
   goLoops: () => set({ view: "loops" }),
   focusLoop: (id) => set({ view: "loops", openLoopId: id }),
   toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
-  toggleMaximized: (id) => set((s) => ({ maximizedId: s.maximizedId === id ? null : id })),
-  clearMaximized: () => set({ maximizedId: null }),
+  toggleMaximized: (wsId, id) =>
+    set((s) => {
+      const next = { ...s.maximizedByWs };
+      if (next[wsId] === id) delete next[wsId];
+      else next[wsId] = id;
+      return { maximizedByWs: next };
+    }),
+  clearMaximized: (wsId) =>
+    set((s) => {
+      if (!(wsId in s.maximizedByWs)) return {};
+      const next = { ...s.maximizedByWs };
+      delete next[wsId];
+      return { maximizedByWs: next };
+    }),
   setFileDrop: (id) => set({ fileDropId: id }),
   setSkillDrop: (id) => set({ skillDropId: id }),
   openSettings: (tab) => set((s) => ({ settingsOpen: true, settingsTab: tab ?? s.settingsTab })),
