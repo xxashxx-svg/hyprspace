@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.17.2 — 2026-08-12
+
+- Fullscreen is remembered per project. Maximize a pane in one project and it stays maximized when you switch away and come back — each project keeps its own.
+- Proper loading states. Pane startup, image previews, the file tree and the pull-request dialog now show a real loader with elapsed time instead of bare text.
+
 ## 0.17.1 — 2026-08-05
 
 - Fixed: with a pane maximized, opening an image with ctrl+click (or switching tabs at all) kept showing the terminal — the maximized pane now follows its tab strip, so images open and tabs switch while fullscreen.
