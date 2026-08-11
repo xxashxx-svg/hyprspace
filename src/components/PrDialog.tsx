@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useGit } from "../stores/git";
+import { LoadingState } from "./LoadingState";
 
 // "Create pull request" modal — pre-filled from the repo (title + body from the commits, base = the
 // default branch) so you review and edit everything before it's opened, instead of a blind one-click.
@@ -48,7 +49,9 @@ export function PrDialog() {
         </div>
 
         {loading ? (
-          <div className="cd-pr-loading">Reading the repo…</div>
+          <div className="cd-pr-loading">
+            <LoadingState label="Reading the repo" />
+          </div>
         ) : onDefault ? (
           <div className="cd-pr-warn">
             You're on <code>{defaults.head}</code> — that's the base branch. Switch to a feature branch

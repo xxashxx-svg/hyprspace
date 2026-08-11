@@ -309,24 +309,6 @@
     opacity: 1;
   }
 }
-.pane-boot-spin {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--border-2);
-  border-top-color: var(--accent);
-  animation: paneBootSpin 0.7s linear infinite;
-}
-@keyframes paneBootSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.pane-boot-text {
-  font-size: 12px;
-  color: var(--text-3);
-  letter-spacing: 0.01em;
-}
 .pane-term .xterm {
   height: 100%;
 }

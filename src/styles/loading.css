@@ -1,0 +1,90 @@
+/* ---- LoadingState: pixel-grid loader for long-running work (components/LoadingState.tsx) ----
+   Ported from a Tailwind original to vanilla CSS + tokens, per the styling rule. `--ink`/`--ink-3`
+   in that original map to our `--text-1`/`--text-3`. */
+
+.loadstate {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 3x3 of 4px cells, 1.5px apart — small enough to sit inline next to a label */
+.loadstate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 4px);
+  gap: 1.5px;
+}
+.loadstate-cell {
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--text-1);
+  opacity: 0.15; /* the dim resting state the wave lifts out of */
+  animation-name: loadstate-pixel;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.loadstate-cell.round {
+  border-radius: 50%;
+}
+/* orbit's centre cell: never animates, sits dimmer still */
+.loadstate-cell.off {
+  opacity: 0.07;
+  animation: none;
+}
+@keyframes loadstate-pixel {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* the label shimmers by sliding a highlight through clipped text */
+.loadstate-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: transparent;
+  background-image: linear-gradient(90deg, var(--text-3) 35%, var(--text-1) 50%, var(--text-3) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: loadstate-shimmer 1.4s linear infinite;
+}
+@keyframes loadstate-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* tabular figures so the ticking tenths don't jitter the layout */
+.loadstate-time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* base.css already collapses durations globally, which would leave the grid frozen mid-wave at
+   whatever opacity it happened to hold. Pin it to the dim resting state instead, and stop the
+   shimmer painting a half-swept gradient across the label. The timer keeps ticking. */
+@media (prefers-reduced-motion: reduce) {
+  .loadstate-cell {
+    animation: none !important;
+    opacity: 0.15;
+  }
+  .loadstate-cell.off {
+    opacity: 0.07;
+  }
+  .loadstate-label {
+    animation: none !important;
+    background-image: none;
+    color: var(--text-2);
+  }
+}

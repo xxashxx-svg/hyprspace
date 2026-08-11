@@ -27,6 +27,7 @@ import { revealLabel } from "../platform";
 import { fileIcon } from "../lib/fileIcons";
 import { PROVIDERS } from "../lib/providers";
 import { CtxSubmenu } from "./CtxSubmenu";
+import { LoadingState } from "./LoadingState";
 
 // git decoration + open-file highlight for the tree. context (not props) because TreeNode recurses;
 // `status` is keyed by repo-relative path with forward slashes, which is what git porcelain gives us.
@@ -423,7 +424,8 @@ export function FileTree({
     <div className="ft-tree">
       {entries === null ? (
         <div className="ft-dim" style={{ paddingLeft: 12 }}>
-          Loading…
+          {/* no timer: a folder read is usually instant, and a stopwatch on it reads as alarming */}
+          <LoadingState label="Loading" variant="dots" timer={false} />
         </div>
       ) : entries.length === 0 ? (
         <div className="ft-dim" style={{ paddingLeft: 12 }}>

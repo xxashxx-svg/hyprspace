@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FolderOpen, Maximize2, Minus, Plus, RotateCw, Scan, X } from "lucide-react";
 import { readImageFile, revealPath } from "../api";
+import { LoadingState } from "./LoadingState";
 
 interface Props {
   path: string;
@@ -253,7 +254,7 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
               onError={() => setErr("failed to decode image")}
             />
           ) : (
-            active && <div className="iv-loading">loading…</div>
+            active && <LoadingState label="Decoding image" variant="dots" />
           )}
         </div>
       )}

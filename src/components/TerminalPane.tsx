@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { TerminalSearch } from "./TerminalSearch";
 import { PaneAddMenu } from "./PaneAddMenu";
+import { LoadingState } from "./LoadingState";
 
 // small lucide glyph per provider, shown at the start of the pane header
 export const PROVIDER_ICONS = {
@@ -126,7 +127,7 @@ interface Props {
   // per pane per render) — that's what lets the memo below actually skip re-renders.
   onFocus: (sid: string) => void;
   onClose: (wsId: string, sid: string) => void;
-  onToggleMax: (sid: string) => void;
+  onToggleMax: (wsId: string, sid: string) => void;
   onGripDown: (e: RPointerEvent<HTMLDivElement>, wsId: string, sid: string) => void;
   onGripMove: (e: RPointerEvent<HTMLDivElement>) => void;
   onGripUp: (e: RPointerEvent<HTMLDivElement>) => void;
@@ -841,7 +842,7 @@ function TerminalPaneInner({
             className="pane-btn"
             title={isMaxed ? "Restore" : "Maximize"}
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => onToggleMax(sessionId)}
+            onClick={() => onToggleMax(wsId, sessionId)}
           >
             {isMaxed ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
@@ -867,9 +868,8 @@ function TerminalPaneInner({
       )}
       <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
       {booting && (
-        <div className="pane-boot" aria-hidden>
-          <span className="pane-boot-spin" />
-          <span className="pane-boot-text">Starting {PROVIDER_LABEL[provider] ?? "session"}…</span>
+        <div className="pane-boot">
+          <LoadingState label={`Starting ${PROVIDER_LABEL[provider] ?? "session"}`} />
         </div>
       )}
       {menu && (
