@@ -75,14 +75,12 @@ const TABS = [
     label: "Windows",
     cmd: `irm ${INSTALL_PS1} | iex`,
     note: "Runs the signed installer from the latest release. Per-user, so no admin prompt.",
-    src: INSTALL_PS1,
   },
   {
     key: "mac",
     label: "macOS",
     cmd: `curl -fsSL ${INSTALL_SH} | sh`,
     note: "Apple Silicon. Copies HyprSpace.app into /Applications.",
-    src: INSTALL_SH,
   },
   // only once a release actually carries the AppImage, otherwise this 404s (see LINUX_RELEASED)
   ...(LINUX_RELEASED
@@ -92,7 +90,6 @@ const TABS = [
           label: "Linux",
           cmd: `curl -fsSL ${INSTALL_SH} | sh`,
           note: "x86_64. Puts the self-updating AppImage in ~/.local/bin and adds a menu entry.",
-          src: INSTALL_SH,
         },
       ]
     : []),
@@ -101,7 +98,6 @@ const TABS = [
     label: "From source",
     cmd: `git clone ${REPO} && cd hyprspace && npm install && npm run tauri dev`,
     note: "Needs Node and the Rust toolchain.",
-    src: "",
   },
 ]
 
@@ -149,23 +145,8 @@ export function Install() {
         <span className="mr-2 select-none text-zinc-600">$</span>
         {TABS[tab].cmd}
       </pre>
-      {/* plain inline flow, not flex: the note and the link are one sentence and should wrap like
-          one, which normal text layout does for free at every width */}
       <p className="px-4 pb-3.5 font-mono text-[11.5px] leading-relaxed text-zinc-500">
         {TABS[tab].note}
-        {TABS[tab].src && (
-          <>
-            {" "}
-            <a
-              href={TABS[tab].src}
-              target="_blank"
-              rel="noreferrer"
-              className="whitespace-nowrap text-zinc-400 underline decoration-white/20 underline-offset-2 transition hover:text-zinc-200 hover:decoration-white/50"
-            >
-              read it first →
-            </a>
-          </>
-        )}
       </p>
     </div>
   )
