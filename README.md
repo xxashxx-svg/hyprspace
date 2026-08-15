@@ -21,6 +21,24 @@ It runs agents on *your* CLIs and *your* logins. HyprSpace spawns the `claude` /
 binary you already have installed and authenticated, and never touches your subscription
 credentials.
 
+## Install
+
+```sh
+curl -fsSL https://hyprspace.dev/install.sh | sh     # macOS and Linux
+```
+
+```powershell
+irm https://hyprspace.dev/install.ps1 | iex          # Windows
+```
+
+Linux gets the self-updating AppImage in `~/.local/bin` plus a menu entry, macOS gets the app in
+`/Applications`, Windows runs the signed per-user installer (no admin prompt). Both scripts are
+plain text — [read install.sh](https://hyprspace.dev/install.sh) before you pipe it anywhere. If
+you'd rather click a button, the [releases page](https://github.com/xxashxx-svg/hyprspace/releases)
+has the `.exe`, `.dmg`, `.AppImage` and `.deb`.
+
+Everything below is for building it from source.
+
 ## Prerequisites
 
 - **Rust**, stable toolchain, via [rustup](https://rustup.rs).

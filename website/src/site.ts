@@ -10,3 +10,8 @@ export const DOWNLOAD_LINUX = `${RELEASES}/latest/download/HyprSpace-linux-x86_6
 // v0.15.1 carries the AppImage and the .deb, so the download above resolves. Set this back to false
 // only if a release ever ships without Linux artifacts, so the site cannot offer a 404.
 export const LINUX_RELEASED = true
+
+// One-line installers, served from this site's public/ folder. Absolute on purpose — these get
+// pasted into a terminal, where a relative URL means nothing.
+export const INSTALL_SH = "https://hyprspace.dev/install.sh"
+export const INSTALL_PS1 = "https://hyprspace.dev/install.ps1"

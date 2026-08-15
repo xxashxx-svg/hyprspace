@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Check, Copy } from "lucide-react"
-import { DOWNLOAD_LINUX, DOWNLOAD_MAC, DOWNLOAD_WIN, LINUX_RELEASED, RELEASES, REPO } from "@/site"
+import { INSTALL_PS1, INSTALL_SH, LINUX_RELEASED, RELEASES, REPO } from "@/site"
 
 /* ---------------------------------------------------------------- release pill */
 
@@ -66,25 +66,33 @@ export function ReleasePill() {
 
 /* ---------------------------------------------------------------- install block */
 
+// macOS and Linux share one script (it branches on uname), so those two tabs carry the same command
+// — the note is what tells them apart. Every tab says what the command is about to do, because
+// nobody should pipe a script into a shell without being told where it lands.
 const TABS = [
   {
     key: "win",
     label: "Windows",
-    cmd: `irm ${DOWNLOAD_WIN} -OutFile HyprSpace.exe; ./HyprSpace.exe`,
+    cmd: `irm ${INSTALL_PS1} | iex`,
+    note: "Runs the signed installer from the latest release. Per-user, so no admin prompt.",
+    src: INSTALL_PS1,
   },
   {
     key: "mac",
     label: "macOS",
-    cmd: `curl -L -o HyprSpace.dmg ${DOWNLOAD_MAC} && open HyprSpace.dmg`,
+    cmd: `curl -fsSL ${INSTALL_SH} | sh`,
+    note: "Apple Silicon. Copies HyprSpace.app into /Applications.",
+    src: INSTALL_SH,
   },
-  // only once a release actually carries the AppImage, otherwise this curl 404s (see LINUX_RELEASED)
+  // only once a release actually carries the AppImage, otherwise this 404s (see LINUX_RELEASED)
   ...(LINUX_RELEASED
     ? [
         {
           key: "linux",
           label: "Linux",
-          // AppImages arrive without the execute bit, so chmod is part of the one-liner
-          cmd: `curl -L -o HyprSpace.AppImage ${DOWNLOAD_LINUX} && chmod +x HyprSpace.AppImage && ./HyprSpace.AppImage`,
+          cmd: `curl -fsSL ${INSTALL_SH} | sh`,
+          note: "x86_64. Puts the self-updating AppImage in ~/.local/bin and adds a menu entry.",
+          src: INSTALL_SH,
         },
       ]
     : []),
@@ -92,6 +100,8 @@ const TABS = [
     key: "src",
     label: "From source",
     cmd: `git clone ${REPO} && cd hyprspace && npm install && npm run tauri dev`,
+    note: "Needs Node and the Rust toolchain.",
+    src: "",
   },
 ]
 
@@ -135,10 +145,28 @@ export function Install() {
       </div>
       {/* wrap rather than scroll: this is the install section, so the command is the content. A
           horizontal scrollbar hides most of a long URL behind a gesture nobody makes. */}
-      <pre className="px-4 py-3.5 font-mono text-[12.5px] leading-relaxed break-all whitespace-pre-wrap text-zinc-300">
+      <pre className="px-4 pt-3.5 pb-2.5 font-mono text-[12.5px] leading-relaxed break-all whitespace-pre-wrap text-zinc-300">
         <span className="mr-2 select-none text-zinc-600">$</span>
         {TABS[tab].cmd}
       </pre>
+      {/* plain inline flow, not flex: the note and the link are one sentence and should wrap like
+          one, which normal text layout does for free at every width */}
+      <p className="px-4 pb-3.5 font-mono text-[11.5px] leading-relaxed text-zinc-500">
+        {TABS[tab].note}
+        {TABS[tab].src && (
+          <>
+            {" "}
+            <a
+              href={TABS[tab].src}
+              target="_blank"
+              rel="noreferrer"
+              className="whitespace-nowrap text-zinc-400 underline decoration-white/20 underline-offset-2 transition hover:text-zinc-200 hover:decoration-white/50"
+            >
+              read it first →
+            </a>
+          </>
+        )}
+      </p>
     </div>
   )
 }

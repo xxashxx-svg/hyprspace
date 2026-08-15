@@ -1,0 +1,3 @@
+# Shell scripts must stay LF everywhere. A CRLF install.sh dies with "bad interpreter" the moment
+# anyone pipes it into sh, and Windows checkouts convert by default.
+*.sh text eol=lf
