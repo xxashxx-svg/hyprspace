@@ -234,9 +234,12 @@ export function Titlebar() {
   };
 
   // macOS won't move the window via data-tauri-drag-region when titleBarStyle is Overlay (tauri #9503),
-  // so we drive the drag ourselves. Skip clicks that land on a button/menu/input so they still work.
+  // so we drive the drag ourselves — using tauri's own rule for a bare drag region: only a DIRECT
+  // hit on the marked element drags. Anything nested is not the bar, so it must not move the window.
+  // Matters because the popovers (usage, notifications, menus) are absolutely positioned children of
+  // the titlebar that hang out over the app — dragging one used to drag the whole window.
   const onChrome = (e: ReactMouseEvent) =>
-    !(e.target as HTMLElement).closest("button, a, input, select, textarea, [role='menuitem']");
+    (e.target as HTMLElement).hasAttribute("data-tauri-drag-region");
   // the top-left traffic-light corner is native (not DOM), so onChrome can't see it. starting a drag
   // there swallows the mousedown meant for the close/min/max buttons — the long-standing macOS
   // "can't close the window" flakiness. leave that corner entirely to the native buttons.
