@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.18.0 — 2026-09-11
+
+- Threads and a composer: pick the model and effort, paste images, and start from one place
+- Resume saved Claude and Codex sessions for a folder with one click
+- Paste a repository link to clone it into a new thread
+- Sidebar is one list of threads with archive, drag to reorder, and live agent state for every CLI
+- Files and Git dock with commit and push, GitHub Desktop style
+- Diffs, files, images and videos open as panes
+- Resizable sidebar, dock and pane grid
+
 ## 0.17.2 — 2026-08-12
 
 - Fullscreen is remembered per project. Maximize a pane in one project and it stays maximized when you switch away and come back — each project keeps its own.
