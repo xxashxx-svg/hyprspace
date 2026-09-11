@@ -58,7 +58,8 @@ $tag = "v$new"
 Write-Host "Releasing $cur -> $new" -ForegroundColor Cyan
 
 function Set-Text($path, $text) {
-  [IO.File]::WriteAllText((Resolve-Path $path), $text, (New-Object Text.UTF8Encoding($false)))
+  $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) # works for new files too
+  [IO.File]::WriteAllText($full, $text, (New-Object Text.UTF8Encoding($false)))
 }
 # one bump, three files, formatting untouched: replace the first version field in each
 $pkg = Get-Content package.json -Raw -Encoding UTF8
