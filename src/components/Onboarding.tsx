@@ -11,7 +11,7 @@ import { kbd } from "../platform";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Logo } from "./Logo";
 import { Blurred } from "./Blurred";
-import { Check, Copy, RotateCw, FolderOpen, Layers, ArrowRight } from "lucide-react";
+import { Check, Copy, RotateCw, FolderOpen, ArrowRight } from "lucide-react";
 import claudeLogo from "../assets/brand/claude.svg";
 import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
@@ -228,33 +228,20 @@ function StepLaunch({ finish }: { finish: () => void }) {
     finish();
     useUi.getState().goSpace();
   };
-  const openSpace = () => {
-    useWorkspaces.getState().addOpenSpace();
-    finish();
-    useUi.getState().goSpace();
-  };
   return (
     <div className="ob-step">
       <h2>Open your first space</h2>
-      <p className="ob-sub">A project pins agents to one folder; an open space mixes folders freely.</p>
+      <p className="ob-sub">Every space is a folder. Threads start in it.</p>
       <div className="ob-launch">
         <button className="ob-launch-card" onClick={() => void openProject()}>
           <FolderOpen size={20} strokeWidth={1.75} />
           <span className="ob-launch-title">Open a project folder</span>
           <span className="ob-launch-desc">picks a folder and starts a Claude agent in it</span>
         </button>
-        <button className="ob-launch-card" onClick={openSpace}>
-          <Layers size={20} strokeWidth={1.75} />
-          <span className="ob-launch-title">Start an open space</span>
-          <span className="ob-launch-desc">a scratch grid where every pane can live in a different folder</span>
-        </button>
       </div>
       <div className="ob-tips">
         <span>
           <kbd>{kbd("Ctrl K")}</kbd> command palette
-        </span>
-        <span>
-          <kbd>{kbd("Ctrl ⇧ G")}</kbd> review dock
         </span>
         <span>
           <kbd>{kbd("Ctrl 1-9")}</kbd> switch spaces

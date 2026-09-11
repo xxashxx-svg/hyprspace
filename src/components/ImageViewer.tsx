@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, Maximize2, Minus, Plus, RotateCw, Scan, X } from "lucide-react";
 import { readImageFile, revealPath } from "../api";
 import { LoadingState } from "./LoadingState";
@@ -7,36 +7,43 @@ interface Props {
   path: string;
   active: boolean;
   onClose: () => void;
-  /** the tab strip already shows the filename and a close × — don't repeat them */
+  /** the pane header already shows the file name and a close button */
   tabbed?: boolean;
 }
 
-const MIN = 0.05;
-const MAX = 32;
-const clamp = (z: number) => Math.max(MIN, Math.min(MAX, z));
-// a drag this small is a click, not a pan — otherwise click-to-zoom never fires
+const MIN = 0.02;
+const MAX = 64;
+const STEP = 1.25;
 const DRAG_SLOP = 4;
 
+/** Where the image sits: its scale, and its center's offset from the stage center, in pixels. */
+interface View {
+  s: number;
+  x: number;
+  y: number;
+}
+
+const clampScale = (s: number) => Math.max(MIN, Math.min(MAX, s));
+
+/**
+ * Image viewer. The image is drawn at natural size and moved with a transform, so zooming is one
+ * scale value and panning is one offset. The wheel always zooms toward the cursor, dragging always
+ * pans, double-click toggles between fit and 100%, and the offset is clamped so the image can never
+ * leave the pane.
+ */
 export function ImageViewer({ path, active, onClose, tabbed }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // null = fit to the pane (the default). A number is an explicit zoom, 1 being 100%.
-  const [zoom, setZoom] = useState<number | null>(null);
   const [nat, setNat] = useState({ w: 0, h: 0 });
   const [stage, setStage] = useState({ w: 0, h: 0 });
+  const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 });
+  const [fit, setFit] = useState(true); // follow the pane size until the user zooms
+  const [animate, setAnimate] = useState(false); // ease button and key zooms, not wheel or drag
   const [panning, setPanning] = useState(false);
-  const [nonce, setNonce] = useState(0); // bumped by Retry to re-read the file
-
+  const [nonce, setNonce] = useState(0);
   const stageRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  // Where the cursor was, and which point of the IMAGE it was over (as a 0..1 fraction), so the zoom
-  // can put that same point back under the cursor. Anchoring to the image rather than to scroll
-  // position is what keeps this right while the image is flex-centered: the centering margin shrinks
-  // as the image grows, and scroll coords alone would drift by exactly that much.
-  const anchor = useRef<{ cx: number; cy: number; fx: number; fy: number } | null>(null);
 
-  // only hold the bytes while this tab is on screen. hidden tabs stay mounted, and a data URL is
-  // ~1.33x the file, so a few open images would otherwise sit on tens of MB each for nothing.
+  // hold the bytes only while on screen: hidden panes stay mounted, and a data url is 1.3x the file
   useEffect(() => {
     if (!active) {
       setSrc(null);
@@ -46,7 +53,7 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
     let alive = true;
     setSrc(null);
     setErr(null);
-    setZoom(null);
+    setFit(true);
     readImageFile(path)
       .then((url) => alive && setSrc(url))
       .catch((e) => alive && setErr(String(e)));
@@ -55,8 +62,6 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
     };
   }, [path, active, nonce]);
 
-  // Stage size in state rather than read off the ref at render: the fit percentage has to recompute
-  // when the pane resizes, and a ref read wouldn't re-render to update the label.
   useEffect(() => {
     const st = stageRef.current;
     if (!st) return;
@@ -65,117 +70,112 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
     return () => ro.disconnect();
   }, [err]);
 
-  // What the image is actually drawn at right now. In fit mode CSS decides (contain, never upscaling
-  // past 1:1), so zooming out of fit has to start from that same number or the first notch jumps.
   const fitScale = useCallback(() => {
-    if (!nat.w || !nat.h || !stage.w) return 1;
+    if (!nat.w || !nat.h || !stage.w || !stage.h) return 1;
     return Math.min(1, stage.w / nat.w, stage.h / nat.h);
   }, [nat, stage]);
-  const scale = zoom ?? fitScale();
 
-  // zoom keeping `client` (a viewport point, i.e. the cursor) over the same bit of the image
-  const zoomTo = useCallback(
-    (next: number, client?: { x: number; y: number }) => {
-      const to = clamp(next);
-      // already there (holding the wheel at max, say) — bail without arming an anchor, since the
-      // layout effect only runs when `zoom` changes and a stale one would fire on the NEXT zoom
-      if (to === zoom) return;
-      const img = imgRef.current;
-      if (img && client) {
-        const r = img.getBoundingClientRect();
-        if (r.width && r.height) {
-          anchor.current = {
-            cx: client.x,
-            cy: client.y,
-            fx: (client.x - r.left) / r.width,
-            fy: (client.y - r.top) / r.height,
-          };
-        }
-      }
-      setZoom(to);
+  // the image can go anywhere, as long as a sliver of it stays inside the pane
+  const clampView = useCallback(
+    (v: View): View => {
+      const w = nat.w * v.s;
+      const h = nat.h * v.s;
+      const keep = Math.max(16, Math.min(w, h, 64));
+      const mx = Math.max(0, (stage.w + w) / 2 - keep);
+      const my = Math.max(0, (stage.h + h) / 2 - keep);
+      return { s: v.s, x: Math.max(-mx, Math.min(mx, v.x)), y: Math.max(-my, Math.min(my, v.y)) };
     },
-    [zoom],
+    [nat, stage],
   );
 
-  // The new size has landed in the DOM by now: measure where the anchored point actually ended up
-  // and scroll by the difference. Measuring beats predicting — it stays correct through centering,
-  // scrollbars appearing, and the browser clamping scroll at the edges.
-  useLayoutEffect(() => {
-    const st = stageRef.current;
-    const img = imgRef.current;
-    const a = anchor.current;
-    anchor.current = null;
-    if (!st || !img || !a) return;
-    const r = img.getBoundingClientRect();
-    st.scrollLeft += r.left + a.fx * r.width - a.cx;
-    st.scrollTop += r.top + a.fy * r.height - a.cy;
-  }, [zoom]);
+  // in fit mode the view follows the pane and the image size
+  useEffect(() => {
+    if (fit) setView({ s: fitScale(), x: 0, y: 0 });
+  }, [fit, fitScale]);
 
-  // Wheel to zoom. Bound by hand because it has to be non-passive to preventDefault — otherwise the
-  // gesture scrolls the pane underneath, and on a trackpad it fights the pinch.
+  /** Zoom to `s`, keeping the point under `client` (a viewport coordinate) still. */
+  const zoomTo = useCallback(
+    (s: number, client?: { x: number; y: number }, eased = false) => {
+      const st = stageRef.current;
+      const next = clampScale(s);
+      setFit(false);
+      setAnimate(eased);
+      setView((v) => {
+        if (!st) return { ...v, s: next };
+        const r = st.getBoundingClientRect();
+        // cursor relative to the stage center, falling back to the center itself
+        const px = client ? client.x - (r.left + r.width / 2) : 0;
+        const py = client ? client.y - (r.top + r.height / 2) : 0;
+        const k = next / v.s;
+        return clampView({ s: next, x: px - (px - v.x) * k, y: py - (py - v.y) * k });
+      });
+    },
+    [clampView],
+  );
+  const toFit = () => {
+    setAnimate(true);
+    setFit(true);
+  };
+  const toActual = (client?: { x: number; y: number }) => zoomTo(1, client, true);
+
+  // the wheel zooms, always. Bound by hand so it can be non-passive and stop the pane scrolling.
   useEffect(() => {
     const st = stageRef.current;
     if (!st || !src) return;
     const onWheel = (e: WheelEvent) => {
-      // a plain wheel scrolls an image that's already zoomed in; ctrl/⌘ always means zoom, and is
-      // what a trackpad pinch sends
-      if (!(e.ctrlKey || e.metaKey || zoom === null)) return;
       e.preventDefault();
-      const step = Math.exp(-e.deltaY * 0.002); // exponential, so every notch feels the same size
-      zoomTo((zoom ?? fitScale()) * step, { x: e.clientX, y: e.clientY });
+      // trackpad pinch arrives as ctrl+wheel with small deltas; a mouse notch is about 100
+      const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0022));
+      zoomTo(view.s * factor, { x: e.clientX, y: e.clientY });
     };
     st.addEventListener("wheel", onWheel, { passive: false });
     return () => st.removeEventListener("wheel", onWheel);
-  }, [src, zoom, zoomTo, fitScale]);
+  }, [src, view.s, zoomTo]);
 
-  // drag to pan, with pointer capture so a fast drag that leaves the stage still tracks
-  const drag = useRef<{ x: number; y: number; sl: number; st: number; moved: boolean } | null>(null);
+  // drag to pan
+  const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
-    const st = stageRef.current;
-    if (!st || e.button !== 0) return;
-    drag.current = { x: e.clientX, y: e.clientY, sl: st.scrollLeft, st: st.scrollTop, moved: false };
+    if (e.button !== 0) return;
+    drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
-    const st = stageRef.current;
-    if (!d || !st) return;
+    if (!d) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < DRAG_SLOP) return;
     if (!d.moved) {
       d.moved = true;
       setPanning(true);
+      setAnimate(false);
     }
-    st.scrollLeft = d.sl - dx;
-    st.scrollTop = d.st - dy;
+    setView((v) => clampView({ s: v.s, x: d.vx + dx, y: d.vy + dy }));
   };
   const onPointerUp = (e: React.PointerEvent) => {
-    const d = drag.current;
     drag.current = null;
     setPanning(false);
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    // a click (rather than a drag) still toggles fit ↔ 100%, the way it always has
-    if (d && !d.moved) {
-      if (zoom === null) zoomTo(1, { x: e.clientX, y: e.clientY });
-      else setZoom(null);
-    }
+  };
+  const onDoubleClick = (e: React.MouseEvent) => {
+    if (fit || Math.abs(view.s - fitScale()) < 0.001) toActual({ x: e.clientX, y: e.clientY });
+    else toFit();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "+" || e.key === "=") zoomTo(scale * 1.25);
-    else if (e.key === "-" || e.key === "_") zoomTo(scale / 1.25);
-    else if (e.key === "0") setZoom(null);
-    else if (e.key === "1") setZoom(1);
+    if (e.key === "+" || e.key === "=") zoomTo(view.s * STEP, undefined, true);
+    else if (e.key === "-" || e.key === "_") zoomTo(view.s / STEP, undefined, true);
+    else if (e.key === "0") toFit();
+    else if (e.key === "1") toActual();
     else return;
     e.preventDefault();
   };
 
   const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-  // reveal-in-folder wants the containing directory (reveal_path opens a folder, not a file)
   const sep = path.includes("\\") ? "\\" : "/";
   const dir = path.split(/[\\/]/).slice(0, -1).join(sep) || path;
-  const zoomed = zoom !== null;
+  const atActual = Math.abs(view.s - 1) < 0.001;
+  const canPan = !!src && nat.w > 0;
 
   return (
     <div className="image-viewer">
@@ -185,30 +185,27 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
             {name}
           </span>
         )}
+        {src && nat.w > 0 && (
+          <span className="iv-dims">
+            {nat.w} × {nat.h}
+          </span>
+        )}
         <span className="iv-gap" />
         {src && (
           <div className="iv-zoom">
-            <button className="iv-btn" title="Zoom out (−)" onClick={() => zoomTo(scale / 1.25)}>
+            <button className="iv-btn" title="Zoom out (-)" onClick={() => zoomTo(view.s / STEP, undefined, true)}>
               <Minus size={13} />
             </button>
-            <button className="iv-btn iv-pct" title="Actual size (1)" onClick={() => setZoom(1)}>
-              {Math.round(scale * 100)}%
+            <button className="iv-btn iv-pct" title="Actual size (1)" onClick={() => toActual()}>
+              {Math.round(view.s * 100)}%
             </button>
-            <button className="iv-btn" title="Zoom in (+)" onClick={() => zoomTo(scale * 1.25)}>
+            <button className="iv-btn" title="Zoom in (+)" onClick={() => zoomTo(view.s * STEP, undefined, true)}>
               <Plus size={13} />
             </button>
-            <button
-              className={`iv-btn${zoomed ? "" : " on"}`}
-              title="Fit to pane (0)"
-              onClick={() => setZoom(null)}
-            >
+            <button className={`iv-btn${fit ? " on" : ""}`} title="Fit to pane (0)" onClick={toFit}>
               <Scan size={13} />
             </button>
-            <button
-              className={`iv-btn${zoom === 1 ? " on" : ""}`}
-              title="Actual size (1)"
-              onClick={() => setZoom(1)}
-            >
+            <button className={`iv-btn${atActual && !fit ? " on" : ""}`} title="Actual size (1)" onClick={() => toActual()}>
               <Maximize2 size={13} />
             </button>
           </div>
@@ -224,7 +221,7 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
       </div>
       {err ? (
         <div className="iv-error">
-          <div className="iv-error-msg">couldn't open image</div>
+          <div className="iv-error-msg">Could not open the image</div>
           <div className="iv-error-path">{path}</div>
           <div className="iv-error-detail">{err}</div>
           <button className="iv-btn iv-retry" onClick={() => setNonce((n) => n + 1)}>
@@ -234,27 +231,32 @@ export function ImageViewer({ path, active, onClose, tabbed }: Props) {
       ) : (
         <div
           ref={stageRef}
-          className={`iv-stage${zoomed ? " zoomed" : ""}${panning ? " panning" : ""}`}
+          className={`iv-stage${canPan ? " pannable" : ""}${panning ? " panning" : ""}`}
           tabIndex={0}
           onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          onDoubleClick={onDoubleClick}
         >
           {src ? (
             <img
-              ref={imgRef}
-              className="iv-img"
+              className={`iv-img${animate ? " eased" : ""}`}
               src={src}
               alt={name}
               draggable={false}
-              style={zoomed && nat.w ? { width: nat.w * zoom, height: nat.h * zoom } : undefined}
+              style={{
+                width: nat.w || undefined,
+                height: nat.h || undefined,
+                transform: `translate(-50%, -50%) translate(${view.x}px, ${view.y}px) scale(${view.s})`,
+                opacity: nat.w ? 1 : 0,
+              }}
               onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-              onError={() => setErr("failed to decode image")}
+              onError={() => setErr("The file is not an image this viewer can decode.")}
             />
           ) : (
-            active && <LoadingState label="Decoding image" variant="dots" />
+            active && <LoadingState label="Opening image" variant="dots" />
           )}
         </div>
       )}

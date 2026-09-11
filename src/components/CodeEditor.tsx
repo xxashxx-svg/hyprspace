@@ -7,7 +7,8 @@ import { vscodeChrome, vscodeHighlight } from "../lib/editorTheme";
 import { readFile, writeFile } from "../api";
 import { markFileDirty, takeDiscarded } from "../lib/dirtyFiles";
 import { confirmDialog } from "../stores/confirm";
-import { Save, AlertCircle, FileCode, X } from "lucide-react";
+import { Save, AlertCircle, Check, FileCode, X } from "lucide-react";
+import { kbd } from "../platform";
 
 // language support by file extension (the few that cover most of what people edit here) —
 // each pack is imported on demand so its grammar only loads when a matching file is opened
@@ -48,6 +49,7 @@ export function CodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedOnce, setSavedOnce] = useState(false); // so "Saved" only shows after a save, not on open
   const [err, setErr] = useState<string | null>(null);
   const [autosave, setAutosave] = useState(false);
 
@@ -98,6 +100,7 @@ export function CodeEditor({
       setDirty(false);
       dirtyRef.current = false;
       markFileDirty(path, false);
+      setSavedOnce(true);
     } catch (e) {
       setErr(String(e));
     }
@@ -179,22 +182,41 @@ export function CodeEditor({
     <div className="editor">
       <div className="editor-head">
         {!tabbed && <FileCode size={13} className="editor-head-ico" />}
-        {tabbed ? (
-          // the tab carries the name; keep only the unsaved marker so it stays visible
-          dirty && <span className="editor-dirty" title="unsaved changes" />
-        ) : (
+        {!tabbed && (
           <span className="editor-name" title={path}>
             {name}
-            {dirty && <span className="editor-dirty" title="unsaved changes" />}
           </span>
         )}
+        {/* the pane header carries the name; this line says where the buffer stands */}
+        <span className={`editor-state${dirty ? " dirty" : ""}`}>
+          {saving ? (
+            "Saving"
+          ) : dirty ? (
+            <>
+              <span className="editor-dirty" />
+              Unsaved changes
+            </>
+          ) : savedOnce ? (
+            <>
+              <Check size={11} />
+              Saved
+            </>
+          ) : null}
+        </span>
         <span className="editor-head-gap" />
-        <label className="editor-autosave">
-          <input type="checkbox" checked={autosave} onChange={(e) => setAutosave(e.target.checked)} />
+        <button
+          className={`editor-auto${autosave ? " on" : ""}`}
+          aria-pressed={autosave}
+          title={autosave ? "Saving as you type. Click to turn off." : "Save as you type"}
+          onClick={() => setAutosave((v) => !v)}
+        >
+          <span className="editor-auto-dot" />
           Autosave
-        </label>
-        <button className="editor-save" onClick={() => void save.current()} disabled={!dirty || saving}>
-          <Save size={12} /> {saving ? "Saving…" : "Save"}
+        </button>
+        <button className={`editor-save${dirty ? " primary" : ""}`} onClick={() => void save.current()} disabled={!dirty || saving}>
+          <Save size={12} />
+          {saving ? "Saving" : "Save"}
+          <kbd>{kbd("Ctrl S")}</kbd>
         </button>
         {!tabbed && (
           <button className="editor-icon-btn" onClick={() => void close()} title="Close file">

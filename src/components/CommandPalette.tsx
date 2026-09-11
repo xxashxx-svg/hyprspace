@@ -1,14 +1,11 @@
 import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspace";
-import { useLoops, newLoop } from "../stores/loops";
-import { useProjectConfigs, folderKey } from "../stores/projectConfig";
-import { runAction } from "../lib/startup";
-import { pauseLoop } from "../lib/automations";
 import { searchOutput } from "../terminal/buffers";
 import { isWindows, kbd } from "../platform";
 import { Search } from "lucide-react";
 import {
+  newSession,
   newClaude,
   newGemini,
   newCodex,
@@ -34,8 +31,6 @@ interface Item {
 export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen);
   const workspaces = useWorkspaces((s) => s.workspaces);
-  const activeId = useWorkspaces((s) => s.activeId);
-  const configs = useProjectConfigs((s) => s.configs);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +41,7 @@ export function CommandPalette() {
     const base: Item[] = [
       {
         id: "launch",
-        label: "Launch workspace — fan out many agents",
+        label: "Launch several agents at once",
         run: () => useUi.getState().openLaunch(),
       },
       { id: "claude", label: "New Claude session", run: () => void newClaude() },
@@ -62,67 +57,22 @@ export function CommandPalette() {
         label: "New Claude in isolated worktree",
         run: () => void newClaudeInWorktree(),
       },
+      { id: "new", label: "New thread", hint: "Ctrl+Shift+N", run: newSession },
       { id: "term", label: "New terminal", hint: "Ctrl+Shift+T", run: () => void newTerminal() },
       { id: "close", label: "Close focused pane", hint: "Ctrl+Shift+W", run: closeFocused },
       { id: "max", label: "Maximize / restore pane", hint: "Ctrl+Shift+M", run: toggleMaxFocused },
-      {
-        id: "dock",
-        label: "Toggle review dock — source & skills",
-        hint: "Ctrl+Shift+G",
-        run: () => useUi.getState().toggleDock(),
-      },
-      {
-        id: "skills",
-        label: "Skills — drag into terminals",
-        run: () => useUi.getState().setDockTab("skills"),
-      },
-      {
-        id: "loops-open",
-        label: "Automations",
-        run: () => useUi.getState().goLoops(),
-      },
-      {
-        id: "loop-new",
-        label: "New automation",
-        run: () => {
-          const w = useWorkspaces.getState();
-          const ws = w.workspaces.find((x) => x.id === w.activeId);
-          const folder = ws && ws.kind !== "open" ? ws.cwd : "";
-          const def = newLoop(folder);
-          def.name = "New automation";
-          useLoops.getState().upsert(def);
-          useUi.getState().focusLoop(def.id);
-        },
-      },
-      {
-        id: "loops-pause",
-        label: "Pause all running automations",
-        run: () => {
-          const runs = useLoops.getState().runs;
-          for (const id of Object.keys(runs)) if (runs[id].status === "running") pauseLoop(id, true);
-        },
-      },
+      { id: "dock", label: "Show or hide files and git", hint: "Ctrl+Shift+G", run: () => useUi.getState().toggleDock() },
+      { id: "git", label: "Open the git panel", run: () => useUi.getState().setDockTab("git") },
       { id: "settings", label: "Open settings", run: () => useUi.getState().openSettings() },
     ];
-    // the active project's actions (run on demand)
-    const aws = workspaces.find((w) => w.id === activeId);
-    const folder = aws && aws.kind !== "open" ? aws.cwd : "";
-    const actions: Item[] = folder
-      ? (configs[folderKey(folder)]?.startup ?? []).map((a) => ({
-          id: "action-" + a.id,
-          label: `Run action: ${a.name || a.command}`,
-          hint: a.keybinding,
-          run: () => aws && runAction(aws.id, a),
-        }))
-      : [];
     const spaces: Item[] = workspaces.map((w, i) => ({
       id: "ws-" + w.id,
       label: `Switch to ${w.name}`,
       hint: i < 9 ? `Ctrl+${i + 1}` : undefined,
       run: () => switchSpaceByIndex(i),
     }));
-    return [...base, ...actions, ...spaces];
-  }, [workspaces, activeId, configs]);
+    return [...base, ...spaces];
+  }, [workspaces]);
 
   const filteredCommands = useMemo(() => {
     const s = q.trim().toLowerCase();

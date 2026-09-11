@@ -23,7 +23,7 @@ export interface PaneAgent {
 
 // "Edit sync.rs" / "Bash npm run build" — the tool plus its most identifying argument
 function toolLabel(tool: string, input: Record<string, unknown>): string {
-  const base = (v: unknown) => String(v ?? "").split(/[\/]/).filter(Boolean).pop() ?? "";
+  const base = (v: unknown) => String(v ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
   const arg =
     base(input.file_path ?? input.path ?? input.notebook_path) ||
     String(input.command ?? input.pattern ?? input.query ?? input.description ?? "").trim();

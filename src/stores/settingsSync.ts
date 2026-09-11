@@ -20,6 +20,11 @@ type Snap = {
   autoNameAgents: boolean;
   projectsDir: string;
   dismissedConfirms: string[];
+  agentModel: Record<string, string>;
+  agentEffort: Record<string, string>;
+  lastProvider: string;
+  railWidth: number;
+  dockWidth: number;
   onboarded: boolean;
 };
 
@@ -42,6 +47,11 @@ function snapshot(): Snap {
     autoNameAgents: s.autoNameAgents,
     projectsDir: s.projectsDir,
     dismissedConfirms: s.dismissedConfirms,
+    agentModel: s.agentModel,
+    agentEffort: s.agentEffort,
+    lastProvider: s.lastProvider,
+    railWidth: s.railWidth,
+    dockWidth: s.dockWidth,
     onboarded: s.onboarded,
   };
 }

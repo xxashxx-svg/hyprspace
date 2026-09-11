@@ -70,7 +70,49 @@ export const LAYOUTS: Record<number, LayoutPreset[]> = {
   ],
 };
 
-export type ResolvedLayout = { cols: string; rows?: string; place: (i: number) => CellPlace };
+export type ResolvedLayout = {
+  cols: string;
+  rows?: string;
+  place: (i: number) => CellPlace;
+  /** the preset behind this layout, when it is one (auto tiling has none) */
+  preset?: LayoutPreset;
+};
+
+/** How many tracks a grid-template string declares: "repeat(6, 1fr)" is 6, "1fr 1fr" is 2. */
+export function trackCount(template: string): number {
+  const m = template.match(/repeat\((\d+),/);
+  if (m) return Number(m[1]);
+  return template.trim().split(/\s+/).length;
+}
+
+/** A grid-template string from fractional weights: [1, 1.5] becomes "1fr 1.5fr". */
+export function weightsTemplate(weights: number[]): string {
+  return weights.map((w) => `${Math.round(w * 1000) / 1000}fr`).join(" ");
+}
+
+// "1 / 3" spans tracks 1 and 2; "2" is just track 2
+function span(line: string | undefined): [number, number] {
+  if (!line) return [1, 2];
+  const [a, b] = line.split("/").map((x) => Number(x.trim()));
+  return [a, Number.isFinite(b) ? b : a + 1];
+}
+
+/**
+ * The track boundaries (1..n-1) a user can drag on one axis: a boundary that any cell spans across
+ * is not draggable, because moving it would resize the middle of a pane.
+ */
+export function resizableBoundaries(preset: LayoutPreset, axis: "col" | "row"): number[] {
+  const n = trackCount(axis === "col" ? preset.cols : preset.rows);
+  const out: number[] = [];
+  for (let b = 1; b < n; b++) {
+    const crossed = preset.cells.some((c) => {
+      const [start, end] = span(axis === "col" ? c.gridColumn : c.gridRow);
+      return start <= b && end > b + 1;
+    });
+    if (!crossed) out.push(b);
+  }
+  return out;
+}
 
 // the layouts available for a count (for the picker). empty = no choices (use auto tiling).
 export function layoutsFor(n: number): LayoutPreset[] {
@@ -82,7 +124,7 @@ export function resolveLayout(n: number, id?: string): ResolvedLayout {
   const presets = LAYOUTS[n];
   if (presets && presets.length) {
     const p = (id && presets.find((x) => x.id === id)) || presets[0];
-    return { cols: p.cols, rows: p.rows, place: (i) => p.cells[i] ?? {} };
+    return { cols: p.cols, rows: p.rows, place: (i) => p.cells[i] ?? {}, preset: p };
   }
   const g = getLayout(n); // 7+ panes (or 1): the auto tiling, rows auto-flow
   return { cols: g.cols, place: (i) => ({ gridColumn: g.span(i) }) };

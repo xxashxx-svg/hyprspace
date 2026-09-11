@@ -554,6 +554,8 @@ pub fn run() {
             devtools::git_pr_defaults,
             devtools::git_is_repo,
             devtools::git_init,
+            devtools::git_clone,
+            devtools::agent_sessions,
             devtools::git_init_repo,
             devtools::git_branch_info,
             devtools::git_file_op,

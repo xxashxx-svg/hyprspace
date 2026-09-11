@@ -23,6 +23,11 @@ interface SettingsState {
   projectsDir: string; // base folder for new projects; "" → ~/Documents/HyprSpace
   onboarded: boolean; // first-run wizard done (or skipped) — existing users get it set silently
   dismissedConfirms: string[]; // "don't ask again" ids
+  agentModel: Record<string, string>; // provider id → model id ("" = the CLI's default)
+  agentEffort: Record<string, string>; // provider id → effort level ("" = the CLI's default)
+  lastProvider: string; // what the composer launched last; the next composer opens on it
+  railWidth: number; // left sidebar width in px
+  dockWidth: number; // right dock width in px
   hydrated: boolean;
   setTheme: (id: string) => void;
   setFontSize: (n: number) => void;
@@ -39,6 +44,11 @@ interface SettingsState {
   setCodexMode: (m: CodexMode) => void;
   setAutoNameAgents: (b: boolean) => void;
   setProjectsDir: (p: string) => void;
+  setAgentModel: (provider: string, model: string) => void;
+  setAgentEffort: (provider: string, effort: string) => void;
+  setLastProvider: (id: string) => void;
+  setRailWidth: (n: number) => void;
+  setDockWidth: (n: number) => void;
   setOnboarded: (b: boolean) => void;
   dismissConfirm: (id: string) => void;
   resetDismissedConfirms: () => void;
@@ -69,6 +79,11 @@ export const useSettings = create<SettingsState>()((set) => ({
   autoNameAgents: false, // off by default — opt in via Settings (uses your Codex free quota)
   projectsDir: "",
   dismissedConfirms: [],
+  agentModel: {},
+  agentEffort: {},
+  lastProvider: "claude",
+  railWidth: 272,
+  dockWidth: 380,
   onboarded: false,
   hydrated: false,
 
@@ -90,6 +105,11 @@ export const useSettings = create<SettingsState>()((set) => ({
   setCodexMode: (m) => set({ codexMode: m }),
   setAutoNameAgents: (b) => set({ autoNameAgents: b }),
   setProjectsDir: (p) => set({ projectsDir: p.trim() }),
+  setAgentModel: (provider, model) => set((s) => ({ agentModel: { ...s.agentModel, [provider]: model } })),
+  setAgentEffort: (provider, effort) => set((s) => ({ agentEffort: { ...s.agentEffort, [provider]: effort } })),
+  setLastProvider: (id) => set({ lastProvider: id }),
+  setRailWidth: (n) => set({ railWidth: Math.min(520, Math.max(200, Math.round(n))) }),
+  setDockWidth: (n) => set({ dockWidth: Math.min(720, Math.max(260, Math.round(n))) }),
   setOnboarded: (b) => set({ onboarded: b }),
   dismissConfirm: (id) =>
     set((s) => (s.dismissedConfirms.includes(id) ? {} : { dismissedConfirms: [...s.dismissedConfirms, id] })),

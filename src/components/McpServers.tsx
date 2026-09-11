@@ -264,7 +264,7 @@ export function McpServers() {
       {list === null ? (
         <div className="mcp-empty">Loading…</div>
       ) : list.length === 0 ? (
-        <div className="mcp-empty">No MCP servers yet — add one to give your agents extra tools.</div>
+        <div className="mcp-empty">No MCP servers yet. Add one to give your agents extra tools.</div>
       ) : (
         <div className="mcp-list">
           {list.map((e) => {

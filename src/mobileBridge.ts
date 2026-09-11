@@ -24,15 +24,12 @@ import { DEFAULT_GITIGNORE, joinPath, parentOf, projectsBaseDir } from "./lib/pr
 import { useWorkspaces } from "./stores/workspace";
 import { useAgentStatus, displayState } from "./stores/agentStatus";
 import { useUsage, summarize } from "./stores/usage";
-import { useLoops } from "./stores/loops";
 import { useBridge } from "./stores/bridge";
-import { startLoop, stopLoop } from "./lib/automations";
 import { claudeCmd, codexCmd, geminiCmd, opencodeCmd, grokCmd, WSL_CMD } from "./actions";
 
 function snapshot() {
   const { workspaces, activeId, focusedSessionId, activatedIds } = useWorkspaces.getState();
   const agents = useAgentStatus.getState().byPane;
-  const { loops, runs } = useLoops.getState();
   const now = Date.now();
 
   return {
@@ -47,7 +44,7 @@ function snapshot() {
       // panes only exist as PTYs in a space that's been opened; the phone offers to wake the rest
       activated: activatedIds.includes(w.id),
       panes: w.sessions
-        .filter((s) => !s.image && !s.file) // viewer tabs have no terminal to mirror
+        .filter((s) => !s.image && !s.file && !s.media && !s.diff && !s.draft) // viewer tabs and drafts have no terminal to mirror
         .map((s) => {
           const a = agents[s.id];
           return {
@@ -62,22 +59,7 @@ function snapshot() {
           };
         }),
     })),
-    automations: Object.values(loops).map((l) => {
-      const r = runs[l.id];
-      return {
-        id: l.id,
-        name: l.name || "Untitled",
-        mode: l.mode,
-        enabled: l.enabled,
-        folder: l.folder,
-        status: r?.status ?? "idle",
-        lastRunAt: r?.lastRunAt ?? null,
-        nextRunAt: r?.nextRunAt ?? null,
-        lastResult: r?.lastResult ?? null,
-        wsId: r?.wsId ?? null,
-        paneId: r?.paneId ?? null,
-      };
-    }),
+    automations: [], // the feature is gone; the phone app still expects the key
     usage: summarize(useUsage.getState().byPane, now),
   };
 }
@@ -229,14 +211,6 @@ async function handle(r: Req): Promise<unknown> {
     case "git.commit":
       return { out: await gitCommit(str("cwd"), str("message"), !!p.push, true) };
 
-    case "automation.run":
-      startLoop(str("id"));
-      return { ok: true };
-
-    case "automation.stop":
-      stopLoop(str("id"));
-      return { ok: true };
-
     // a full refresh, for a phone coming back from the background
     case "state":
       return snapshot();
@@ -270,7 +244,6 @@ export function initMobileBridge(): () => void {
     useWorkspaces.subscribe(schedule),
     useAgentStatus.subscribe(schedule),
     useUsage.subscribe(schedule),
-    useLoops.subscribe(schedule),
     // a phone that connects while the desktop is idle still needs the current picture
     useBridge.subscribe(() => {
       lastSig = "";

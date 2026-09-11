@@ -6,6 +6,7 @@ use std::os::windows::process::CommandExt;
 use serde_json::Value;
 
 mod git;
+mod sessions;
 mod worktree;
 mod project;
 mod fs;
@@ -15,6 +16,7 @@ mod mcp;
 mod skills;
 
 pub use git::*;
+pub use sessions::*;
 pub use worktree::*;
 pub use project::*;
 pub use fs::*;

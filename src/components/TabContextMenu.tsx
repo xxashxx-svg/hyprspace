@@ -9,7 +9,6 @@ import { closeSession } from "../actions";
 import { revealLabel } from "../platform";
 import { PROVIDERS } from "../lib/providers";
 import { CtxSubmenu } from "./CtxSubmenu";
-import { maybeAutostart } from "../lib/startup";
 
 
 // Right-click a pane tab. Carries what the pane header's "…" menu used to, now that a tab strip
@@ -88,7 +87,6 @@ export function TabContextMenu({
                         const st = useWorkspaces.getState();
                         st.setActive(ctx.wsId);
                         st.addSession(ctx.wsId, pr.cmd(), folder);
-                        maybeAutostart(ctx.wsId);
                       })
                     }
                   >

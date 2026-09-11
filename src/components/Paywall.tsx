@@ -48,7 +48,7 @@ export function Paywall() {
             Subscribe
           </button>
           <button className="auth-google" disabled={busy} onClick={() => void recheck()}>
-            {busy ? "Checking…" : "I've subscribed — re-check"}
+            {busy ? "Checking…" : "I subscribed, check again"}
           </button>
         </div>
 

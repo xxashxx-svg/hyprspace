@@ -17,62 +17,80 @@
 .ctx-menu {
   position: fixed;
   z-index: 201;
-  min-width: 190px;
-  /* lift the panel clearly off whatever is behind it — surface-2 alone read as washed out over a
-     dark terminal. a hairline top highlight + a real shadow is what sells it as floating. */
-  background: var(--surface-3);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: var(--radius-2);
+  min-width: 176px;
+  /* the same quiet surface as the sidebar cards, lifted with a shadow rather than a bright fill */
+  background: color-mix(in srgb, var(--surface-2) 92%, #000);
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
   box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.6),
-    0 2px 8px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  padding: 5px;
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 1px;
   transform-origin: top left;
   animation: ctxIn 0.1s var(--ease);
 }
+/* what the menu is about: the file or space name, small and dim */
+.ctx-head {
+  padding: 3px 8px 5px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ctx-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  height: 26px;
   background: transparent;
   border: none;
-  color: var(--text-1); /* was text-2 — muted labels are what made this look washed out */
+  color: var(--text-2);
   text-align: left;
-  padding: 6px 9px;
-  border-radius: var(--radius-1);
+  padding: 0 8px;
+  border-radius: 6px;
   cursor: pointer;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   white-space: nowrap;
   transition: background 0.1s var(--ease), color 0.1s var(--ease);
 }
+.ctx-item > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ctx-item svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   flex: 0 0 auto;
-  color: var(--text-2);
+  color: var(--text-3);
   transition: color 0.1s var(--ease);
 }
+/* hover is the same neutral lift the sidebar rows use, not a colored fill */
 .ctx-item:hover {
-  background: color-mix(in srgb, var(--accent) 26%, transparent);
-  color: #fff;
+  background: color-mix(in srgb, var(--surface-3) 80%, transparent);
+  color: var(--text-1);
 }
 .ctx-item:hover svg {
-  color: #fff;
+  color: var(--text-1);
 }
-/* thin divider that groups related actions (T3-style) */
 .ctx-sep {
   height: 1px;
-  background: rgba(255, 255, 255, 0.09);
-  margin: 5px 7px;
+  background: var(--border-1);
+  margin: 4px 2px;
 }
 /* destructive actions stay neutral until hovered, then go red */
 .ctx-item.danger:hover {
-  background: color-mix(in srgb, var(--status-error) 16%, transparent);
+  background: color-mix(in srgb, var(--status-error) 14%, transparent);
   color: var(--status-error);
 }
 .ctx-item.danger:hover svg {
@@ -89,11 +107,11 @@
   opacity: 0.55;
 }
 .ctx-sub:hover > .ctx-item {
-  background: color-mix(in srgb, var(--accent) 26%, transparent);
-  color: #fff;
+  background: color-mix(in srgb, var(--surface-3) 80%, transparent);
+  color: var(--text-1);
 }
 .ctx-sub:hover > .ctx-item svg {
-  color: #fff;
+  color: var(--text-1);
 }
 .ctx-sub-pop {
   position: absolute;
@@ -115,8 +133,8 @@
 }
 /* inline rename field inside a context menu */
 .ctx-rename {
-  width: 190px;
-  padding: 6px 8px;
+  width: 176px;
+  padding: 5px 8px;
   background: var(--surface-2);
   border: 1px solid var(--accent);
   border-radius: var(--radius-1);
@@ -124,4 +142,217 @@
   font: inherit;
   font-size: 12.5px;
   outline: none;
+}
+
+/* ---- anchored dropdown (Menu.tsx): the space switcher, the composer's pickers. same raised
+   surface + accent hover as the context menus, so every menu in the app reads as one family ---- */
+.pop-menu {
+  position: fixed;
+  z-index: 150;
+  min-width: 264px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-3);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  transform-origin: top left;
+  animation: ctxIn 0.1s var(--ease);
+}
+.pop-menu-search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-3);
+}
+.pop-menu-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+}
+.pop-menu-search input::placeholder {
+  color: var(--text-3);
+}
+.pop-menu-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pop-menu-head {
+  padding: 7px 10px 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.pop-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s var(--ease), color 0.1s var(--ease);
+}
+/* hover and the keyboard highlight are the same state */
+.pop-menu-item:hover,
+.pop-menu-item.active {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: #fff;
+}
+.pop-menu-item > svg,
+.pop-menu-item > img {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--text-2);
+  transition: color 0.1s var(--ease);
+}
+.pop-menu-item > img {
+  object-fit: contain;
+}
+.pop-menu-item:hover > svg,
+.pop-menu-item.active > svg {
+  color: #fff;
+}
+.pop-menu-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* two-line rows: a name over a dim detail (the folder, what the agent is) */
+.pop-menu-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pop-menu-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.pop-menu-item.on .pop-menu-title {
+  font-weight: 600;
+}
+.pop-menu-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-3);
+  transition: color 0.1s var(--ease);
+}
+.pop-menu-desc.mono {
+  font-family: var(--font-mono);
+}
+.pop-menu-item:hover .pop-menu-desc,
+.pop-menu-item.active .pop-menu-desc {
+  color: rgba(255, 255, 255, 0.72);
+}
+/* trailing count / meta, pushed right */
+.pop-menu-meta {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.pop-menu-item:hover .pop-menu-meta,
+.pop-menu-item.active .pop-menu-meta {
+  color: rgba(255, 255, 255, 0.72);
+}
+/* the current pick */
+.pop-menu-check {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-1);
+}
+.pop-menu-meta + .pop-menu-check {
+  margin-left: 8px;
+}
+.pop-menu-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.pop-menu-empty {
+  padding: 10px 10px 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.pop-menu-foot {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.pop-menu-foot kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  margin-right: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--text-2);
+}
+
+/* compact: one-line rows for short lists like the space switcher */
+.pop-menu.compact {
+  min-width: 200px;
+  max-width: 260px;
+}
+.pop-menu.compact .pop-menu-search {
+  height: 32px;
+  padding: 0 10px;
+}
+.pop-menu.compact .pop-menu-list {
+  padding: 4px;
+}
+.pop-menu.compact .pop-menu-item {
+  height: 28px;
+  padding: 0 8px;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.pop-menu.compact .pop-menu-title {
+  flex: 1;
+  min-width: 0;
+}
+.pop-menu.compact .pop-menu-sep {
+  margin: 3px 4px;
 }

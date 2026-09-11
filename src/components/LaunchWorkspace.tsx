@@ -151,7 +151,7 @@ export function LaunchWorkspace() {
             <div className="lpg-heading">
               <h1 className="lpg-title">Launch a workspace</h1>
               <p className="lpg-sub">
-                Pick a folder and fan out as many agents as you want — they open side by side, ready to work in parallel.
+                Pick a folder and choose how many agents to start. They open side by side.
               </p>
             </div>
           </div>

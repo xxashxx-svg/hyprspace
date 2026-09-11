@@ -4,25 +4,21 @@ import { Titlebar } from "./components/Titlebar";
 import { Rail } from "./components/Rail";
 import { PaneGrid } from "./components/PaneGrid";
 import { useWorkspaces } from "./stores/workspace";
-import { useProjectConfigs } from "./stores/projectConfig";
-import { taskFromFile } from "./lib/startup";
 import { useUi } from "./stores/ui";
 import { useSettings } from "./stores/settings";
+import { useProviders } from "./stores/providers";
 import { initSettingsSync } from "./stores/settingsSync";
 import { initBridge } from "./stores/bridge";
 import { initMobileBridge } from "./mobileBridge";
 import { useGit } from "./stores/git";
-import { useActionEditor } from "./stores/actionEditor";
 import { usePreview } from "./stores/preview";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { SignInScreen } from "./components/AuthGate";
 import { track } from "./lib/analytics";
 import { Updater } from "./components/Updater";
 import { Hotkeys } from "./components/Hotkeys";
-import { ReviewDock } from "./components/ReviewDock";
 import { HomePage } from "./components/HomePage";
-import { StartupRunner } from "./components/StartupRunner";
-import { LoopRunner } from "./components/LoopRunner";
+import { Dock } from "./components/dock/Dock";
 import { WhatsNew } from "./components/WhatsNew";
 import { isMac } from "./platform";
 import { applyTheme } from "./themes";
@@ -34,7 +30,6 @@ import "./App.css";
 // pages/dialogs that only appear behind a condition are code-split — their chunks load on
 // first open, not at startup. always-mounted stuff (Titlebar/Rail/PaneGrid/HomePage) stays static.
 const Settings = lazy(() => import("./components/Settings").then((m) => ({ default: m.Settings })));
-const LoopsPage = lazy(() => import("./components/LoopsPage").then((m) => ({ default: m.LoopsPage })));
 const LaunchWorkspace = lazy(() =>
   import("./components/LaunchWorkspace").then((m) => ({ default: m.LaunchWorkspace })),
 );
@@ -50,7 +45,6 @@ const PrDialog = lazy(() => import("./components/PrDialog").then((m) => ({ defau
 const InitRepoDialog = lazy(() =>
   import("./components/InitRepoDialog").then((m) => ({ default: m.InitRepoDialog })),
 );
-const ActionDialog = lazy(() => import("./components/ActionDialog").then((m) => ({ default: m.ActionDialog })));
 const PreviewPanel = lazy(() => import("./components/PreviewPanel").then((m) => ({ default: m.PreviewPanel })));
 
 const win = getCurrentWindow();
@@ -95,7 +89,6 @@ export default function App() {
   const commitOpen = useGit((s) => s.dialogOpen);
   const prOpen = useGit((s) => s.prOpen);
   const initRepoOpen = useGit((s) => s.initOpen);
-  const actionOpen = useActionEditor((s) => s.open);
   const previewOpen = usePreview((s) => s.open);
   useSessionNamer(); // periodically task-names agent panes via Codex (single-flight, kill-switchable)
 
@@ -105,6 +98,7 @@ export default function App() {
     booted = true;
     // one anonymous ping per launch — this is the whole of the "how many people use this" signal
     void track("app_opened");
+    void useProviders.getState().refresh();
     let cancelled = false;
     (async () => {
       // we no longer seed a default "Home" workspace — the sidebar starts empty and the user adds
@@ -267,46 +261,21 @@ export default function App() {
         .getState()
         .workspaces.flatMap((w) => w.sessions)
         .find((s) => s.id === sid);
-      return sess?.image ? null : sid;
-    };
-    // the services config dropzone (drop a .bat/script/.exe to add it as a startup task)
-    const svcDropAt = (px: number, py: number): HTMLElement | null => {
-      const dpr = window.devicePixelRatio || 1;
-      const el = document.elementFromPoint(px / dpr, py / dpr) as HTMLElement | null;
-      return el?.closest<HTMLElement>(".svc-drop") ?? null;
-    };
-    const highlightSvc = (el: HTMLElement | null) => {
-      document.querySelectorAll(".svc-drop.over").forEach((e) => e.classList.remove("over"));
-      el?.classList.add("over");
+      return sess?.image || sess?.media || sess?.diff ? null : sid;
     };
     win
       .onDragDropEvent((event) => {
         const p = event.payload;
         if (p.type === "over") {
-          const svc = svcDropAt(p.position.x, p.position.y);
-          highlightSvc(svc);
-          setDrop(svc ? null : sidAt(p.position.x, p.position.y));
+          setDrop(sidAt(p.position.x, p.position.y));
         } else if (p.type === "drop") {
-          const svc = svcDropAt(p.position.x, p.position.y);
-          highlightSvc(null);
           setDrop(null);
-          if (svc && p.paths.length) {
-            const folder = svc.dataset.folder ?? "";
-            if (folder) {
-              const cur = useProjectConfigs.getState().getConfig(folder).startup;
-              useProjectConfigs
-                .getState()
-                .setConfig(folder, { startup: [...cur, ...p.paths.map((path) => taskFromFile(path))] });
-            }
-          } else {
-            const sid = sidAt(p.position.x, p.position.y);
-            if (sid && p.paths.length) {
-              const text = p.paths.map((path) => (/\s/.test(path) ? `"${path}"` : path)).join(" ");
-              void writePty(sid, new TextEncoder().encode(text));
-            }
+          const sid = sidAt(p.position.x, p.position.y);
+          if (sid && p.paths.length) {
+            const text = p.paths.map((path) => (/\s/.test(path) ? `"${path}"` : path)).join(" ");
+            void writePty(sid, new TextEncoder().encode(text));
           }
         } else if (p.type === "leave") {
-          highlightSvc(null);
           setDrop(null);
         }
       })
@@ -327,19 +296,14 @@ export default function App() {
       <div className="app-body">
         <Rail />
         {view === "home" && <HomePage />}
-        <Suspense fallback={null}>
-          {view === "loops" && <LoopsPage />}
-          {view === "launch" && <LaunchWorkspace />}
-        </Suspense>
+        <Suspense fallback={null}>{view === "launch" && <LaunchWorkspace />}</Suspense>
         {/* kept mounted (PTYs stay alive) but hidden unless we're in a space */}
         <div className="workspace-view" style={{ display: view === "space" ? "flex" : "none" }}>
           <PaneGrid />
-          <ReviewDock />
+          <Dock />
         </div>
       </div>
       <Updater />
-      <StartupRunner />
-      <LoopRunner />
       <WhatsNew />
       <Suspense fallback={null}>
         {/* onboarding also mounts while undecided (!onboarded) — its own effect makes the
@@ -352,7 +316,6 @@ export default function App() {
         {commitOpen && <CommitDialog />}
         {prOpen && <PrDialog />}
         {initRepoOpen && <InitRepoDialog />}
-        {actionOpen && <ActionDialog />}
         {newProjectOpen && <NewProjectDialog />}
       </Suspense>
       <ConfirmDialog />

@@ -1,0 +1,333 @@
+/* ---- thread rows, inside a space's section in the sidebar ---- */
+/* ---- a row: agent · time / title / where or what · state ---- */
+.sess-row {
+  position: relative;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 8px 9px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.sess-row:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+}
+.sess-row.active {
+  background: var(--surface-3);
+}
+.sess-row.dragging {
+  opacity: 0.45;
+}
+.sess-row.drop-over {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.sess-top,
+.sess-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.sess-mark {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+.sess-mark img {
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+}
+.sess-mark-term {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 3px;
+}
+/* working: a ring circles the agent's mark */
+.sess-row.st-working .sess-mark::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: var(--status-busy);
+  border-right-color: color-mix(in srgb, var(--status-busy) 40%, transparent);
+  animation: sessRing 0.9s linear infinite;
+}
+@keyframes sessRing {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sess-prov {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.sess-time {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+}
+.sess-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-where,
+.sess-act {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-where > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.sess-where > svg {
+  flex: 0 0 auto;
+}
+.sess-act {
+  display: block;
+  color: var(--text-2);
+}
+/* the state glyph: a dot that pulses while working, blinks blue when it needs you, ticks when done */
+.sess-state {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.sess-row.st-working .sess-state {
+  background: var(--status-busy);
+  animation: sessPulse 1.2s ease-in-out infinite;
+}
+.sess-row.st-waiting .sess-state {
+  background: var(--status-awaiting);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-awaiting) 25%, transparent);
+  animation: sessPulse 1s ease-in-out infinite;
+}
+.sess-row.st-done .sess-state {
+  width: 12px;
+  height: 12px;
+  background: var(--status-ok);
+}
+.sess-row.st-exited .sess-state {
+  background: rgba(255, 255, 255, 0.1);
+}
+@keyframes sessPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+/* sub-agents a claude pane has running: small cards under the thread, in the row's own style */
+.sess-agents {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--status-busy) 14%, transparent);
+  color: var(--status-busy);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.sess-subs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.sess-sub {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  min-width: 0;
+  padding: 0 8px 0 5px;
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  overflow: hidden;
+}
+.sess-sub.working {
+  background-image: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--status-busy) 7%, transparent) 50%, transparent 80%);
+  background-size: 220% 100%;
+  animation: sessSheen 2.6s linear infinite;
+}
+.sess-sub-mark {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.sess-sub-mark img {
+  width: 10px;
+  height: 10px;
+}
+.sess-sub.working .sess-sub-mark::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: var(--status-busy);
+  border-right-color: color-mix(in srgb, var(--status-busy) 40%, transparent);
+  animation: sessRing 0.9s linear infinite;
+}
+.sess-sub-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-sub-time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+.sess-sub-state {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-busy);
+  animation: sessPulse 1.2s ease-in-out infinite;
+}
+.sess-sub.idle .sess-sub-state {
+  background: var(--text-3);
+  animation: none;
+}
+/* working rows carry a slow sheen; waiting rows get a blue tint so they stand out in a long list */
+.sess-row.st-working {
+  background-image: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--status-busy) 7%, transparent) 50%, transparent 80%);
+  background-size: 220% 100%;
+  animation: sessSheen 2.6s linear infinite;
+}
+@keyframes sessSheen {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+.sess-row.st-waiting {
+  background: color-mix(in srgb, var(--status-awaiting) 7%, transparent);
+}
+.sess-row.st-waiting .sess-act {
+  color: var(--status-awaiting);
+}
+.sess-row.st-exited .sess-name {
+  color: var(--text-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sess-row.st-working,
+  .sess-row.st-working .sess-mark::before,
+  .sess-row.st-working .sess-state,
+  .sess-row.st-waiting .sess-state,
+  .sess-sub.working,
+  .sess-sub.working .sess-sub-mark::before,
+  .sess-sub-state {
+    animation: none;
+  }
+}
+.sess-close {
+  position: absolute;
+  right: 8px;
+  top: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s var(--ease);
+}
+.sess-row:hover .sess-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sess-row:hover .sess-time {
+  visibility: hidden;
+}
+.sess-close:hover {
+  color: var(--status-error);
+}
+/* viewer tabs (an image or a file open in the grid) are documents, not running work */
+.sess-row.doc {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--text-3);
+}
+.sess-row.doc .sess-name {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.sess-doc-ico {
+  flex: 0 0 auto;
+}

@@ -1,0 +1,1019 @@
+/* ---- composer: where a session starts. Lives in the grid (a draft pane, or an empty space) and
+   on the home page. ---- */
+.composer-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+  position: relative;
+}
+.composer-pane::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 640px;
+  height: 360px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.composer-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+}
+.composer-title {
+  margin: 0 0 16px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 550;
+  letter-spacing: -0.015em;
+  color: var(--text-1);
+}
+.composer-title span {
+  font-weight: 650;
+}
+.composer-pane.compact .composer-title {
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+.composer-pane.compact {
+  padding: 16px;
+}
+
+/* the box */
+.composer {
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--surface-2) 85%, transparent);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  transition: border-color 0.14s var(--ease);
+}
+/* focus lights the frame in the chosen agent's color, softly */
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border-2));
+  box-shadow:
+    var(--shadow-2),
+    0 0 0 3px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+.composer-top,
+.composer-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+.composer-bottom {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-1);
+}
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--surface-1);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 260px;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.composer-chip:hover {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+  color: var(--text-1);
+}
+.composer-chip img {
+  display: block;
+  object-fit: contain;
+}
+.composer-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-chip > svg:last-child {
+  color: var(--text-3);
+}
+/* a thread's subfolder, plain text beside the space chip */
+.composer-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the branch as a small outlined pill */
+.composer-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border-1);
+  border-radius: 13px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-branch svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.composer-note {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-style: italic;
+}
+.composer-input {
+  width: 100%;
+  min-height: 68px;
+  max-height: 260px;
+  padding: 4px 14px 10px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.composer-input::placeholder {
+  color: var(--text-3);
+}
+/* the attach button: a quiet icon left of the key hints */
+.composer-icon {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.composer-icon:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+/* attached files: image thumbnails, or an icon and name for anything else */
+.composer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+.composer-file {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-1);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.composer-file.img {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  overflow: hidden;
+}
+.composer-file.img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer-file-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-file-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.composer-file-x:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.composer-file.img .composer-file-x {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+}
+.composer-file.img:hover .composer-file-x {
+  opacity: 1;
+}
+.composer-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+.composer-send:hover {
+  background: var(--accent-hover);
+}
+.composer-rename {
+  height: 26px;
+  min-width: 160px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+  background: var(--bg-base);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+/* ---- model picker: provider tabs across the top, models below, effort at the bottom ---- */
+.pop-menu.mp {
+  min-width: 320px;
+  max-width: 380px;
+}
+.mp-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mp-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: background 0.1s var(--ease);
+}
+.mp-tab img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  opacity: 0.7;
+}
+.mp-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.mp-tab.on {
+  border-bottom-color: var(--brand, var(--accent));
+  color: var(--text-1);
+}
+.mp-tab.on img {
+  opacity: 1;
+}
+/* not installed: still there so you can see why it cannot be picked */
+.mp-tab.off img {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+.mp-tab.off {
+  color: color-mix(in srgb, var(--text-3) 50%, transparent);
+}
+.mp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px 4px;
+  min-width: 0;
+}
+.mp-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.mp-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-ver {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.mp-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 14px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.mp-missing strong {
+  color: var(--status-busy);
+  font-weight: 600;
+}
+.mp-missing code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-1);
+}
+.mp-custom {
+  display: flex;
+  gap: 6px;
+  padding: 6px 4px 2px;
+}
+.mp-custom input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.mp-custom input:focus {
+  border-color: var(--accent);
+}
+.mp-custom button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mp-custom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- effort slider: one stop per level, in the agent's colors ---- */
+.effort-pop {
+  position: fixed;
+  z-index: 150;
+  width: 264px;
+  padding: 10px 12px 9px;
+  background: var(--surface-3);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 0 30px -10px color-mix(in srgb, var(--brand) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transform-origin: bottom left;
+  animation: effortIn 0.18s var(--ease);
+}
+@keyframes effortIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.effort-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.effort-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
+}
+.effort-mark img {
+  width: 11px;
+  height: 11px;
+  object-fit: contain;
+}
+.effort-model {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.effort-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--brand2);
+  animation: effortWord 0.22s var(--ease);
+}
+.effort-blurb {
+  margin: 2px 0 9px 26px;
+  font-size: 11px;
+  color: var(--text-3);
+  animation: effortWord 0.26s var(--ease);
+}
+@keyframes effortWord {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.effort-track {
+  position: relative;
+  height: 26px;
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+/* the filled part: a brand gradient, a glow that follows it, and stars drifting through it */
+.effort-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--effort-pct);
+  min-width: 26px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--brand) 55%, #1a1a1a), var(--brand) 70%, var(--brand2));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--brand) 50%, transparent);
+  transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.effort-stars {
+  position: absolute;
+  inset: 0;
+  width: 200%;
+  background:
+    radial-gradient(circle at 7% 40%, rgba(255, 255, 255, 0.55) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 17% 68%, rgba(255, 255, 255, 0.35) 0 1px, transparent 2px),
+    radial-gradient(circle at 26% 28%, rgba(255, 255, 255, 0.5) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 36% 60%, rgba(255, 255, 255, 0.3) 0 1px, transparent 2px),
+    radial-gradient(circle at 44% 36%, rgba(255, 255, 255, 0.45) 0 1px, transparent 2px);
+  background-size: 50% 100%;
+  animation: effortDrift 9s linear infinite;
+}
+.effort-stars.far {
+  opacity: 0.6;
+  background-position: 25% 0;
+  animation-duration: 16s;
+}
+@keyframes effortDrift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+/* a ring of light that bursts from the thumb on every change */
+.effort-flash {
+  position: absolute;
+  top: 50%;
+  left: calc(13px + (100% - 26px) * var(--effort-pct) / 100%);
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand2) 70%, transparent);
+  animation: effortFlash 0.5s var(--ease) forwards;
+}
+@keyframes effortFlash {
+  from {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand2) 70%, transparent);
+  }
+  to {
+    opacity: 0;
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--brand2) 0%, transparent);
+  }
+}
+/* our thumb glides; the native one underneath is invisible but still takes the drag and focus */
+.effort-thumb {
+  position: absolute;
+  top: 3px;
+  left: calc(3px + (100% - 26px) * var(--effort-pct) / 100%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 2px color-mix(in srgb, var(--brand) 55%, transparent);
+  pointer-events: none;
+  z-index: 3;
+  transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.15s var(--ease), transform 0.12s var(--ease);
+}
+.effort-track:hover .effort-thumb {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 4px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+.effort-track:active .effort-thumb {
+  transform: scale(1.08);
+}
+.effort-track input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  z-index: 4;
+}
+.effort-track input[type="range"]::-webkit-slider-runnable-track {
+  height: 26px;
+  background: transparent;
+}
+.effort-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: transparent;
+}
+.effort-track input[type="range"]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 13px;
+}
+.effort-stops {
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+.effort-stop {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  transition: background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.effort-stop.lit {
+  background: rgba(255, 255, 255, 0.6);
+}
+.effort-stop.here {
+  transform: scale(0);
+}
+/* the two ends, clickable to jump straight there */
+.effort-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+.effort-tick {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s var(--ease);
+}
+.effort-tick:hover {
+  color: var(--text-1);
+}
+.effort-tick.on {
+  color: var(--brand2);
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .effort-stars,
+  .effort-flash,
+  .effort-name,
+  .effort-blurb {
+    animation: none;
+  }
+}
+
+/* ---- clone card: the text starts with a repository link ---- */
+.clone {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 12px 14px 11px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--surface-2) 85%, transparent);
+  box-shadow: var(--shadow-1);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+/* a thin sweep along the top while git runs */
+.clone-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-hover), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0;
+}
+.clone.busy .clone-progress {
+  opacity: 1;
+  animation: clone-sweep 1.1s ease-in-out infinite;
+}
+@keyframes clone-sweep {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+.clone-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.clone-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.clone-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.clone-title b {
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clone-url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clone-go {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), opacity 0.12s var(--ease);
+}
+.clone-go:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.clone-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+  padding-right: 12px;
+}
+.clone-go kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.clone-dest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.clone-label {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+/* the destination reads as one path: folder chip, separator, name */
+.clone-path {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 4px 0 0;
+  border: 1px solid var(--border-1);
+  border-radius: 7px;
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.clone-path:focus-within {
+  border-color: color-mix(in srgb, var(--text-3) 60%, transparent);
+}
+.clone-parent {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 8px;
+  border: none;
+  border-right: 1px solid var(--border-1);
+  border-radius: 6px 0 0 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.clone-parent:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.clone-parent svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.clone-parent-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.clone-sep {
+  flex: 0 0 auto;
+  padding: 0 4px 0 8px;
+  color: var(--text-3);
+}
+.clone-name {
+  flex: 1;
+  min-width: 60px;
+  height: 100%;
+  padding: 0 6px 0 0;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  outline: none;
+}
+.clone-note,
+.clone-error {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.clone-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--status-error);
+  white-space: pre-wrap;
+}
+.clone-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+/* ---- under the box: a suggestion row, and the provider's saved conversations ---- */
+.suggest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.suggest:hover {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+.suggest-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.suggest-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+}
+.suggest-text b {
+  font-weight: 600;
+  color: var(--text-1);
+}
+.suggest-text span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.suggest-go {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-3);
+}
+.suggest:hover .suggest-go {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.recent {
+  margin-top: 16px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  overflow: hidden;
+}
+.recent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-1);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.recent-head img {
+  opacity: 0.85;
+}
+.recent-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.recent-row:hover {
+  background: color-mix(in srgb, var(--surface-3) 65%, transparent);
+  color: var(--text-1);
+}
+.recent-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+/* the resume label takes the time's place on hover */
+.recent-go {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 11px;
+}
+.recent-row:hover .recent-time {
+  display: none;
+}
+.recent-row:hover .recent-go {
+  display: inline-flex;
+}

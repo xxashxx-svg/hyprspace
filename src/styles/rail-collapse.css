@@ -1,19 +1,11 @@
 /* ---- hideable rail (the titlebar's .tb-sidebar button toggles it) ---- */
 .rail {
-  /* smooth full-hide: the rail slides off the left edge. its content keeps the 220px width so it
-     travels as one unit (no reflow/squish), and the negative margin collapses its flex size to 0 so
-     the sibling view expands to fill. .app-shell already clips (overflow:hidden) so nothing scrolls. */
+  /* smooth full-hide: the rail slides off the left edge. its content keeps its width so it travels
+     as one unit (no reflow/squish), and the negative margin collapses its flex size to 0 so the
+     sibling view expands to fill. .app-shell already clips (overflow:hidden) so nothing scrolls. */
   transition: margin-left 0.24s var(--ease);
-  padding-top: 6px;
 }
 .rail.hidden {
-  margin-left: -220px; /* == -1 * rail width (see .rail width in rail.css) */
+  margin-left: calc(-1 * var(--rail-w));
   pointer-events: none; /* tucked away → its (clipped) content shouldn't catch clicks */
-}
-.rail-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
 }

@@ -1,18 +1,20 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
-import { X, Plus, Maximize2, Minimize2, FolderSymlink, Terminal as TerminalIcon } from "lucide-react";
+import { X, GripVertical, Terminal as TerminalIcon } from "lucide-react";
 import { useWorkspaces, toSlots } from "../stores/workspace";
 import type { Session } from "../stores/workspace";
 import { useUi } from "../stores/ui";
 import { TerminalPane, PROVIDER_ICONS } from "./TerminalPane";
 import { ImageViewer } from "./ImageViewer";
+import { MediaViewer } from "./MediaViewer";
+import { DiffViewer } from "./DiffViewer";
 const PaneEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
-import { PaneAddMenu } from "./PaneAddMenu";
 import { TabContextMenu } from "./TabContextMenu";
-import { Launchpad } from "./Launchpad";
+import { ComposerPane } from "./composer/ComposerPane";
 import { Logo } from "./Logo";
 import { closeSession } from "../actions";
-import { resolveLayout } from "../lib/grid";
+import { PROVIDER_LOGO } from "../lib/brand";
+import { resolveLayout, activeLayoutId, resizableBoundaries, trackCount, weightsTemplate } from "../lib/grid";
 
 // the proxy is capped rather than full-size: a third-of-the-screen card in your hand would cover
 // the very drop targets you're aiming at
@@ -24,10 +26,10 @@ function cellSidAt(x: number, y: number): string | null {
   return el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
 }
 
-// which space (a rail row) is under the cursor — for dragging a pane out into another space
+// which space's rows in the sidebar are under the cursor, for dragging a pane into another space
 function railWsAt(x: number, y: number): string | null {
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
-  return el?.closest<HTMLElement>(".rail-item-wrap")?.dataset.wsid ?? null;
+  return el?.closest<HTMLElement>(".space-row, .sess-row")?.dataset.wsid ?? null;
 }
 
 export function PaneGrid() {
@@ -97,10 +99,56 @@ export function PaneGrid() {
   const activeLayout = resolveLayout(activeCount, active?.layouts?.[activeCount]);
   const showGrid = !!active && active.sessions.length > 0;
 
-  // provider picker opened from a slot's tab-strip + (mirrors the pane header's + menu)
-  const [tabMenu, setTabMenu] = useState<
-    { x: number; y: number; wsId: string; anchorId: string; anchorCommand?: string; cwd: string } | null
-  >(null);
+  // Dragged track weights for this layout, if any. Written straight to the grid element while
+  // dragging and stored on release, so a drag never re-renders the terminals.
+  const layoutKey = `${activeCount}:${activeLayoutId(activeCount, active?.layouts?.[activeCount])}`;
+  const tracks = active?.tracks?.[layoutKey];
+  const preset = activeLayout.preset;
+  const colW = preset && tracks?.cols?.length === trackCount(preset.cols) ? tracks.cols : preset ? Array(trackCount(preset.cols)).fill(1) : null;
+  const rowW = preset && tracks?.rows?.length === trackCount(preset.rows) ? tracks.rows : preset ? Array(trackCount(preset.rows)).fill(1) : null;
+  const gridCols = colW ? weightsTemplate(colW) : activeLayout.cols;
+  const gridRows = rowW ? weightsTemplate(rowW) : activeLayout.rows;
+  const gridRef = useRef<HTMLDivElement>(null);
+  const setTracks = useWorkspaces((s) => s.setTracks);
+  const gutter = useRef<{ axis: "col" | "row"; b: number; start: number; w: number[]; inner: number } | null>(null);
+  const onGutterDown = (e: RPointerEvent<HTMLDivElement>, axis: "col" | "row", b: number) => {
+    const g = gridRef.current;
+    const w = axis === "col" ? colW : rowW;
+    if (!g || !w) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const r = g.getBoundingClientRect();
+    const inner = (axis === "col" ? r.width : r.height) - 16 - 8 * (w.length - 1);
+    gutter.current = { axis, b, start: axis === "col" ? e.clientX : e.clientY, w: [...w], inner };
+  };
+  const onGutterMove = (e: RPointerEvent<HTMLDivElement>) => {
+    const d = gutter.current;
+    const g = gridRef.current;
+    if (!d || !g) return;
+    const total = d.w.reduce((a, b) => a + b, 0);
+    const delta = (((d.axis === "col" ? e.clientX : e.clientY) - d.start) / d.inner) * total;
+    const min = total * 0.12;
+    const next = [...d.w];
+    const a = Math.max(min, Math.min(d.w[d.b - 1] + delta, d.w[d.b - 1] + d.w[d.b] - min));
+    next[d.b - 1] = a;
+    next[d.b] = d.w[d.b - 1] + d.w[d.b] - a;
+    if (d.axis === "col") g.style.gridTemplateColumns = weightsTemplate(next);
+    else g.style.gridTemplateRows = weightsTemplate(next);
+    (d as { live?: number[] }).live = next;
+  };
+  const onGutterUp = (e: RPointerEvent<HTMLDivElement>) => {
+    const d = gutter.current as ({ live?: number[] } & NonNullable<typeof gutter.current>) | null;
+    gutter.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (!d?.live || !active) return;
+    setTracks(active.id, layoutKey, d.axis === "col" ? { cols: d.live } : { rows: d.live });
+  };
+  // where each draggable boundary sits, as a css calc over the grid's padding and gaps
+  const gutterPos = (w: number[], b: number) => {
+    const total = w.reduce((a, x) => a + x, 0);
+    const frac = w.slice(0, b).reduce((a, x) => a + x, 0) / total;
+    return `calc(8px + (100% - 16px - ${8 * (w.length - 1)}px) * ${frac} + ${8 * (b - 1) + 4}px)`;
+  };
+
   // right-click a tab — the actions the old pane-header "…" menu used to hold
   const [tabCtx, setTabCtx] = useState<{ x: number; y: number; wsId: string; sessionId: string } | null>(
     null,
@@ -258,18 +306,21 @@ export function PaneGrid() {
         </div>
       )}
       {active && active.sessions.length === 0 && (
-        <Launchpad wsId={active.id} name={active.name} kind={active.kind} cwd={active.cwd ?? ""} />
+        <div className="pane-empty-composer">
+          <ComposerPane wsId={active.id} spacePicker />
+        </div>
       )}
 
       {/* ONE grid holds every space's panes; inactive ones are display:none so their PTYs stay
           alive AND a pane can move between spaces without React remounting it — the key stays
           under the same parent, so the xterm + PTY survive the move instead of restarting. */}
       <div
+        ref={gridRef}
         className={`pane-grid${maxedHere ? " maxed" : ""}`}
         style={{
           display: showGrid ? "grid" : "none",
-          gridTemplateColumns: maxedHere ? "1fr" : activeLayout.cols,
-          gridTemplateRows: maxedHere ? undefined : activeLayout.rows,
+          gridTemplateColumns: maxedHere ? "1fr" : gridCols,
+          gridTemplateRows: maxedHere ? undefined : gridRows,
         }}
       >
         {workspaces.flatMap((w) => {
@@ -295,7 +346,7 @@ export function PaneGrid() {
               <div
                 key={slot.group ?? solo.id}
                 data-sid={single ? solo.id : undefined}
-                className={`pane-cell tabbed${single && dragId === solo.id ? " dragging" : ""}${single && overId === solo.id ? " drop-over" : ""}`}
+                className={`pane-cell tabbed${single && dragId === solo.id ? " dragging" : ""}${single && overId === solo.id ? " drop-over" : ""}${isActiveWs && focusedSessionId === activeTab ? " focused" : ""}`}
                 style={{
                   display: cellVisible ? undefined : "none",
                   gridColumn: cellVisible && !maxedHere ? place.gridColumn : undefined,
@@ -305,14 +356,46 @@ export function PaneGrid() {
                 <div
                     className="pane-tabs"
                     onPointerDown={single ? (e) => {
-                      // only the empty strip area drags — not a tab or a button
+                      // only the bar itself drags, not a tab or a button
                       if ((e.target as HTMLElement).closest(".pane-tab, button")) return;
                       onGripDown(e, w.id, solo.id);
                     } : undefined}
                     onPointerMove={single ? onGripMove : undefined}
                     onPointerUp={single ? onGripUp : undefined}
+                    onDoubleClick={(e) => {
+                      if ((e.target as HTMLElement).closest(".pane-tab, button")) return;
+                      const act = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
+                      onPaneToggleMax(w.id, act.id);
+                    }}
                   >
-                    {slot.sessions.map((ts) => {
+                    {single && <GripVertical size={12} className="pane-grip" />}
+                    {/* one pane = a plain title, no tab chrome. tabs only appear once a slot
+                        actually stacks more than one pane (an image / file opened into it) */}
+                    {single ? (
+                      (() => {
+                        const SIcon = PROVIDER_ICONS[solo.provider] ?? TerminalIcon;
+                        const logo = PROVIDER_LOGO[solo.provider];
+                        return (
+                          <span
+                            className="pane-solo"
+                            title={solo.image || solo.file || solo.title || solo.provider}
+                            onContextMenu={(e: RMouseEvent) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setTabCtx({ x: e.clientX, y: e.clientY, wsId: w.id, sessionId: solo.id });
+                            }}
+                          >
+                            {solo.draft ? null : logo ? (
+                              <img className="pane-solo-logo" src={logo} alt="" />
+                            ) : (
+                              <SIcon size={12} className="pane-tab-ico" />
+                            )}
+                            <span className="pane-solo-title">{solo.title || solo.provider}</span>
+                          </span>
+                        );
+                      })()
+                    ) : (
+                    slot.sessions.map((ts) => {
                       const TIcon = PROVIDER_ICONS[ts.provider] ?? TerminalIcon;
                       return (
                         <div
@@ -345,65 +428,23 @@ export function PaneGrid() {
                           </button>
                         </div>
                       );
-                    })}
-                    {/* chrome-style: new-tab button sits right after the last tab, not off in the
-                        controls group */}
-                    <button
-                      className="pane-tab-add"
-                      title="Open a pane in this folder"
-                      onClick={(e: RMouseEvent) => {
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        const act = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
-                        setTabMenu({
-                          x: Math.min(r.left, window.innerWidth - 210),
-                          y: r.bottom + 4,
-                          wsId: w.id,
-                          anchorId: act.id,
-                          anchorCommand: act.command,
-                          cwd: act.cwd ?? w.cwd,
-                        });
-                      }}
-                    >
-                      <Plus size={14} />
-                    </button>
+                    })
+                    )}
                     {/* identity + controls for the ACTIVE tab — deliberately the same folder label
                         and the same .pane-btn group a solo pane's header shows, so a slot looks the
                         same whether or not it happens to be tabbed */}
                     <span className="pane-tabs-gap" />
-                  {(() => {
-                      const act = slot.sessions.find((ss) => ss.id === activeTab) ?? solo;
-                      const acwd = act.cwd ?? w.cwd ?? "";
-                      let dir = acwd.split(/[\\/]/).filter(Boolean).pop();
-                      // a pane auto-named after its folder ("lualink-rs" in a lualink-rs tab) would
-                      // print the same word twice — only keep the folder when it says something new
-                      if (dir && dir.toLowerCase() === (act.title ?? "").toLowerCase()) dir = undefined;
-                      return (
-                        <>
-                          {dir && (
-                            <span className="pane-cwd" title={acwd}>
-                              <FolderSymlink size={11} className="pane-cwd-ico" />
-                              {dir}
-                            </span>
-                          )}
-                          <span className="pane-head-right">
-                            <button
-                              className="pane-btn"
-                              title={wsMaxId === act.id ? "Restore" : "Maximize"}
-                              onClick={() => onPaneToggleMax(w.id, act.id)}
-                            >
-                              {wsMaxId === act.id ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                            </button>
-                            <button
-                              className="pane-btn close"
-                              title="Close pane"
-                              onClick={() => onPaneClose(w.id, act.id)}
-                            >
-                              <X size={13} />
-                            </button>
-                          </span>
-                        </>
-                      );
-                    })()}
+                    {single && (
+                      <span className="pane-head-right">
+                        <button
+                          className="pane-btn close"
+                          title={wsMaxId === solo.id ? "Close pane (double-click the bar to restore)" : "Close pane (double-click the bar to maximize)"}
+                          onClick={() => onPaneClose(w.id, solo.id)}
+                        >
+                          <X size={13} />
+                        </button>
+                      </span>
+                    )}
                   </div>
                 {slot.sessions.map((sess: Session) => {
                   // one pane is on screen per visible slot: the maximized pane when maximizing,
@@ -416,8 +457,14 @@ export function PaneGrid() {
                   // a "guest" pane sits in a project space but points at a different folder than the
                   // project (e.g. dragged in from an open space) — flag it so it's obvious at a glance
                   const guest = w.kind === "project" && (sess.cwd ?? w.cwd) !== w.cwd;
-                  const pane = sess.image ? (
+                  const pane = sess.draft ? (
+                    <ComposerPane wsId={w.id} sessionId={sess.id} compact />
+                  ) : sess.image ? (
                     <ImageViewer path={sess.image} active={visible} onClose={() => onPaneClose(w.id, sess.id)} tabbed />
+                  ) : sess.media ? (
+                    <MediaViewer path={sess.media} active={visible} />
+                  ) : sess.diff ? (
+                    <DiffViewer cwd={sess.cwd ?? w.cwd} path={sess.diff} active={visible} />
                   ) : sess.file ? (
                     <Suspense fallback={null}>
                       <PaneEditor path={sess.file} onClose={() => onPaneClose(w.id, sess.id)} tabbed />
@@ -475,7 +522,8 @@ export function PaneGrid() {
                       style={{ display: visible ? undefined : "none" }}
                       // an image pane has no TerminalPane to claim focus, so without this clicking one
                       // leaves focus on the last terminal and Ctrl+Shift+W closes the WRONG pane
-                      onMouseDown={sess.image || sess.file ? () => onPaneFocus(sess.id) : undefined}
+                      // panes without a terminal take focus here; a terminal pane focuses itself
+                      onMouseDown={sess.image || sess.file || sess.media || sess.diff || sess.draft ? () => onPaneFocus(sess.id) : undefined}
                     >
                       {pane}
                     </div>
@@ -486,18 +534,31 @@ export function PaneGrid() {
           });
         })}
       </div>
-      {tabCtx && <TabContextMenu ctx={tabCtx} onClose={() => setTabCtx(null)} />}
-      {tabMenu && (
-        <PaneAddMenu
-          x={tabMenu.x}
-          y={tabMenu.y}
-          wsId={tabMenu.wsId}
-          anchorId={tabMenu.anchorId}
-          anchorCommand={tabMenu.anchorCommand}
-          cwd={tabMenu.cwd}
-          onClose={() => setTabMenu(null)}
-        />
+      {showGrid && !maxedHere && preset && colW && rowW && (
+        <>
+          {resizableBoundaries(preset, "col").map((b) => (
+            <div
+              key={`c${b}`}
+              className="pane-gutter col"
+              style={{ left: gutterPos(colW, b) }}
+              onPointerDown={(e) => onGutterDown(e, "col", b)}
+              onPointerMove={onGutterMove}
+              onPointerUp={onGutterUp}
+            />
+          ))}
+          {resizableBoundaries(preset, "row").map((b) => (
+            <div
+              key={`r${b}`}
+              className="pane-gutter row"
+              style={{ top: gutterPos(rowW, b) }}
+              onPointerDown={(e) => onGutterDown(e, "row", b)}
+              onPointerMove={onGutterMove}
+              onPointerUp={onGutterUp}
+            />
+          ))}
+        </>
       )}
+      {tabCtx && <TabContextMenu ctx={tabCtx} onClose={() => setTabCtx(null)} />}
     </div>
   );
 }

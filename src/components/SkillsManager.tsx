@@ -191,7 +191,7 @@ export function SkillsManager({ cwd }: { cwd: string }) {
             <textarea
               className="mcp-area"
               rows={4}
-              placeholder="text to insert — a prompt, a command…"
+              placeholder="Text to insert: a prompt or a command"
               value={snip.body}
               onChange={(e) => setSnip({ ...snip, body: e.target.value })}
             />
@@ -266,7 +266,7 @@ export function SkillsManager({ cwd }: { cwd: string }) {
           )}
         </div>
         <div className="skm-rows">
-          {discovered.length === 0 && <div className="skm-empty">None yet — create one with the + above.</div>}
+          {discovered.length === 0 && <div className="skm-empty">None yet. Create one with the + above.</div>}
           {discovered.map((it) => (
             <div className="mcp-row" key={`${it.scope}-${it.command}`}>
               <span className="mcp-ico">

@@ -13,11 +13,15 @@ export interface Session {
   title: string;
   command?: string;
   cwd?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image" | "editor";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image" | "editor" | "media" | "diff";
   // set → this tab is an image viewer holding that file path (not a terminal)
   image?: string;
   // set → this tab is a code editor on that file (not a terminal)
   file?: string;
+  // set → this tab plays that video or audio file
+  media?: string;
+  // set → this tab shows the working tree diff of that file (a path git reports, from `cwd`)
+  diff?: string;
   // claude panes pin to their session id (id IS a uuid); once launched we resume it next time
   started?: boolean;
   // the claude conversation this pane is currently on — starts as `id`, but follows a manual
@@ -28,10 +32,15 @@ export interface Session {
   // an automation's run pane: mounts even in a space you haven't opened, and is never persisted
   // (a saved one would relaunch its agent on the next app start)
   ephemeral?: boolean;
+  // a composer pane: not launched yet. Submitting it turns it into a real session in place.
+  draft?: boolean;
+  // the model it was launched with, for display (the CLI itself decides what actually runs)
+  model?: string;
 }
 
 // which viewer a path opens in — images get the image viewer, everything else the code editor
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
+const MEDIA_EXT = /\.(?:mp4|webm|mov|mkv|avi|m4v|mp3|wav|flac|ogg|m4a|aac|opus)$/i;
 
 export interface Workspace {
   id: string;
@@ -43,8 +52,10 @@ export interface Workspace {
   renamed?: boolean; // user renamed it → never auto-rename again
   aiNamed?: boolean; // AI already titled it → don't re-title (a manual rename still wins)
   layouts?: Record<number, string>; // chosen pane-layout preset id per pane-count (else auto/default)
+  tracks?: Record<string, { cols?: number[]; rows?: number[] }>; // dragged track weights, keyed "count:layoutId"
   activeTabByGroup?: Record<string, string>; // group id → the tab (session id) shown in that slot
   lastOpenedAt?: number; // when you last entered it — home's "Continue" ordering
+  archived?: boolean; // parked at the bottom of the sidebar; its panes keep running
 }
 
 const COLORS = ["#3fb6e0", "#46c98a", "#e0a23f", "#b06ae0", "#e5484d", "#7dc4e8"];
@@ -106,7 +117,7 @@ function deriveProviderTitle(
 // pane when ≤1 member is left, else re-point the slot's active tab to a surviving sibling.
 function stripSession(w: Workspace, sessionId: string): Workspace {
   const removed = w.sessions.find((ss) => ss.id === sessionId);
-  let sessions = w.sessions.filter((ss) => ss.id !== sessionId);
+  const sessions = w.sessions.filter((ss) => ss.id !== sessionId);
   const group = removed?.group;
   if (!group) return { ...w, sessions };
   const siblings = w.sessions.filter((ss) => ss.group === group); // still includes the removed one
@@ -136,12 +147,16 @@ interface WorkspaceState {
   activateWorkspace: (id: string) => void;
   /** `activate: false` adds it without making it the active space — used by automations */
   addWorkspace: (name?: string, cwd?: string, opts?: { activate?: boolean }) => string;
-  addOpenSpace: (name?: string) => string;
+  /** Give a space without a folder one. Used the first time a composer picks a folder in it. */
+  setWorkspaceCwd: (id: string, cwd: string) => void;
   removeWorkspace: (id: string) => void;
+  /** park a space under "Archived" in the sidebar, or bring it back */
+  setArchived: (id: string, archived: boolean) => void;
   renameWorkspace: (id: string, name: string) => void;
   autoNameWorkspace: (id: string, name: string) => void;
   setActive: (id: string) => void;
   setLayout: (id: string, count: number, presetId: string) => void;
+  setTracks: (id: string, key: string, tracks: { cols?: number[]; rows?: number[] }) => void;
   reorderWorkspaces: (fromId: string, toId: string) => void;
   /** returns the new pane's id. `focus: false` launches it without stealing the view — used by
    *  automations, which must never yank you out of what you're doing. */
@@ -149,12 +164,18 @@ interface WorkspaceState {
   /** stack a pane as a tab in the anchor's slot. returns the new pane's id; `focus: false` leaves
    *  the slot showing whatever it was showing — used by automations. */
   addTab: (wsId: string, anchorSessionId: string, command?: string, cwd?: string, opts?: { focus?: boolean; ephemeral?: boolean }) => string;
-  // open a file as a viewer tab (image → image viewer, anything else → code editor). `anchor` pins
-  // it into a specific pane's slot (ctrl+click in a terminal); without one it lands on the focused
-  // pane of the active space.
+  /** a composer pane in the grid; returns its id */
+  addDraft: (wsId: string, cwd?: string) => string;
+  /** launch a draft: give it a command and it becomes a normal pane under the same id */
+  startDraft: (sessionId: string, command: string | undefined, model?: string) => void;
+  // open a file as its own pane (image → image viewer, anything else → code editor), placed right
+  // after `anchor` (ctrl+click in a terminal) or after the focused pane of the active space.
   openPathTab: (path: string, anchor?: { wsId: string; sessionId: string }) => void;
+  /** a file's diff as a pane beside the focused one, in the active space */
+  openDiffTab: (cwd: string, path: string) => void;
   setActiveTab: (wsId: string, group: string, sessionId: string) => void;
   renameSession: (sessionId: string, title: string) => void;
+  setSessionModel: (sessionId: string, model: string) => void;
   removeSession: (wsId: string, sessionId: string) => void;
   markStarted: (sessionId: string) => void;
   setClaudeSessionId: (sessionId: string, claudeId: string) => void;
@@ -192,28 +213,24 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
     return id;
   },
 
-  addOpenSpace: (name) => {
-    const id = uid();
-    set((s) => {
-      const openCount = s.workspaces.filter((w) => w.kind === "open").length;
-      const color = COLORS[s.workspaces.length % COLORS.length];
-      const ws: Workspace = {
-        id,
-        name: name || `Open ${openCount + 1}`,
-        cwd: "",
-        color,
-        kind: "open",
-        sessions: [],
-      };
-      return { workspaces: [...s.workspaces, ws], activeId: id };
-    });
-    return id;
-  },
+  setWorkspaceCwd: (id, cwd) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => (w.id === id && !w.cwd ? { ...w, cwd, kind: "project" } : w)),
+    })),
 
   removeWorkspace: (id) =>
     set((s) => {
       const workspaces = s.workspaces.filter((w) => w.id !== id);
       const activeId = s.activeId === id ? (workspaces[0]?.id ?? null) : s.activeId;
+      return { workspaces, activeId };
+    }),
+
+  setArchived: (id, archived) =>
+    set((s) => {
+      const workspaces = s.workspaces.map((w) => (w.id === id ? { ...w, archived } : w));
+      // archiving the space you are in moves you to the first live one, if there is one
+      const activeId =
+        archived && s.activeId === id ? (workspaces.find((w) => !w.archived)?.id ?? s.activeId) : s.activeId;
       return { workspaces, activeId };
     }),
 
@@ -248,6 +265,13 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
     set((s) => ({
       workspaces: s.workspaces.map((w) =>
         w.id === id ? { ...w, layouts: { ...(w.layouts ?? {}), [count]: presetId } } : w,
+      ),
+    })),
+
+  setTracks: (id, key, tracks) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === id ? { ...w, tracks: { ...(w.tracks ?? {}), [key]: { ...(w.tracks?.[key] ?? {}), ...tracks } } } : w,
       ),
     })),
 
@@ -295,6 +319,54 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
     return id;
   },
 
+  addDraft: (wsId, cwd) => {
+    const id = uid();
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === wsId
+          ? {
+              ...w,
+              sessions: [
+                ...w.sessions,
+                { id, title: "New thread", cwd: cwd ?? w.cwd, provider: "terminal" as const, draft: true },
+              ],
+            }
+          : w,
+      ),
+      focusedSessionId: id,
+    }));
+    return id;
+  },
+
+  setSessionModel: (sessionId, model) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.sessions.some((ss) => ss.id === sessionId)
+          ? { ...w, sessions: w.sessions.map((ss) => (ss.id === sessionId ? { ...ss, model } : ss)) }
+          : w,
+      ),
+    })),
+
+  startDraft: (sessionId, command, model) =>
+    set((s) => {
+      const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
+      return {
+        workspaces: s.workspaces.map((w) => {
+          if (!w.sessions.some((ss) => ss.id === sessionId)) return w;
+          return {
+            ...w,
+            sessions: w.sessions.map((ss) => {
+              if (ss.id !== sessionId) return ss;
+              const { provider, title } = deriveProviderTitle(command, ss.cwd ?? w.cwd, used);
+              const next: Session = { ...ss, command, provider, title, model };
+              delete next.draft;
+              return next;
+            }),
+          };
+        }),
+      };
+    }),
+
   // open a new pane stacked as a tab in the anchor's slot, inheriting its folder. if the anchor
   // isn't grouped yet we mint a group id and stamp it on BOTH panes so they form the group together.
   addTab: (wsId, anchorSessionId, command, cwd, opts) => {
@@ -334,52 +406,53 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         ? s.workspaces.find((x) => x.id === anchor.wsId)
         : s.workspaces.find((x) => x.id === s.activeId);
       if (!w) return {};
-      // anchor on the given pane, else the focused one, else the first — that's whose slot it joins
+      // the pane the file opens beside: the given one, else the focused one, else the last
       const anchorSess =
         (anchor && w.sessions.find((ss) => ss.id === anchor.sessionId)) ??
         w.sessions.find((ss) => ss.id === s.focusedSessionId) ??
-        w.sessions[0];
+        w.sessions[w.sessions.length - 1];
       const isImg = IMAGE_EXT.test(path);
-      const title = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-      const mk = (group?: string): Session => ({
+      const isMedia = MEDIA_EXT.test(path);
+      // already open somewhere in this space: focus that pane instead of opening a second copy
+      const dupe = w.sessions.find((ss) => (ss.image ?? ss.media ?? ss.file) === path);
+      if (dupe) return { focusedSessionId: dupe.id };
+      const tab: Session = {
         id: uid(),
-        title,
+        title: path.split(/[\\/]/).filter(Boolean).pop() ?? path,
         cwd: anchorSess?.cwd ?? w.cwd,
-        provider: isImg ? "image" : "editor",
-        ...(isImg ? { image: path } : { file: path }),
-        group,
-      });
-
-      // nothing to anchor to (empty space) — the viewer becomes its own solo pane
-      if (!anchorSess) {
-        const tab = mk();
-        return {
-          workspaces: s.workspaces.map((x) => (x.id === w.id ? { ...x, sessions: [...x.sessions, tab] } : x)),
-          focusedSessionId: tab.id,
-        };
-      }
-
-      const group = anchorSess.group ?? anchorSess.id; // group id == anchor session id, so the slot's react key never changes
-      // already open in this slot → just focus it instead of stacking a duplicate
-      const dupe = w.sessions.find((ss) => ss.group === group && (ss.image ?? ss.file) === path);
-      if (dupe) {
-        return {
-          workspaces: s.workspaces.map((x) =>
-            x.id === w.id
-              ? { ...x, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [group]: dupe.id } }
-              : x,
-          ),
-          focusedSessionId: dupe.id,
-        };
-      }
-      const tab = mk(group);
+        provider: isImg ? "image" : isMedia ? "media" : "editor",
+        ...(isImg ? { image: path } : isMedia ? { media: path } : { file: path }),
+      };
       const workspaces = s.workspaces.map((x) => {
         if (x.id !== w.id) return x;
         const sessions = [...x.sessions];
-        const ai = sessions.findIndex((ss) => ss.id === anchorSess.id);
-        if (!anchorSess.group) sessions[ai] = { ...sessions[ai], group }; // pull the anchor into the group
-        sessions.splice(ai + 1, 0, tab);
-        return { ...x, sessions, activeTabByGroup: { ...(x.activeTabByGroup ?? {}), [group]: tab.id } };
+        const at = anchorSess ? sessions.findIndex((ss) => ss.id === anchorSess.id) + 1 : sessions.length;
+        sessions.splice(at, 0, tab);
+        return { ...x, sessions };
+      });
+      return { workspaces, focusedSessionId: tab.id };
+    }),
+
+  openDiffTab: (cwd, path) =>
+    set((s) => {
+      const w = s.workspaces.find((x) => x.id === s.activeId);
+      if (!w) return {};
+      const dupe = w.sessions.find((ss) => ss.diff === path && ss.cwd === cwd);
+      if (dupe) return { focusedSessionId: dupe.id };
+      const anchorSess = w.sessions.find((ss) => ss.id === s.focusedSessionId) ?? w.sessions[w.sessions.length - 1];
+      const tab: Session = {
+        id: uid(),
+        title: `${path.split(/[\\/]/).filter(Boolean).pop() ?? path} (diff)`,
+        cwd,
+        provider: "diff",
+        diff: path,
+      };
+      const workspaces = s.workspaces.map((x) => {
+        if (x.id !== w.id) return x;
+        const sessions = [...x.sessions];
+        const at = anchorSess ? sessions.findIndex((ss) => ss.id === anchorSess.id) + 1 : sessions.length;
+        sessions.splice(at, 0, tab);
+        return { ...x, sessions };
       });
       return { workspaces, focusedSessionId: tab.id };
     }),
@@ -531,7 +604,43 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
         }),
       };
     });
-    set({ workspaces: renamed, activeId, hydrated: true });
+    // Migration: open spaces (a grid of panes in different folders) are gone; every space is one
+    // folder. An old open space is split by the folder each pane ran in: panes join the space for
+    // that folder if one exists, or get a new space named after it. An open space with no panes
+    // left has nothing to keep and is dropped.
+    const key = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
+    const folderized: Workspace[] = [];
+    const byDir = new Map<string, Workspace>();
+    const spaceFor = (dir: string) => {
+      let ws = byDir.get(key(dir));
+      if (!ws) {
+        ws = {
+          id: uid(),
+          name: dir.split(/[\\/]/).filter(Boolean).pop() || dir,
+          cwd: dir,
+          color: COLORS[folderized.length % COLORS.length],
+          kind: "project",
+          sessions: [],
+        };
+        byDir.set(key(dir), ws);
+        folderized.push(ws);
+      }
+      return ws;
+    };
+    for (const w of renamed) {
+      if (w.cwd) {
+        const dup = byDir.get(key(w.cwd));
+        if (dup) dup.sessions.push(...w.sessions);
+        else {
+          byDir.set(key(w.cwd), w);
+          folderized.push(w);
+        }
+        continue;
+      }
+      for (const s of w.sessions) if (s.cwd) spaceFor(s.cwd).sessions.push(s);
+    }
+    const active = folderized.some((w) => w.id === activeId) ? activeId : (folderized[0]?.id ?? null);
+    set({ workspaces: folderized, activeId: active, hydrated: true });
   },
   markHydrated: () => set({ hydrated: true }),
 }));

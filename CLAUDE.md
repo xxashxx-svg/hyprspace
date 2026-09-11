@@ -5,9 +5,8 @@
 
 HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
 Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
-resume, drag-to-swap, a multi-agent **launcher** (fan out N agents in a folder at once), scheduled
-**Automations**, an integrated **code editor**, a command palette, and a git review dock. Neutral,
-T3-Code-inspired dark UI.
+resume, drag-to-swap, a multi-agent **launcher** (fan out N agents in a folder at once), and a
+command palette. Neutral, T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
@@ -50,8 +49,11 @@ T3-Code-inspired dark UI.
    Settings. This repo is public: if you add a property, the Settings copy and the file's header
    comment must change in the same commit. Never send prompts, terminal output, paths, project names,
    or anything joined to an account.
-9. **Code style:** human/casual, minimal comments (comment only tricky logic, keep it short and
-   lowercase-casual). Match the surrounding code.
+9. **Code style:** clear and conventional over casual. Comment the why, not the what. New UI code
+   goes in a folder per area (`components/composer`, `components/dock`) with one stylesheet per
+   area in `styles/`.
+10. **Copy:** every string a user reads is plain English. No em dashes, no curly quotes, no
+   filler. One idea per sentence. Say what happens, not how it feels.
 
 ---
 
@@ -84,14 +86,13 @@ src/                         React frontend
   styles/tokens.css          design tokens (theme variables)
   styles/<area>.css          per-area component CSS (rail, home, pane, loops, launcher, editor, …) —
                              split out of the old monolithic App.css so agents don't collide
-  components/                UI: Titlebar, Rail (sidebar), PaneGrid, TerminalPane, HomePage,
-                             ReviewDock, Settings, NewProjectDialog, CommandPalette,
-                             LaunchWorkspace (multi-agent launcher), CodeEditor (dock editor),
-                             LoopsPage + AutomationEditor + LoopRunView + LoopRunner (Automations),
-                             StartupSettings, Logo, …
+  components/                UI: Titlebar, Rail (sidebar) + SessionRow, PaneGrid, TerminalPane,
+                             HomePage, composer/ (ComposerPane, ModelPicker), dock/ (Dock, FilesPanel,
+                             GitPanel), Settings, NewProjectDialog, CommandPalette, LaunchWorkspace
+                             (multi-agent launcher), Menu (anchored dropdown), CodeEditor, Logo, …
   stores/                    Zustand: workspace, ui, settings, settingsSync, git, activity, skills,
-                             auth, updater, notifications, confirm, loops, launchPresets,
-                             projectConfig, services, bridge (mobile)
+                             agentStatus, usage, providers (installed CLIs), auth, updater,
+                             notifications, confirm, launchPresets, bridge (mobile)
   api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
                              never invoke() directly
   mobileBridge.ts            state mirror + action handler for the phone app (see mobile/)
@@ -99,15 +100,17 @@ src/                         React frontend
   platform.ts                OS detection + platform-conditional bits (modifier keys, shells)
   themes.ts                  theme definitions applied over styles/tokens.css
   ai/                        autoNameSession.ts — titles a pane from the user's first prompt (Codex)
-  lib/                       small helpers (projects.ts = where new projects go, time.ts) +
-                             automations.ts (the Automations engine) + startup.ts (startup actions)
+  lib/                       models.ts (agent catalog: models, efforts, flags), composer.ts (type a
+                             prompt into a pane once its CLI is up), agentHeuristics.ts (row state
+                             for CLIs without hooks), grid.ts (layouts + resizable boundaries),
+                             brand.ts (provider marks), projects.ts, time.ts, branches.ts
 
 src-tauri/                   Rust backend
   src/lib.rs                 all #[tauri::command] registrations + app lifecycle (kill_all on exit)
   src/pty.rs                 PtyManager — ConPTY/portable-pty, byte coalescing
   src/agent.rs               AgentManager — one headless provider turn (used by the pane auto-namer)
   src/agenthook.rs           loopback listener feeding claude's hooks + status line into the app
-                             (live agent state, usage meter, automation completion)
+                             (live agent state, usage meter)
   src/bridge.rs              LAN WebSocket server the Android app talks to (off by default)
   src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
                              providers.rs, mcp.rs, skills.rs, usage.rs (per-provider usage read from
@@ -142,22 +145,44 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
   folder at once: pick a folder → grid size → agent mix (quick-fill), then `addWorkspace` + N
   `addSession` calls so `PaneGrid` tiles them. Saved configs are `stores/launchPresets.ts`; agent
   panes get friendly names (`lib/names.ts`).
-- **Editor.** `CodeEditor` (CodeMirror) lives in the Review dock's "Editor" tab; clicking a file in
-  the Files tree opens it (`read_file`/`write_file` in `devtools/fs.rs`), with save / autosave.
-- **Automations.** Scheduled / interval / manual agents. A `LoopDef` (persisted `"loops"`,
-  `stores/loops.ts`) is driven by the engine in `lib/automations.ts`, which runs each fire in a
-  **real claude pane** (ephemeral background tab, on the subscription — no API key, no headless
-  path): it launches the constant `claudeCmd`, waits for the TUI's status line, **types the task in
-  as keystrokes** (never onto a shell command line), and watches the pane's agent hooks for the
-  turn to end. Every run has a wall-clock budget (defaulted) and hitting it **closes the pane** — it
-  can't run forever. Optional worktree isolation + Review-changes. On the dedicated **Automations**
-  page (rail); runs only while the app is open. See ARCHITECTURE.
+- **Composer.** `components/composer/ComposerPane` is where a session starts: pick the agent, model
+  and effort (`ModelPicker`, catalog in `lib/models.ts`, installed CLIs from `stores/providers.ts`),
+  type a task, press Enter. "New session" (`actions.newSession`) adds a **draft** session
+  (`Session.draft`) that renders as a composer pane in the grid; submitting calls `startDraft`, which
+  turns it into a normal pane under the same id, and `lib/composer.ts` **types the prompt in as
+  keystrokes** once the CLI is up (claude: its status line; other CLIs: a fixed delay). An empty
+  space shows a composer too. Under the box: the CLI's saved conversations for the folder
+  (`agent_sessions` reads claude's transcripts and codex's rollouts; `actions.resumeCmd` reopens
+  one), and a clone card when the text starts with a repository link (`git_clone`). Terminal path
+  only, no SDK, no token.
+- **Model / effort flags.** `actions.commandFor(provider, choice)` builds the launch command; the
+  per-agent defaults live in settings (`agentModel`, `agentEffort`) and the composer edits them.
+  Claude takes `--effort low|medium|high|xhigh|max`, Codex `-c model_reasoning_effort=...`. Effort
+  levels are per model: Codex's list (and each model's levels, up to `ultra`) is read from its own
+  `~/.codex/models_cache.json` by `stores/providers.ts`; the static catalog is the fallback.
+- **Sidebar.** One resizable column (`Rail`): search, then every space as a section that folds open
+  to its threads (`SessionRow`), the active space open by default with its working tree's file
+  count and line deltas. Rows drag to reorder; dropping on another space moves the pane there.
+  A space can be archived (`Workspace.archived`): it parks under an "Archived" group at the bottom
+  with its panes still running. Row state comes from
+  claude's hooks (`stores/agentStatus`) or, for CLIs without hooks, from the terminal output
+  (`lib/agentHeuristics`: recent output = working, a question in the last lines = waiting).
+- **Right dock.** `components/dock/Dock` (Ctrl+Shift+G): Files (`FilesPanel`, a lazy tree with git
+  decorations) and Git (`GitPanel`, tick files to stage, summary + description, commit to the branch,
+  push when ahead). It follows the focused pane's folder. Resizable from its left edge.
+- **Pane grid.** Layout presets in `lib/grid.ts`; the boundaries between tracks that no pane spans
+  are draggable (`resizableBoundaries`), and dragged weights persist per layout in
+  `Workspace.tracks`. The pane header is a grip, the agent mark, the name, and a close button;
+  double-click it to maximize.
+- **Editor.** `CodeEditor` (CodeMirror) opens as a pane tab when you ctrl+click a file path in a
+  terminal, or a file in the dock's Files tab. A changed file in the Git tab opens its diff as a
+  pane the same way (`DiffViewer`, `Session.diff`).
 - **IPC discipline.** Components call `src/api/index.ts` wrappers, never `invoke()` directly. Sync
   Tauri commands run on the UI thread, so anything filesystem-heavy is `async fn` + `spawn_blocking`.
 - **Windows note.** `claude` is a `.cmd` shim, so it's spawned via `cmd /c claude …` so PATHEXT
   resolves it. Prompts go over stdin to avoid shell-escaping.
 
-Full design details (session/cwd pinning, the Loops engine + hook backend, PTY coalescing):
+Full design details (session/cwd pinning, the hook backend, PTY coalescing):
 **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
 ---
@@ -173,10 +198,6 @@ Full design details (session/cwd pinning, the Loops engine + hook backend, PTY c
   not a dev change.
 - **Persisted state names** are sanitized to a token in `persist.rs`, and large blobs are capped on
   save so the store can't grow unbounded.
-- **An Automation can never run forever.** Every run gets a wall-clock budget (`stop.timeBudgetMin`,
-  defaulted to 60 minutes when unset), and hitting it — like Stop — **closes the run's pane**, so
-  the agent dies with the run. Don't add an infinite path, and don't let a stop path leave the
-  pane's agent alive.
 
 ## Docs index
 - [docs/README.md](./docs/README.md) — index of everything below

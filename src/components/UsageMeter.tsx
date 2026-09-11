@@ -222,10 +222,10 @@ export function UsageMeter() {
         className={`um-chip ${worst?.t ?? ""}${!worst || sum?.stale ? " stale" : ""}`}
         title={
           worst
-            ? `${worst.label} — ${Math.round(worst.win.pct)}% used${
+            ? `${worst.label}: ${Math.round(worst.win.pct)}% used${
                 worst.win.resetsAt ? `, resets in ${resetLabel(worst.win)}` : ""
               }`
-            : "Usage window reset — updates on the next turn"
+            : "Usage window reset. Updates on the next turn."
         }
         onClick={() => setOpen((o) => !o)}
       >

@@ -12,9 +12,9 @@ import { applyUnicode } from "../terminal/unicodeProvider";
 import { termSurface } from "../terminal/palettes";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { useSettings } from "../stores/settings";
-import { useWorkspaces } from "../stores/workspace";
-import { useProjectConfigs } from "../stores/projectConfig";
 import { useUi } from "../stores/ui";
+import { modelEnv, type ProviderId } from "../lib/models";
+import { useWorkspaces } from "../stores/workspace";
 import { useNotifications } from "../stores/notifications";
 import { claudeCmd } from "../actions";
 import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp, pathExists, claudeImagePath, agentHookSettings } from "../api";
@@ -42,8 +42,10 @@ import {
   FolderOpen,
   ClipboardList,
   GitBranch,
+  FileVideo,
   GitPullRequestArrow,
   Plus,
+  GitCompare,
 } from "lucide-react";
 import { TerminalSearch } from "./TerminalSearch";
 import { PaneAddMenu } from "./PaneAddMenu";
@@ -60,6 +62,8 @@ export const PROVIDER_ICONS = {
   terminal: TerminalIcon,
   image: ImageIcon,
   editor: FileCode,
+  media: FileVideo,
+  diff: GitCompare,
 } as const;
 
 // friendly name for the brief "Starting …" boot indicator
@@ -73,15 +77,18 @@ const PROVIDER_LABEL = {
   terminal: "terminal",
   image: "image",
   editor: "editor",
+  media: "media",
+  diff: "diff",
 } as const;
 
 // Each claude pane owns its session id (= the pane's uuid), so on relaunch it resumes its OWN
 // conversation — not just "the folder's latest", which broke open spaces with several panes in
 // one folder. We claim the id with --session-id on first launch, then --resume <id> to return.
 function injectClaudeArg(cmd: string, arg: string): string {
-  if (/--session-id|--resume|--continue|(^|\s)-[cr](\s|$)/.test(cmd)) return cmd; // already pinned
   return cmd.replace(/^claude\b/, `claude ${arg}`);
 }
+// a command that already names its conversation (a session resumed from the composer) keeps it
+const pinsSession = (cmd: string) => /--session-id|--resume|--continue|(^|\s)-[cr](\s|$)/.test(cmd);
 
 // image-file paths in terminal output become ctrl+clickable — windows/posix absolute + relative.
 // three branches: "quoted" and 'quoted' (so a path with spaces still matches — %TEMP% contains the
@@ -115,7 +122,7 @@ interface Props {
   cwd: string;
   guest?: boolean;
   command?: string;
-  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image" | "editor";
+  provider: "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal" | "image" | "editor" | "media" | "diff";
   title?: string;
   started?: boolean;
   active: boolean;
@@ -410,6 +417,9 @@ function TerminalPaneInner({
           .then((t) => (t ? void term.paste(t) : pasteImage()))
           .catch(pasteImage)
           .catch(() => {});
+        // returning false only stops xterm's key handling; the browser would still fire its own
+        // paste event on the textarea, and xterm pastes that too. This keeps it to one paste.
+        e.preventDefault();
         return false;
       }
       return true;
@@ -473,18 +483,11 @@ function TerminalPaneInner({
     let paused = false;
 
     useActivity.getState().markStart(sessionId);
-    // apply the owning project's per-project env vars + default shell, if set
-    const ownerWs = useWorkspaces
-      .getState()
-      .workspaces.find((w) => w.sessions.some((s) => s.id === sessionId));
-    const cfg = ownerWs ? useProjectConfigs.getState().getConfig(ownerWs.cwd) : null;
-    const projEnv = cfg && Object.keys(cfg.env).length ? cfg.env : undefined;
     // Interactive Claude panes: force a full alt-screen repaint every frame so a resize can't leave
     // stale/duplicated rows or a mid-screen status line. Claude only auto-enables this for
     // background/agent-view sessions on Windows, so interactive panes have to opt in themselves.
-    const env = isClaude
-      ? { ...(projEnv ?? {}), CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT: "1" }
-      : projEnv;
+    const modelEnvVars = modelEnv(provider as ProviderId, useSettings.getState().agentEffort[provider] ?? "");
+    const env = isClaude ? { ...modelEnvVars, CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT: "1" } : modelEnvVars;
     lastSize.current = { cols: term.cols, rows: term.rows }; // create_pty carries the initial size
     createPty(
       {
@@ -494,7 +497,6 @@ function TerminalPaneInner({
         cols: term.cols,
         rows: term.rows,
         ...(env ? { env } : {}),
-        ...(cfg?.defaultShell ? { shell: cfg.defaultShell } : {}),
       },
       {
         onData: (bytes) => {
@@ -534,7 +536,9 @@ function TerminalPaneInner({
           const settings = await agentHookSettings(sessionId).catch(() => null);
           if (settings) toRun = injectClaudeArg(toRun, `--settings "${settings}"`);
         }
-        if (isClaude && started) {
+        if (isClaude && pinsSession(toRun)) {
+          // nothing to add: the command carries its own --resume / --session-id
+        } else if (isClaude && started) {
           // each pane owns its conversation under its own id, so resume that exact chat reliably;
           // panes created before we owned the id fall back to the folder's latest, else fresh
           const mode = await claudeResumeMode(cwd, sessionId).catch(() => "fresh");
@@ -815,7 +819,7 @@ function TerminalPaneInner({
           {folder && (
             <span
               className={`pane-cwd${guest ? " guest" : ""}`}
-              title={guest ? `${cwd} — outside this space's folder` : cwd}
+              title={guest ? `${cwd} (outside this space's folder)` : cwd}
             >
               {guest && <FolderSymlink size={11} className="pane-cwd-ico" />}· {folder}
             </span>
@@ -928,11 +932,11 @@ function TerminalPaneInner({
             <button
               className="pane-menu-item"
               onClick={() => {
-                useUi.getState().setDockTab("changes");
+                useUi.getState().setDockTab("git");
                 setMenu(null);
               }}
             >
-              <GitPullRequestArrow size={14} /> Open Git panel
+              <GitPullRequestArrow size={14} /> Open git panel
             </button>
             <div className="pane-menu-sep" />
             <button

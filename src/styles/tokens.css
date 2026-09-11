@@ -19,6 +19,7 @@
   --text-2: #a1a1a1;
   --text-3: #767676;
 
+  --border-0: rgba(255, 255, 255, 0.035); /* shell dividers: sidebar, titlebar, dock edges */
   --border-1: rgba(255, 255, 255, 0.06);
   --border-2: rgba(255, 255, 255, 0.1);
 

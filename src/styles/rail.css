@@ -1,52 +1,37 @@
-/* ---- Rail ---- */
+/* ---- Rail: one column. Search, spaces that fold open to their threads (sessions.css), settings ---- */
 .rail {
-  width: 220px;
+  --rail-w: 272px; /* overridden inline from settings */
+  position: relative;
   flex: 0 0 auto;
-  background: var(--surface-1);
-  border-right: 1px solid var(--border-1);
   display: flex;
   flex-direction: column;
-  position: relative;
+  width: var(--rail-w);
+  min-height: 0;
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-0);
 }
-.rail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px 6px;
+.rail-resize {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
 }
-/* quiet uppercase section label — it's a divider, not a row you interact with */
-.rail-title {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-3);
+.rail-resize:hover,
+.rail-resize:active {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
-.rail-add {
-  background: transparent;
-  border: none;
-  color: var(--text-2);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-1);
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.rail-add:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
-}
-/* sidebar Search — an Orca-style inline filter input; the kbd chip still opens the palette */
 .rail-search-box {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 2px 2px 8px;
+  margin: 8px 8px 6px;
   padding: 0 8px;
-  height: 32px;
-  border: 1px solid var(--border-2);
+  height: 30px;
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   background: var(--surface-2);
   color: var(--text-3);
@@ -89,168 +74,351 @@
   color: var(--text-1);
 }
 .rail-search-kbd {
-  cursor: pointer;
-}
-/* collapsed rail keeps the icon-button that opens the palette */
-.rail-search {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 9px;
-  margin-bottom: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-3);
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-}
-.rail-search:hover {
-  background: var(--surface-2);
-  color: var(--text-2);
-}
-.rail-search svg {
-  flex: 0 0 auto;
-}
-.rail-search-label {
-  flex: 1;
-  text-align: left;
-}
-.rail-search-kbd {
   flex: 0 0 auto;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-3);
-  background: var(--surface-2);
+  background: transparent;
   border: 1px solid var(--border-1);
   border-radius: 4px;
-  padding: 1px 6px;
-}
-.rail.collapsed .rail-search {
-  justify-content: center;
-  padding: 9px 0;
-}
-.rail.collapsed .rail-search-label,
-.rail.collapsed .rail-search-kbd {
-  display: none;
-}
-.rail-home {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 9px;
-  margin-bottom: 4px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  border-radius: var(--radius-1);
+  padding: 1px 5px;
   cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
-.rail-home svg {
-  color: var(--accent);
-  flex: 0 0 auto;
-}
-.rail-home:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.rail-home.active {
-  background: var(--accent-dim);
-  color: var(--text-1);
-}
-.rail.collapsed .rail-home {
-  justify-content: center;
-  padding: 9px 0;
-}
-.rail.collapsed .rail-home-label {
-  display: none;
-}
-/* top-level Loops/automations nav entry */
-.rail-nav {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 9px;
-  margin-bottom: 8px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.rail-nav svg {
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-.rail-nav:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.rail-nav:hover svg {
-  color: var(--text-2);
-}
-.rail-nav.active {
-  background: var(--accent-dim);
-  color: var(--text-1);
-}
-.rail-nav.active svg {
-  color: var(--accent);
-}
-.rail-nav-label {
+.rail-scroll {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
-.rail-nav-badge {
+.space-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 8px 4px;
+}
+.space-list.dragging,
+.space-list.dragging .sess-row {
+  cursor: grabbing;
+}
+.space {
+  display: flex;
+  flex-direction: column;
+}
+/* the section header: fold arrow, name, thread count, and a + that shows on hover */
+.space-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 4px 0 2px;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.space-row:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  color: var(--text-1);
+}
+.space.active > .space-row {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.space-row.droppable {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.space-row.drop-over {
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.space-twist {
   flex: 0 0 auto;
-  min-width: 17px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.space-twist svg {
+  transition: transform 0.14s var(--ease);
+}
+.space-twist.open svg {
+  transform: rotate(90deg);
+}
+.space-twist:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.space-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-count {
+  flex: 0 0 auto;
   font-family: var(--font-mono);
   font-size: 10.5px;
-  line-height: 1;
-  padding: 3px 5px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--surface-0);
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  padding-right: 4px;
 }
-/* idle: just the loop count, neutral rather than the live accent */
-.rail-nav-badge.muted {
-  background: var(--surface-3);
-  color: var(--text-2);
-}
-.rail.collapsed .rail-nav {
+.space-add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  padding: 9px 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease), background 0.12s var(--ease), color 0.12s var(--ease);
 }
-.rail.collapsed .rail-nav-label {
+.space-row:hover .space-add,
+.space.active > .space-row .space-add {
+  opacity: 1;
+}
+.space-add:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.space-row:hover .space-count {
+  visibility: hidden;
+}
+/* archived spaces: a section like the others, dimmer, parked under a divider */
+.archive {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-1);
+}
+.archive-row {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.archive-ico {
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+.archive-row:hover .space-count {
+  visibility: visible;
+}
+.arch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 8px;
+  border-radius: 7px;
+  color: var(--text-3);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.arch-row:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  color: var(--text-1);
+}
+.arch-row.active {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.arch-row.drop-over {
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.arch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arch-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+/* the restore pill takes the count's place on hover, like Resume in the composer's list */
+.arch-restore {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.arch-restore:hover {
+  background: color-mix(in srgb, var(--surface-3) 70%, var(--text-3));
+}
+.arch-row:hover .arch-count {
   display: none;
 }
-.rail.collapsed .rail-nav-badge {
-  position: absolute;
-  margin-left: 18px;
-  margin-top: -14px;
-  min-width: 0;
-  padding: 2px 4px;
+.arch-row:hover .arch-restore {
+  display: inline-flex;
 }
-/* settings pinned to the bottom of the sidebar (Cursor-style, bottom-left) */
+.space-rename {
+  width: 100%;
+  height: 30px;
+  background: var(--bg-base);
+  border: 1px solid var(--accent);
+  color: var(--text-1);
+  border-radius: 7px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+/* the fold: a grid row that eases between 0 and its content height */
+.space-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s var(--ease);
+}
+.space.open > .space-fold {
+  grid-template-rows: 1fr;
+}
+.space-fold-in {
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0s linear 0.2s;
+}
+.space.open > .space-fold > .space-fold-in {
+  visibility: visible;
+  transition: visibility 0s;
+}
+/* the folded-open part, indented under the space name */
+.space-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px 12px;
+}
+.space-sum,
+.space-empty {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+/* a space with no threads is one block: header, status line and note light up together */
+.space.empty {
+  border-radius: 7px;
+  transition: background 0.12s var(--ease);
+}
+.space.empty:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+}
+.space.empty:hover > .space-row {
+  background: transparent;
+  color: var(--text-1);
+}
+.space.empty:hover .space-sum,
+.space.empty:hover .space-empty {
+  color: var(--text-2);
+}
+/* with threads, the status line still belongs to the header: hovering it lights both */
+.space:not(.empty) .space-sum:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  color: var(--text-2);
+}
+.space:not(.empty):has(> .space-fold .space-sum:hover) > .space-row {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  color: var(--text-1);
+}
+.space-sum {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.space-sum-add {
+  color: var(--status-ok);
+}
+.space-sum-del {
+  color: var(--status-error);
+}
+.space-empty {
+  padding: 4px 8px 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+/* the add row: a plain row with a plus, dim until hovered */
+.space-open {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: calc(100% - 16px);
+  margin: 6px 8px 8px;
+  height: 30px;
+  padding: 0 4px 0 2px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.space-open-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.space-open:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  color: var(--text-1);
+}
+.space-open:hover .space-open-ico {
+  background: var(--surface-3);
+}
+.rail-empty {
+  padding: 6px 10px;
+  color: var(--text-3);
+  font-size: 12px;
+}
 .rail-foot {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   padding: 7px 8px 8px;
-  border-top: 1px solid var(--border-1);
+  border-top: 1px solid var(--border-0);
 }
 .rail-settings {
   flex: 1;
@@ -258,222 +426,6 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 9px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12.5px;
-  text-align: left;
-  transition:
-    background 0.12s var(--ease),
-    color 0.12s var(--ease);
-}
-.rail-settings svg {
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-.rail-settings:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.rail-settings:hover svg {
-  color: var(--text-2);
-}
-.rail-settings-label {
-  flex: 1;
-}
-.rail.collapsed .rail-foot {
-  padding: 6px 0 8px;
-}
-.rail.collapsed .rail-settings {
-  justify-content: center;
-  padding: 9px 0;
-}
-.rail.collapsed .rail-settings-label {
-  display: none;
-}
-/* expandable space → sessions hierarchy (T3-style) */
-.rail-item-wrap {
-  display: flex;
-  flex-direction: column;
-}
-.rail-twist {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  border-radius: 4px;
-}
-.rail-twist:hover {
-  color: var(--text-1);
-}
-.rail-twist svg {
-  transition: transform 0.14s var(--ease);
-}
-.rail-twist.open svg {
-  transform: rotate(90deg);
-}
-.rail-twist-spacer {
-  flex: 0 0 auto;
-  width: 16px;
-}
-/* expand reveal: grid-rows 0fr→1fr animates open/close AND re-settles smoothly when the file tree
-   loads async (no Loading→pop), without fighting the sidebar width transition */
-.rail-sub {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.18s var(--ease);
-}
-.rail-sub.open {
-  grid-template-rows: 1fr;
-}
-.rail-sub-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-/* every nesting level uses the SAME step + the same hairline, so the tiers line up as one ladder
-   (project → branch → agent → sub-agent) instead of each inventing its own inset */
-.rail-sessions {
-  display: flex;
-  flex-direction: column;
-  margin: 0 0 4px 15px;
-  padding-left: 9px;
-  border-left: 1px solid var(--border-1);
-}
-.rail-session {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 26px;
-  text-align: left;
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 12.5px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.rail-session:hover {
-  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
-  color: var(--text-1);
-}
-.rail-session.active {
-  background: var(--surface-3);
-  color: var(--text-1);
-}
-.rail-sess-ico {
-  position: relative;
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.rail-sess-logo {
-  width: 14px;
-  height: 14px;
-  object-fit: contain;
-}
-.rail-sess-dot {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--status-idle);
-}
-/* with a provider logo shown, the status becomes a small corner presence badge */
-.rail-sess-dot.badge {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 6px;
-  height: 6px;
-  box-shadow: 0 0 0 1.5px var(--surface-1);
-}
-.rail-sess-dot.s-ready {
-  background: var(--status-ok);
-}
-.rail-sess-dot.s-exited {
-  background: var(--status-idle);
-}
-.rail-sess-dot.s-busy {
-  background: var(--status-awaiting);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-awaiting) 22%, transparent);
-  animation: sessPulse 1.3s ease-in-out infinite;
-}
-@keyframes sessPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-.rail-sess-name {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* the subfolder a session runs in, shown dim after its name */
-.rail-sess-sub {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10.5px;
-  color: var(--text-3);
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-}
-.rail-sess-time {
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-.rail.collapsed .rail-twist,
-.rail.collapsed .rail-twist-spacer,
-.rail.collapsed .rail-sessions {
-  display: none;
-}
-.rail-list {
-  flex: 0 0 auto;
-  padding: 2px 8px 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.rail-header:not(:first-child) {
-  margin-top: 12px;
-}
-.rail-empty {
-  padding: 2px 12px 6px;
-  color: var(--text-3);
-  font-size: 11px;
-  font-style: italic;
-}
-.rail-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   height: 28px;
   padding: 0 8px;
   border: none;
@@ -481,308 +433,22 @@
   color: var(--text-2);
   border-radius: 6px;
   cursor: pointer;
-  text-align: left;
-  width: 100%;
   font: inherit;
   font-size: 12.5px;
+  text-align: left;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
-.rail-item:hover {
+.rail-settings svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.rail-settings:hover {
   background: color-mix(in srgb, var(--surface-3) 55%, transparent);
   color: var(--text-1);
 }
-.rail-item.active {
-  background: var(--surface-3);
-  color: var(--text-1);
-}
-.rail-item.active .rail-ico {
-  opacity: 1;
-}
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-.rail-grip {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  color: var(--text-3);
-  opacity: 0;
-  margin: 0 -2px 0 -3px;
-  cursor: grab;
-  touch-action: none;
-  transition: opacity 0.12s var(--ease);
-}
-.rail-item:hover .rail-grip {
-  opacity: 0.6;
-}
-.rail-grip:active {
-  cursor: grabbing;
-}
-.rail-item.dragging {
-  opacity: 0.5;
-}
-.rail-item.drop-over {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-/* dragging a terminal pane over the sidebar: spaces light up as drop targets */
-.rail-item.pane-droppable {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-.rail-item.pane-drop-over {
-  background: var(--accent-dim);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
-}
-.rail.collapsed .rail-grip {
-  display: none;
-}
-.rail-ico {
-  flex: 0 0 auto;
-  display: block;
-  color: var(--text-3);
-}
-.rail-item.active .rail-ico {
+.rail-settings:hover svg {
   color: var(--text-2);
 }
-.rail-name {
+.rail-settings-label {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* a plain trailing number — the pill made every row look like it had a notification */
-.rail-count {
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  padding-right: 2px;
-}
-.rail-clear {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-3);
-  cursor: pointer;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border-radius: 4px;
-  font-size: 15px;
-  line-height: 1;
-  opacity: 0;
-  pointer-events: none;
-}
-.rail-item:hover .rail-clear {
-  opacity: 1;
-  pointer-events: auto;
-}
-/* keep the count's space reserved (visibility, not display) so hovering never reflows the row */
-.rail-item:hover .rail-count {
-  visibility: hidden;
-}
-.rail-clear:hover {
-  background: var(--surface-3);
-  color: var(--status-error);
-}
-.rail-rename {
-  flex: 1;
-  min-width: 0;
-  background: var(--bg-base);
-  border: 1px solid var(--accent);
-  color: var(--text-1);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font: inherit;
-  font-size: 13px;
-  outline: none;
-}
-
-/* ---- live agent state (claude hooks) + delegated sub-agents ---- */
-/* working = a stepped spinner, not a smooth one: N long-running agents shouldn't each pin the
-   compositor at refresh rate just to draw a rotating ring. */
-.rail-sess-dot.s-working {
-  background: transparent;
-  border: 2px solid var(--status-busy);
-  border-top-color: transparent;
-  animation: railSpin 1s steps(12, end) infinite;
-}
-@keyframes railSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .rail-sess-dot.s-working {
-    animation: none;
-  }
-}
-.rail-sess-dot.s-waiting {
-  background: var(--status-awaiting);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-awaiting) 22%, transparent);
-}
-.rail-sess-dot.s-done {
-  background: var(--status-ok);
-}
-.rail-sess-dot.s-idle {
-  background: rgba(255, 255, 255, 0.22);
-}
-/* the one row you should look at */
-/* sub-agent children — indented under their parent with a lineage rail, quieter than a real pane */
-.rail-subagents {
-  margin-left: 9px;
-  padding-left: 9px;
-  border-left: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  display: flex;
-  flex-direction: column;
-}
-.rail-subagent {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 24px;
-  padding: 0 8px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-1);
-  color: var(--text-3);
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.rail-subagent:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-2);
-}
-
-/* ---- branch / worktree tier: project → branch → agent → sub-agent ---- */
-.rail-branch {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 26px;
-  padding: 0 8px;
-  color: var(--text-3);
-  font-size: 11.5px;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.rail-branch-ico {
-  flex: 0 0 auto;
-}
-.rail-branch-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-/* the checkout the project points at, as opposed to a worktree branched off it */
-/* the space's own branch reads a step brighter than the worktrees under it, with a small dot to
-   mark it — hierarchy through contrast rather than a coloured pill */
-.rail-branch.primary .rail-branch-name {
-  color: var(--text-2);
-}
-.rail-branch-dot {
-  flex: 0 0 auto;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--text-2);
-}
-.rail-branch .rail-count {
-  margin-left: auto;
-}
-/* panes belonging to a branch sit under it, with a hairline tying them together */
-.rail-branch-kids {
-  margin-left: 9px;
-  padding-left: 9px;
-  border-left: 1px solid var(--border-1);
-}
-
-/* the name owns the slack; trailing meta never steals from it (a "needs you" flag was truncating
-   a pane's name down to "lualin…") */
-.rail-session .rail-sess-name,
-.rail-subagent .rail-sess-name,
-.rail-branch-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rail-sess-time,
-.rail-sess-sub {
-  flex: 0 0 auto;
-}
-
-/* viewer tabs (an image or a file open in the grid) are documents, not running work — quieter than
-   an agent row so they never compete for attention in a list whose job is "who needs me" */
-.rail-session.doc {
-  color: var(--text-3);
-}
-.rail-session.doc:hover,
-.rail-session.doc.active {
-  color: var(--text-2);
-}
-.rail-sess-doc-ico {
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-
-/* ---- two-line agent rows: name on top, what it's doing underneath ---- */
-.rail-session {
-  height: auto;
-  min-height: 26px;
-  padding: 4px 8px;
-  align-items: flex-start;
-}
-/* the glyphs sit on the first line, not centred against a two-line block */
-.rail-session .rail-sess-ico {
-  margin-top: 2px;
-}
-.rail-sess-col {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 1px;
-}
-.rail-sess-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-/* the second line always ellipses rather than wrapping — a row must stay two lines tall */
-.rail-sess-act {
-  font-size: 10.5px;
-  line-height: 1.35;
-  color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rail-session.active .rail-sess-act {
-  color: var(--text-2);
-}
-/* viewer tabs have no activity — keep them on one compact line */
-.rail-session.doc {
-  align-items: center;
-  padding: 0 8px;
-  height: 26px;
-}
-.rail-session.doc .rail-sess-ico {
-  margin-top: 0;
 }

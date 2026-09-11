@@ -1,9 +1,8 @@
 import { create } from "zustand";
 
 interface UiState {
-  view: "home" | "space" | "loops" | "launch"; // home dashboard, a workspace, the loops page, or the multi-agent launcher
-  launchReturn: "home" | "space" | "loops"; // where the launcher's Cancel/Esc sends you back to
-  openLoopId: string | null; // the loop selected in the Loops page master-detail
+  view: "home" | "space" | "launch"; // home composer, a workspace, or the multi-agent launcher
+  launchReturn: "home" | "space"; // where the launcher's Cancel/Esc sends you back to
   railCollapsed: boolean;
   // Which pane is fullscreen, PER PROJECT. A single global id meant maximizing in one project
   // silently wiped the other's — you'd come back and find it tiled again.
@@ -16,13 +15,11 @@ interface UiState {
   newProjectOpen: boolean; // the New Project wizard
   paletteOpen: boolean;
   dockOpen: boolean;
-  dockTab: "changes" | "skills" | "files";
+  dockTab: "files" | "git";
   paneDragging: boolean; // a terminal pane is mid-drag (rail shows spaces as drop targets)
   paneDragOverWs: string | null; // the space the dragged pane is hovering over in the rail
   goHome: () => void;
   goSpace: () => void;
-  goLoops: () => void;
-  focusLoop: (id: string) => void; // open a specific loop in the Loops page
   toggleRail: () => void;
   toggleMaximized: (wsId: string, id: string) => void;
   clearMaximized: (wsId: string) => void;
@@ -41,7 +38,7 @@ interface UiState {
   setPalette: (b: boolean) => void;
   toggleDock: () => void;
   setDock: (b: boolean) => void;
-  setDockTab: (t: "changes" | "skills" | "files") => void;
+  setDockTab: (t: "files" | "git") => void;
   onboardingOpen: boolean;
   openOnboarding: () => void;
   closeOnboarding: () => void;
@@ -52,24 +49,21 @@ interface UiState {
 export const useUi = create<UiState>()((set) => ({
   view: "home", // land on the dashboard
   launchReturn: "home",
-  openLoopId: null,
   railCollapsed: false,
   maximizedByWs: {},
   fileDropId: null,
   skillDropId: null,
   settingsOpen: false,
   signInOpen: false,
-  settingsTab: "appearance",
+  settingsTab: "general",
   newProjectOpen: false,
   paletteOpen: false,
   dockOpen: false,
-  dockTab: "files", // the dock opens on Files — the tab you actually browse from
+  dockTab: "files",
   paneDragging: false,
   paneDragOverWs: null,
   goHome: () => set({ view: "home" }),
   goSpace: () => set({ view: "space" }),
-  goLoops: () => set({ view: "loops" }),
-  focusLoop: (id) => set({ view: "loops", openLoopId: id }),
   toggleRail: () => set((s) => ({ railCollapsed: !s.railCollapsed })),
   toggleMaximized: (wsId, id) =>
     set((s) => {

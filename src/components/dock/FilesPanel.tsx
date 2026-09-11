@@ -1,15 +1,14 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { useWorkspaces } from "../stores/workspace";
-import { useUi } from "../stores/ui";
-import { listDir, revealPath, fileOp, findFiles, gitChanges, type DirEntry } from "../api";
-import { joinPath, parentOf } from "../lib/projects";
-import { maybeAutostart } from "../lib/startup";
-import { confirmDialog } from "../stores/confirm";
+import { useWorkspaces } from "../../stores/workspace";
+import { useUi } from "../../stores/ui";
+import { listDir, revealPath, fileOp, findFiles, gitChanges, type DirEntry } from "../../api";
+import { joinPath, parentOf } from "../../lib/projects";
+import { confirmDialog } from "../../stores/confirm";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   ChevronRight,
-  Folder,
+  FileText,
   FolderOpen,
   FolderPlus,
   FilePlus,
@@ -23,11 +22,11 @@ import {
   X,
   Terminal as TerminalIcon,
 } from "lucide-react";
-import { revealLabel } from "../platform";
-import { fileIcon } from "../lib/fileIcons";
-import { PROVIDERS } from "../lib/providers";
-import { CtxSubmenu } from "./CtxSubmenu";
-import { LoadingState } from "./LoadingState";
+import { revealLabel } from "../../platform";
+import { fileIcon } from "../../lib/fileIcons";
+import { PROVIDERS } from "../../lib/providers";
+import { CtxSubmenu } from "../CtxSubmenu";
+import { LoadingState } from "../LoadingState";
 
 // git decoration + open-file highlight for the tree. context (not props) because TreeNode recurses;
 // `status` is keyed by repo-relative path with forward slashes, which is what git porcelain gives us.
@@ -101,7 +100,7 @@ function TreeNode({
   const rel = path.length > rootCwd.length ? path.slice(rootCwd.length + 1).split("\\").join("/") : "";
   const git = dir ? null : decoOf(deco.status.get(rel));
   const isOpen = !dir && deco.open.has(normPath(path));
-  const Ico = dir ? Folder : fileIcon(name);
+  const ico = fileIcon(name);
   const [open, setOpen] = useState(false);
   const [kids, setKids] = useState<DirEntry[] | null>(() => peekDir(path));
   const [loading, setLoading] = useState(false);
@@ -146,7 +145,6 @@ function TreeNode({
     if (target) {
       ws.setActive(target);
       ws.addSession(target, command, path);
-      maybeAutostart(target);
     }
     useUi.getState().goSpace();
     setMenu(null);
@@ -205,11 +203,11 @@ function TreeNode({
       {renaming ? (
         <div className="ft-row" style={{ paddingLeft: pad }}>
           {dir ? (
-            <ChevronRight size={13} className={`ft-twist${open ? " open" : ""}`} />
+            <ChevronRight size={12} className={`ft-twist${open ? " open" : ""}`} />
           ) : (
             <span className="ft-spacer" />
           )}
-          <Ico size={14} className={`ft-ico${dir ? "" : " file"}`} />
+          {!dir && createElement(ico, { size: 13, className: "ft-ico file" })}
           <input
             className="ft-rename"
             autoFocus
@@ -234,12 +232,12 @@ function TreeNode({
           }}
         >
           {dir ? (
-            <ChevronRight size={13} className={`ft-twist${open ? " open" : ""}`} />
+            <ChevronRight size={12} className={`ft-twist${open ? " open" : ""}`} />
           ) : (
             <span className="ft-spacer" />
           )}
-          <Ico size={14} className={`ft-ico${dir ? "" : " file"}`} />
-          <span className={`ft-name${git ? ` g-${git.cls}` : ""}`}>{name}</span>
+          {!dir && createElement(ico, { size: 13, className: "ft-ico file" })}
+          <span className={`ft-name${dir ? " dir" : ""}${git ? ` g-${git.cls}` : ""}`}>{name}</span>
           {git && <span className={`ft-git g-${git.cls}`}>{git.badge}</span>}
           {dir && liveDirs?.has(normPath(path)) && (
             <span className="ft-live" title="A session is running here" />
@@ -256,7 +254,7 @@ function TreeNode({
           )}
           {creating && (
             <div className="ft-row" style={{ paddingLeft: pad + 12 + 8 }}>
-              <Folder size={14} className="ft-ico" style={{ opacity: creating === "dir" ? 1 : 0 }} />
+              {creating === "dir" ? <ChevronRight size={12} className="ft-twist" /> : <span className="ft-spacer" />}
               <input
                 className="ft-rename"
                 autoFocus
@@ -308,6 +306,7 @@ function TreeNode({
               top: Math.min(menu.y, Math.max(8, window.innerHeight - 330)),
             }}
           >
+            <div className="ctx-head">{name}</div>
             {!dir && (
               <button
                 className="ctx-item"
@@ -316,21 +315,39 @@ function TreeNode({
                   setMenu(null);
                 }}
               >
-                Open in editor
+                <FileText size={14} />
+                <span>Open in editor</span>
               </button>
             )}
             {dir && (
               <>
                 <button className="ctx-item" onClick={() => void startCreate("file")}>
                   <FilePlus size={14} />
-                  <span>New file…</span>
+                  <span>New file</span>
                 </button>
                 <button className="ctx-item" onClick={() => void startCreate("dir")}>
                   <FolderPlus size={14} />
-                  <span>New folder…</span>
+                  <span>New folder</span>
+                </button>
+                <div className="ctx-sep" />
+                <CtxSubmenu label="Start a thread here" icon={<TerminalIcon size={14} />}>
+                  {PROVIDERS.map((pr) => (
+                    <button key={pr.id} className="ctx-item" onClick={() => launchHere(pr.cmd())}>
+                      <pr.icon size={14} />
+                      <span>{pr.label}</span>
+                    </button>
+                  ))}
+                </CtxSubmenu>
+                <button className="ctx-item" onClick={openAsProject}>
+                  <FolderOpen size={14} />
+                  <span>Open as a space</span>
                 </button>
               </>
             )}
+            <button className="ctx-item" onClick={reveal}>
+              <ExternalLink size={14} />
+              <span>{revealLabel}</span>
+            </button>
             <div className="ctx-sep" />
             <button className="ctx-item" onClick={() => copyPath(false)}>
               <Copy size={14} />
@@ -339,27 +356,6 @@ function TreeNode({
             <button className="ctx-item" onClick={() => copyPath(true)}>
               <Link2 size={14} />
               <span>Copy relative path</span>
-            </button>
-            <div className="ctx-sep" />
-            {dir && (
-              <button className="ctx-item" onClick={openAsProject}>
-                <FolderOpen size={14} />
-                <span>Open as project</span>
-              </button>
-            )}
-            {dir && (
-              <CtxSubmenu label="Open here" icon={<TerminalIcon size={14} />}>
-                {PROVIDERS.map((pr) => (
-                  <button key={pr.id} className="ctx-item" onClick={() => launchHere(pr.cmd())}>
-                    <pr.icon size={14} />
-                    <span>{pr.label}</span>
-                  </button>
-                ))}
-              </CtxSubmenu>
-            )}
-            <button className="ctx-item" onClick={reveal}>
-              <ExternalLink size={14} />
-              <span>{revealLabel}</span>
             </button>
             <div className="ctx-sep" />
             <button
@@ -525,7 +521,7 @@ export function FilesPanel() {
   }, [q, cwd]);
 
   if (!ws || !cwd) {
-    return <div className="ft-empty">No folder here yet — open a project, or start a pane in a folder.</div>;
+    return <div className="ft-empty">No folder yet. Open a project, or start a pane in a folder.</div>;
   }
 
   return (
@@ -535,6 +531,9 @@ export function FilesPanel() {
         <span className="ft-root" title={cwd}>
           {ws.name}
         </span>
+        <span className="ft-root-path" title={cwd}>
+          {cwd.split(/[\\/]/).filter(Boolean).slice(-2).join("/")}
+        </span>
         <button className="ft-refresh" title="Refresh" onClick={() => setRefreshKey((k) => k + 1)}>
           <RefreshCw size={13} />
         </button>
@@ -543,7 +542,7 @@ export function FilesPanel() {
         <ListFilter size={13} />
         <input
           className="ft-search-in"
-          placeholder="Find files"
+          placeholder="Filter files"
           value={q}
           spellCheck={false}
           onChange={(e) => setQ(e.target.value)}

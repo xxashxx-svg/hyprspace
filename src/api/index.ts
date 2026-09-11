@@ -312,6 +312,19 @@ export function gitIsRepo(cwd: string): Promise<boolean> {
 export function gitInit(cwd: string): Promise<string> {
   return invoke("git_init", { cwd });
 }
+export interface AgentSession {
+  id: string;
+  title: string;
+  modified: number;
+}
+/** The CLI's saved conversations for a folder, newest first. Claude and Codex only. */
+export function agentSessions(provider: string, cwd: string): Promise<AgentSession[]> {
+  return invoke("agent_sessions", { provider, cwd });
+}
+/** Clone `url` into `<parent>/<name>`. Resolves to the new folder. */
+export function gitClone(url: string, parent: string, name: string): Promise<string> {
+  return invoke("git_clone", { url, parent, name });
+}
 export function gitInitRepo(opts: {
   cwd: string;
   name: string;

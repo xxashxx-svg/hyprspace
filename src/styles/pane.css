@@ -17,6 +17,44 @@
   gap: 8px;
   padding: 8px;
 }
+/* drag handles over the gaps between panes; hairline until hovered */
+.pane-gutter {
+  position: absolute;
+  z-index: 3;
+}
+.pane-gutter.col {
+  top: 8px;
+  bottom: 8px;
+  width: 8px;
+  margin-left: -4px;
+  cursor: col-resize;
+}
+.pane-gutter.row {
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  margin-top: -4px;
+  cursor: row-resize;
+}
+.pane-gutter::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s var(--ease);
+}
+.pane-gutter.col::after {
+  width: 2px;
+}
+.pane-gutter.row::after {
+  height: 2px;
+}
+.pane-gutter:hover::after,
+.pane-gutter:active::after {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
 /* maximized: fill the stage edge-to-edge — no margin, border, or rounded outline */
 .pane-grid.maxed {
   gap: 0;
@@ -36,6 +74,12 @@
 .pane-cell.tabbed {
   flex-direction: column;
 }
+.pane-empty-composer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  z-index: 2;
+}
 .pane-tab-body {
   flex: 1;
   min-width: 0;
@@ -44,17 +88,58 @@
   position: relative;
 }
 
-/* ---- pane tab strip (a slot with >1 pane) ---- */
+/* ---- pane header: a title bar. a solo pane shows its name; a slot stacking several panes
+   shows them as pills in the same bar ---- */
 .pane-tabs {
   flex: 0 0 auto;
+  height: 30px;
   display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 3px 4px 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 10px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-1);
   overflow-x: auto;
   scrollbar-width: none;
+}
+.pane-grip {
+  flex: 0 0 auto;
+  margin-left: -6px;
+  color: var(--text-3);
+  opacity: 0.5;
+}
+.pane-tabs:hover .pane-grip {
+  opacity: 0.9;
+}
+.pane-solo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-3);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pane-solo-logo {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+  opacity: 0.8;
+}
+.pane-solo-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pane-cell.focused .pane-solo-title {
+  color: var(--text-1);
+}
+.pane-cell.focused .pane-solo-logo {
+  opacity: 1;
 }
 .pane-tabs::-webkit-scrollbar {
   height: 0;
@@ -65,10 +150,10 @@
   gap: 6px;
   /* don't let flex squeeze tabs down to slivers — overflow and scroll the strip instead */
   flex: 0 0 auto;
-  min-width: 92px;
   max-width: 180px;
-  padding: 5px 6px 5px 9px;
-  border-radius: var(--radius-1) var(--radius-1) 0 0;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
   color: var(--text-3);
   cursor: pointer;
   user-select: none;
@@ -80,7 +165,7 @@
   color: var(--text-2);
 }
 .pane-tab.active {
-  background: var(--surface-2);
+  background: var(--surface-3);
   color: var(--text-1);
 }
 .pane-tab.active .pane-tab-ico {
@@ -143,26 +228,6 @@
 .pane-tab-x:active {
   background: rgba(255, 255, 255, 0.18);
   color: #ff5f56;
-}
-.pane-tab-add {
-  flex: 0 0 auto;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin: 0 2px 3px;
-  border: none;
-  border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.pane-tab-add:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-1);
 }
 .terminal-pane {
   flex: 1;
@@ -410,15 +475,13 @@
   flex: 1 1 auto;
   min-width: 8px;
 }
-/* the folder label in the strip is the same .pane-cwd the solo header uses; just give it room */
+/* the folder label in the bar is the same .pane-cwd the old solo header used; just give it room */
 .pane-tabs .pane-cwd {
   flex: 0 0 auto;
-  align-self: center;
   padding-right: 6px;
 }
 .pane-tabs .pane-head-right {
-  align-self: center;
-  padding-bottom: 3px;
+  flex: 0 0 auto;
 }
 /* the strip replaced the pane header, so it's also the drag handle for a single-pane slot */
 .pane-cell.tabbed .pane-tabs {

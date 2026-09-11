@@ -46,15 +46,15 @@
   background: var(--surface-2);
   color: var(--text-1);
 }
-/* fit-to-pane by default: centered, contained; a subtle checker so transparent PNGs read clearly */
+/* the stage clips; the image is positioned from the center and moved with a transform */
 .iv-stage {
   flex: 1;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-  /* transparency checkerboard, built from tokens so it follows the theme instead of forcing dark */
+  position: relative;
+  overflow: hidden;
+  cursor: default;
+  touch-action: none; /* the drag is ours; without this a trackpad drag becomes native panning */
+  /* transparency checkerboard, built from tokens so it follows the theme */
   background-color: var(--surface-1);
   background-image: linear-gradient(45deg, var(--surface-3) 25%, transparent 25%),
     linear-gradient(-45deg, var(--surface-3) 25%, transparent 25%),
@@ -67,32 +67,33 @@
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
-.iv-img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  cursor: zoom-in;
-  user-select: none;
-  -webkit-user-drag: none; /* otherwise a pan turns into a native image drag */
-}
-/* zoomed: an explicit pixel size, scrolled around inside the stage. `safe center` keeps the image
-   centered while it's smaller than the pane but stops it clipping past the edges once it's bigger. */
-.iv-stage.zoomed {
-  align-items: safe center;
-  justify-content: safe center;
+.iv-stage.pannable {
   cursor: grab;
-  /* the drag is ours to handle — without this a trackpad or touch drag gets claimed by native
-     panning and our pointer stream dies with a pointercancel mid-gesture */
-  touch-action: none;
 }
-.iv-stage.zoomed.panning {
+.iv-stage.panning {
   cursor: grabbing;
 }
-.iv-stage.zoomed .iv-img {
+.iv-img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   max-width: none;
   max-height: none;
-  object-fit: fill; /* the element is already the exact scaled size */
-  cursor: inherit;
+  transform-origin: center;
+  image-rendering: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+/* button and key zooms ease into place; wheel and drag stay immediate */
+.iv-img.eased {
+  transition: transform 0.18s var(--ease);
+}
+.iv-dims {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
 }
 /* zoom cluster in the bar — a tight group so it reads as one control, not five buttons */
 .iv-zoom {
@@ -147,4 +148,66 @@
 /* pushes the remaining controls right once the filename is hidden (tabbed) */
 .iv-gap {
   flex: 1 1 auto;
+}
+
+/* ---- media viewer: video or audio in a pane ---- */
+.mv {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+.mv-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.mv-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  background: #000;
+  outline: none;
+}
+.mv-audio {
+  width: min(100%, 520px);
+}
+.mv-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.mv-fallback p {
+  margin: 0;
+}
+.mv-fallback .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mv-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border-top: 1px solid var(--border-1);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.mv-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

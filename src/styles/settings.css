@@ -1,98 +1,349 @@
-/* ---- settings modal ---- */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  background: rgba(0, 0, 0, 0.5);
+/* ---- settings: a nav column and a page of grouped rows ---- */
+.settings-screen {
+  position: absolute;
+  inset: 36px 0 0;
+  z-index: 60;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--bg-base);
 }
-.modal-card {
-  width: 560px;
-  max-width: 92vw;
-  max-height: 86vh;
+.settings-nav {
+  width: 212px;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+  padding: 14px 10px 10px;
+  border-right: 1px solid var(--border-1);
   background: var(--surface-1);
-  border: 1px solid var(--border-2);
-  border-radius: var(--radius-3);
-  box-shadow: var(--shadow-2);
-  overflow: hidden;
-  animation: fdoIn 0.13s var(--ease);
 }
-.modal-head {
+.settings-brand {
+  padding: 4px 10px 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.settings-nav-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--border-1);
-  font-weight: 600;
-  font-size: 14px;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
-.modal-x {
-  width: 30px;
-  height: 30px;
+.settings-nav-item svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.settings-nav-item:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  color: var(--text-1);
+}
+.settings-nav-item.active {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.settings-nav-item.active svg {
+  color: var(--accent);
+}
+.settings-nav-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-1);
+}
+.settings-acct {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 36px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-acct:hover {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+}
+.settings-acct img,
+.settings-acct-ava {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.settings-acct-ava {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-3);
-  font-size: 20px;
-  line-height: 1;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  flex: 0 0 auto;
-  margin: -4px -6px 0 0;
+  background: var(--surface-3);
+  font-size: 11px;
+  font-weight: 600;
 }
-.modal-x:hover {
+.settings-acct-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 26px 28px 18px;
+  border-bottom: 1px solid var(--border-1);
+}
+.settings-header-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.settings-header-desc {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.settings-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.settings-close:hover {
   background: var(--surface-2);
   color: var(--text-1);
 }
-
-/* ---- settings window (its own OS window: title strip + Cursor-style nav + content) ---- */
-.settings-root {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-1);
-  overflow: hidden;
-  border: 1px solid var(--border-2); /* frameless: hairline so it reads as a window */
+.settings-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
-.setwin-bar {
-  height: 36px;
-  flex: 0 0 auto;
+.settings-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 22px 28px 48px;
+}
+.set-section {
+  margin-bottom: 26px;
+}
+.set-label {
+  margin: 0 0 8px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.set-group {
+  padding: 0 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+}
+.set-val {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.set-val-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.set-val-copy code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.set-input {
+  margin-left: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--surface-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  min-width: 180px;
+}
+.set-input:focus {
+  border-color: var(--accent);
+}
+.set-model {
+  display: flex;
+  align-items: center;
+}
+.set-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-left: 12px;
-  background: var(--bg-base);
-  border-bottom: 1px solid var(--border-1);
-  user-select: none;
-  -webkit-user-select: none;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-3);
 }
-.setwin-brand {
+.set-bar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.set-bar .spin {
+  animation: setspin 0.8s linear infinite;
+}
+@keyframes setspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.set-blurb {
+  margin: 0 2px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.set-hint svg {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+/* account */
+.acct-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-1);
 }
-.setwin-brand svg {
-  color: var(--accent);
+.acct-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex: 0 0 auto;
 }
-.setwin-ctls {
+.acct-avatar-fallback {
   display: flex;
-  height: 100%;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  font-weight: 600;
 }
-.settings-shell {
+.acct-meta {
   flex: 1;
-  min-height: 0;
-  display: flex;
+  min-width: 0;
 }
+.acct-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.acct-email {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.acct-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.acct-copy:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+/* agents */
+.agent-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 6px;
+}
+.agent-mark {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+.agent-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.agent-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-ver {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.agent-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.agent-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.agent-status.ok .agent-status-dot {
+  background: var(--status-ok);
+}
+.agent-status.warn .agent-status-dot {
+  background: var(--status-busy);
+}
+.agent-status.err .agent-status-dot {
+  background: var(--status-error);
+}
+.agent-status.err {
+  color: var(--text-3);
+}
+
 /* in-app settings screen — fills below the titlebar (so window controls stay reachable) */
 @keyframes settingsIn {
   from {
@@ -101,437 +352,6 @@
   to {
     opacity: 1;
   }
-}
-.settings-screen {
-  position: fixed;
-  inset: 36px 0 0 0;
-  z-index: 300;
-  display: flex;
-  background: var(--bg-base);
-  animation: settingsIn 0.12s var(--ease);
-}
-.settings-close {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  border-radius: var(--radius-1);
-}
-.settings-close:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.settings-nav {
-  width: 212px;
-  flex: 0 0 auto;
-  background: var(--bg-base);
-  border-right: 1px solid var(--border-1);
-  display: flex;
-  flex-direction: column;
-  padding: 16px 12px;
-  gap: 1px;
-}
-.settings-brand {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--text-3);
-  padding: 4px 10px 14px;
-}
-.settings-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 13px;
-  padding: 9px 10px;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.settings-nav-item svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  opacity: 0.75;
-}
-.settings-nav-item:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.settings-nav-item.active {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.settings-nav-item.active svg {
-  color: var(--accent);
-  opacity: 1;
-}
-/* account chip + Back button pinned to the bottom of the nav, Cursor/T3-style */
-.settings-nav-bottom {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-1);
-}
-.settings-back {
-  color: var(--text-3);
-}
-.settings-back:hover {
-  color: var(--text-1);
-}
-.settings-acct {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  color: var(--text-2);
-  font: inherit;
-  padding: 8px 8px 4px;
-  cursor: pointer;
-}
-.settings-acct:hover,
-.settings-acct.active {
-  color: var(--text-1);
-}
-.settings-acct img,
-.settings-acct-ava {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  object-fit: cover;
-}
-.settings-acct-ava {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-3);
-  color: var(--text-1);
-  font-size: 13px;
-  font-weight: 600;
-}
-.settings-acct-meta {
-  flex: 1;
-  min-width: 0;
-}
-.settings-acct-name {
-  font-size: 12.5px;
-  color: var(--text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.settings-acct-sub {
-  font-size: 11px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.settings-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  --set-col: 720px; /* the content column width — the header lines up with it */
-}
-.settings-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  /* left pad tracks the centered column below, so the title sits above the cards instead of way off
-     at the window edge. falls back to the plain 28px once the window is too narrow to center. */
-  padding: 22px 28px 18px max(28px, calc(32px + (100% - 64px - var(--set-col)) / 2));
-  border-bottom: 1px solid var(--border-1);
-}
-.settings-header-title {
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  color: var(--text-1);
-}
-.settings-header-desc {
-  font-size: 12.5px;
-  color: var(--text-3);
-  margin-top: 3px;
-}
-.settings-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 30px 32px 44px;
-}
-/* centered content column floating in the wider surface — the Cursor feel */
-.settings-page {
-  width: 100%;
-  max-width: var(--set-col);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-.settings-about {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 6px;
-  padding: 30px 16px;
-}
-.about-logo {
-  color: var(--accent);
-  margin-bottom: 4px;
-}
-.about-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-1);
-}
-.about-ver {
-  font-size: 12px;
-  color: var(--text-3);
-  font-family: var(--font-mono);
-}
-.about-blurb {
-  font-size: 13px;
-  color: var(--text-2);
-  max-width: 380px;
-  line-height: 1.5;
-  margin-top: 6px;
-}
-.modal-body {
-  padding: 16px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-.set-section {
-  display: flex;
-  flex-direction: column;
-}
-.set-label {
-  font-size: 11px;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--text-3);
-  margin-bottom: 9px;
-  padding-left: 2px;
-}
-/* grouped card: related rows sit inside one filled card, split by dividers */
-.set-group {
-  background: var(--surface-2);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-2);
-  padding: 0 16px;
-}
-.set-group.pad {
-  padding: 16px;
-}
-/* signed-in account block, borderless because the group is the card */
-.acct-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 0;
-}
-/* provider card header (Settings → Providers) */
-.provider-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 9px;
-  padding-left: 2px;
-}
-.provider-ico {
-  display: flex;
-  color: var(--text-2);
-}
-.provider-name {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-.provider-ver {
-  font-size: 11px;
-  color: var(--text-3);
-  font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", monospace;
-  font-weight: 500;
-}
-.provider-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--text-2);
-  margin: -3px 0 10px 2px;
-}
-.provider-status-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.provider-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  background: var(--text-3);
-}
-.provider-status.ok .provider-status-dot {
-  background: var(--status-ok);
-}
-.provider-status.warn .provider-status-dot {
-  background: var(--status-busy);
-}
-.provider-status.err {
-  color: var(--text-3);
-}
-.provider-status.err .provider-status-dot {
-  background: var(--status-error);
-}
-.provider-acct {
-  color: var(--text-1);
-  font-weight: 500;
-}
-.provider-cli {
-  font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", monospace;
-  font-size: 11.5px;
-}
-
-/* ---- account tab: details + stats ---- */
-.acct-val {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--text-2);
-  min-width: 0;
-}
-.acct-val-copy {
-  max-width: 340px;
-}
-.acct-id {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 11.5px;
-  color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 240px;
-}
-.acct-verified {
-  color: var(--status-ok);
-  flex: 0 0 auto;
-}
-.acct-copy {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-1);
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  flex: 0 0 auto;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.acct-copy:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
-}
-.acct-stats {
-  display: flex;
-  background: var(--surface-1);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-2);
-  overflow: hidden;
-}
-.acct-stat {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 14px 16px;
-  border-right: 1px solid var(--border-1);
-  min-width: 0;
-}
-.acct-stat:last-child {
-  border-right: none;
-}
-.acct-stat-ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-1);
-  background: var(--surface-3);
-  color: var(--text-2);
-  flex: 0 0 auto;
-}
-.acct-stat-body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.acct-stat-n {
-  font-size: 18px;
-  font-weight: 650;
-  color: var(--text-1);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.acct-stat-l {
-  font-size: 11px;
-  color: var(--text-3);
-}
-.providers-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.providers-checked {
-  font-size: 11px;
-  color: var(--text-3);
-}
-.providers-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-1);
-  background: transparent;
-  border: 1px solid var(--border-1);
-  color: var(--text-3);
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.providers-refresh:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
 }
 
 /* ---- MCP servers manager (Settings → MCP) ---- */
@@ -1285,49 +1105,10 @@
   line-height: 1.5;
   padding-top: 2px;
 }
-
-/* loading skeleton */
-.sk {
-  display: block;
-  border-radius: var(--radius-1);
-  background: linear-gradient(
-    90deg,
-    var(--surface-3) 0%,
-    color-mix(in srgb, var(--surface-3) 55%, var(--surface-2)) 50%,
-    var(--surface-3) 100%
-  );
-  background-size: 200% 100%;
-  animation: usageShimmer 1.3s ease-in-out infinite;
-}
-.sk-ico {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-}
-.sk-line {
-  height: 10px;
-}
-.sk-bar {
-  height: 8px;
-  border-radius: 999px;
-}
-.sk-tile {
-  height: 46px;
-}
-.sk-badge {
-  width: 84px;
-  height: 20px;
-  border-radius: 999px;
-}
 @keyframes usageShimmer {
   to {
     background-position: -200% 0;
   }
-}
-
-/* negative delay = phase offset, so neighbouring skeletons shimmer out of step */
-.sk {
-  animation-delay: var(--sk-delay, 0s);
 }
 
 /* cards ease in as each provider's scan lands */
@@ -1433,10 +1214,4 @@
 }
 .term-theme-card.active .ttc-check {
   opacity: 1;
-}
-.set-hint {
-  font-size: 11.5px;
-  color: var(--text-3);
-  margin-top: 10px;
-  padding-left: 2px;
 }

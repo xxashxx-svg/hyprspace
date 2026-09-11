@@ -6,8 +6,8 @@
   align-items: center;
   gap: 6px;
   padding: 0 4px 0 10px;
-  background: var(--surface-1);
-  border-bottom: 1px solid var(--border-1);
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border-0);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -226,50 +226,6 @@
 }
 /* running-loops indicator — a neutral pill that reads as a sibling of the New/Open buttons
    (no status-green tint), with one small accent dot that gently breathes while iterating. */
-.tb-loop {
-  position: relative;
-  margin-right: 4px;
-}
-.tb-loop-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 26px;
-  max-width: 180px;
-  padding: 0 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-1);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    background 0.12s var(--ease),
-    border-color 0.12s var(--ease),
-    color 0.12s var(--ease);
-}
-.tb-loop-btn:hover {
-  background: var(--surface-3);
-  border-color: var(--border-2);
-  color: var(--text-1);
-}
-.tb-loop-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--text-3); /* paused/idle: muted, static */
-}
-.tb-loop-dot.live {
-  background: var(--accent);
-  animation: loopBreath 1.8s var(--ease) infinite;
-}
-.tb-loop-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 @keyframes loopBreath {
   0%,
   100% {
@@ -808,4 +764,10 @@
   height: 1px;
   background: rgba(255, 255, 255, 0.09);
   margin: 5px 7px;
+}
+
+/* a toggle that is currently on (the dock) */
+.tb-ctl.on {
+  color: var(--text-1);
+  background: var(--surface-2);
 }

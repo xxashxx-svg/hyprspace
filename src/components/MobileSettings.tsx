@@ -118,8 +118,8 @@ export function MobileSettings() {
                 <div className="mob-pair-side">
                   <div className="mob-pair-title">Scan this in the HyprSpace app</div>
                   <div className="mob-pair-desc">
-                    Your phone has to be on the same wifi as this computer — unless you add a way in
-                    from outside below, which the app falls back to automatically.
+                    Your phone has to be on the same wifi as this computer, unless you add an away
+                    address below. The app falls back to that address on its own.
                   </div>
                   <div className="mob-field">
                     <span className="mob-field-key">Address</span>
@@ -131,7 +131,7 @@ export function MobileSettings() {
                       >
                         {(info.addresses ?? []).map((a) => (
                           <option key={a.ip} value={a.ip}>
-                            {a.ip} — {a.label}
+                            {a.ip} ({a.label})
                             {a.preferred ? " (this network)" : ""}
                           </option>
                         ))}
@@ -170,7 +170,7 @@ export function MobileSettings() {
                 <WifiOff size={16} strokeWidth={1.75} />
                 <div>
                   {running
-                    ? "Couldn't work out this machine's network address — check that you're on a network, not just loopback."
+                    ? "Could not find this machine's network address. Check that you are on a network, not just loopback."
                     : "Starting the bridge…"}
                 </div>
               </div>
@@ -188,8 +188,8 @@ export function MobileSettings() {
                 <div className="set-key">Away address</div>
                 <div className="set-desc">
                   Goes in the QR as a second way in, so the phone still finds this machine off your
-                  wifi. A VPN address works best — install Tailscale on both and use the 100.x.x.x one
-                  it gives this machine; it'll show in the dropdown above too. A tunnel's public URL
+                  wifi. A VPN address works best. Install Tailscale on both and use the 100.x.x.x one
+                  it gives this machine. It shows in the dropdown above too. A tunnel's public URL
                   (<code>wss://…</code>) works as well.{" "}
                   <strong>Don't just forward the port</strong> — plain <code>ws://</code> over the
                   internet sends your pairing code and everything your agents print in the clear.

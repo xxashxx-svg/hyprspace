@@ -54,8 +54,8 @@ export function PrDialog() {
           </div>
         ) : onDefault ? (
           <div className="cd-pr-warn">
-            You're on <code>{defaults.head}</code> — that's the base branch. Switch to a feature branch
-            to open a PR.
+            You are on <code>{defaults.head}</code>, which is the base branch. Switch to a feature
+            branch to open a PR.
           </div>
         ) : (
           <>
@@ -103,7 +103,7 @@ export function PrDialog() {
             </div>
             {sameAsHead && <div className="cd-pr-warn">Base must be different from your branch.</div>}
             {!defaults.pushed && (
-              <div className="cd-hint">Your branch isn't pushed yet — it'll be pushed to origin first.</div>
+              <div className="cd-hint">Your branch is not pushed yet. It will be pushed to origin first.</div>
             )}
           </>
         )}

@@ -16,7 +16,7 @@ export const revealLabel = isLinux ? "Open containing folder" : `Reveal in ${fil
 export const openFolderLabel = isLinux ? "Open folder" : `Open folder in ${fileManager}`;
 
 // what a runnable file looks like here — the services dropzone names examples, and .bat/.exe are
-// meaningless outside Windows (see taskFromFile in lib/startup.ts for the matching run logic)
+// meaningless outside Windows
 export const scriptExt = isWindows ? ".bat" : ".sh";
 export const binaryLabel = isWindows ? ".exe" : "executable";
 

@@ -1,4 +1,5 @@
-/* ---- files tree ---- */
+/* ---- files tree: a quiet explorer. Folders are a chevron and a name, files carry a small type
+   glyph, git state colors the name, indent guides keep depth readable ---- */
 .ft {
   flex: 1;
   min-height: 0;
@@ -14,16 +15,23 @@
 .ft-head {
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
-  padding: 8px 8px 8px 12px;
-  border-bottom: 1px solid var(--border-1);
+  height: 36px;
+  padding: 0 8px 0 14px;
 }
 .ft-root {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text-1);
+  white-space: nowrap;
+}
+.ft-root-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -32,9 +40,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  align-self: center;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-1);
   background: transparent;
   border: none;
@@ -45,23 +54,20 @@
   background: var(--surface-3);
   color: var(--text-1);
 }
-/* Orca-style "Find files" box */
+/* the filter: a plain line, not a box */
 .ft-search {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 8px 10px 6px;
-  padding: 0 8px;
-  height: 30px;
-  border: 1px solid var(--border-2);
-  border-radius: 8px;
-  background: var(--surface-2);
+  margin: 0 8px 4px;
+  padding: 0 6px;
+  height: 28px;
+  border-bottom: 1px solid var(--border-1);
   color: var(--text-3);
-  transition: border-color 0.12s var(--ease);
 }
 .ft-search:focus-within {
-  border-color: color-mix(in srgb, var(--text-3) 55%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .ft-search-in {
   flex: 1;
@@ -97,23 +103,25 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 4px 10px;
+  padding: 2px 6px 10px;
 }
 .ft-row {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 8px;
+  height: 26px;
+  padding: 0 8px;
   background: transparent;
   border: none;
   border-radius: 6px;
-  color: var(--text-2);
+  color: var(--text-3);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+  white-space: nowrap;
+  transition: background 0.1s var(--ease), color 0.1s var(--ease);
 }
 .ft-row:hover {
   background: color-mix(in srgb, var(--surface-3) 55%, transparent);
@@ -122,23 +130,38 @@
 .ft-twist {
   flex: 0 0 auto;
   color: var(--text-3);
+  opacity: 0.7;
   transition: transform 0.12s var(--ease);
 }
 .ft-twist.open {
   transform: rotate(90deg);
 }
 .ft-spacer {
-  width: 13px;
+  width: 12px;
   flex: 0 0 auto;
 }
 .ft-ico {
   flex: 0 0 auto;
   color: var(--text-3);
-  opacity: 0.9;
+  opacity: 0.7;
 }
-.ft-ico.file {
-  color: var(--text-3);
-  opacity: 0.75;
+.ft-row:hover .ft-ico {
+  opacity: 1;
+}
+.ft-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* folders read a step stronger than files */
+.ft-name.dir {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.ft-row:hover .ft-name.dir {
+  color: var(--text-1);
 }
 /* search hit: filename + dim relative folder */
 .ft-hit .ft-name {
@@ -150,35 +173,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   color: var(--text-3);
-}
-.ft-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 /* inline rename / new-file input in a tree row */
 .ft-rename {
   flex: 1;
   min-width: 0;
+  height: 22px;
   background: var(--bg-base);
   border: 1px solid var(--accent);
   color: var(--text-1);
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 0 6px;
   font: inherit;
   font-size: 12px;
   outline: none;
 }
-/* dot on a folder that has a live session running in it */
+/* a folder with a live thread in it */
 .ft-live {
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  margin-right: 4px;
+  margin-right: 2px;
   border-radius: 50%;
   background: var(--status-ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-ok) 20%, transparent);
@@ -186,10 +204,10 @@
 .ft-dim {
   color: var(--text-3);
   font-size: 11.5px;
-  padding: 3px 8px;
+  padding: 4px 8px;
 }
 
-/* ---- git decoration + open-file highlight (VS Code's palette, via tokens) ---- */
+/* ---- git state on the name, plus a small letter at the right ---- */
 .ft-name.g-mod {
   color: #e2c08d;
 }
@@ -200,14 +218,14 @@
   color: #c74e39;
   text-decoration: line-through;
 }
-/* the M/A/D/U badge, right-aligned like the source-control list */
 .ft-git {
+  flex: 0 0 auto;
   margin-left: auto;
   padding-left: 6px;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  flex: 0 0 auto;
+  opacity: 0.85;
 }
 .ft-git.g-mod {
   color: #e2c08d;
@@ -218,15 +236,15 @@
 .ft-git.g-del {
   color: #c74e39;
 }
-/* a file that's already open as a tab reads as "current" */
+/* a file that is open as a tab: an accent bar on the left */
 .ft-row.open-file {
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .ft-row.open-file .ft-name {
   color: var(--text-1);
 }
-/* indent guides — one hairline per nesting level, so deep trees stay readable.
-   (drawn on the node wrapper so it spans the row AND its expanded children) */
+/* indent guides: one hairline per nesting level */
 .ft-node {
   position: relative;
 }
@@ -237,4 +255,7 @@
   width: 1px;
   background: var(--border-1);
   pointer-events: none;
+}
+.ft-node .ft-node:hover::before {
+  background: var(--border-2);
 }

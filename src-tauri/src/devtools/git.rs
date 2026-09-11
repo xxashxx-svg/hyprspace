@@ -507,3 +507,33 @@ pub async fn git_file_op(cwd: String, op: String, path: String) -> Result<(), St
 // Create (or reuse) a folder for a new project, optionally seeding README.md / .gitignore.
 // create_dir_all is idempotent, so this is safe to call on an existing folder too; we only
 // write the seed files when they're absent, never clobbering something already there.
+
+/// `git clone <url>` into `<parent>/<name>`. Returns the new folder. Refuses to clone over an
+/// existing folder so a typo cannot merge two checkouts.
+#[tauri::command]
+pub async fn git_clone(url: String, parent: String, name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = url.trim();
+        let name = name.trim();
+        if url.is_empty() || parent.is_empty() || name.is_empty() {
+            return Err("Need a repository, a folder and a name.".to_string());
+        }
+        if name.contains(['/', '\\']) || name == "." || name == ".." {
+            return Err("The folder name cannot contain slashes.".to_string());
+        }
+        // anything that starts with a dash would be read as a git option
+        if url.starts_with('-') {
+            return Err("That does not look like a repository URL.".to_string());
+        }
+        let dest = Path::new(&parent).join(name);
+        if dest.exists() {
+            return Err(format!("{} already exists.", dest.display()));
+        }
+        std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
+        let dest_s = dest.to_string_lossy().to_string();
+        git(&parent, &["clone", "--", url, &dest_s])?;
+        Ok(dest_s)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

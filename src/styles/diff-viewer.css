@@ -1,0 +1,100 @@
+/* ---- diff viewer: a file's working tree diff as a pane ---- */
+.dv {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+.dv-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.dv-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-counts {
+  display: inline-flex;
+  gap: 6px;
+}
+.dv-counts .add {
+  color: var(--status-ok);
+}
+.dv-counts .del {
+  color: var(--status-error);
+}
+.dv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.dv-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.dv-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.dv-empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.dv-line {
+  padding: 0 14px;
+  white-space: pre;
+  color: var(--text-2);
+}
+.dv-line.meta {
+  color: var(--text-3);
+}
+.dv-line.hunk {
+  color: var(--status-awaiting);
+  background: color-mix(in srgb, var(--status-awaiting) 8%, transparent);
+}
+.dv-line.add {
+  color: #b5f0c2;
+  background: rgba(16, 185, 129, 0.12);
+}
+.dv-line.del {
+  color: #ffb3ad;
+  background: rgba(239, 68, 68, 0.12);
+}
+.dv-more {
+  margin: 8px 14px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
