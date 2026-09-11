@@ -54,3 +54,6 @@ docs/ENTITLEMENT.md
 docs/audit/
 scripts/gen-license-keypair.mjs
 scripts/license-keygen.mjs
+
+# deploy.ps1 stages the release assets here
+dist-release/
