@@ -65,10 +65,11 @@ npm run tauri dev          # dev with HMR (Vite + Rust). This is how you work da
 npm run tauri build        # production build (Windows NSIS installer by default)
 ```
 
-Releases are cut by a maintainer-local PowerShell script (`deploy.ps1`, not in this repo) that bumps
-all three version files, builds + signs the Windows installer, publishes a GitHub release with a
-`latest.json` manifest, and triggers the macOS CI build. It needs the project's signing key, so it's
-maintainer-only.
+Releases are cut by `deploy.ps1` (in the repo): it bumps the three version files, writes the
+changelog entry, commits and tags, opens a draft GitHub release with the notes, and runs
+`.github/workflows/release.yml`. CI builds and signs Windows, macOS and Linux with the updater key
+held in the repo's secrets, merges each into `latest.json`, and publishes the draft when all three
+are in. No machine needs the signing key.
 
 **Verifying a change in dev:** TS changes hot-reload (run `npx tsc --noEmit` to typecheck). Rust
 changes (`src-tauri/`) trigger a recompile + app relaunch — confirm with `cargo check` in

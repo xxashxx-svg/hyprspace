@@ -1,15 +1,16 @@
 name: release
 
-# CI builds the platforms you can't build on Windows — macOS and Linux. Windows itself is built
-# locally with deploy.ps1 (free). Each job MERGES its own entry into the release's latest.json,
-# preserving what the others published (windows-x86_64 from deploy.ps1, then darwin-aarch64, then
-# linux-x86_64). deploy.ps1 triggers this automatically after it publishes.
+# CI builds every platform, signed with the updater key held in this repo's secrets, so no
+# machine has to keep that key. deploy.ps1 bumps the version, tags, opens the release as a DRAFT
+# with the notes, and runs this workflow. Each job MERGES its own entry into the release's
+# latest.json (windows-x86_64, then darwin-aarch64, then linux-x86_64), and the last job publishes
+# the draft, so the updater endpoint (releases/latest) only sees the release once it is complete.
 #
-# The linux job `needs: macos` on purpose: both jobs read-modify-write the same latest.json asset,
-# so they must not run concurrently or one would clobber the other's platform entry.
+# The jobs chain with `needs` on purpose: they all read-modify-write the same latest.json asset,
+# so they must not run concurrently or one would clobber another's platform entry.
 #
 # Manual run: gh workflow run release.yml -f tag=v0.2.4   (the release should already
-# exist from deploy.ps1; if not, this creates a macOS-only one).
+# exist from deploy.ps1; if not, the first job creates a draft).
 #
 # Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD, RELEASES_TOKEN.
 # Optional Apple signing/notarization secrets are read if present.
@@ -29,7 +30,49 @@ env:
   RELEASES_REPO: xxashxx-svg/hyprspace
 
 jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm install
+      - name: Build + sign Windows installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: --bundles nsis
+      - name: Merge windows into the release manifest + upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${{ inputs.tag }}"
+          mkdir -p dist existing
+          find src-tauri/target -type f \( -name "*-setup.exe" -o -name "*-setup.exe.sig" \) -exec cp {} dist/ \;
+          # stable-named copy so the website's Download link always resolves to the newest build
+          cp dist/HyprSpace_*_x64-setup.exe dist/HyprSpace-windows-x64-setup.exe
+          echo "built:"; ls -la dist
+          gh release download "$tag" --repo "$RELEASES_REPO" --pattern latest.json --dir existing 2>/dev/null || true
+          node scripts/ci-build-latest.mjs "$tag" dist "$RELEASES_REPO" existing/latest.json
+          echo "merged manifest:"; cat dist/latest.json
+          if gh release view "$tag" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$RELEASES_REPO" --clobber dist/*-setup.exe dist/latest.json
+          else
+            gh release create "$tag" --repo "$RELEASES_REPO" --draft \
+              --title "HyprSpace ${tag#v}" --notes "Automated release." \
+              dist/*-setup.exe dist/latest.json
+          fi
+
   macos:
+    needs: windows
     runs-on: macos-14 # Apple Silicon → aarch64
     # releases live in this same repo, so the built-in token is the right credential — a PAT has to
     # be re-scoped whenever it expires, which is what broke the 0.12.0 darwin publish.
@@ -80,7 +123,7 @@ jobs:
           if gh release view "$tag" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
             gh release upload "$tag" --repo "$RELEASES_REPO" --clobber dist/*.dmg dist/*.app.tar.gz dist/latest.json
           else
-            gh release create "$tag" --repo "$RELEASES_REPO" \
+            gh release create "$tag" --repo "$RELEASES_REPO" --draft \
               --title "HyprSpace ${tag#v}" --notes "Automated release." \
               dist/*.dmg dist/*.app.tar.gz dist/latest.json
           fi
@@ -139,10 +182,12 @@ jobs:
             gh release upload "$tag" --repo "$RELEASES_REPO" --clobber \
               dist/*.AppImage dist/*.deb dist/latest.json
           else
-            gh release create "$tag" --repo "$RELEASES_REPO" \
+            gh release create "$tag" --repo "$RELEASES_REPO" --draft \
               --title "HyprSpace ${tag#v}" --notes "Automated release." \
               dist/*.AppImage dist/*.deb dist/latest.json
           fi
+          # every platform is in: publish, which is when releases/latest starts pointing here
+          gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false
 
   # The Android companion app (mobile/). Independent of the desktop's version — it ships on its own
   # cadence — so this only runs when you ask for it, and attaches the APK to the same release under a

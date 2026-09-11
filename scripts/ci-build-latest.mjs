@@ -1,13 +1,15 @@
 // Merge this runner's platform entry into the release's Tauri updater manifest.
 //   node scripts/ci-build-latest.mjs <tag> <artifactsDir> <releasesRepo> [existingManifest]
-// Starts from <existingManifest> if present (so entries other jobs already published —
-// windows-x86_64 from deploy.ps1, darwin-aarch64 from the macos job — are preserved), adds
-// whatever updater artifacts it finds in <artifactsDir>, and writes <artifactsDir>/latest.json.
+// Starts from <existingManifest> if present (so entries earlier jobs already published are
+// preserved), adds whatever updater artifacts it finds in <artifactsDir>, and writes
+// <artifactsDir>/latest.json. The first job has no manifest to start from, so the notes come from
+// the release body deploy.ps1 wrote.
 //
 // Platform-agnostic on purpose: the mac and linux jobs run the same command, and adding a target
 // (say darwin-x86_64) is a row in PLATFORMS rather than a new script.
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 
 const [tag, dir, repo, existingPath] = process.argv.slice(2);
 if (!tag || !dir || !repo) {
@@ -23,14 +25,25 @@ const base = `https://github.com/${repo}/releases/download/${tag}`;
 // because the AppImage updater artifact is a .AppImage.tar.gz on some Tauri versions and the bare
 // .AppImage on others; whichever this build produced is the one we use.
 const PLATFORMS = [
+  { key: "windows-x86_64", suffixes: ["-setup.exe"] },
   { key: "darwin-aarch64", suffixes: [".app.tar.gz"] },
   { key: "linux-x86_64", suffixes: [".AppImage.tar.gz", ".AppImage"] },
 ];
 
+// the release notes deploy.ps1 put on the (draft) release; falls back to a bare version line
+function releaseNotes() {
+  try {
+    const body = execSync(`gh release view ${tag} --repo ${repo} --json body -q .body`, { encoding: "utf8" }).trim();
+    return body || null;
+  } catch {
+    return null;
+  }
+}
+
 // start from the existing manifest if we have one, so we only ever ADD our own platform
 let manifest = {
   version,
-  notes: `HyprSpace ${version}`,
+  notes: releaseNotes() ?? `HyprSpace ${version}`,
   pub_date: new Date().toISOString(),
   platforms: {},
 };

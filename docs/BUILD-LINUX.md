@@ -13,7 +13,7 @@ Linux machine to cut a release.
 | Shell in a pane | `powershell.exe` | `$SHELL` | `$SHELL` → `/bin/bash` |
 | Bundle | NSIS installer | .app / .dmg | AppImage + .deb |
 | Auto-update | yes | yes | **AppImage only** |
-| Built by | `deploy.ps1` (local) | CI | CI |
+| Built by | CI | CI | CI |
 
 Two consequences worth knowing before you touch this:
 
@@ -71,10 +71,10 @@ the desktop environment and will differ between GNOME, KDE and the tiling WMs.
 
 ## Release flow
 
-`deploy.ps1` publishes the Windows half first, then triggers this workflow. The jobs run in sequence:
+`deploy.ps1` opens the release as a draft and triggers this workflow. The jobs run in sequence:
 
 ```
-deploy.ps1 (windows-x86_64)  →  macos job (darwin-aarch64)  →  linux job (linux-x86_64)
+windows job (windows-x86_64)  →  macos job (darwin-aarch64)  →  linux job (linux-x86_64)
 ```
 
 Each one downloads the release's `latest.json`, adds **only its own** platform entry via
