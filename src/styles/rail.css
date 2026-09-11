@@ -98,8 +98,19 @@
   padding: 2px 8px 4px;
 }
 .space-list.dragging,
-.space-list.dragging .sess-row {
+.space-list.dragging .sess-row,
+.space-list.dragging .space-row {
   cursor: grabbing;
+}
+/* a space header being dragged, and the header it will land above */
+.space-row.dragging {
+  opacity: 0.45;
+}
+.space-row.drop-here {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.space-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .space {
   display: flex;

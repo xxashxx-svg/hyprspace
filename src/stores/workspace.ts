@@ -157,7 +157,8 @@ interface WorkspaceState {
   setActive: (id: string) => void;
   setLayout: (id: string, count: number, presetId: string) => void;
   setTracks: (id: string, key: string, tracks: { cols?: number[]; rows?: number[] }) => void;
-  reorderWorkspaces: (fromId: string, toId: string) => void;
+  /** move a space in front of `toId`, or to the end when `toId` is null */
+  reorderWorkspaces: (fromId: string, toId: string | null) => void;
   /** returns the new pane's id. `focus: false` launches it without stealing the view — used by
    *  automations, which must never yank you out of what you're doing. */
   addSession: (wsId: string, command?: string, cwd?: string, opts?: { focus?: boolean; ephemeral?: boolean }) => string;
@@ -283,6 +284,10 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       const fi = arr.findIndex((w) => w.id === fromId);
       if (fi < 0) return {};
       const [moved] = arr.splice(fi, 1);
+      if (toId === null) {
+        arr.push(moved);
+        return { workspaces: arr };
+      }
       const ti = arr.findIndex((w) => w.id === toId);
       if (ti < 0) return {};
       arr.splice(ti, 0, moved);

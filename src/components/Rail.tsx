@@ -49,6 +49,7 @@ export function Rail() {
   const renameWorkspace = useWorkspaces((s) => s.renameWorkspace);
   const setArchived = useWorkspaces((s) => s.setArchived);
   const reorderSessions = useWorkspaces((s) => s.reorderSessions);
+  const reorderWorkspaces = useWorkspaces((s) => s.reorderWorkspaces);
   const moveSessionToWorkspace = useWorkspaces((s) => s.moveSessionToWorkspace);
   const paneDragging = useUi((s) => s.paneDragging);
   const paneDragOverWs = useUi((s) => s.paneDragOverWs);
@@ -101,18 +102,39 @@ export function Rail() {
     if (view !== "home") useUi.getState().goSpace();
   };
 
-  // Thread drag, done imperatively so a pointermove never re-renders the list. A drag starts after
-  // a few pixels of travel; the click that would follow a drop is swallowed.
-  const drag = useRef<{ sid: string; wsId: string; el: HTMLElement; sx: number; sy: number; on: boolean; over: HTMLElement | null } | null>(null);
-  const targetAt = (x: number, y: number) =>
-    (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>(".sess-row, .space-row") ?? null;
+  // Dragging, done imperatively so a pointermove never re-renders the list. A thread drags to
+  // reorder within its space or onto another space; a space header drags to reorder the spaces.
+  // A drag starts after a few pixels of travel; the click that would follow a drop is swallowed.
+  const drag = useRef<{
+    kind: "thread" | "space";
+    sid: string;
+    wsId: string;
+    el: HTMLElement;
+    sx: number;
+    sy: number;
+    on: boolean;
+    over: HTMLElement | null;
+    after: boolean; // space drags: land below `over` instead of above it
+  } | null>(null);
+  // the live space headers in sidebar order, minus the one being dragged
+  const spaceHeads = (self: HTMLElement) =>
+    Array.from(document.querySelectorAll<HTMLElement>(".space-list .space-row:not(.archive-row)")).filter((r) => r !== self);
+  const targetAt = (x: number, y: number, kind: "thread" | "space") =>
+    (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>(
+      kind === "thread" ? ".sess-row, .space-row" : ".space-row:not(.archive-row)",
+    ) ?? null;
   const onPointerDown = (e: RPointerEvent) => {
     if (e.button !== 0) return;
     const t = e.target as HTMLElement;
     if (t.closest(".sess-close")) return;
-    const el = t.closest<HTMLElement>(".sess-row");
-    if (!el?.dataset.sid || !el.dataset.wsid) return;
-    drag.current = { sid: el.dataset.sid, wsId: el.dataset.wsid, el, sx: e.clientX, sy: e.clientY, on: false, over: null };
+    const row = t.closest<HTMLElement>(".sess-row");
+    if (row?.dataset.sid && row.dataset.wsid) {
+      drag.current = { kind: "thread", sid: row.dataset.sid, wsId: row.dataset.wsid, el: row, sx: e.clientX, sy: e.clientY, on: false, over: null, after: false };
+      return;
+    }
+    const head = t.closest<HTMLElement>(".space-row");
+    if (!head || head.classList.contains("archive-row") || !head.dataset.wsid || t.closest("button")) return;
+    drag.current = { kind: "space", sid: "", wsId: head.dataset.wsid, el: head, sx: e.clientX, sy: e.clientY, on: false, over: null, after: false };
   };
   const onPointerMove = (e: RPointerEvent) => {
     const d = drag.current;
@@ -124,12 +146,29 @@ export function Rail() {
       d.el.closest(".space-list")?.classList.add("dragging");
       d.el.setPointerCapture?.(e.pointerId);
     }
-    const over = targetAt(e.clientX, e.clientY);
-    const next = over && over !== d.el ? over : null;
-    if (next !== d.over) {
-      d.over?.classList.remove("drop-over");
-      next?.classList.add("drop-over");
+    const over = targetAt(e.clientX, e.clientY, d.kind);
+    let next = over && over !== d.el ? over : null;
+    let after = false;
+    if (d.kind === "space") {
+      if (next) {
+        // upper half lands above the header, lower half below it
+        const r = next.getBoundingClientRect();
+        after = e.clientY > r.top + r.height / 2;
+      } else {
+        // past the last header: land at the end of the list
+        const heads = spaceHeads(d.el);
+        const last = heads[heads.length - 1];
+        if (last && e.clientY > last.getBoundingClientRect().bottom) {
+          next = last;
+          after = true;
+        }
+      }
+    }
+    if (next !== d.over || after !== d.after) {
+      d.over?.classList.remove("drop-over", "drop-here", "drop-after");
+      next?.classList.add(d.kind === "space" ? (after ? "drop-after" : "drop-here") : "drop-over");
       d.over = next;
+      d.after = after;
     }
   };
   const endDrag = (drop: boolean) => {
@@ -137,18 +176,27 @@ export function Rail() {
     if (!d) return;
     drag.current = null;
     d.el.classList.remove("dragging");
-    d.over?.classList.remove("drop-over");
+    d.over?.classList.remove("drop-over", "drop-here", "drop-after");
     d.el.closest(".space-list")?.classList.remove("dragging");
     if (!d.on) return;
     d.el.dataset.justDragged = "1";
     const tWs = d.over?.dataset.wsid;
     const tSid = d.over?.dataset.sid;
-    if (!drop || !tWs) return;
-    if (tWs !== d.wsId) moveSessionToWorkspace(d.wsId, d.sid, tWs);
+    if (!drop || !tWs || !d.over) return;
+    if (d.kind === "space") {
+      if (!d.after) {
+        if (tWs !== d.wsId) reorderWorkspaces(d.wsId, tWs);
+        return;
+      }
+      // below a header means in front of the next one, or last when there is none
+      const heads = spaceHeads(d.el);
+      const following = heads[heads.indexOf(d.over) + 1];
+      reorderWorkspaces(d.wsId, following?.dataset.wsid ?? null);
+    } else if (tWs !== d.wsId) moveSessionToWorkspace(d.wsId, d.sid, tWs);
     else if (tSid) reorderSessions(d.wsId, d.sid, tSid);
   };
   const onClickCapture = (e: RMouseEvent) => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>(".sess-row");
+    const el = (e.target as HTMLElement).closest<HTMLElement>(".sess-row, .space-row");
     if (el?.dataset.justDragged) {
       delete el.dataset.justDragged;
       e.stopPropagation();
