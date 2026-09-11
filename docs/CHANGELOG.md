@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.18.1 — 2026-09-11
+
+- Usage now shows your real limits as soon as the app opens, instead of waiting for an agent to take a turn
+- The usage panel is redesigned, and the titlebar ring skips a limit that is already spent so it tracks one you can still act on
+- Drag a space in the sidebar to reorder it, dropping above or below the one you land on
+- The sidebar no longer repeats 'Clean working tree' under every space or counts open terminals
+
 ## 0.18.0 — 2026-09-11
 
 - Threads and a composer: pick the model and effort, paste images, and start from one place
