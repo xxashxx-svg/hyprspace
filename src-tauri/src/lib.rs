@@ -556,6 +556,8 @@ pub fn run() {
             devtools::git_init,
             devtools::git_clone,
             devtools::agent_sessions,
+            devtools::claude_live_usage,
+            devtools::codex_live_usage,
             devtools::git_init_repo,
             devtools::git_branch_info,
             devtools::git_file_op,

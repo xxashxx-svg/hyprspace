@@ -20,12 +20,16 @@ command palette. Neutral, T3-Code-inspired dark UI.
 
 ## ⚠️ Critical constraints — do not violate
 
-1. **Subscription compliance (most important).** The app runs Claude on the user's **subscription**
-   by spawning their already-logged-in `claude` CLI — nothing else. **NEVER** build a custom
-   claude.ai OAuth flow, **NEVER** read/store/forward the subscription OAuth token to call the
-   Anthropic API yourself, **NEVER** feed subscription tokens to an SDK. Reading credential files
-   for **display-only** fields (email / plan) is fine; using a token for auth is not. This is the
-   same sanctioned path T3 Code uses. The terminal panes just spawn the CLI.
+1. **Subscription compliance (most important).** All *inference* runs on the user's
+   **subscription** by spawning their already-logged-in `claude` CLI — nothing else. **NEVER** build
+   a custom claude.ai OAuth flow, **NEVER** feed a subscription token to an SDK, and **NEVER** use
+   one to send a prompt or complete anything. The terminal panes just spawn the CLI.
+   The one sanctioned exception is `devtools/live_usage.rs`: it reads the token the CLI already
+   stores and sends it back to that same provider's **usage endpoint only**
+   (`api.anthropic.com/api/oauth/usage`, `chatgpt.com/backend-api/codex/usage`) to read the
+   account's own limits for display. The token is read per request, never stored or forwarded
+   anywhere else. Respect the poll cadence in that file: Claude's bucket is shared with Claude Code
+   itself, so 180s is the floor.
 2. **No `React.StrictMode`.** It's intentionally disabled in `main.tsx` — double-mounting corrupts
    xterm.js lifecycles. Don't re-add it.
 3. **Styling = vanilla CSS + design tokens.** Use the CSS variables in `src/styles/tokens.css`
@@ -168,6 +172,11 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
   with its panes still running. Row state comes from
   claude's hooks (`stores/agentStatus`) or, for CLIs without hooks, from the terminal output
   (`lib/agentHeuristics`: recent output = working, a question in the last lines = waiting).
+- **Usage.** The meter prefers `devtools/live_usage.rs`, which reads the account's real limits from
+  each provider's usage endpoint (see rule 1) every 180s for Claude and 60s for Codex, with a
+  cooldown on 429/5xx. When that can't answer — signed out, offline, rate limited with nothing
+  cached — it falls back to what arrives for free: claude's status line pushing `rate_limits` every
+  turn (`stores/usage.ts`, fed by `agenthook.rs`), and codex's rollout files (`devtools/usage.rs`).
 - **Right dock.** `components/dock/Dock` (Ctrl+Shift+G): Files (`FilesPanel`, a lazy tree with git
   decorations) and Git (`GitPanel`, tick files to stage, summary + description, commit to the branch,
   push when ahead). It follows the focused pane's folder. Resizable from its left edge.

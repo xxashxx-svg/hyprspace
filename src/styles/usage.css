@@ -1,4 +1,4 @@
-/* Live Claude usage — titlebar chip + popover (UsageMeter.tsx) */
+/* Live provider usage — titlebar chip + popover (UsageMeter.tsx) */
 .um {
   position: relative;
   display: flex;
@@ -29,13 +29,13 @@
   opacity: 0.5;
 }
 
-/* ring */
+/* the ring in the titlebar reports the most urgent window */
 .um-ring {
   transform: rotate(-90deg);
   flex: 0 0 auto;
 }
 .um-ring-tr {
-  stroke: rgba(255, 255, 255, 0.26);
+  stroke: rgba(255, 255, 255, 0.22);
 }
 .um-ring-fg {
   stroke: var(--text-1);
@@ -48,48 +48,97 @@
   stroke: var(--status-error);
 }
 
-/* popover */
+/* Opening grows the panel out of the chip it hangs from; closing reverses it. The bars fill from
+   empty on the way in, which reads as the numbers arriving rather than having always been there. */
+@keyframes umPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+@keyframes umPopOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+@keyframes umFill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* the panel: one surface, one border. Everything inside is spacing, not more boxes. */
+.um-pop {
+  transform-origin: top right;
+  animation: umPopIn 0.15s var(--ease);
+}
+.um-pop.closing {
+  animation: umPopOut 0.12s var(--ease) forwards;
+  pointer-events: none;
+}
+.um-pop .um-bar i {
+  transform-origin: left center;
+  animation: umFill 0.45s var(--ease) both;
+}
+.um-pop.closing .um-bar i {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .um-pop,
+  .um-pop.closing,
+  .um-pop .um-bar i {
+    animation: none;
+  }
+}
 .um-pop {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  width: 268px;
+  width: 272px;
   z-index: 500;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr); /* a long chip must never widen the panel */
-  overflow: hidden;
-  gap: 0;
-  padding: 4px;
-  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  background: color-mix(in srgb, var(--surface-2) 92%, #000);
   border: 1px solid var(--border-2);
-  border-radius: var(--radius-2);
-  box-shadow: var(--shadow-2);
+  border-radius: 11px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
-/* one provider = one card, so two providers read as two things rather than one long list */
-.um-hdr {
+/* a provider is a run of rows, not a card. One hairline separates two of them. */
+.um-card {
+  padding: 8px 12px 12px;
+}
+.um-card + .um-card {
+  border-top: 1px solid var(--border-1);
+}
+.um-head {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 10px 11px 9px;
-  border-top: 1px solid var(--border-1);
-  margin-top: 4px;
+  height: 24px;
+  margin-bottom: 10px;
 }
-.um-hdr.first {
-  border-top: 0;
-  margin-top: 0;
-}
-.um-logo {
-  width: 15px;
-  height: 15px;
+.um-mark {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+.um-mark img {
+  width: 14px;
+  height: 14px;
 }
 .um-name {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text-1);
-  letter-spacing: -0.01em;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -100,39 +149,41 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-3);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-1);
-  border-radius: 4px;
-  padding: 2px 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 55%;
 }
 
-.um-grp {
-  display: grid;
-  gap: 7px;
-  padding: 7px 11px 11px;
+.um-body {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
 }
-.um-row {
+.um-win {
+  display: grid;
+  gap: 6px;
+}
+.um-win-top {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 .um-lbl {
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 12px;
   color: var(--text-2);
-  letter-spacing: 0;
-  text-transform: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* the number is the point of the panel — give it real size */
 .um-val {
+  flex: 0 0 auto;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 1;
   color: var(--text-1);
@@ -148,46 +199,36 @@
   color: var(--text-3);
 }
 
-/* bars */
+/* the bar fills in the provider's own color until the provider calls it warning or critical */
 .um-bar {
   position: relative;
-  height: 7px;
+  height: 5px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
   display: flex;
 }
 .um-bar i {
   height: 100%;
   display: block;
   border-radius: 99px;
-  background: linear-gradient(90deg, var(--text-2), var(--text-1));
+  background: var(--brand);
   transition: width 0.35s var(--ease);
 }
 .um-bar.warn i {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--status-busy) 70%, transparent), var(--status-busy));
+  background: var(--status-busy);
 }
 .um-bar.crit i {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--status-error) 70%, transparent), var(--status-error));
+  background: var(--status-error);
 }
 
-.um-sub {
+.um-foot,
+.um-note {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-3);
-  margin-top: -1px;
 }
 .um-stale {
-  font-size: 10.5px;
-  color: var(--text-2);
-  border-top: 1px solid var(--border-1);
-  margin-top: 4px;
-  padding: 9px 11px 4px;
-}
-.um-sub.stale {
-  color: var(--text-3);
-}
-.um-val.muted {
+  padding: 0 12px 8px;
+  font-size: 11px;
   color: var(--text-3);
 }

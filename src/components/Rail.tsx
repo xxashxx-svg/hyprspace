@@ -11,22 +11,21 @@ import { newSession } from "../actions";
 import { onBranchResolved } from "../lib/branches";
 import { SessionRow, useDiffSummary } from "./SessionRow";
 
-/** The working tree line under an open space: file count and line deltas, or "clean". */
+/**
+ * The working tree line under an open space: file count and line deltas. A clean tree says nothing
+ * rather than repeating "clean" down the whole sidebar — the absence of the line is the message.
+ */
 function SpaceSummary({ cwd }: { cwd: string }) {
   const diff = useDiffSummary(cwd);
+  if (!cwd) return <div className="space-sum">No folder yet</div>;
+  if (!diff) return null;
   return (
     <div className="space-sum">
-      {diff ? (
-        <>
-          <span>
-            {diff.files} {diff.files === 1 ? "file" : "files"}
-          </span>
-          <span className="space-sum-add">+{diff.added}</span>
-          <span className="space-sum-del">−{diff.removed}</span>
-        </>
-      ) : (
-        <span>{cwd ? "Clean working tree" : "No folder yet"}</span>
-      )}
+      <span>
+        {diff.files} {diff.files === 1 ? "file" : "files"}
+      </span>
+      <span className="space-sum-add">+{diff.added}</span>
+      <span className="space-sum-del">−{diff.removed}</span>
     </div>
   );
 }
@@ -298,7 +297,6 @@ export function Rail() {
                       <ChevronRight size={12} />
                     </button>
                     <span className="space-name">{w.name}</span>
-                    {w.sessions.length > 0 && <span className="space-count">{w.sessions.length}</span>}
                     <button
                       className="space-add"
                       title="New thread here"

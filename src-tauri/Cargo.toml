@@ -28,6 +28,8 @@ portable-pty = "0.9"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-updater = "2"
+# usage endpoints (devtools/live_usage.rs); rustls so no OpenSSL is needed on any build host
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
 ed25519-dalek = "2"

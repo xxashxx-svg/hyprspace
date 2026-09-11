@@ -7,6 +7,7 @@ use serde_json::Value;
 
 mod git;
 mod sessions;
+mod live_usage;
 mod worktree;
 mod project;
 mod fs;
@@ -17,6 +18,7 @@ mod skills;
 
 pub use git::*;
 pub use sessions::*;
+pub use live_usage::*;
 pub use worktree::*;
 pub use project::*;
 pub use fs::*;

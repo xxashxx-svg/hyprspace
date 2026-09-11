@@ -14,6 +14,8 @@ export interface UsageWindow {
   windowMs?: number;
   /** the pct is the PREVIOUS window's, so we don't actually know this window's number yet */
   stale?: boolean;
+  /** the provider's own severity when it reports one. Trusted over anything we infer. */
+  severity?: string;
 }
 
 export interface PaneUsage {
@@ -202,6 +204,10 @@ export interface ProviderBlock {
   plan?: string;
   updatedAt?: number; // unix ms, when the source file was last written
   windows: { key: string; label: string; win: UsageWindow }[];
+  /** why the numbers are old or missing: rate limited, signed out, offline */
+  note?: string;
+  /** extra usage bought on top of the plan, when the account has it switched on */
+  extra?: { percent: number; used: number; limit: number; currency?: string };
 }
 
 function windowName(minutes: number): string {
@@ -213,6 +219,55 @@ function windowName(minutes: number): string {
   const h = Math.round(minutes / 60);
   return h === 5 ? "Session · 5h" : `${h} hours`;
 }
+
+// ---- live endpoints ----
+// Claude and Codex both expose the account's own limits to the token their CLI already holds.
+// That's the only source that knows the numbers when no agent is mid-turn, so it's preferred over
+// the status line and the rollout files, which stay as the fallback.
+import type { LiveUsage } from "../api";
+
+/** Shape a live reading into the block the popover renders. Null when it carries no windows. */
+export function toLiveBlock(id: string, label: string, u: LiveUsage | null): ProviderBlock | null {
+  if (!u) return null;
+  const windows = (u.bars ?? []).map((b) => ({
+    key: b.id,
+    label: b.label,
+    win: {
+      pct: clamp(b.percent),
+      resetsAt: b.resetsAt ?? undefined,
+      windowMs: b.windowMs ?? undefined,
+      severity: b.severity ?? undefined,
+    } as UsageWindow,
+  }));
+  if (!windows.length) return null;
+  return {
+    id,
+    label,
+    plan: u.plan ?? undefined,
+    updatedAt: u.at || undefined,
+    windows,
+    note: u.note ?? undefined,
+    extra: u.extra
+      ? { percent: clamp(u.extra.percent), used: u.extra.used, limit: u.extra.limit, currency: u.extra.currency ?? undefined }
+      : undefined,
+  };
+}
+
+interface LiveState {
+  claude: ProviderBlock | null;
+  codex: ProviderBlock | null;
+  /** a message worth showing even when there are no numbers, e.g. "sign in again" */
+  claudeNote?: string;
+  codexNote?: string;
+  setLive: (id: "claude" | "codex", block: ProviderBlock | null, note?: string) => void;
+}
+
+export const useLiveUsage = create<LiveState>()((set) => ({
+  claude: null,
+  codex: null,
+  setLive: (id, block, note) =>
+    set(id === "claude" ? { claude: block, claudeNote: note } : { codex: block, codexNote: note }),
+}));
 
 interface CodexState {
   codex: ProviderBlock | null;

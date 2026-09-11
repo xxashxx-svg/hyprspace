@@ -312,6 +312,37 @@ export function gitIsRepo(cwd: string): Promise<boolean> {
 export function gitInit(cwd: string): Promise<string> {
   return invoke("git_init", { cwd });
 }
+/** One limit window as a provider's usage endpoint reports it. */
+export interface LiveBar {
+  id: string;
+  label: string;
+  percent: number;
+  resetsAt?: number | null;
+  windowMs?: number | null;
+  /** the provider's own call: "normal" | "warning" | "critical" */
+  severity?: string | null;
+}
+export interface LiveUsage {
+  ok: boolean;
+  at: number;
+  plan?: string | null;
+  bars: LiveBar[];
+  active?: string | null;
+  extra?: { percent: number; used: number; limit: number; currency?: string | null } | null;
+  /** "auth" | "missing" | "rate" | "error", absent when ok */
+  kind?: string | null;
+  note?: string | null;
+}
+/** The account's live Claude limits. Poll no faster than every 180s: the endpoint's rate-limit
+ *  bucket is shared with Claude Code itself. */
+export function claudeLiveUsage(): Promise<LiveUsage> {
+  return invoke("claude_live_usage");
+}
+/** The account's live Codex limits, from the endpoint the Codex CLI uses. */
+export function codexLiveUsage(): Promise<LiveUsage> {
+  return invoke("codex_live_usage");
+}
+
 export interface AgentSession {
   id: string;
   title: string;

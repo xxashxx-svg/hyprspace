@@ -210,9 +210,7 @@
   background: var(--surface-3);
   color: var(--text-1);
 }
-.space-row:hover .space-count {
-  visibility: hidden;
-}
+
 /* archived spaces: a section like the others, dimmer, parked under a divider */
 .archive {
   margin-top: 6px;
@@ -226,9 +224,6 @@
 .archive-ico {
   flex: 0 0 auto;
   margin-right: 2px;
-}
-.archive-row:hover .space-count {
-  visibility: visible;
 }
 .arch-row {
   display: flex;
