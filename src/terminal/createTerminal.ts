@@ -68,6 +68,56 @@ export function makeTerminal(isClaude: boolean): Terminal {
   });
 }
 
+// Every terminal that shares a font, size, theme and DPR SHARES ONE glyph atlas — xterm caches them
+// by config (@xterm/addon-webgl CharAtlasCache), and all our panes match. Clearing the atlas from
+// one pane repacks that shared texture but only resets THAT pane's cell cache. Every other pane
+// keeps texture coordinates pointing into the old packing, and since the renderer redraws only
+// cells whose content changed, any cell that never changes keeps drawing from a slot that now holds
+// a different glyph. That is the character stuck beside claude's prompt: the space next to the
+// marker is the one cell on a busy line that never changes, so it is the one that rots.
+// So an atlas clear has to be an all-panes repaint, never a per-pane one.
+// Only panes holding a GPU renderer belong here. A pane without one has no atlas to go stale, and a
+// pane that gave its renderer up rebuilds model, vertices and all when it gets a new one.
+const live = new Set<Terminal>();
+
+export function trackTerminal(term: Terminal): void {
+  live.add(term);
+}
+
+export function untrackTerminal(term: Terminal): void {
+  live.delete(term);
+}
+
+/**
+ * Invalidate the shared glyph atlas and redraw every live pane from scratch. Coalesced to one
+ * repaint per frame — every mounted pane listens for the same window focus and theme change, so
+ * without this a grid of twelve would run this twelve times over.
+ */
+let queued = false;
+export function repaintAllTerminals(): void {
+  if (queued) return;
+  queued = true;
+  requestAnimationFrame(() => {
+    queued = false;
+    // clear first, everywhere: only the first call actually repacks the atlas, but each one resets
+    // that pane's cell cache, which is what stops it drawing from the old packing
+    for (const t of live) {
+      try {
+        t.clearTextureAtlas?.();
+      } catch {
+        /* renderer not ready */
+      }
+    }
+    for (const t of live) {
+      try {
+        t.refresh(0, t.rows - 1);
+      } catch {
+        /* renderer not ready */
+      }
+    }
+  });
+}
+
 // Attach the GPU (WebGL) renderer when it's enabled — same atlas-and-quads model as Alacritty's
 // OpenGL renderer, so block art (the Claude logo, progress bars, box-drawing) tiles seamlessly.
 // MUST be called after term.open(). Returns the addon so callers can detach it again — panes drop

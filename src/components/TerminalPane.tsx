@@ -7,7 +7,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { makeTerminal, termTheme, attachGpuRenderer } from "../terminal/createTerminal";
+import { makeTerminal, termTheme, attachGpuRenderer, trackTerminal, untrackTerminal, repaintAllTerminals } from "../terminal/createTerminal";
 import { applyUnicode } from "../terminal/unicodeProvider";
 import { termSurface } from "../terminal/palettes";
 import type { WebglAddon } from "@xterm/addon-webgl";
@@ -185,16 +185,17 @@ function TerminalPaneInner({
     (cols: number, rows: number) => {
       if (cols === lastSize.current.cols && rows === lastSize.current.rows) return;
       lastSize.current = { cols, rows };
-      void resizePty(sessionId, cols, rows);
+      // If the invoke loses — the first fit can land before create_pty has registered the session,
+      // and then resize_pty answers "no such session" — forget the size so the next fit sends it
+      // again. Recording a size the backend never got leaves xterm and the child disagreeing about
+      // the width for the life of the pane, and a TUI drawing its prompt at the wrong width leaves
+      // characters on screen that nothing can erase.
+      void resizePty(sessionId, cols, rows).catch(() => {
+        lastSize.current = { cols: -1, rows: -1 };
+      });
     },
     [sessionId],
   );
-
-  // the refocus redraw listener below only repaints visible panes; ref so it sees the latest
-  const activeRef = useRef(active);
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
 
   useEffect(() => {
     const el = ref.current;
@@ -434,15 +435,18 @@ function TerminalPaneInner({
 
     // A pane can open before the bundled webfont finishes loading, so WebGL rasterizes its
     // glyph atlas with a fallback font → garbled text. Rebuild the atlas once fonts are ready.
+    // The re-measure lands on a different cell width, so the pty has to hear the new cols/rows as
+    // well: the size it was created with was measured against the fallback font. Without this the
+    // child spends the pane's whole life drawing to a width xterm doesn't have.
     document.fonts?.ready?.then(() => {
       if (disposed) return;
       try {
-        term.clearTextureAtlas?.();
         fit.fit();
-        term.refresh(0, term.rows - 1);
+        fitResize(term.cols, term.rows);
       } catch {
         /* not ready */
       }
+      repaintAllTerminals(); // the atlas is shared — see createTerminal.ts
     });
 
     // show a brief "starting…" overlay only when the shell/agent is slow to print its first byte
@@ -618,22 +622,9 @@ function TerminalPaneInner({
     };
     el.addEventListener("wheel", onWheel, { passive: false, capture: true });
 
-    // after sleep/resume or refocus the WebGL atlas can go stale → ghost cursor; invalidate + repaint
-    const redraw = () => {
-      if (!activeRef.current) return; // hidden panes rebuild their atlas when re-activated anyway
-      try {
-        term.clearTextureAtlas?.();
-        requestAnimationFrame(() => {
-          try {
-            term.refresh(0, term.rows - 1);
-          } catch {
-            /* not ready */
-          }
-        });
-      } catch {
-        /* not ready */
-      }
-    };
+    // after sleep/resume or refocus the WebGL atlas can go stale → ghost cursor. Every pane repaints,
+    // not just this one: the atlas is shared, so clearing it here would rot the others' cells.
+    const redraw = () => repaintAllTerminals();
     const onVis = () => {
       if (document.visibilityState === "visible") redraw();
     };
@@ -647,6 +638,7 @@ function TerminalPaneInner({
       clearTimeout(tSettled);
       clearTimeout(bootShow);
       clearTimeout(bootMax);
+      untrackTerminal(term);
       ro.disconnect();
       el.removeEventListener("wheel", onWheel, { capture: true });
       document.removeEventListener("visibilitychange", onVis);
@@ -685,8 +677,12 @@ function TerminalPaneInner({
       // never fire (the emitter cancels remaining listeners mid-dispose)
       const gl = attachGpuRenderer(term, () => {
         glRef.current = null; // next activation re-attaches
+        untrackTerminal(term);
       });
-      if (gl) glRef.current = gl;
+      if (gl) {
+        glRef.current = gl;
+        trackTerminal(term); // now holds atlas state, so it joins the app-wide repaints
+      }
     } else if (!want && glRef.current) {
       try {
         glRef.current.dispose();
@@ -694,6 +690,7 @@ function TerminalPaneInner({
         /* terminal already torn down */
       }
       glRef.current = null;
+      untrackTerminal(term);
     }
   }, [active, gpuRender]);
 
@@ -726,12 +723,7 @@ function TerminalPaneInner({
     t.options.theme = termTheme();
     // paint the pane surface (padding ring + corners) with the same bg so edges don't show the old color
     document.documentElement.style.setProperty("--term-surface", termSurface(terminalTheme));
-    try {
-      t.clearTextureAtlas?.();
-      t.refresh(0, t.rows - 1);
-    } catch {
-      /* renderer not ready */
-    }
+    repaintAllTerminals(); // a new theme means a new atlas, and every pane shares it
   }, [themeId, terminalTheme]);
 
   // live font change → re-fit + resize the pty
