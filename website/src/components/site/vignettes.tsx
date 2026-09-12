@@ -71,62 +71,77 @@ function Dot({ tone, className = "" }: { tone: "work" | "wait" | "done"; classNa
 /** the sidebar: project → branch → two-line agent rows, with a sub-agent under the first */
 export function TreeVignette() {
   return (
-    <Panel label="Projects">
+    <Panel label="Threads">
       <div className="px-2 pb-3 text-[12px]">
-        <div className="flex items-center gap-2 rounded-md px-2 py-1.5" style={{ background: "#282828" }}>
-          <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke={T2} strokeWidth="1.8">
-            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+        {/* the space header: a chevron and its name, the way the sidebar folds */}
+        <div className="flex items-center gap-1 px-1 py-1">
+          <svg viewBox="0 0 24 24" className="size-3 shrink-0 rotate-90" fill="none" stroke={T3} strokeWidth="2.2">
+            <path d="m9 18 6-6-6-6" />
           </svg>
-          <span style={{ color: T1 }}>hyprspace-tauri</span>
-          <span className="ml-auto font-mono text-[10px]" style={{ color: T3 }}>2</span>
+          <span className="font-semibold" style={{ color: T1 }}>hyprspace</span>
+        </div>
+        <div className="flex items-center gap-1.5 px-2 pb-1 font-mono text-[10px]" style={{ color: T3 }}>
+          <span>3 files</span>
+          <span style={{ color: "#10b981" }}>+64</span>
+          <span style={{ color: "#ef4444" }}>&minus;12</span>
         </div>
 
-        <div className="mt-0.5 flex items-center gap-1.5 py-1 pl-6" style={{ color: T3 }}>
-          <svg viewBox="0 0 24 24" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
-            <path d="M18 9a9 9 0 0 1-9 9" />
-          </svg>
-          <span className="text-[11.5px]" style={{ color: T2 }}>main</span>
-          <i className="size-1 rounded-full" style={{ background: T2 }} />
-        </div>
-
-        {[
-          [claudeIcon, "Claude", "Delegating audit pass", "work", "now"],
-          [openaiIcon, "Codex", "cargo check", "done", "4m"],
-        ].map(([ic, name, act, tone, when]) => (
-          <div key={name as string}>
-            <div className="flex items-start gap-2 py-1 pl-6">
-              <span className="relative mt-[3px] flex size-3.5 shrink-0 items-center justify-center">
-                <img src={ic as string} alt="" className="size-3.5" />
-                <Dot tone={tone as "work"} className="absolute -right-1 -bottom-0.5 ring-2" />
-              </span>
-              <span className="flex min-w-0 flex-col">
-                <span className="text-[12px] leading-tight" style={{ color: T1 }}>{name}</span>
-                <span className="truncate font-mono text-[10px] leading-tight" style={{ color: T3 }}>{act}</span>
-              </span>
-              <span className="mt-px ml-auto font-mono text-[10px]" style={{ color: T3 }}>{when}</span>
-            </div>
-
-            {/* delegated agents hang off a lineage rail tinted with the app's accent, as in the rail */}
-            {name === "Claude" && (
-              <div
-                className="ml-[38px] flex flex-col pl-2.5"
-                style={{ borderLeft: "1px solid color-mix(in srgb, var(--brand) 40%, transparent)" }}
-              >
-                {[
-                  ["security audit", "1m"],
-                  ["test coverage", "40s"],
-                ].map(([label, ago]) => (
-                  <div key={label} className="flex items-center gap-2 py-[3px]">
-                    <Dot tone="work" className="!size-1" />
-                    <span className="truncate text-[11px]" style={{ color: T2 }}>{label}</span>
-                    <span className="ml-auto font-mono text-[10px]" style={{ color: T3 }}>{ago}</span>
-                  </div>
-                ))}
+        <div className="grid gap-0.5 pl-3">
+          {[
+            [claudeIcon, "Opus 5", "implement the session resume endpoint", "work", "now", true],
+            [openaiIcon, "gpt-5.6-sol", "cover the resume path with tests", "done", "4m", false],
+          ].map(([ic, model, title, tone, when, subs]) => (
+            <div key={title as string}>
+              <div className="grid gap-[3px] rounded-lg px-2 py-1.5" style={subs ? { background: S2 } : undefined}>
+                <div className="flex items-center gap-1.5">
+                  <img src={ic as string} alt="" className="size-3" />
+                  <span className="font-mono text-[10px]" style={{ color: T3 }}>{model as string}</span>
+                  {subs ? (
+                    <span
+                      className="flex items-center gap-1 rounded px-1 font-mono text-[9px]"
+                      style={{ background: "rgba(245,158,11,0.14)", color: "#f59e0b" }}
+                    >
+                      2
+                    </span>
+                  ) : null}
+                  <span className="ml-auto font-mono text-[10px]" style={{ color: T3 }}>{when as string}</span>
+                </div>
+                <div className="truncate text-[11.5px]" style={{ color: T1 }}>{title as string}</div>
+                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: T3 }}>
+                  <svg viewBox="0 0 24 24" className="size-2.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
+                    <path d="M18 9a9 9 0 0 1-9 9" />
+                  </svg>
+                  <span className="font-mono">main</span>
+                  <Dot tone={tone as "work"} className="ml-auto" />
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+
+              {/* the sub-agents that thread has running, as their own small cards */}
+              {subs ? (
+                <div className="mt-[3px] grid gap-[3px]">
+                  {[
+                    ["security audit", "1m"],
+                    ["test coverage", "40s"],
+                  ].map(([label, ago]) => (
+                    <div
+                      key={label}
+                      className="flex items-center gap-1.5 rounded-md border px-1.5 py-1"
+                      style={{ borderColor: B1, background: "rgba(255,255,255,0.02)" }}
+                    >
+                      <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full" style={{ background: "#282828" }}>
+                        <img src={claudeIcon} alt="" className="size-2" />
+                      </span>
+                      <span className="truncate text-[10.5px]" style={{ color: T2 }}>{label}</span>
+                      <span className="ml-auto font-mono text-[9.5px]" style={{ color: T3 }}>{ago}</span>
+                      <Dot tone="work" className="!size-1" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </div>
     </Panel>
   )
@@ -163,8 +178,8 @@ export function UsageVignette() {
     <div className="overflow-hidden rounded-[10px] border p-3.5" style={{ background: S2, borderColor: "rgba(255,255,255,0.1)" }}>
       <div className="grid gap-3">
         <div className="text-[10px] font-semibold tracking-[0.07em] uppercase" style={{ color: T3 }}>Claude</div>
-        <Meter label="Session · 5h" value="34%" width="34%" tick />
-        <Meter label="This week" value="54%" width="54%" slow />
+        <Meter label="Session" value="34%" width="34%" />
+        <Meter label="All models" value="54%" width="54%" slow />
         <div className="font-mono text-[10px]" style={{ color: T2 }}>resets in 2h 41m</div>
       </div>
     </div>
@@ -183,8 +198,8 @@ export function PaletteVignette() {
         <div className="-mx-1 mt-1 rounded px-1" style={{ background: "#282828", color: T1 }}>
           Open · deploy.ps1
         </div>
-        <div>Run · Commit &amp; push</div>
-        <div>New · Open space</div>
+        <div>Run · Commit and push</div>
+        <div>New · Thread</div>
       </div>
     </Panel>
   )
@@ -304,18 +319,28 @@ export function EditorVignette() {
   )
 }
 
-/** a startup action running in its own pane */
-export function StartupVignette() {
+/** the composer: where a thread starts — model, effort, then the task */
+export function ComposerVignette() {
   return (
-    <Panel label="On open · hyprspace-tauri">
-      <div className={`${mono} px-3 pb-3`} style={{ color: T3 }}>
-        <div className="flex items-center gap-2">
-          <Dot tone="work" />
-          <span style={{ color: T1 }}>npm run tauri dev</span>
-        </div>
-        <div>VITE ready in 1058 ms</div>
-        <div style={{ color: "#86efac" }}>➜ localhost:1420</div>
+    <div className="overflow-hidden rounded-[10px] border" style={{ background: S2, borderColor: "rgba(255,255,255,0.1)" }}>
+      <div className="px-3 pt-3 text-[12px]" style={{ color: T3 }}>
+        add a replay case and a reconnect test
+        <i className="ml-px inline-block h-[11px] w-1.5 align-middle hs-blink" style={{ background: T2 }} />
       </div>
-    </Panel>
+      <div className="mt-3 flex items-center gap-1.5 border-t px-2.5 py-2" style={{ borderColor: B1 }}>
+        <span className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px]" style={{ background: "#282828", color: T1 }}>
+          <img src={claudeIcon} alt="" className="size-3" />
+          Opus 5
+        </span>
+        <span className="rounded-md px-1.5 py-1 text-[11px]" style={{ background: "#282828", color: T1 }}>
+          xhigh
+        </span>
+        <span className="ml-auto flex size-6 items-center justify-center rounded-md" style={{ background: "#1b4ed8" }}>
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="#fff" strokeWidth="2.4">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </span>
+      </div>
+    </div>
   )
 }

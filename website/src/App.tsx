@@ -1,20 +1,14 @@
-import {
-  Apple,
-  BarChart3,
-  Download,
-  Github,
-  ShieldCheck,
-} from "lucide-react"
+import { BarChart3, ShieldCheck } from "lucide-react"
 
 import { ClaudePane, CodexPane, GrokPane } from "@/components/site/sessions"
 import { AppShell } from "@/components/site/app-shell"
-import { Nav, usePlatform } from "@/components/site/nav"
-import { Install, ReleasePill } from "@/components/site/showcase"
+import { Nav } from "@/components/site/nav"
+import { DownloadCta, Install, ReleasePill } from "@/components/site/showcase"
 import {
   DiffVignette,
   EditorVignette,
   PaletteVignette,
-  StartupVignette,
+  ComposerVignette,
   SwapVignette,
   TreeVignette,
   UsageVignette,
@@ -22,14 +16,13 @@ import {
 import { Pane } from "@/components/site/pane"
 import {
   AppIcon,
-  ButtonLink,
   Eyebrow,
   Point,
   Reveal,
   Section,
   Wrap,
 } from "@/components/site/primitives"
-import { DOWNLOAD_MAC, DOWNLOAD_WIN, LINUX_RELEASED, RELEASES, REPO } from "@/site"
+import { RELEASES, REPO } from "@/site"
 
 import claudeIcon from "@/assets/brand/claude.svg"
 import openaiIcon from "@/assets/brand/openai.svg"
@@ -54,13 +47,13 @@ const bento = [
     span: "lg:col-span-3",
     visual: <UsageVignette />,
     title: "Usage in the titlebar",
-    body: "Session and weekly limits, updated as the agents work.",
+    body: "Session and weekly limits, live from your account.",
   },
   {
     span: "lg:col-span-2",
     visual: <PaletteVignette />,
     title: "Command palette",
-    body: "Jump to any project, pane, or automation.",
+    body: "Jump to any space, thread or file.",
   },
   {
     span: "lg:col-span-2",
@@ -82,13 +75,12 @@ const bento = [
   },
   {
     span: "lg:col-span-3",
-    visual: <StartupVignette />,
-    title: "Startup actions",
-    body: "Auto-run your dev server when you open a folder.",
+    visual: <ComposerVignette />,
+    title: "Start from the composer",
+    body: "Pick the model and effort, paste an image, press Enter.",
   },
 ]
 function Hero() {
-  const dl = usePlatform()
   return (
     <section className="pt-20 md:pt-24">
       <Wrap className="text-center">
@@ -104,15 +96,8 @@ function Hero() {
           Mission control for Claude, Codex, Grok and OpenCode. Your own CLIs, your own subscriptions.
         </p>
 
-        <div className="mt-9 inline-flex flex-wrap items-center justify-center gap-3.5">
-          <ButtonLink href={dl.href}>
-            <dl.Icon className="size-4" /> {dl.label}
-          </ButtonLink>
-          {dl.others.map((o) => (
-            <ButtonLink key={o.href} href={o.href} variant="line">
-              <o.Icon className="size-4" /> {o.label}
-            </ButtonLink>
-          ))}
+        <div className="mt-9">
+          <DownloadCta />
         </div>
 
         <div className="mt-9 flex flex-wrap items-center justify-center gap-2">
@@ -170,9 +155,10 @@ function InstallBand() {
             <h2 className="text-[clamp(26px,3.2vw,36px)] leading-[1.15] font-medium">
               One command. No account.
             </h2>
-            <p className="mt-4 max-w-[42ch] text-[16px] text-zinc-400">
-              Take the installer for your platform, or build it from source. You sign into the agent
-              CLIs you already pay for, and nothing else.
+            <p className="mt-4 max-w-[44ch] text-[16px] leading-relaxed text-zinc-400">
+              Paste one line into a terminal and the signed installer does the rest. There is no
+              account to make. You sign into the agent CLIs you already pay for, and HyprSpace runs
+              those.
             </p>
           </Reveal>
         </div>
@@ -199,7 +185,8 @@ function Subscription() {
                 Exactly what your plan gives you. A workspace, not a reseller.
               </Point>
               <Point icon={<BarChart3 />} title="Usage at a glance">
-                Limits in the titlebar, read locally. Nothing of yours leaves the machine.
+                Limits in the titlebar, read from your own account. Only ever your provider, never
+                us.
               </Point>
             </div>
           </Reveal>
@@ -278,39 +265,10 @@ function Closing() {
           <h2 className="text-[clamp(32px,5vw,56px)] font-medium">
             Stop babysitting one chat at a time.
           </h2>
-          <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-3.5">
-            <ButtonLink href={DOWNLOAD_WIN}>
-              <Download className="size-4" /> Download for Windows
-            </ButtonLink>
-            <ButtonLink href={DOWNLOAD_MAC} variant="line">
-              <Apple className="size-4" /> Download for macOS
-            </ButtonLink>
-            <ButtonLink href={REPO} variant="ghost" external>
-              <Github className="size-4" /> Source
-            </ButtonLink>
+          <div className="mt-8">
+            <DownloadCta />
           </div>
-          {/* Platforms as columns rather than a dot-separated run-on, and driven by LINUX_RELEASED
-              so it cannot claim something the releases page does not actually have. */}
-          {/* block-level flex, not inline-flex: the CTA row above is inline-flex, so an inline strip
-              would sit on the same line as the buttons instead of under them */}
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-5 font-mono text-[11.5px] text-zinc-500">
-            <span>
-              <span className="text-zinc-300">Windows</span> 10 and 11
-            </span>
-            <span className="h-3.5 w-px bg-white/[0.12]" />
-            <span>
-              <span className="text-zinc-300">macOS</span> Apple Silicon
-            </span>
-            {LINUX_RELEASED && (
-              <>
-                <span className="h-3.5 w-px bg-white/[0.12]" />
-                <span>
-                  <span className="text-zinc-300">Linux</span> AppImage and deb
-                </span>
-              </>
-            )}
-          </div>
-          <p className="mt-3.5 font-mono text-[11.5px] text-zinc-600">free during the beta</p>
+          <p className="mt-4 font-mono text-[11.5px] text-zinc-600">free during the beta</p>
         </Reveal>
       </Wrap>
     </Section>

@@ -10,8 +10,9 @@ const LINKS: [string, string][] = [
 
 /**
  * Which build to offer. The nav used to hand everyone the Windows installer, which meant a Mac
- * visitor downloaded a .exe — so this picks by platform and the hero uses it to order its buttons.
- * `others` carries the remaining platforms, so the hero can offer them after the visitor's own.
+ * visitor downloaded a .exe, so this picks by platform. The page shows that one build and nothing
+ * else; `others` is only there for the quiet "also on" line, for a visitor whose browser reports
+ * the wrong thing or who is grabbing a build for a different machine.
  */
 export function usePlatform() {
   const [os, setOs] = useState<"win" | "mac" | "linux">("win")
@@ -21,13 +22,31 @@ export function usePlatform() {
     const linux = /Linux|X11/.test(ua) && !/Android/.test(ua)
     setOs(/Mac|iPhone|iPad/.test(ua) ? "mac" : linux ? "linux" : "win")
   }, [])
-  const win = { href: DOWNLOAD_WIN, label: "Download for Windows", Icon: Download }
-  const osx = { href: DOWNLOAD_MAC, label: "Download for macOS", Icon: Apple }
+  const win = {
+    href: DOWNLOAD_WIN,
+    label: "Download for Windows",
+    name: "Windows",
+    req: "Windows 10 and 11",
+    Icon: Download,
+  }
+  const osx = {
+    href: DOWNLOAD_MAC,
+    label: "Download for macOS",
+    name: "macOS",
+    req: "Apple Silicon",
+    Icon: Apple,
+  }
   // no packaged Linux build published yet, so point Linux visitors at the source build rather than
   // an asset URL that 404s (see LINUX_RELEASED)
   const lin = LINUX_RELEASED
-    ? { href: DOWNLOAD_LINUX, label: "Download for Linux", Icon: Terminal }
-    : { href: REPO, label: "Build from source", Icon: Terminal }
+    ? {
+        href: DOWNLOAD_LINUX,
+        label: "Download for Linux",
+        name: "Linux",
+        req: "AppImage and deb",
+        Icon: Terminal,
+      }
+    : { href: REPO, label: "Build from source", name: "Linux", req: "from source", Icon: Terminal }
   const mine = os === "mac" ? osx : os === "linux" ? lin : win
   const all = LINUX_RELEASED ? [win, osx, lin] : [win, osx]
   return { ...mine, short: "Download", others: all.filter((b) => b !== mine) }
