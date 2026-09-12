@@ -186,7 +186,7 @@ on both at once. Two things it does deliberately:
 - **CSS is split per area.** `src/App.css` is just an ordered `@import` index of `src/styles/*.css`
   (one file per area: rail, home, pane, loops, launcher, editor, …). Edit the area file, not the
   index; order is preserved so the cascade is identical to the old single file.
-- **`devtools` is a folder module** (`git` / `worktree` / `project` / `fs` / `providers` / `mcp` /
+- **`devtools` is a folder module** (`git` / `worktree` / `project` / `fs` / `providers` /
   `skills`), re-exported by `mod.rs` so `devtools::*` paths in `lib.rs` are unchanged. Shared helpers
   (`git`, `home_dir`, `read_json`) live in `mod.rs`.
 - **Smooth UI** uses `@formkit/auto-animate` (rail lists + expand/collapse, the file tree, the Loops

@@ -118,7 +118,7 @@ src-tauri/                   Rust backend
                              (live agent state, usage meter)
   src/bridge.rs              LAN WebSocket server the Android app talks to (off by default)
   src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
-                             providers.rs, mcp.rs, skills.rs, usage.rs (per-provider usage read from
+                             providers.rs, skills.rs, usage.rs (per-provider usage read from
                              local CLI files, display-only) (+ mod.rs re-exports + shared helpers)
   src/persist.rs             crash-safe JSON state store (~/.hyprspace/v2)
   src/oauth.rs               loopback listener for the app's own Google/Supabase sign-in (PKCE)
