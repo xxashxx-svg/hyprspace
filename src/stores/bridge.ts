@@ -13,6 +13,7 @@ import {
   saveState,
   type BridgeInfo,
   type BridgePeer,
+  type LocalAddr,
 } from "../api";
 
 export const DEFAULT_BRIDGE_PORT = 6768;
@@ -85,6 +86,22 @@ export function pairingUrl(
   const p = info?.running ? info.port : port;
   const tail = remote ? `&remote=${encodeURIComponent(remote)}` : "";
   return `hyprspace://pair?host=${encodeURIComponent(host)}&port=${p}&token=${token}${tail}`;
+}
+
+/**
+ * This machine's Tailscale address, if it has one.
+ *
+ * Tailscale hands every machine an address out of 100.64.0.0/10 (the carrier-grade NAT range) and
+ * names its interface after itself on Windows and Linux. macOS gives it a generic `utun`, so the
+ * address range is the check that works everywhere and the name is a bonus.
+ */
+export function tailscaleAddr(info: BridgeInfo | null): LocalAddr | null {
+  for (const a of info?.addresses ?? []) {
+    if (/tailscale/i.test(a.label)) return a;
+    const m = /^100\.(\d{1,3})\./.exec(a.ip);
+    if (m && Number(m[1]) >= 64 && Number(m[1]) <= 127) return a;
+  }
+  return null;
 }
 
 export function peerLabel(p: BridgePeer): string {

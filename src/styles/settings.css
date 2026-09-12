@@ -1,5 +1,8 @@
 /* ---- settings: a nav column and a page of grouped rows ---- */
 .settings-screen {
+  /* one source of truth for the content column: the header lines up with it too */
+  --set-col: 1000px;
+  --set-gut: 32px;
   position: absolute;
   inset: 36px 0 0;
   z-index: 60;
@@ -114,7 +117,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 26px 28px 18px;
+  /* the title lines up with .settings-page's centred column; the close button keeps the far edge */
+  padding: 26px var(--set-gut) 18px max(var(--set-gut), calc((100% - var(--set-col)) / 2 + var(--set-gut)));
   border-bottom: 1px solid var(--border-1);
 }
 .settings-header-title {
@@ -150,9 +154,9 @@
   overflow-y: auto;
 }
 .settings-page {
-  max-width: 720px;
+  max-width: var(--set-col);
   margin: 0 auto;
-  padding: 22px 28px 48px;
+  padding: 22px var(--set-gut) 48px;
 }
 .set-section {
   margin-bottom: 26px;
