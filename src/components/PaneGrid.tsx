@@ -110,6 +110,12 @@ export function PaneGrid() {
   const gridRows = rowW ? weightsTemplate(rowW) : activeLayout.rows;
   const gridRef = useRef<HTMLDivElement>(null);
   const setTracks = useWorkspaces((s) => s.setTracks);
+  // where each draggable boundary sits, as a css calc over the grid's padding and gaps
+  const gutterPos = (w: number[], b: number) => {
+    const total = w.reduce((a, x) => a + x, 0);
+    const frac = w.slice(0, b).reduce((a, x) => a + x, 0) / total;
+    return `calc(8px + (100% - 16px - ${8 * (w.length - 1)}px) * ${frac} + ${8 * (b - 1) + 4}px)`;
+  };
   const gutter = useRef<{ axis: "col" | "row"; b: number; start: number; w: number[]; inner: number } | null>(null);
   const onGutterDown = (e: RPointerEvent<HTMLDivElement>, axis: "col" | "row", b: number) => {
     const g = gridRef.current;
@@ -131,8 +137,18 @@ export function PaneGrid() {
     const a = Math.max(min, Math.min(d.w[d.b - 1] + delta, d.w[d.b - 1] + d.w[d.b] - min));
     next[d.b - 1] = a;
     next[d.b] = d.w[d.b - 1] + d.w[d.b] - a;
-    if (d.axis === "col") g.style.gridTemplateColumns = weightsTemplate(next);
-    else g.style.gridTemplateRows = weightsTemplate(next);
+    // The grid template is written straight to the DOM so a drag never re-renders the terminals —
+    // which also means React never repositions the handle you are holding, and it sits at its old
+    // offset until you let go. Move it along with the boundary it stands for. Only this one moves:
+    // the two weights either side of it always sum to what they did, so the rest stay put.
+    const el = e.currentTarget;
+    if (d.axis === "col") {
+      g.style.gridTemplateColumns = weightsTemplate(next);
+      el.style.left = gutterPos(next, d.b);
+    } else {
+      g.style.gridTemplateRows = weightsTemplate(next);
+      el.style.top = gutterPos(next, d.b);
+    }
     (d as { live?: number[] }).live = next;
   };
   const onGutterUp = (e: RPointerEvent<HTMLDivElement>) => {
@@ -141,12 +157,6 @@ export function PaneGrid() {
     e.currentTarget.releasePointerCapture(e.pointerId);
     if (!d?.live || !active) return;
     setTracks(active.id, layoutKey, d.axis === "col" ? { cols: d.live } : { rows: d.live });
-  };
-  // where each draggable boundary sits, as a css calc over the grid's padding and gaps
-  const gutterPos = (w: number[], b: number) => {
-    const total = w.reduce((a, x) => a + x, 0);
-    const frac = w.slice(0, b).reduce((a, x) => a + x, 0) / total;
-    return `calc(8px + (100% - 16px - ${8 * (w.length - 1)}px) * ${frac} + ${8 * (b - 1) + 4}px)`;
   };
 
   // right-click a tab — the actions the old pane-header "…" menu used to hold
