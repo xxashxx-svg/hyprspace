@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { c, font, sp, t } from "../src/theme";
 import { useConn } from "../src/store";
 import { connect, disconnect, isOpen } from "../src/rpc";
+import { Toaster } from "../src/toast";
 
 /** the thin strip under the header that says why you're not seeing live data */
 function ConnBanner() {
@@ -14,9 +15,9 @@ function ConnBanner() {
 
   const text =
     status === "connecting"
-      ? `Connecting to ${desktopHost || "your desktop"}…`
+      ? `Connecting to ${desktopHost || "your desktop"}`
       : status === "retrying"
-        ? `Lost the connection — retrying in ${retryIn}s`
+        ? `Lost the connection. Retrying in ${retryIn}s`
         : status === "failed"
           ? (error ?? "Couldn't connect")
           : "Offline";
@@ -64,16 +65,16 @@ export default function RootLayout() {
             animation: "slide_from_right",
           }}
         >
-          <Stack.Screen name="index" options={{ title: "HyprSpace" }} />
+          <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="pair" options={{ title: "Pair with desktop" }} />
           <Stack.Screen name="new-project" options={{ title: "New project" }} />
-          <Stack.Screen name="space/[id]" options={{ title: "Space" }} />
+          <Stack.Screen name="compose" options={{ title: "New thread" }} />
           <Stack.Screen name="term/[id]" options={{ title: "Terminal" }} />
           <Stack.Screen name="git/[id]" options={{ title: "Changes" }} />
-          <Stack.Screen name="automations" options={{ title: "Automations" }} />
           <Stack.Screen name="usage" options={{ title: "Usage" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
         </Stack>
+        <Toaster />
         <ConnBanner />
       </View>
     </SafeAreaProvider>

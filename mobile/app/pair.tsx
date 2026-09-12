@@ -42,7 +42,7 @@ export default function Pair() {
         (params.remote ? `&remote=${encodeURIComponent(params.remote)}` : ""),
     );
     if (!parsed) {
-      setErr("That pairing link is missing something — check the address and code.");
+      setErr("That pairing link is incomplete. Check the address and the code.");
       return;
     }
     autoPaired.current = true;
@@ -67,7 +67,7 @@ export default function Pair() {
       `host=${encodeURIComponent(host.trim())}&port=${Number.isFinite(p) ? p : 6768}&token=${encodeURIComponent(token.trim())}`,
     );
     if (!parsed) {
-      setErr("Check the address and the code — the code is 32 characters.");
+      setErr("Check the address and the code. The code is 32 characters.");
       return;
     }
     void save(parsed);
@@ -78,7 +78,7 @@ export default function Pair() {
     if (!perm?.granted) {
       const res = await askPerm();
       if (!res.granted) {
-        setErr("Camera access was denied — you can still type the address and code below.");
+        setErr("Camera access was denied. You can type the address and code in below instead.");
         return;
       }
     }
@@ -168,7 +168,7 @@ export default function Pair() {
 
       <Text style={p.note}>
         Your phone and this computer have to be on the same wifi. Nothing goes through the internet and
-        no account is involved — the code is only checked by the desktop app itself.
+        no account is involved. Only the desktop app checks the code.
       </Text>
     </ScrollView>
   );

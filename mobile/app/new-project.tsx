@@ -1,27 +1,21 @@
-// New project, from the phone. Mirrors the desktop's New Project dialog: pick a location, name it,
-// choose agents, create. The desktop does the actual work (mobileBridge.ts → project.create) and the
-// state push that follows is what makes it appear on both screens at once.
+// New project, from the phone: pick a location, name it, create. The desktop does the work
+// (mobileBridge.ts, project.create) and the state push that follows is what makes it appear on both
+// screens at once. Starting threads is the composer's job, so this hands over to it when done.
 //
-// Path handling deliberately lives on the desktop — it knows whether it's \ or /, we don't. So
-// browsing is a round trip (fs.browse) rather than us stitching paths together locally.
+// Path handling deliberately lives on the desktop. It knows whether it is a backslash or a slash
+// and we do not, so browsing is a round trip rather than us stitching paths together here.
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { req } from "../src/rpc";
 import { useConn } from "../src/store";
-import { c, font, providerLabel, r, sp, t } from "../src/theme";
+import { c, font, r, sp, t } from "../src/theme";
 import { Btn, Card, Empty, Label, Row, s as u } from "../src/ui";
 
 type Entry = { name: string; dir: boolean };
 // `sep` is the desktop's path separator, sent so we can render a "<folder><sep><name>" preview.
 // It is for DISPLAY only — every real path is built desktop-side.
 type Browse = { path: string; parent: string; sep: string; entries: Entry[] };
-
-// the providers you can stack into a new project, in the desktop's order. `wsl` is intentionally
-// absent: it's Windows-only and the phone can't know the desktop's OS, so it stays a desktop choice.
-const PROVIDERS = ["claude", "codex", "gemini", "opencode", "grok", "terminal"] as const;
-type Prov = (typeof PROVIDERS)[number];
-const MAX = 6;
 
 export default function NewProject() {
   const router = useRouter();
@@ -37,14 +31,6 @@ export default function NewProject() {
   const [git, setGit] = useState(true);
   const [readme, setReadme] = useState(true);
   const [gitignore, setGitignore] = useState(true);
-  const [counts, setCounts] = useState<Record<Prov, number>>({
-    claude: 1,
-    codex: 0,
-    gemini: 0,
-    opencode: 0,
-    grok: 0,
-    terminal: 0,
-  });
 
   // `into` descends by name and `path` jumps to an absolute one the desktop gave us — either way the
   // desktop does the joining, so this works whether it's C:\… or /home/…
@@ -65,10 +51,6 @@ export default function NewProject() {
     if (online) void go({});
   }, [online, go]);
 
-  const bump = (k: Prov, d: number) =>
-    setCounts((p) => ({ ...p, [k]: Math.max(0, Math.min(MAX, p[k] + d)) }));
-
-  const total = PROVIDERS.reduce((n, k) => n + counts[k], 0);
   const here = browse?.path ?? "";
   const sep = browse?.sep ?? "/";
   // "new" makes a subfolder of the folder you're browsing; "existing" uses it as-is
@@ -86,10 +68,10 @@ export default function NewProject() {
         // starter files only make sense for a folder we're creating
         readme: mode === "new" && readme,
         gitignore: mode === "new" && gitignore,
-        panes: counts,
       });
-      // replace, so Back goes home rather than back into a form for a project that now exists
-      router.replace(`/space/${res.ws}`);
+      // replace, so Back goes home rather than into a form for a project that now exists. The
+      // composer is where a thread actually starts.
+      router.replace(`/compose?ws=${res.ws}`);
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
       setBusy(false);
@@ -143,7 +125,7 @@ export default function NewProject() {
         <Card style={{ marginTop: sp[2] }}>
           <View style={st.pathBar}>
             <Text style={st.path} numberOfLines={1} ellipsizeMode="head">
-              {here || "…"}
+              {here || "Loading"}
             </Text>
             {loading && <ActivityIndicator size="small" color={c.text3} />}
           </View>
@@ -152,7 +134,7 @@ export default function NewProject() {
           <View style={[st.target, u.rowDivider]}>
             <Text style={st.targetLabel}>{mode === "new" ? "Creates" : "Opens"}</Text>
             <Text style={st.targetVal} numberOfLines={1} ellipsizeMode="head">
-              {mode === "new" ? `${here}${sep}${name.trim() || "…"}` : here}
+              {mode === "new" ? `${here}${sep}${name.trim() || "name"}` : here}
             </Text>
           </View>
 
@@ -184,24 +166,6 @@ export default function NewProject() {
       </View>
 
       <View>
-        <Label>Agents</Label>
-        <Card>
-          {PROVIDERS.map((k, i) => (
-            <View key={k} style={[u.row, i < PROVIDERS.length - 1 && u.rowDivider]}>
-              <Text style={[u.title, { flex: 1 }]}>{providerLabel[k] ?? k}</Text>
-              <Pressable onPress={() => bump(k, -1)} hitSlop={8} style={st.step}>
-                <Text style={st.stepText}>−</Text>
-              </Pressable>
-              <Text style={st.count}>{counts[k]}</Text>
-              <Pressable onPress={() => bump(k, 1)} hitSlop={8} style={st.step}>
-                <Text style={st.stepText}>+</Text>
-              </Pressable>
-            </View>
-          ))}
-        </Card>
-      </View>
-
-      <View>
         <Label>Setup</Label>
         <Card>
           <Toggle label="Initialise git" on={git} onPress={() => setGit((v) => !v)} />
@@ -217,11 +181,7 @@ export default function NewProject() {
       {!!err && <Text style={st.err}>{err}</Text>}
 
       <Btn kind="primary" onPress={() => void create()} disabled={!canCreate}>
-        {busy
-          ? "Creating…"
-          : total > 0
-            ? `Create and launch ${total} pane${total === 1 ? "" : "s"}`
-            : "Create project"}
+        {busy ? "Creating" : "Create project"}
       </Btn>
     </ScrollView>
   );
@@ -286,17 +246,6 @@ const st = StyleSheet.create({
   up: { color: c.text3, fontSize: t.md, width: 16, textAlign: "center" },
   folder: { color: c.text3, fontSize: t.sm, width: 16, textAlign: "center" },
   chev: { color: c.text3, fontSize: t.lg },
-
-  step: {
-    width: 34,
-    height: 34,
-    borderRadius: r.one,
-    backgroundColor: c.s3,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepText: { color: c.text1, fontSize: t.lg, fontFamily: font.uiMedium },
-  count: { color: c.text1, fontSize: t.md, fontFamily: font.mono, minWidth: 22, textAlign: "center" },
 
   check: {
     width: 22,

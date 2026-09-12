@@ -23,13 +23,42 @@ import {
 import { DEFAULT_GITIGNORE, joinPath, parentOf, projectsBaseDir } from "./lib/projects";
 import { useWorkspaces } from "./stores/workspace";
 import { useAgentStatus, displayState } from "./stores/agentStatus";
-import { useUsage, summarize } from "./stores/usage";
+import { useActivity } from "./stores/activity";
+import { useUsage, useLiveUsage, summarize } from "./stores/usage";
 import { useBridge } from "./stores/bridge";
-import { claudeCmd, codexCmd, geminiCmd, opencodeCmd, grokCmd, WSL_CMD } from "./actions";
+import { claudeCmd, codexCmd, geminiCmd, opencodeCmd, grokCmd, WSL_CMD, commandFor, resumeCmd } from "./actions";
+import { queuePrompt } from "./lib/composer";
+import { CATALOG, modelLabel, type ProviderId } from "./lib/models";
+import { PROVIDER_NAME } from "./lib/brand";
+import { useProviders, catalogFor } from "./stores/providers";
+import { agentSessions } from "./api";
+
+/**
+ * What the phone's Usage screen draws. The meter here prefers the live endpoint, which knows the
+ * account's limits whether or not an agent is mid-turn, so send that when it has answered and fall
+ * back to the status-line summary otherwise. The wire shape stays the same either way.
+ */
+function usagePayload(now: number) {
+  const sum = summarize(useUsage.getState().byPane, now);
+  const live = useLiveUsage.getState().claude;
+  if (!live?.windows.length) return sum;
+  const five = live.windows.find((w) => w.key === "session" || w.key === "five_hour");
+  return {
+    five: five?.win,
+    others: live.windows.filter((w) => w !== five),
+    // the endpoint never says which model is running; only the status line knows that
+    models: sum?.models ?? [],
+    at: live.updatedAt ?? now,
+    stale: false,
+  };
+}
 
 function snapshot() {
   const { workspaces, activeId, focusedSessionId, activatedIds } = useWorkspaces.getState();
   const agents = useAgentStatus.getState().byPane;
+  const live = useUsage.getState().byPane;
+  const lastOut = useActivity.getState().lastOut;
+  const codexModels = useProviders.getState().codexModels;
   const now = Date.now();
 
   return {
@@ -47,6 +76,8 @@ function snapshot() {
         .filter((s) => !s.image && !s.file && !s.media && !s.diff && !s.draft) // viewer tabs and drafts have no terminal to mirror
         .map((s) => {
           const a = agents[s.id];
+          // the model the CLI is actually on beats the one it was launched with
+          const model = live[s.id]?.model ?? (s.model ? modelLabel(s.provider as ProviderId, s.model, catalogFor(s.provider as ProviderId, codexModels)) : "");
           return {
             id: s.id,
             title: s.title,
@@ -55,12 +86,16 @@ function snapshot() {
             started: !!s.started,
             state: displayState(a, now),
             activity: a?.activity ?? null,
+            model,
+            /** when this pane last printed anything, for the phone's relative stamp */
+            at: lastOut[s.id] ?? 0,
             subs: a?.subs.length ?? 0,
+            subAgents: (a?.subs ?? []).map((x) => ({ id: x.id, label: x.label, state: x.state, at: x.startedAt })),
           };
         }),
     })),
     automations: [], // the feature is gone; the phone app still expects the key
-    usage: summarize(useUsage.getState().byPane, now),
+    usage: usagePayload(now),
   };
 }
 
@@ -106,17 +141,48 @@ async function handle(r: Req): Promise<unknown> {
       ws().setActive(str("ws"));
       return { ok: true };
 
+    // Start a thread, the way the desktop composer does: build the launch command from the chosen
+     // model and effort, then type the task in once the CLI is up. `resume` reopens a saved
+     // conversation instead of starting a new one.
     case "space.launch": {
       const id = str("ws");
       const space = ws().workspaces.find((w) => w.id === id);
       if (!space) throw new Error("no such space");
       const folder = str("cwd") || space.cwd;
-      if (!folder) throw new Error("open spaces need a folder — launch this one from the desktop");
-      const build = PROVIDER_CMD[str("provider")];
-      if (!build) throw new Error("unknown provider");
+      if (!folder) throw new Error("this space has no folder yet. Pick one on the desktop first.");
+      const provider = str("provider") as ProviderId;
+      if (!PROVIDER_CMD[provider]) throw new Error("unknown agent");
+      const choice = { model: str("model") || undefined, effort: str("effort") || undefined };
+      const resume = str("resume");
+      // only claude and codex can reopen a conversation by id; anything else just starts fresh
+      const cmd = (resume ? resumeCmd(provider, resume, choice) : undefined) ?? commandFor(provider, choice);
       ws().activateWorkspace(id);
-      return { pane: ws().addSession(id, build(), folder, { focus: false }) };
+      const pane = ws().addSession(id, cmd, folder, { focus: false });
+      if (str("model")) ws().setSessionModel(pane, str("model"));
+      // queuePrompt waits for the CLI to actually be ready; sendPrompt's flat delay does not
+      const text = str("prompt").trim();
+      if (text) queuePrompt(pane, cmd, text);
+      return { pane };
     }
+
+    // what the phone's agent picker offers: the installed CLIs and the models each one has
+    case "agents.catalog": {
+      const inst = useProviders.getState().status;
+      const codex = useProviders.getState().codexModels;
+      return {
+        agents: (Object.keys(CATALOG) as ProviderId[]).map((pid) => ({
+          id: pid,
+          label: PROVIDER_NAME[pid] ?? pid,
+          installed: inst[pid]?.installed !== false,
+          models: (catalogFor(pid, codex).models ?? []).map((m) => ({ id: m.id, label: m.label })),
+          efforts: catalogFor(pid, codex).efforts ?? [],
+        })),
+      };
+    }
+
+    // saved conversations for a folder, so the phone can reopen one
+    case "agent.sessions":
+      return { sessions: await agentSessions(str("provider"), str("cwd")) };
 
     case "pane.close":
       ws().removeSession(str("ws"), str("pane"));
@@ -141,10 +207,18 @@ async function handle(r: Req): Promise<unknown> {
     }
 
     case "fs.browse": {
-      const from = str("path") || (await projectsBaseDir().catch(() => "")) || (await getHomeDir());
+      const asked = str("path");
+      const from = asked || (await projectsBaseDir().catch(() => "")) || (await getHomeDir());
       // descending is `into`, not a path the phone built: it can't know our separator
-      const path = str("into") ? joinPath(from, str("into")) : from;
-      const entries = await listDir(path);
+      let path = str("into") ? joinPath(from, str("into")) : from;
+      // The projects folder is only created when the first project lands in it, so the default
+      // often does not exist yet. Falling back to home beats handing the phone a bare "os error 3"
+      // it can do nothing about. A folder the phone asked for by name still errors, as it should.
+      const entries = await listDir(path).catch(async (e) => {
+        if (asked || str("into")) throw e;
+        path = await getHomeDir();
+        return listDir(path);
+      });
       return {
         path,
         parent: parentOf(path),

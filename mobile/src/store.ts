@@ -6,6 +6,14 @@ import { Platform } from "react-native";
 
 // ---- the snapshot shape, mirroring src/mobileBridge.ts on the desktop ----
 
+/** a delegated agent the pane has running right now */
+export interface SubAgent {
+  id: string;
+  label: string;
+  state: string;
+  at: number;
+}
+
 export interface Pane {
   id: string;
   title: string;
@@ -14,31 +22,20 @@ export interface Pane {
   started: boolean;
   state: "working" | "waiting" | "done" | "idle";
   activity: string | null;
+  /** the model the CLI is on, as it reports it. Older desktops do not send this. */
+  model?: string;
+  /** when the pane last printed anything, unix ms. 0 when it never has. */
+  at?: number;
   subs: number;
+  subAgents?: SubAgent[];
 }
 
 export interface Space {
   id: string;
   name: string;
-  kind: "project" | "open";
   cwd: string;
-  color: string;
   activated: boolean;
   panes: Pane[];
-}
-
-export interface Automation {
-  id: string;
-  name: string;
-  mode: string;
-  enabled: boolean;
-  folder: string;
-  status: string;
-  lastRunAt: number | null;
-  nextRunAt: number | null;
-  lastResult: string | null;
-  wsId: string | null;
-  paneId: string | null;
 }
 
 export interface UsageWindow {
@@ -59,7 +56,6 @@ export interface Snap {
   activeId: string | null;
   focusedId: string | null;
   spaces: Space[];
-  automations: Automation[];
   usage: Usage | null;
 }
 

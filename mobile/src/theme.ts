@@ -28,7 +28,19 @@ export const c = {
   ok: "#10b981",
   error: "#ef4444",
   claim: "#a855f7",
+
 } as const;
+
+/** the provider marks, matching the desktop's PROVIDER_COLOR (src/lib/brand.ts) */
+export const providerColor: Record<string, string> = {
+  claude: "#d97757",
+  codex: "#10a37f",
+  gemini: "#4c8bf5",
+  opencode: "#8f8f8f",
+  grok: "#8a8a8a",
+  wsl: "#7dc4e8",
+  terminal: "#767676",
+};
 
 export const r = { one: 6, two: 10, three: 14 } as const;
 

@@ -188,10 +188,10 @@ function handleText(raw: string) {
       wanted = false; // both of these are permanent — retrying just spins
       useConn.getState().failed(
         code === "auth"
-          ? "That pairing code was rejected. Re-scan the QR in Settings → Mobile on the desktop."
+          ? "That pairing code was rejected. Scan the code again from Settings, Mobile on the desktop."
           : code === "protocol"
             ? m.stale === "desktop"
-              ? "Your desktop HyprSpace is older than this app — update it and try again."
+              ? "Your desktop HyprSpace is older than this app. Update it and try again."
               : "This app is too old for that desktop. Install the newer APK from its releases page."
             : "The desktop refused the connection.",
       );

@@ -1,12 +1,13 @@
 // What changed in a space's repo, and the diff for one file. Read-only apart from commit — reviewing
 // on a phone is the useful half; landing code is better done at a keyboard.
 import { useCallback, useEffect, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useConn, useSpace } from "../../src/store";
 import { req } from "../../src/rpc";
 import { c, font, sp, t } from "../../src/theme";
 import { Btn, Card, Empty, Label, Loading, Row, s as u } from "../../src/ui";
+import { toast } from "../../src/toast";
 
 interface FileChange {
   path: string;
@@ -116,7 +117,7 @@ export default function GitScreen() {
       setMsg("");
       await load();
     } catch (e) {
-      Alert.alert("Commit failed", String((e as Error).message));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -155,7 +156,7 @@ export default function GitScreen() {
       <View>
         <Label>{files ? `${files.length} changed` : "Changed"}</Label>
         {files === null ? (
-          <Card>{err ? <Empty title="Couldn't read the repo" hint={err} /> : <Loading />}</Card>
+          <Card>{err ? <Empty title="Could not read the repository" hint={err} /> : <Loading />}</Card>
         ) : files.length === 0 ? (
           <Card>
             <Empty title="Nothing changed" hint="The working tree is clean." />

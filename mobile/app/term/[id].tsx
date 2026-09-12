@@ -189,7 +189,7 @@ export default function TermScreen() {
           <Text style={m.headSub} numberOfLines={1}>
             {pane
               ? `${providerLabel[pane.provider] ?? pane.provider} · ${pane.activity ?? stateLabel[pane.state]}`
-              : "not on the desktop any more"}
+              : "no longer on the desktop"}
           </Text>
         </View>
         <Pressable
@@ -220,7 +220,7 @@ export default function TermScreen() {
           <View style={m.overlay} pointerEvents="none">
             <Text style={m.overlayText}>
               {gone
-                ? "This pane isn't running on the desktop."
+                ? "This thread is not running on the desktop."
                 : `The process exited (code ${exited}).`}
             </Text>
           </View>
@@ -245,7 +245,7 @@ export default function TermScreen() {
           style={m.input}
           value={text}
           onChangeText={onType}
-          placeholder={online ? "Type — it goes straight in" : "Offline"}
+          placeholder={online ? "Type straight into the terminal" : "Offline"}
           placeholderTextColor={c.text3}
           editable={online}
           multiline

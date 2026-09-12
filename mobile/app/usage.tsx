@@ -2,12 +2,13 @@
 // CLI's own status line there — display only, never an API call.
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useConn, type UsageWindow } from "../src/store";
-import { c, font, r, sp, t } from "../src/theme";
+import { c, font, providerColor, r, sp, t } from "../src/theme";
 import { Card, Empty, Label, s as u } from "../src/ui";
 import { relTime, untilTime } from "../src/fmt";
 
+/** the bar takes Claude's colour until the number is worth worrying about, like the desktop's */
 function hot(pct: number) {
-  return pct >= 90 ? c.error : pct >= 70 ? c.busy : c.accentHover;
+  return pct >= 90 ? c.error : pct >= 70 ? c.busy : providerColor.claude;
 }
 
 function Meter({ label, win }: { label: string; win: UsageWindow }) {
@@ -16,7 +17,7 @@ function Meter({ label, win }: { label: string; win: UsageWindow }) {
     <View style={m.meter}>
       <View style={m.meterTop}>
         <Text style={m.meterLabel}>{label}</Text>
-        <Text style={[m.meterVal, { color: hot(pct) }]}>{Math.round(pct)}%</Text>
+        <Text style={[m.meterVal, pct >= 70 && { color: hot(pct) }]}>{Math.round(pct)}%</Text>
       </View>
       <View style={m.track}>
         <View style={[m.fill, { width: `${pct}%`, backgroundColor: hot(pct) }]} />
@@ -35,7 +36,7 @@ export default function Usage() {
         <Card>
           <Empty
             title="Nothing reported yet"
-            hint="Numbers show up once a Claude pane on the desktop has taken a turn."
+            hint="Numbers appear once the desktop has read your account limits."
           />
         </Card>
       </ScrollView>
@@ -53,7 +54,7 @@ export default function Usage() {
               <Meter key={o.key} label={o.label} win={o.win} />
             ))}
             {!usage.five && usage.others.length === 0 && (
-              <Text style={u.sub}>This plan doesn't report windows.</Text>
+              <Text style={u.sub}>This plan does not report limit windows.</Text>
             )}
           </View>
         </Card>
@@ -75,7 +76,7 @@ export default function Usage() {
       )}
 
       <Text style={m.note}>
-        {usage.stale ? "No recent reports — " : ""}last update {relTime(usage.at)} ago.
+        {usage.stale ? "Nothing reported recently. " : ""}Last update {relTime(usage.at)} ago.
       </Text>
     </ScrollView>
   );
@@ -86,8 +87,8 @@ const m = StyleSheet.create({
   meter: { gap: sp[2] },
   meterTop: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
   meterLabel: { color: c.text2, fontSize: t.sm, fontFamily: font.ui },
-  meterVal: { fontSize: t.md, fontFamily: font.mono },
-  track: { height: 6, borderRadius: r.one, backgroundColor: c.s3, overflow: "hidden" },
+  meterVal: { color: c.text1, fontSize: t.lg, fontFamily: font.mono },
+  track: { height: 5, borderRadius: r.one, backgroundColor: c.s3, overflow: "hidden" },
   fill: { height: "100%", borderRadius: r.one },
   reset: { color: c.text3, fontSize: t.xs, fontFamily: font.ui },
   note: { color: c.text3, fontSize: t.sm, fontFamily: font.ui },
