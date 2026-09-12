@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.0 — 2026-09-12
+
+- The MCP tab is gone. It could only show servers from one of the three places Claude keeps them, so it never matched what the CLI reported. Use claude mcp add instead.
+- Each agent's permission modes now use the provider's own names: Bypass permissions and Plan mode for Claude, Agent and YOLO for Codex, YOLO mode for Gemini.
+- A thread in a folder that is not a git repo no longer shows the folder name as though it were a branch.
+- Dragging a divider between panes now moves the divider with your cursor instead of snapping into place when you let go.
+- Faster launch: the sign-in library is no longer loaded at startup, cutting 18% of the code the app reads before it opens.
+- Less work while agents are streaming: terminal output is batched to one frame and decoded once instead of on every chunk.
+
 ## 0.19.0 — 2026-09-12
 
 - Threads in the sidebar now count up while they work and show a tick when they finish. A blue dot means one thing only: that thread is waiting on you.
