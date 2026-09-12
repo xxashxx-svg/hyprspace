@@ -16,7 +16,7 @@
 // the app treats you as entitled and never locks. Only an explicit paid+not-entitled answer locks.
 import { create } from "zustand";
 import { entitlementVerify, saveState, loadState } from "../api";
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 import { useAuth } from "./auth";
 
 type Mode = "free" | "paid";
@@ -86,14 +86,15 @@ export const useEntitlement = create<EntState>((set) => ({
 
   check: async () => {
     const session = useAuth.getState().session;
+    const sb = await getSupabase();
     // no backend wired / not signed in → dormant: entitled. (the app stays free until a real
     // `entitlement` function is deployed and the server flips to paid.)
-    if (!supabase || !session) {
+    if (!sb || !session) {
       set({ status: "ok", mode: "free", reason: "", checkedAt: Date.now() });
       return;
     }
     try {
-      const { data, error } = await supabase.functions.invoke(ENTITLEMENT_FN);
+      const { data, error } = await sb.functions.invoke(ENTITLEMENT_FN);
       if (error || !data) throw error ?? new Error("no entitlement");
       const r = await resolveResult(data as EntResult);
       set({

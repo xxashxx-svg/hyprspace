@@ -4,7 +4,7 @@
 import { create } from "zustand";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 import { oauthListen } from "../api";
 
 interface AuthState {
@@ -42,13 +42,14 @@ export const useAuth = create<AuthState>()((set, get) => ({
   cancelVerify: () => set({ pendingEmail: null, error: "", notice: "" }),
 
   init: async () => {
-    if (!supabase) {
+    const sb = await getSupabase();
+    if (!sb) {
       set({ ready: true });
       return;
     }
     if (!subscribed) {
       subscribed = true;
-      supabase.auth.onAuthStateChange((_event, session) => {
+      sb.auth.onAuthStateChange((_event, session) => {
         set({ session, user: session?.user ?? null });
       });
     }
@@ -58,7 +59,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const timeout = new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error("session check timed out")), 8000),
       );
-      const { data } = await Promise.race([supabase.auth.getSession(), timeout]);
+      const { data } = await Promise.race([sb.auth.getSession(), timeout]);
       set({ session: data.session, user: data.session?.user ?? null });
     } catch (e) {
       console.error("auth init failed:", e);
@@ -68,14 +69,15 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   signInWithGoogle: async () => {
-    if (!supabase) {
+    const sb = await getSupabase();
+    if (!sb) {
       set({ error: "Sign-in isn't configured." });
       return;
     }
     if (get().signingIn) return;
     set({ signingIn: true, error: "", notice: "" });
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await sb.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: "http://localhost:8765", skipBrowserRedirect: true },
       });
@@ -108,7 +110,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const code = params.get("code");
       if (!code) throw new Error("No authorization code returned.");
 
-      const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+      const { error: exErr } = await sb.auth.exchangeCodeForSession(code);
       if (exErr) throw exErr;
       // onAuthStateChange fires and sets the session
     } catch (e) {
@@ -119,18 +121,19 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   signInWithEmail: async (email, password) => {
-    if (!supabase) {
+    const sb = await getSupabase();
+    if (!sb) {
       set({ error: "Sign-in isn't configured." });
       return;
     }
     if (get().signingIn) return;
     set({ signingIn: true, error: "", notice: "" });
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) {
         // signed up before but never verified → send a fresh code and switch to the verify step
         if (/not confirmed/i.test(error.message)) {
-          await supabase.auth.resend({ type: "signup", email }).catch(() => {});
+          await sb.auth.resend({ type: "signup", email }).catch(() => {});
           set({ pendingEmail: email, notice: `Verify your email — we sent a code to ${email}.` });
           return;
         }
@@ -145,14 +148,15 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   signUpWithEmail: async (email, password) => {
-    if (!supabase) {
+    const sb = await getSupabase();
+    if (!sb) {
       set({ error: "Sign-in isn't configured." });
       return;
     }
     if (get().signingIn) return;
     set({ signingIn: true, error: "", notice: "" });
     try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
       if (data.session) return; // confirmation disabled → already signed in
       // confirmation required → collect the emailed code
@@ -166,10 +170,11 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   verifyCode: async (token) => {
     const email = get().pendingEmail;
-    if (!email || !supabase || get().signingIn) return;
+    const sb = await getSupabase();
+    if (!email || !sb || get().signingIn) return;
     set({ signingIn: true, error: "", notice: "" });
     try {
-      const { error } = await supabase.auth.verifyOtp({ email, token, type: "signup" });
+      const { error } = await sb.auth.verifyOtp({ email, token, type: "signup" });
       if (error) throw error;
       set({ pendingEmail: null, notice: "" });
       // onAuthStateChange sets the session
@@ -182,15 +187,17 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   resendCode: async () => {
     const email = get().pendingEmail;
-    if (!email || !supabase) return;
+    const sb = await getSupabase();
+    if (!email || !sb) return;
     set({ error: "", notice: "" });
-    const { error } = await supabase.auth.resend({ type: "signup", email });
+    const { error } = await sb.auth.resend({ type: "signup", email });
     if (error) set({ error: msg(error) });
     else set({ notice: `New code sent to ${email}.` });
   },
 
   signOut: async () => {
-    if (supabase) await supabase.auth.signOut().catch(() => {});
+    const sb = await getSupabase();
+    if (sb) await sb.auth.signOut().catch(() => {});
     set({ session: null, user: null });
   },
 }));
