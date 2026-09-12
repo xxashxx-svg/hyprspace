@@ -1,5 +1,5 @@
 import { createElement, useEffect, useReducer, useState } from "react";
-import { Check, GitBranch, GitCompare, GitFork, Image as ImageIcon, PenLine, X } from "lucide-react";
+import { Check, Folder, GitBranch, GitCompare, GitFork, Image as ImageIcon, PenLine, X } from "lucide-react";
 import type { Workspace } from "../stores/workspace";
 import { useActivity } from "../stores/activity";
 import { useAgentStatus, displayState, type AgentState } from "../stores/agentStatus";
@@ -144,6 +144,9 @@ export function SessionRow({
   const docIcon = sess.image ? ImageIcon : sess.diff ? GitCompare : fileIcon(sess.title || sess.file || sess.media || "");
   const logo = PROVIDER_LOGO[sess.provider];
   const cwd = sess.cwd || ws.cwd;
+  // A branch when the folder is a repo, otherwise just where the thread runs. The icon has to say
+  // which of the two it is: the folder-name fallback under a branch icon read as a branch named
+  // after the project, on folders that are not repos at all.
   const branch = cwd ? branchOf(cwd) : undefined;
   const where = [branch, relSub(ws.cwd, sess.cwd)].filter(Boolean).join("/") || (cwd ? cwd.split(/[\\/]/).filter(Boolean).pop() : "no folder");
   const label = sess.draft
@@ -202,7 +205,7 @@ export function SessionRow({
           </span>
         ) : (
           <span className="sess-where" title={cwd}>
-            <GitBranch size={11} />
+            {branch ? <GitBranch size={11} /> : <Folder size={11} />}
             <span>{where}</span>
           </span>
         )}
