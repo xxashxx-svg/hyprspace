@@ -4,7 +4,7 @@ import type { Workspace } from "../stores/workspace";
 import { useActivity } from "../stores/activity";
 import { useAgentStatus, displayState, type AgentState } from "../stores/agentStatus";
 import { useUsage } from "../stores/usage";
-import { relTime } from "../lib/time";
+import { elapsed, relTime } from "../lib/time";
 import { branchOf } from "../lib/branches";
 import { fileIcon } from "../lib/fileIcons";
 import { PROVIDER_LOGO, PROVIDER_NAME } from "../lib/brand";
@@ -14,6 +14,12 @@ import { closeSession } from "../actions";
 import { gitChanges } from "../api";
 
 type RowState = AgentState | "exited";
+
+// Last line of defence for a "working" row whose CLI is gone: it exited back to the shell, or was
+// killed, so its Stop will never arrive. Note this can only catch a DEAD cli, not an idle one —
+// claude paints its own cursor, so an idle claude pane still writes to the pty twice a second and
+// never looks quiet. A conversation reset is caught by the SessionStart hook instead.
+const QUIET_MS = 30_000;
 
 // the part of a thread's cwd below its space's folder, "" if it is the root
 function relSub(wsCwd: string, sessCwd?: string): string {
@@ -47,6 +53,33 @@ export function SessionRow({
   const agent = useAgentStatus((s) => s.byPane[sess.id]);
   const [, tick] = useReducer((x: number) => x + 1, 0);
 
+  const now = Date.now();
+  // Claude reports through hooks. Everything else is judged from the terminal output.
+  let state: RowState;
+  let activity: string | undefined;
+  if (sess.draft) {
+    state = "idle";
+    activity = "Not started";
+  } else if (agent) {
+    state = isExited ? "exited" : displayState(agent, now);
+    activity = agent.activity;
+    // Don't take "working" on trust when the pty has gone silent — see QUIET_MS. Measured from
+    // whichever is later, the last output or the moment the state was set, so a turn that has only
+    // just started is never cut off early. It re-arms on its own: new output makes it working again.
+    if (state === "working" && now - Math.max(lastOut ?? 0, agent.since) > QUIET_MS) {
+      state = "idle";
+      activity = undefined;
+    }
+  } else {
+    const h = heuristicState(sess.id, lastOut, isExited, now);
+    state = h.state;
+    activity = h.activity;
+  }
+
+  // Only a pane reporting through claude's hooks knows when it started working, so only those can
+  // count up. Everything else keeps the relative time, which is all we honestly have for them.
+  const runningSince = state === "working" && agent ? agent.since : undefined;
+
   // re-render once the busy window lapses so the state can settle to idle or waiting
   useEffect(() => {
     if (!lastOut) return;
@@ -55,6 +88,32 @@ export function SessionRow({
     const t = setTimeout(tick, left + 50);
     return () => clearTimeout(t);
   }, [lastOut]);
+
+  // the counter has to move every second, but only while this row is counting and the window is
+  // on screen — a hidden window ticking once a second per working thread is pure waste
+  const counting = runningSince !== undefined;
+  useEffect(() => {
+    if (!counting) return;
+    let iv: ReturnType<typeof setInterval> | undefined;
+    const arm = () => {
+      if (document.visibilityState === "visible") {
+        if (!iv) iv = setInterval(tick, 1000);
+      } else if (iv) {
+        clearInterval(iv);
+        iv = undefined;
+      }
+    };
+    arm();
+    const onVis = () => {
+      arm();
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      if (iv) clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [counting]);
 
   // keep the relative time fresh, only while the window is visible
   const hasOut = !!lastOut;
@@ -80,22 +139,6 @@ export function SessionRow({
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [hasOut]);
-
-  const now = Date.now();
-  // Claude reports through hooks. Everything else is judged from the terminal output.
-  let state: RowState;
-  let activity: string | undefined;
-  if (sess.draft) {
-    state = "idle";
-    activity = "Not started";
-  } else if (agent) {
-    state = isExited ? "exited" : displayState(agent, now);
-    activity = agent.activity;
-  } else {
-    const h = heuristicState(sess.id, lastOut, isExited, now);
-    state = h.state;
-    activity = h.activity;
-  }
 
   const isDoc = !!(sess.image || sess.file || sess.media || sess.diff);
   const docIcon = sess.image ? ImageIcon : sess.diff ? GitCompare : fileIcon(sess.title || sess.file || sess.media || "");
@@ -145,13 +188,11 @@ export function SessionRow({
           {sess.draft ? <PenLine size={12} /> : logo ? <img src={logo} alt="" /> : <span className="sess-mark-term" />}
         </span>
         <span className="sess-prov">{label}</span>
-        {agent && agent.subs.length > 0 && (
-          <span className="sess-agents" title={`${agent.subs.length} sub-agents running`}>
-            <GitFork size={9} />
-            {agent.subs.length}
-          </span>
-        )}
-        {lastOut ? <span className="sess-time">{relTime(lastOut)}</span> : null}
+        {runningSince !== undefined ? (
+          <span className="sess-elapsed">{elapsed(runningSince, now)}</span>
+        ) : lastOut ? (
+          <span className="sess-time">{relTime(lastOut)}</span>
+        ) : null}
       </span>
       <span className="sess-name">{sess.title}</span>
       <span className="sess-foot">
@@ -176,7 +217,6 @@ export function SessionRow({
               <span className="sess-sub-mark">{logo ? <img src={logo} alt="" /> : <GitFork size={9} />}</span>
               <span className="sess-sub-label">{sub.label}</span>
               <span className="sess-sub-time">{relTime(sub.startedAt)}</span>
-              <span className="sess-sub-state" />
             </span>
           ))}
         </span>
@@ -196,8 +236,15 @@ export function SessionRow({
   );
 }
 
-/** "3 files · +12 −4" for a folder, refreshed while the window is visible. */
-export function useDiffSummary(cwd: string) {
+/**
+ * "3 files · +12 −4" for a folder.
+ *
+ * It reads once as soon as it knows the folder, even for a space that is folded shut. That is what
+ * keeps the fold smooth: git takes a moment to answer, so a summary that only started loading when
+ * the space opened would land after the fold had already settled and shove the threads down a
+ * second time. Polling, which is the expensive part, still only runs while the space is open.
+ */
+export function useDiffSummary(cwd: string, active = true) {
   const [sum, setSum] = useState<{ files: number; added: number; removed: number } | null>(null);
   useEffect(() => {
     if (!cwd) return;
@@ -217,11 +264,11 @@ export function useDiffSummary(cwd: string) {
         .catch(() => alive && setSum(null));
     };
     tick();
-    const id = setInterval(tick, 20_000);
+    const id = active ? setInterval(tick, 20_000) : undefined;
     return () => {
       alive = false;
-      clearInterval(id);
+      if (id) clearInterval(id);
     };
-  }, [cwd]);
+  }, [cwd, active]);
   return cwd ? sum : null;
 }

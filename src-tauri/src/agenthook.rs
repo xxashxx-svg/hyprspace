@@ -150,16 +150,24 @@ pub fn agent_hook_settings(pane_id: String) -> Option<String> {
     // every hook runs the same command; the event name comes from the payload claude puts on stdin
     let cmd = format!("\"{exe}\" agent-hook {port} \"{pane_id}\"");
     let entry = json!([{ "hooks": [ { "type": "command", "command": cmd } ] }]);
-    // A delegation is only observable as the sub-agent tool being called — there's no SubagentStart
-    // hook. The tool is "Agent" on current claude and "Task" on older builds, so match either.
-    let task = json!([{ "matcher": "Agent|Task", "hooks": [ { "type": "command", "command": cmd } ] }]);
     let settings = json!({
         "hooks": {
             "UserPromptSubmit": entry,   // turn started → working
             "Stop": entry,               // turn ended → done
-            "Notification": entry,       // permission / idle prompt → waiting on you
+            // startup / resume / clear / compact. Without it a local slash command strands the row:
+            // /clear submits a prompt (so we go working) but never produces an assistant turn, so no
+            // Stop ever closes it and the thread counts up forever.
+            "SessionStart": entry,
+            "Notification": entry,       // a permission block (waiting on you) or an idle nudge (ignored)
             "SubagentStop": entry,       // a delegated agent finished
-            "PreToolUse": task,          // Agent(...) → a sub-agent spawned
+            // Every tool, not just delegations. It is what the activity line is made of ("Bash
+            // cargo check"), it is how a delegation is spotted at all (there is no SubagentStart
+            // hook, only the Agent/Task tool being called), and the pair of them is the only thing
+            // that can end a permission block: approving one produces no hook of its own, so
+            // without PostToolUse the row keeps saying "needs your permission" for the rest of the
+            // turn while claude works away.
+            "PreToolUse": entry,
+            "PostToolUse": entry,
         },
         // claude hands the status line a per-turn blob with the account's rate-limit windows,
         // this pane's context fill and its cost — the only local, token-free source for live usage.

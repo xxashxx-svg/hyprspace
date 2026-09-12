@@ -15,8 +15,8 @@ import { SessionRow, useDiffSummary } from "./SessionRow";
  * The working tree line under an open space: file count and line deltas. A clean tree says nothing
  * rather than repeating "clean" down the whole sidebar — the absence of the line is the message.
  */
-function SpaceSummary({ cwd }: { cwd: string }) {
-  const diff = useDiffSummary(cwd);
+function SpaceSummary({ cwd, active }: { cwd: string; active: boolean }) {
+  const diff = useDiffSummary(cwd, active);
   if (!cwd) return <div className="space-sum">No folder yet</div>;
   if (!diff) return null;
   return (
@@ -310,7 +310,7 @@ export function Rail() {
                     </button>
                     <button
                       className="space-add"
-                      title="Archive"
+                      title="Archive this space"
                       onClick={(e) => {
                         e.stopPropagation();
                         setArchived(w.id, true);
@@ -336,7 +336,10 @@ export function Rail() {
                         setMenu({ x: e.clientX, y: e.clientY, id: w.id });
                       }}
                     >
-                      {isOpen && <SpaceSummary cwd={w.cwd} />}
+                      {/* mounted whether the space is folded or not, so its height is part of the
+                          fold from the first frame. Gated on `isOpen` it loaded late and pushed the
+                          threads down once the fold had already finished. */}
+                      <SpaceSummary cwd={w.cwd} active={isOpen} />
                       {threads.map((s) => (
                         <SessionRow
                           key={s.id}

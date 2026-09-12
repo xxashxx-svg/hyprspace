@@ -92,6 +92,16 @@
   font-variant-numeric: tabular-nums;
   font-size: 10.5px;
 }
+/* a working thread counts up instead. Mono with tabular figures so the row cannot twitch as the
+   digits roll over, and the busy colour so it reads as the thing that is live. */
+.sess-elapsed {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--status-busy);
+}
 .sess-name {
   min-width: 0;
   font-size: 13px;
@@ -127,33 +137,30 @@
   color: var(--text-2);
 }
 /* the state glyph: a dot that pulses while working, blinks blue when it needs you, ticks when done */
+/* The mark on the right means one of exactly two things: this thread is waiting on you, or it has
+   finished. A working thread already says so with its counter and the ring on its logo, so it gets
+   no light of its own, and neither do idle or exited ones. */
 .sess-state {
+  display: none;
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.18);
   color: #fff;
 }
-.sess-row.st-working .sess-state {
-  background: var(--status-busy);
-  animation: sessPulse 1.2s ease-in-out infinite;
-}
 .sess-row.st-waiting .sess-state {
+  display: flex;
   background: var(--status-awaiting);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-awaiting) 25%, transparent);
   animation: sessPulse 1s ease-in-out infinite;
 }
 .sess-row.st-done .sess-state {
+  display: flex;
   width: 12px;
   height: 12px;
   background: var(--status-ok);
-}
-.sess-row.st-exited .sess-state {
-  background: rgba(255, 255, 255, 0.1);
 }
 @keyframes sessPulse {
   0%,
@@ -164,20 +171,8 @@
     opacity: 0.35;
   }
 }
-/* sub-agents a claude pane has running: small cards under the thread, in the row's own style */
-.sess-agents {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--status-busy) 14%, transparent);
-  color: var(--status-busy);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
+/* sub-agents a claude pane has running: small cards under the thread, in the row's own style.
+   No status dot of their own — the ring turning on each one's logo already says it. */
 .sess-subs {
   display: flex;
   flex-direction: column;
@@ -243,18 +238,6 @@
   font-size: 10px;
   color: var(--text-3);
 }
-.sess-sub-state {
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--status-busy);
-  animation: sessPulse 1.2s ease-in-out infinite;
-}
-.sess-sub.idle .sess-sub-state {
-  background: var(--text-3);
-  animation: none;
-}
 /* working rows carry a slow sheen; waiting rows get a blue tint so they stand out in a long list */
 .sess-row.st-working {
   background-image: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--status-busy) 7%, transparent) 50%, transparent 80%);
@@ -281,11 +264,9 @@
 @media (prefers-reduced-motion: reduce) {
   .sess-row.st-working,
   .sess-row.st-working .sess-mark::before,
-  .sess-row.st-working .sess-state,
   .sess-row.st-waiting .sess-state,
   .sess-sub.working,
-  .sess-sub.working .sess-sub-mark::before,
-  .sess-sub-state {
+  .sess-sub.working .sess-sub-mark::before {
     animation: none;
   }
 }

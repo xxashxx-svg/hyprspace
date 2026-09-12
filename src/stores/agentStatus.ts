@@ -35,6 +35,9 @@ function trim(s: string, n: number): string {
   return one.length > n ? one.slice(0, n - 1) + "…" : one;
 }
 
+/** Claude's idle-prompt nudge. It reads like a question but nothing was asked. */
+const IDLE_NUDGE = /waiting for your input/i;
+
 // a "working" row older than this is almost certainly a hook we never got (crash, kill -9) rather
 // than a half-hour turn — show it as idle instead of spinning forever.
 export const STALE_MS = 30 * 60 * 1000;
@@ -58,18 +61,27 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
       let next: PaneAgent = cur;
 
       switch (event) {
+        // The conversation just reset (startup, resume, /clear, a compaction), so whatever we
+        // thought was running is void. This is what closes a /clear: it submits a prompt, which
+        // puts the row to work, and then produces no assistant turn for Stop to end.
+        case "SessionStart":
+          next = blank();
+          break;
         case "UserPromptSubmit":
           next = { ...cur, state: "working", since: now, activity: "thinking…" };
           break;
-        case "Notification":
-          // claude fires this when it wants you — a permission prompt or an idle input wait
-          next = {
-            ...cur,
-            state: "waiting",
-            since: now,
-            activity: trim(String(payload.message ?? "waiting for you"), 60),
-          };
+        case "Notification": {
+          // Claude fires this hook for two unrelated things, and only one of them wants you:
+          //   "Claude needs your permission to use Bash"  → a real block; nothing moves until you answer
+          //   "Claude is waiting for your input"          → a nudge sent once the prompt has sat idle
+          //                                                 for a minute, with nothing actually asked
+          // Treating both as "waiting" turned every finished thread blue a minute after it stopped,
+          // so the one state that should mean "go and look at this" came to mean nothing.
+          const msg = trim(String(payload.message ?? "waiting for you"), 60);
+          if (IDLE_NUDGE.test(msg)) break; // leave the row as it was: done, or idle
+          next = { ...cur, state: "waiting", since: now, activity: msg };
           break;
+        }
         case "Stop":
           next = {
             ...cur,
@@ -85,14 +97,9 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
           const tool = String(payload.tool_name ?? "");
           const input = (payload.tool_input ?? {}) as Record<string, unknown>;
           if (tool !== "Agent" && tool !== "Task") {
-            // any other tool just refreshes the activity line ("Edit sync.rs", "Bash cargo check")
-            if (tool) {
-              next = {
-                ...cur,
-                state: cur.state === "waiting" ? "working" : cur.state,
-                activity: toolLabel(tool, input),
-              };
-            }
+            // any other tool refreshes the activity line ("Edit sync.rs", "Bash cargo check").
+            // A tool is running, so the row is working whatever it said a moment ago.
+            if (tool) next = { ...cur, state: "working", activity: toolLabel(tool, input) };
             break;
           }
           const label = String(input.description ?? input.subagent_type ?? "").trim() || "subagent";
@@ -104,6 +111,11 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
           };
           break;
         }
+        // The tool ran, so a permission block on it was approved and the turn is moving again.
+        // Approving produces no hook of its own, so this is what takes the row out of "waiting".
+        case "PostToolUse":
+          if (cur.state === "waiting") next = { ...cur, state: "working", since: now };
+          break;
         default:
           break;
       }
