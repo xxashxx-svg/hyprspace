@@ -13,6 +13,7 @@ import geminiLogo from "../assets/brand/gemini.svg";
 import openaiLogo from "../assets/brand/openai.svg";
 import opencodeLogo from "../assets/brand/opencode.svg";
 import grokLogo from "../assets/brand/grok.svg";
+import { CLAUDE_PERMISSIONS } from "../lib/models";
 
 type AgentKey = "claude" | "codex" | "gemini" | "opencode" | "grok" | "terminal";
 // agents wear their real brand marks (svg); plain terminal keeps a lucide glyph
@@ -269,10 +270,11 @@ export function LaunchWorkspace() {
                   <label className="np-claude-mode">
                     <span>Claude permission mode</span>
                     <select value={claudeMode} onChange={(e) => setClaudeMode(e.target.value as ClaudePermission)}>
-                      <option value="default">Ask each time</option>
-                      <option value="acceptEdits">Accept edits</option>
-                      <option value="plan">Plan mode</option>
-                      <option value="bypass">Bypass permissions</option>
+                      {CLAUDE_PERMISSIONS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
                     </select>
                   </label>
                 )}

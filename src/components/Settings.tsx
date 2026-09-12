@@ -27,7 +27,7 @@ import { useProviders } from "../stores/providers";
 import { useWorkspaces } from "../stores/workspace";
 import { PALETTES } from "../terminal/palettes";
 import { relTime } from "../lib/time";
-import { AGENT_IDS, EFFORT_LABEL, effortsFor, type ProviderId } from "../lib/models";
+import { AGENT_IDS, CLAUDE_PERMISSIONS, CODEX_MODES, EFFORT_LABEL, effortsFor, type ProviderId } from "../lib/models";
 import { catalogFor } from "../stores/providers";
 import { PROVIDER_LOGO, PROVIDER_NAME, PROVIDER_DESC } from "../lib/brand";
 import { McpServers } from "./McpServers";
@@ -541,24 +541,27 @@ export function Settings() {
                         {id === "claude" && (
                           <Row label="Permissions" desc="What Claude may do without asking">
                             <select className="set-select" value={s.claudePermission} onChange={(e) => s.setClaudePermission(e.target.value as ClaudePermission)}>
-                              <option value="default">Ask each time</option>
-                              <option value="acceptEdits">Accept edits</option>
-                              <option value="plan">Plan first</option>
-                              <option value="bypass">Skip all checks</option>
+                              {CLAUDE_PERMISSIONS.map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
+                              ))}
                             </select>
                           </Row>
                         )}
                         {id === "gemini" && (
-                          <Row label="Auto-approve" desc="Run actions without asking">
+                          <Row label="YOLO mode" desc="Run actions without asking">
                             <Toggle on={s.geminiYolo} onChange={s.setGeminiYolo} />
                           </Row>
                         )}
                         {id === "codex" && (
                           <Row label="Approvals" desc="What Codex may do without asking">
                             <select className="set-select" value={s.codexMode} onChange={(e) => s.setCodexMode(e.target.value as CodexMode)}>
-                              <option value="default">Ask each time</option>
-                              <option value="auto">Edit inside the folder</option>
-                              <option value="bypass">Skip all checks</option>
+                              {CODEX_MODES.map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
+                              ))}
                             </select>
                           </Row>
                         )}

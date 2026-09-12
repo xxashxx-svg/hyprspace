@@ -7,6 +7,7 @@ import { pickFolder, createProjectDir, gitInit, gitIsRepo } from "../api";
 import { projectsBaseDir, DEFAULT_GITIGNORE } from "../lib/projects";
 import { claudeCmd, geminiCmd, codexCmd, opencodeCmd, grokCmd, WSL_CMD } from "../actions";
 import { isWindows } from "../platform";
+import { CLAUDE_PERMISSIONS, CODEX_MODES } from "../lib/models";
 import {
   Sparkles,
   Gem,
@@ -36,17 +37,6 @@ const PROVIDERS: { key: ProvKey; name: string; icon: ReactNode }[] = [
   { key: "terminal", name: "Terminal", icon: <TerminalIcon size={15} /> },
 ];
 
-const CLAUDE_MODES: { value: ClaudePermission; label: string }[] = [
-  { value: "default", label: "Ask each time" },
-  { value: "acceptEdits", label: "Accept edits" },
-  { value: "plan", label: "Plan mode" },
-  { value: "bypass", label: "Bypass permissions" },
-];
-const CODEX_MODES: { value: CodexMode; label: string }[] = [
-  { value: "default", label: "Suggest (ask)" },
-  { value: "auto", label: "Auto (sandboxed)" },
-  { value: "bypass", label: "Full access (bypass)" },
-];
 
 export function NewProjectDialog() {
   const open = useUi((s) => s.newProjectOpen);
@@ -263,7 +253,7 @@ export function NewProjectDialog() {
                   value={claudeMode}
                   onChange={(e) => setClaudeMode(e.target.value as ClaudePermission)}
                 >
-                  {CLAUDE_MODES.map((m) => (
+                  {CLAUDE_PERMISSIONS.map((m) => (
                     <option key={m.value} value={m.value}>
                       {m.label}
                     </option>

@@ -9,7 +9,29 @@
 // - Gemini, OpenCode, Grok: `-m` / `--model` as documented; no effort setting known.
 // Every agent also accepts a custom model id, because vendors ship models faster than this file.
 
+import type { ClaudePermission, CodexMode } from "../stores/settings";
+
 export type ProviderId = "claude" | "gemini" | "codex" | "opencode" | "grok" | "wsl" | "terminal";
+
+// How much an agent may do without asking, in the provider's own words. These are the names their
+// own CLIs use, so what the app says matches what you see once the session is running:
+// - Claude prints "accept edits on", "plan mode on" and "bypass permissions on" in its footer.
+// - Codex calls the presets Read Only / Agent / Full Access, and `--dangerously-bypass-approvals-
+//   and-sandbox` (alias `--yolo`) shows as "permissions: YOLO mode" in its session header.
+// One list each, used by every screen that offers the choice — they drifted into three different
+// vocabularies when each screen kept its own copy.
+export const CLAUDE_PERMISSIONS: { value: ClaudePermission; label: string }[] = [
+  { value: "default", label: "Ask each time" },
+  { value: "acceptEdits", label: "Accept edits" },
+  { value: "plan", label: "Plan mode" },
+  { value: "bypass", label: "Bypass permissions" },
+];
+
+export const CODEX_MODES: { value: CodexMode; label: string }[] = [
+  { value: "default", label: "Ask each time" },
+  { value: "auto", label: "Agent" },
+  { value: "bypass", label: "YOLO" },
+];
 
 export const AGENT_IDS: ProviderId[] = ["claude", "codex", "gemini", "opencode", "grok"];
 
