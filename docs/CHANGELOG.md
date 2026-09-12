@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.19.0 — 2026-09-12
+
+- Threads in the sidebar now count up while they work and show a tick when they finish. A blue dot means one thing only: that thread is waiting on you.
+- Fixed a thread that stayed on "Claude needs your permission" after you approved it, and one that kept counting forever after /clear.
+- Drop files onto the composer to attach them, the same as dropping them into a terminal.
+- Settings, Mobile is rebuilt around a live phone preview, with a bigger pairing QR and Tailscale setup for reaching your machine from outside your network.
+- The Android app is rebuilt around spaces and a composer. Download it from Settings, Mobile.
+- Spaces drag to reorder in the sidebar, and the fold no longer jumps when one opens.
+
 ## 0.18.1 — 2026-09-11
 
 - Usage now shows your real limits as soon as the app opens, instead of waiting for an agent to take a turn
