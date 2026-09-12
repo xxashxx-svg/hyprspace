@@ -1017,3 +1017,30 @@
 .recent-row:hover .recent-go {
   display: inline-flex;
 }
+
+/* a file dragged over the composer: the box lights up and says what a drop will do */
+.composer-pane.drop-over .composer {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow:
+    var(--shadow-2),
+    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.composer-pane.drop-over .composer-input::placeholder {
+  color: transparent;
+}
+.composer-pane.drop-over .composer::after {
+  content: "Drop to attach";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+.composer {
+  position: relative;
+}

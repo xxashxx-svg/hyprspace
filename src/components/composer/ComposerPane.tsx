@@ -156,6 +156,22 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
       window.removeEventListener("focus", check);
     };
   }, []);
+  // Files dropped on this composer arrive as a DOM event from App's window drop handler, which
+  // aims it at whichever composer is under the cursor. A ref holds the latest `attach` so the
+  // listener is bound once rather than rebound every keystroke.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onFiles = (e: Event) => {
+      for (const path of (e as CustomEvent<string[]>).detail ?? []) attachRef.current(path);
+    };
+    el.addEventListener("hyprspace-files", onFiles);
+    return () => el.removeEventListener("hyprspace-files", onFiles);
+  }, []);
+
   const taRef = useRef<HTMLTextAreaElement>(null);
   const modelChip = useRef<HTMLButtonElement>(null);
   const effortChip = useRef<HTMLButtonElement>(null);
@@ -251,7 +267,7 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
   const name = ws?.name ?? "";
 
   return (
-    <div className={`composer-pane${compact ? " compact" : ""}`}>
+    <div className={`composer-pane${compact ? " compact" : ""}`} ref={rootRef}>
       <div className="composer-wrap">
         <h2 className="composer-title">
           What should we work on{ws ? <> in <span>{name}</span></> : null}?

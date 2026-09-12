@@ -242,41 +242,64 @@ export default function App() {
     return () => document.removeEventListener("contextmenu", onCtx);
   }, []);
 
-  // drop files onto a terminal pane → insert their (quoted) paths; show a drop overlay on that pane
+  // Drop files onto a terminal to insert their quoted paths, or onto a composer to attach them.
+  // A composer has no PTY to write to, so it gets the paths as a DOM event on its own element —
+  // that scopes the drop to the composer actually under the cursor without a registry.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let lastSid: string | null = null;
+    let lastComposer: HTMLElement | null = null;
     const setDrop = (sid: string | null) => {
       if (sid === lastSid) return;
       lastSid = sid;
       useUi.getState().setFileDrop(sid);
     };
-    const sidAt = (px: number, py: number): string | null => {
+    const setComposer = (el: HTMLElement | null) => {
+      if (el === lastComposer) return;
+      lastComposer?.classList.remove("drop-over");
+      el?.classList.add("drop-over");
+      lastComposer = el;
+    };
+    const clear = () => {
+      setDrop(null);
+      setComposer(null);
+    };
+    const elAt = (px: number, py: number): HTMLElement | null => {
       const dpr = window.devicePixelRatio || 1;
-      const el = document.elementFromPoint(px / dpr, py / dpr) as HTMLElement | null;
+      return document.elementFromPoint(px / dpr, py / dpr) as HTMLElement | null;
+    };
+    const targetAt = (px: number, py: number) => {
+      const el = elAt(px, py);
+      const composer = el?.closest<HTMLElement>(".composer-pane") ?? null;
+      if (composer) return { composer, sid: null };
       const sid = el?.closest<HTMLElement>(".pane-cell")?.dataset.sid ?? null;
-      if (!sid) return null;
-      // an image pane has no PTY — dropping on it would write to a dead session id
+      if (!sid) return { composer: null, sid: null };
+      // a viewer pane has no PTY — dropping on it would write to a dead session id
       const sess = useWorkspaces
         .getState()
         .workspaces.flatMap((w) => w.sessions)
         .find((s) => s.id === sid);
-      return sess?.image || sess?.media || sess?.diff ? null : sid;
+      return { composer: null, sid: sess?.image || sess?.media || sess?.diff ? null : sid };
     };
     win
       .onDragDropEvent((event) => {
         const p = event.payload;
         if (p.type === "over") {
-          setDrop(sidAt(p.position.x, p.position.y));
+          const t = targetAt(p.position.x, p.position.y);
+          setDrop(t.sid);
+          setComposer(t.composer);
         } else if (p.type === "drop") {
-          setDrop(null);
-          const sid = sidAt(p.position.x, p.position.y);
-          if (sid && p.paths.length) {
+          const t = targetAt(p.position.x, p.position.y);
+          clear();
+          if (!p.paths.length) return;
+          if (t.composer) {
+            t.composer.dispatchEvent(new CustomEvent("hyprspace-files", { detail: p.paths }));
+          } else if (t.sid) {
             const text = p.paths.map((path) => (/\s/.test(path) ? `"${path}"` : path)).join(" ");
-            void writePty(sid, new TextEncoder().encode(text));
+            void writePty(t.sid, new TextEncoder().encode(text));
           }
         } else if (p.type === "leave") {
-          setDrop(null);
+          clear();
         }
       })
       .then((un) => {
@@ -285,7 +308,7 @@ export default function App() {
       .catch(() => {});
     return () => {
       unlisten?.();
-      setDrop(null);
+      clear();
     };
   }, []);
 
