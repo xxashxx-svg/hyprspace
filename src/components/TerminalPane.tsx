@@ -465,7 +465,6 @@ function TerminalPaneInner({
     const bootMax = setTimeout(markBooted, 20000); // never leave the overlay stuck
 
     const enc = new TextEncoder();
-    const dec = new TextDecoder();
     const dataDisp = term.onData((d) => {
       noteUserInput(sessionId, d); // capture the first prompt for the auto-namer (T3-style)
       void writePty(sessionId, enc.encode(d));
@@ -518,7 +517,7 @@ function TerminalPaneInner({
             paused = true;
             void pausePty(sessionId).catch(() => {});
           }
-          appendOutput(sessionId, dec.decode(bytes, { stream: true }));
+          appendOutput(sessionId, bytes); // decoded off the hot path, see terminal/buffers.ts
           useActivity.getState().markOutput(sessionId);
         },
         onControl: (c) => {

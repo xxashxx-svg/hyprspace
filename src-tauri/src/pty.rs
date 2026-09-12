@@ -15,7 +15,13 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 
 // coalescer tuning — leading-edge: the first bytes after a quiet moment flush immediately for
 // snappy keystroke echo; only a sustained firehose batches (to <= FLUSH_MS or FLUSH_BYTES).
-const FLUSH_MS: u64 = 4;
+//
+// FLUSH_MS is one frame, deliberately. xterm cannot paint more often than that, so delivering
+// faster buys nothing a user can see while costing an IPC hop, an ArrayBuffer and a parse each
+// time. At 4ms a single busy pane sent up to 250 messages a second, and a grid of agents multiplied
+// it. Echo is unaffected: after a quiet moment `last_flush.elapsed()` is already past the interval,
+// so the first keystroke still goes out on the spot.
+const FLUSH_MS: u64 = 16;
 const FLUSH_BYTES: usize = 16 * 1024;
 const READ_BUF: usize = 64 * 1024;
 // per-session replay buffer for the mobile bridge: a phone that subscribes mid-session needs

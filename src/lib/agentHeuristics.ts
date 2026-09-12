@@ -24,7 +24,7 @@ export interface HeuristicState {
 export function heuristicState(sessionId: string, lastOut: number | undefined, exited: boolean, now = Date.now()): HeuristicState {
   if (exited) return { state: "exited", activity: "Process exited" };
   if (!lastOut) return { state: "idle" };
-  const tail = recentOutput(sessionId, 600);
+  const tail = recentOutput(sessionId, 600, false); // polled from render — never force a flush
   const lines = tail.split("\n").map((l) => l.trim()).filter(Boolean).slice(-4);
   const question = lines.find((l) => WAITING.some((re) => re.test(l)));
   if (question && now - lastOut > 800) return { state: "waiting", activity: question.slice(0, 70) };
