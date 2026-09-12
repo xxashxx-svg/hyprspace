@@ -358,38 +358,9 @@
   }
 }
 
-/* ---- MCP servers manager (Settings → MCP) ---- */
-.mcp {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.mcp-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.mcp-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-.mcp-empty {
-  font-size: 13px;
-  color: var(--text-3);
-  padding: 22px;
-  text-align: center;
-  border: 1px dashed var(--border-1);
-  border-radius: var(--radius-2);
-}
-.mcp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.mcp-row {
+/* ---- the skills list (Settings → Skills): a row per skill or command, with its icon,
+   name, scope and summary. Was shared with the MCP manager until that was removed. ---- */
+.sk-row {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -398,7 +369,7 @@
   border: 1px solid var(--border-1);
   border-radius: var(--radius-2);
 }
-.mcp-ico {
+.sk-ico {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -409,14 +380,14 @@
   color: var(--text-2);
   flex: 0 0 auto;
 }
-.mcp-info {
+.sk-info {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.mcp-name {
+.sk-name {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -424,7 +395,7 @@
   font-weight: 500;
   color: var(--text-1);
 }
-.mcp-kind {
+.sk-kind {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -433,7 +404,7 @@
   border-radius: 4px;
   padding: 0 5px;
 }
-.mcp-sum {
+.sk-sum {
   font-size: 11.5px;
   color: var(--text-3);
   font-family: ui-monospace, "JetBrains Mono", monospace;
@@ -441,7 +412,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mcp-btn {
+.sk-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -455,59 +426,15 @@
   flex: 0 0 auto;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
-.mcp-btn:hover {
+.sk-btn:hover {
   background: var(--surface-3);
   color: var(--text-1);
 }
-.mcp-btn.danger:hover {
+.sk-btn.danger:hover {
   background: rgba(239, 68, 68, 0.16);
   color: #ff6b6b;
 }
-.mcp-edit-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 2px;
-}
-.mcp-back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-1);
-  background: transparent;
-  border: 1px solid var(--border-1);
-  color: var(--text-2);
-  cursor: pointer;
-}
-.mcp-back:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.mcp-edit-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-.mcp-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.mcp-flabel {
-  font-size: 12px;
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.mcp-hint {
-  font-size: 11px;
-  color: var(--text-3);
-  font-weight: 400;
-}
-.mcp-area {
+.sk-area {
   width: 100%;
   background: var(--bg-base);
   border: 1px solid var(--border-1);
@@ -518,15 +445,9 @@
   padding: 8px 10px;
   resize: vertical;
 }
-.mcp-area:focus {
+.sk-area:focus {
   outline: none;
   border-color: var(--accent);
-}
-.mcp-edit-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
 }
 
 /* ---- appearance: theme gallery (each card is a tiny mockup of the app) ---- */

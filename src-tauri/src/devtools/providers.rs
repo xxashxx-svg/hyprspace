@@ -177,4 +177,3 @@ fn provider_status_blocking(id: &str) -> ProviderStatus {
     st
 }
 
-// ---- MCP servers: read/write Claude's ~/.claude.json top-level "mcpServers" ----

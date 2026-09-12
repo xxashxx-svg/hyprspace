@@ -438,21 +438,6 @@ export function providerUsageOne(id: string): Promise<ProviderUsage | null> {
   return invoke("provider_usage_one", { id });
 }
 
-// MCP servers configured for Claude (~/.claude.json "mcpServers")
-export interface McpEntry {
-  name: string;
-  config: Record<string, unknown>;
-}
-export function mcpList(): Promise<McpEntry[]> {
-  return invoke("mcp_list");
-}
-export function mcpSet(name: string, config: unknown, prevName: string | null): Promise<void> {
-  return invoke("mcp_set", { name, config, prevName });
-}
-export function mcpRemove(name: string): Promise<void> {
-  return invoke("mcp_remove", { name });
-}
-
 // discovered Claude skills/commands (project + user scope) for the Skills panel
 export interface SkillItem {
   name: string;

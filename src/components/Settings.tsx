@@ -9,7 +9,6 @@ import {
   Gauge,
   Info,
   Palette,
-  Plug,
   RefreshCw,
   SlidersHorizontal,
   Smartphone,
@@ -30,7 +29,6 @@ import { relTime } from "../lib/time";
 import { AGENT_IDS, CLAUDE_PERMISSIONS, CODEX_MODES, EFFORT_LABEL, effortsFor, type ProviderId } from "../lib/models";
 import { catalogFor } from "../stores/providers";
 import { PROVIDER_LOGO, PROVIDER_NAME, PROVIDER_DESC } from "../lib/brand";
-import { McpServers } from "./McpServers";
 import { SkillsManager } from "./SkillsManager";
 import { UsagePanel } from "./UsagePanel";
 import { MobileSettings } from "./MobileSettings";
@@ -50,7 +48,7 @@ const CURSORS: { label: string; value: CursorStyle }[] = [
   { label: "Underline", value: "underline" },
 ];
 
-type Tab = "general" | "appearance" | "terminal" | "agents" | "usage" | "mcp" | "skills" | "mobile" | "about";
+type Tab = "general" | "appearance" | "terminal" | "agents" | "usage" | "skills" | "mobile" | "about";
 
 const TABS: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   { id: "general", label: "General", desc: "Account and app behavior", icon: <SlidersHorizontal strokeWidth={1.75} /> },
@@ -58,7 +56,6 @@ const TABS: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   { id: "terminal", label: "Terminal", desc: "Colors, cursor, rendering", icon: <SquareTerminal strokeWidth={1.75} /> },
   { id: "agents", label: "Agents", desc: "Default model, effort, and permissions per agent", icon: <Bot strokeWidth={1.75} /> },
   { id: "usage", label: "Usage", desc: "What each agent has used", icon: <Gauge strokeWidth={1.75} /> },
-  { id: "mcp", label: "MCP", desc: "Servers the agents can call", icon: <Plug strokeWidth={1.75} /> },
   { id: "skills", label: "Skills", desc: "Reusable instructions for Claude", icon: <Zap strokeWidth={1.75} /> },
   { id: "mobile", label: "Mobile", desc: "Mirror spaces and terminals to your phone", icon: <Smartphone strokeWidth={1.75} /> },
   { id: "about", label: "About", desc: "Version and updates", icon: <Info strokeWidth={1.75} /> },
@@ -576,7 +573,6 @@ export function Settings() {
             )}
 
             {tab === "usage" && <UsagePanel />}
-            {tab === "mcp" && <McpServers />}
             {tab === "skills" && <SkillsManager cwd={skillsCwd} />}
             {tab === "mobile" && <MobileSettings />}
 

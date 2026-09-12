@@ -189,7 +189,7 @@ export function SkillsManager({ cwd }: { cwd: string }) {
               onChange={(e) => setSnip({ ...snip, name: e.target.value })}
             />
             <textarea
-              className="mcp-area"
+              className="sk-area"
               rows={4}
               placeholder="Text to insert: a prompt or a command"
               value={snip.body}
@@ -209,23 +209,23 @@ export function SkillsManager({ cwd }: { cwd: string }) {
         <div className="skm-rows">
           {snippets.length === 0 && !snip && <div className="skm-empty">No snippets yet.</div>}
           {snippets.map((s) => (
-            <div className="mcp-row" key={s.id}>
-              <span className="mcp-ico">
+            <div className="sk-row" key={s.id}>
+              <span className="sk-ico">
                 <Bookmark size={15} />
               </span>
-              <span className="mcp-info">
-                <span className="mcp-name">{s.name}</span>
-                <span className="mcp-sum">{s.body}</span>
+              <span className="sk-info">
+                <span className="sk-name">{s.name}</span>
+                <span className="sk-sum">{s.body}</span>
               </span>
               <button
-                className="mcp-btn"
+                className="sk-btn"
                 title="Edit"
                 onClick={() => setSnip({ id: s.id, name: s.name, body: s.body })}
               >
                 <Pencil size={14} />
               </button>
               <button
-                className="mcp-btn danger"
+                className="sk-btn danger"
                 title="Delete"
                 onClick={() => useSkills.getState().removeSnippet(s.id)}
               >
@@ -268,21 +268,21 @@ export function SkillsManager({ cwd }: { cwd: string }) {
         <div className="skm-rows">
           {discovered.length === 0 && <div className="skm-empty">None yet. Create one with the + above.</div>}
           {discovered.map((it) => (
-            <div className="mcp-row" key={`${it.scope}-${it.command}`}>
-              <span className="mcp-ico">
+            <div className="sk-row" key={`${it.scope}-${it.command}`}>
+              <span className="sk-ico">
                 {it.kind === "command" ? <SquareSlash size={15} /> : <Sparkles size={15} />}
               </span>
-              <span className="mcp-info">
-                <span className="mcp-name">
+              <span className="sk-info">
+                <span className="sk-name">
                   {it.command}
-                  <span className="mcp-kind">{it.scope}</span>
+                  <span className="sk-kind">{it.scope}</span>
                 </span>
-                <span className="mcp-sum">{it.description || "No description"}</span>
+                <span className="sk-sum">{it.description || "No description"}</span>
               </span>
-              <button className="mcp-btn" title="Edit" onClick={() => void editSkill(it)}>
+              <button className="sk-btn" title="Edit" onClick={() => void editSkill(it)}>
                 <Pencil size={14} />
               </button>
-              <button className="mcp-btn danger" title="Delete" onClick={() => void delSkill(it)}>
+              <button className="sk-btn danger" title="Delete" onClick={() => void delSkill(it)}>
                 <Trash2 size={14} />
               </button>
             </div>
