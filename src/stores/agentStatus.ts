@@ -14,20 +14,30 @@ export interface SubAgent {
 
 export interface PaneAgent {
   state: AgentState;
-  since: number; // when it entered this state — drives the relative time + stale decay
+  since: number; // when it entered this state
+  /** When the current turn began, which is what the sidebar counter counts from. Separate from
+   *  `since` because a turn passes through several states (working, waiting on a permission,
+   *  working again) and can take a second prompt mid-way, and none of that restarts the turn. */
+  turnAt?: number;
+  /** When any hook last arrived. Staleness is judged from this, not from `since`: a turn that has
+   *  been running for an hour but called a tool a minute ago is alive. */
+  seenAt?: number;
   /** one line of "what it's doing" — the current tool, why it's waiting, or what it last said */
   activity?: string;
   /** live sub-agents, newest last. Only ones still running are kept. */
   subs: SubAgent[];
 }
 
-// "Edit sync.rs" / "Bash npm run build" — the tool plus its most identifying argument
+// "Edit sync.rs" / "Bash npm run build" / "lualink run_lua": the tool plus its most identifying
+// argument. MCP tools arrive as mcp__<server>__<tool>, which is an id, not something to read.
 function toolLabel(tool: string, input: Record<string, unknown>): string {
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(tool);
+  const name = mcp ? `${mcp[1]} ${mcp[2]}` : tool;
   const base = (v: unknown) => String(v ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
   const arg =
     base(input.file_path ?? input.path ?? input.notebook_path) ||
     String(input.command ?? input.pattern ?? input.query ?? input.description ?? "").trim();
-  return arg ? `${tool} ${trim(arg, 44)}` : tool;
+  return arg ? `${name} ${trim(arg, 44)}` : name;
 }
 
 function trim(s: string, n: number): string {
@@ -38,8 +48,9 @@ function trim(s: string, n: number): string {
 /** Claude's idle-prompt nudge. It reads like a question but nothing was asked. */
 const IDLE_NUDGE = /waiting for your input/i;
 
-// a "working" row older than this is almost certainly a hook we never got (crash, kill -9) rather
-// than a half-hour turn — show it as idle instead of spinning forever.
+// A working or waiting row that has heard NO hook for this long is almost certainly one whose Stop
+// we never got (a crash, kill -9), so show it as idle instead of spinning forever. Measured from the
+// last hook, not the start of the turn: long turns are real, and each tool call proves it's alive.
 export const STALE_MS = 30 * 60 * 1000;
 
 interface AgentStatusState {
@@ -49,6 +60,10 @@ interface AgentStatusState {
 }
 
 const blank = (): PaneAgent => ({ state: "idle", since: Date.now(), subs: [] });
+
+// a turn already under way keeps its start; anything else starts one now
+const busy = (a: PaneAgent) => a.state === "working" || a.state === "waiting";
+const turnStart = (a: PaneAgent, now: number) => (busy(a) ? (a.turnAt ?? a.since) : now);
 
 export const useAgentStatus = create<AgentStatusState>()((set) => ({
   byPane: {},
@@ -67,8 +82,10 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
         case "SessionStart":
           next = blank();
           break;
+        // A prompt sent while claude is still working is queued into the same turn, and claude's
+        // own timer keeps counting through it, so ours does too.
         case "UserPromptSubmit":
-          next = { ...cur, state: "working", since: now, activity: "thinking…" };
+          next = { ...cur, state: "working", since: now, turnAt: turnStart(cur, now), activity: "thinking…" };
           break;
         case "Notification": {
           // Claude fires this hook for two unrelated things, and only one of them wants you:
@@ -99,13 +116,14 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
           if (tool !== "Agent" && tool !== "Task") {
             // any other tool refreshes the activity line ("Edit sync.rs", "Bash cargo check").
             // A tool is running, so the row is working whatever it said a moment ago.
-            if (tool) next = { ...cur, state: "working", activity: toolLabel(tool, input) };
+            if (tool) next = { ...cur, state: "working", turnAt: turnStart(cur, now), activity: toolLabel(tool, input) };
             break;
           }
           const label = String(input.description ?? input.subagent_type ?? "").trim() || "subagent";
           next = {
             ...cur,
             state: cur.state === "done" ? "working" : cur.state,
+            turnAt: turnStart(cur, now),
             activity: toolLabel(tool === "Agent" ? "Delegating" : tool, input),
             subs: [...cur.subs, { id: `pending-${now}`, label, state: "working", startedAt: now }],
           };
@@ -144,6 +162,9 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
         next = { ...next, subs };
       }
 
+      // every hook is proof of life, including the ones that change nothing visible
+      if (event) next = { ...next, seenAt: now };
+
       if (next === cur) return {};
       return { byPane: { ...s.byPane, [paneId]: next } };
     }),
@@ -157,10 +178,10 @@ export const useAgentStatus = create<AgentStatusState>()((set) => ({
     }),
 }));
 
-/** what a row should actually render — folds stale "working" rows down to idle */
+/** what a row should actually render — folds a working row that has gone silent down to idle */
 export function displayState(a: PaneAgent | undefined, now: number): AgentState {
   if (!a) return "idle";
-  if ((a.state === "working" || a.state === "waiting") && now - a.since > STALE_MS) return "idle";
+  if (busy(a) && now - (a.seenAt ?? a.since) > STALE_MS) return "idle";
   return a.state;
 }
 

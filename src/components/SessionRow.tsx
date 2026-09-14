@@ -78,7 +78,7 @@ export function SessionRow({
 
   // Only a pane reporting through claude's hooks knows when it started working, so only those can
   // count up. Everything else keeps the relative time, which is all we honestly have for them.
-  const runningSince = state === "working" && agent ? agent.since : undefined;
+  const runningSince = state === "working" && agent ? (agent.turnAt ?? agent.since) : undefined;
 
   // re-render once the busy window lapses so the state can settle to idle or waiting
   useEffect(() => {
