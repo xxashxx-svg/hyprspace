@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.1 — 2026-09-14
+
+- A thread that runs for more than 30 minutes keeps counting instead of dropping back to "now" while the agent is still working.
+- Sending a message while a thread is working no longer restarts its timer.
+- New thread is now at the top of the sidebar. The folder button next to it opens a folder as a new space, which is what the old "Open new thread" row at the bottom actually did.
+- MCP tool calls show the server and tool by name in a thread's activity line, like "lualink run_lua".
+
 ## 0.20.0 — 2026-09-12
 
 - The MCP tab is gone. It could only show servers from one of the three places Claude keeps them, so it never matched what the CLI reported. Use claude mcp add instead.
