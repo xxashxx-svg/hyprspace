@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { Archive, ArchiveRestore, ChevronRight, Copy, FolderOpen, Pencil, Plus, Search, Settings as SettingsIcon, Trash2, X } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronRight, Copy, FolderOpen, FolderPlus, Pencil, Plus, Search, Settings as SettingsIcon, SquarePen, Trash2, X } from "lucide-react";
 import { useUi } from "../stores/ui";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
@@ -220,6 +220,22 @@ export function Rail() {
 
   return (
     <div className={`rail${collapsed ? " hidden" : ""}`} style={{ "--rail-w": `${width}px` } as React.CSSProperties}>
+      {/* Starting something is what the sidebar gets used for most, so it leads. New thread opens a
+          composer in the space you're in. The folder button beside it adds a whole new space: that's
+          what the old "Open new thread" row at the bottom actually did, under the wrong name. */}
+      <div className="rail-top">
+        <button className="rail-new" title={`New thread (${kbd("Ctrl+Shift+N")})`} onClick={newSession}>
+          <SquarePen size={14} />
+          <span className="rail-new-label">New thread</span>
+          {/* the shortcut only fits once the rail is wide enough; at its 200px minimum it would
+              crowd the label, so it waits for the room rather than getting clipped */}
+          {width >= 260 && <span className="rail-new-kbd">{kbd("Ctrl Shift N")}</span>}
+        </button>
+        <button className="rail-folder" title="Open a folder as a new space" onClick={() => void openFolder()}>
+          <FolderPlus size={15} />
+        </button>
+      </div>
+
       <div className="rail-search-box">
         <Search size={14} />
         <input
@@ -406,12 +422,6 @@ export function Rail() {
             </section>
           )}
         </div>
-        <button className="space-open" onClick={() => void openFolder()}>
-          <span className="space-open-ico">
-            <Plus size={13} />
-          </span>
-          Open new thread
-        </button>
       </div>
 
       <div className="rail-foot">

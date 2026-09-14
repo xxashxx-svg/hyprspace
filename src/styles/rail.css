@@ -23,12 +23,85 @@
 .rail-resize:active {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
+/* the top of the rail: start a thread, or open a folder as a new space */
+.rail-top {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  margin: 8px 8px 6px;
+}
+.rail-new {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 9px;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.rail-new:hover {
+  background: var(--surface-3);
+  border-color: color-mix(in srgb, var(--text-3) 40%, transparent);
+}
+.rail-new > svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: color 0.12s var(--ease);
+}
+.rail-new:hover > svg {
+  color: var(--text-1);
+}
+.rail-new-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rail-new-kbd {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-3);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.rail-folder {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.rail-folder:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
 .rail-search-box {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 8px 8px 6px;
+  margin: 0 8px 6px;
   padding: 0 8px;
   height: 30px;
   border: 1px solid var(--border-1);
@@ -377,42 +450,6 @@
   padding: 4px 8px 6px;
   font-size: 11.5px;
   color: var(--text-3);
-}
-/* the add row: a plain row with a plus, dim until hovered */
-.space-open {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: calc(100% - 16px);
-  margin: 6px 8px 8px;
-  height: 30px;
-  padding: 0 4px 0 2px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-3);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.space-open-ico {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-}
-.space-open:hover {
-  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
-  color: var(--text-1);
-}
-.space-open:hover .space-open-ico {
-  background: var(--surface-3);
 }
 .rail-empty {
   padding: 6px 10px;
