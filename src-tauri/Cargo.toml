@@ -45,6 +45,8 @@ if-addrs = "0.15"
 # per-target so each platform pulls only its native backend.
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# read the machine + user PATH back from the registry (lib.rs fix_path_env)
+winreg = "0.55"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

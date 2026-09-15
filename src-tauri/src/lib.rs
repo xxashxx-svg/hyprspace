@@ -459,8 +459,59 @@ fn fix_path_env() {
     std::env::set_var("PATH", merged);
 }
 
+// Windows: an app started by the installer, the updater's relaunch, or a browser's download bar
+// inherits a trimmed PATH (system dirs and little else), so `git`, `code` and the agent CLIs
+// vanish for every child process, terminals included. Rebuild it the way a fresh login does:
+// the machine PATH, then the user PATH, from the registry, appended to whatever we were given.
 #[cfg(windows)]
-fn fix_path_env() {}
+fn fix_path_env() {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+    let read = |hive, sub: &str| -> String {
+        RegKey::predef(hive)
+            .open_subkey(sub)
+            .and_then(|k| k.get_value::<String, _>("Path"))
+            .unwrap_or_default()
+    };
+    let machine = read(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment");
+    let user = read(HKEY_CURRENT_USER, "Environment");
+    let mut merged: Vec<String> = std::env::var("PATH")
+        .unwrap_or_default()
+        .split(';')
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect();
+    for entry in machine.split(';').chain(user.split(';')) {
+        let entry = expand_env(entry.trim());
+        if entry.is_empty() || merged.iter().any(|m| m.eq_ignore_ascii_case(&entry)) {
+            continue;
+        }
+        merged.push(entry);
+    }
+    std::env::set_var("PATH", merged.join(";"));
+}
+
+// registry PATH entries are REG_EXPAND_SZ, so `%SystemRoot%\system32` style references are literal
+#[cfg(windows)]
+fn expand_env(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find('%') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        let Some(j) = after.find('%') else {
+            out.push_str(&rest[i..]);
+            return out;
+        };
+        match std::env::var(&after[..j]) {
+            Ok(v) => out.push_str(&v),
+            Err(_) => out.push_str(&rest[i..=i + 1 + j]),
+        }
+        rest = &after[j + 1..];
+    }
+    out.push_str(rest);
+    out
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -484,7 +535,7 @@ pub fn run() {
         return;
     }
 
-    // adopt the user's real shell PATH so a GUI launch on macOS/Linux can find the provider CLIs
+    // adopt the user's real PATH so a GUI or installer launch can find git and the provider CLIs
     fix_path_env();
 
     // dev builds share the installed app's identity, so both fight over the same WebView2
