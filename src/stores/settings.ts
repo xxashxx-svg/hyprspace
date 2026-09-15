@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { applyTheme } from "../themes";
+import type { EditorId } from "../api";
 
 export type CursorStyle = "bar" | "block" | "underline";
 export type ClaudePermission = "default" | "acceptEdits" | "plan" | "bypass";
@@ -26,6 +27,7 @@ interface SettingsState {
   agentModel: Record<string, string>; // provider id → model id ("" = the CLI's default)
   agentEffort: Record<string, string>; // provider id → effort level ("" = the CLI's default)
   lastProvider: string; // what the composer launched last; the next composer opens on it
+  editor: EditorId; // what the titlebar's Open button launches
   railWidth: number; // left sidebar width in px
   dockWidth: number; // right dock width in px
   hydrated: boolean;
@@ -47,6 +49,7 @@ interface SettingsState {
   setAgentModel: (provider: string, model: string) => void;
   setAgentEffort: (provider: string, effort: string) => void;
   setLastProvider: (id: string) => void;
+  setEditor: (id: EditorId) => void;
   setRailWidth: (n: number) => void;
   setDockWidth: (n: number) => void;
   setOnboarded: (b: boolean) => void;
@@ -82,6 +85,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   agentModel: {},
   agentEffort: {},
   lastProvider: "claude",
+  editor: "code",
   railWidth: 272,
   dockWidth: 380,
   onboarded: false,
@@ -108,6 +112,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   setAgentModel: (provider, model) => set((s) => ({ agentModel: { ...s.agentModel, [provider]: model } })),
   setAgentEffort: (provider, effort) => set((s) => ({ agentEffort: { ...s.agentEffort, [provider]: effort } })),
   setLastProvider: (id) => set({ lastProvider: id }),
+  setEditor: (id) => set({ editor: id }),
   setRailWidth: (n) => set({ railWidth: Math.min(520, Math.max(200, Math.round(n))) }),
   setDockWidth: (n) => set({ dockWidth: Math.min(720, Math.max(260, Math.round(n))) }),
   setOnboarded: (b) => set({ onboarded: b }),

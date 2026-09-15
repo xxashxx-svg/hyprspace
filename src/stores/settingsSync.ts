@@ -1,7 +1,7 @@
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode } from "./settings";
-import { saveState } from "../api";
+import { saveState, type EditorId } from "../api";
 
 type Snap = {
   theme: string;
@@ -23,6 +23,7 @@ type Snap = {
   agentModel: Record<string, string>;
   agentEffort: Record<string, string>;
   lastProvider: string;
+  editor: EditorId;
   railWidth: number;
   dockWidth: number;
   onboarded: boolean;
@@ -50,6 +51,7 @@ function snapshot(): Snap {
     agentModel: s.agentModel,
     agentEffort: s.agentEffort,
     lastProvider: s.lastProvider,
+    editor: s.editor,
     railWidth: s.railWidth,
     dockWidth: s.dockWidth,
     onboarded: s.onboarded,

@@ -155,6 +155,11 @@ export function clipboardImageToTemp(): Promise<string | null> {
 export function revealPath(path: string): Promise<void> {
   return invoke("reveal_path", { path });
 }
+// open a folder in VS Code or Cursor
+export type EditorId = "code" | "cursor";
+export function openInEditor(path: string, editor: EditorId): Promise<void> {
+  return invoke("open_in_editor", { path, editor });
+}
 // one directory level for the Files tree
 export interface DirEntry {
   name: string;

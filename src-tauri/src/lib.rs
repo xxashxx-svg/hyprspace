@@ -563,6 +563,7 @@ pub fn run() {
             devtools::git_file_op,
             devtools::create_project_dir,
             devtools::reveal_path,
+            devtools::open_in_editor,
             devtools::list_dir,
             devtools::read_file,
             devtools::read_image_file,

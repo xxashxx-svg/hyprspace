@@ -7,6 +7,7 @@ import { newSession } from "../actions";
 import { Logo } from "./Logo";
 import { UsageMeter } from "./UsageMeter";
 import { LayoutPicker } from "./LayoutPicker";
+import { OpenInEditor } from "./OpenInEditor";
 
 const win = getCurrentWindow();
 
@@ -67,6 +68,7 @@ export function Titlebar() {
               <Plus size={16} />
             </button>
             <LayoutPicker />
+            <OpenInEditor />
           </div>
         )}
         <UsageMeter />

@@ -45,6 +45,57 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+// open a folder in a code editor. `editor` is a fixed id, never a user string, so the only
+// thing that reaches the launcher is a known CLI name plus a canonicalized folder.
+#[tauri::command]
+pub async fn open_in_editor(path: String, editor: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (cli, app) = match editor.as_str() {
+            "code" => ("code", "Visual Studio Code"),
+            "cursor" => ("cursor", "Cursor"),
+            _ => return Err("Unknown editor.".to_string()),
+        };
+        let canon = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+        if !canon.is_dir() {
+            return Err("Not a folder.".to_string());
+        }
+        let s = canon.to_string_lossy();
+        #[cfg(windows)]
+        let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        let s = s.to_string();
+        if s.starts_with('-') {
+            return Err("Invalid path.".to_string());
+        }
+        // Windows: editor CLIs are .cmd shims, so go through `cmd /c`. macOS: GUI apps don't
+        // inherit the shell PATH, so ask Launch Services by app name instead of the CLI.
+        #[cfg(windows)]
+        let mut cmd = {
+            let mut c = Command::new("cmd");
+            c.args(["/c", cli, s.as_str()]);
+            c.creation_flags(0x08000000);
+            c
+        };
+        #[cfg(target_os = "macos")]
+        let mut cmd = {
+            let _ = cli;
+            let mut c = Command::new("open");
+            c.args(["-a", app, s.as_str()]);
+            c
+        };
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let mut cmd = {
+            let _ = app;
+            let mut c = Command::new(cli);
+            c.arg(&s);
+            c
+        };
+        cmd.spawn().map_err(|_| format!("{app} is not installed, or its command line tool is not on PATH."))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---- file tree: list one directory level for the Files panel ----
 
 #[derive(Serialize)]

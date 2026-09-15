@@ -120,6 +120,35 @@
 .tb-action-caret {
   color: var(--text-3);
 }
+/* "Open" split button: the label opens the folder in the chosen editor, the chevron picks one */
+.tb-open {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+.tb-open .tb-action {
+  height: 24px;
+  border-radius: 0;
+}
+.tb-open-main {
+  width: auto;
+  padding: 0 8px 0 7px;
+  color: var(--text-1);
+}
+.tb-open-main img {
+  width: 14px;
+  height: 14px;
+}
+.tb-open-caret {
+  width: 20px;
+  border-left: 1px solid var(--border-1);
+}
+.tb-open-caret.open {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
 /* live git-action status on the topbar button (Pushing… → Pushed) */
 .tb-spin {
   animation: tbspin 0.8s linear infinite;
