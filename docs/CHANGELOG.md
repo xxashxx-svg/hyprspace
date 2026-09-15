@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.3 — 2026-09-15
+
+- Git, VS Code and the agent CLIs are found again when the app is started by the installer or the updater
+
 ## 0.20.2 — 2026-09-15
 
 - Open the current folder in VS Code or Cursor from the titlebar. The chevron picks the editor or opens the folder in Explorer
