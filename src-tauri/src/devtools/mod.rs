@@ -26,12 +26,41 @@ pub use usage::*;
 pub use skills::*;
 
 // ---- shared helpers ----
+
+// A `git` Command. Windows apps launched from a shortcut or an installer can carry a stale PATH
+// without git on it, and then every git call fails with a bare "program not found". So when
+// PATH has no git, fall back to where Git for Windows installs itself.
+pub(crate) fn git_cmd() -> Command {
+    #[cfg(windows)]
+    {
+        let on_path = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).any(|d| d.join("git.exe").is_file()))
+            .unwrap_or(false);
+        if !on_path {
+            let mut known = vec![std::path::PathBuf::from(r"C:\Program Files\Git\cmd\git.exe")];
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                known.push(std::path::Path::new(&local).join(r"Programs\Git\cmd\git.exe"));
+            }
+            if let Some(p) = known.into_iter().find(|p| p.is_file()) {
+                return Command::new(p);
+            }
+        }
+    }
+    Command::new("git")
+}
+
 fn git(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = git_cmd();
     cmd.arg("-C").arg(cwd).args(args);
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW — don't flash a console on each git call
-    let out = cmd.output().map_err(|e| e.to_string())?;
+    let out = cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            "git is not installed, or is not on PATH.".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }

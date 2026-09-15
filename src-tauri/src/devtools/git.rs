@@ -112,7 +112,7 @@ fn git_diff_blocking(cwd: String, path: String) -> Result<String, String> {
     }
     // untracked file: diff against nothing so it shows as all-added. --no-index exits 1
     // when the files differ, which is expected here, so read stdout regardless of status.
-    let out = Command::new("git")
+    let out = git_cmd()
         .arg("-C")
         .arg(&cwd)
         .args(["diff", "--no-index", "--", "/dev/null", &path])
@@ -264,7 +264,7 @@ pub async fn git_create_pr(
         if push {
             let head = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default().trim().to_string();
             if !head.is_empty() {
-                let mut p = Command::new("git");
+                let mut p = git_cmd();
                 p.current_dir(&cwd).args(["push", "-u", "origin", &head]);
                 #[cfg(windows)]
                 p.creation_flags(0x08000000);
@@ -374,7 +374,7 @@ pub async fn git_init_repo(
         if commit || github {
             git(&cwd, &["add", "-A"])?;
             let msg = if commit_msg.trim().is_empty() { "Initial commit" } else { commit_msg.trim() };
-            let mut c = Command::new("git");
+            let mut c = git_cmd();
             c.current_dir(&cwd).args(["commit", "-m", msg]);
             #[cfg(windows)]
             c.creation_flags(0x08000000);
