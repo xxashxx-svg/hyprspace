@@ -1,13 +1,25 @@
 import { create } from "zustand";
-import { applyTheme } from "../themes";
+import { applyTheme, THEMES, type Mode, type Scheme } from "../themes";
 import type { EditorId } from "../api";
 
 export type CursorStyle = "bar" | "block" | "underline";
 export type ClaudePermission = "default" | "acceptEdits" | "plan" | "bypass";
 export type CodexMode = "default" | "auto" | "bypass";
+export type UiFont = "dm" | "system";
+export type DiffColors = "redgreen" | "blueorange";
+
+export const UI_FONTS: Record<UiFont, { label: string; stack: string }> = {
+  dm: { label: "DM Sans (bundled)", stack: '"DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", "Cantarell", sans-serif' },
+  system: { label: "System", stack: 'system-ui, -apple-system, "Segoe UI", "Cantarell", sans-serif' },
+};
 
 interface SettingsState {
   theme: string;
+  colorScheme: Scheme; // light, dark, or follow the OS
+  mode: Mode; // which side colorScheme resolved to. Derived on paint, never persisted.
+  uiFont: UiFont; // everything outside the terminal
+  diffColors: DiffColors; // additions and deletions: red and green, or blue and orange
+  animations: boolean; // off = menus, panels and dialogs snap instead of easing
   fontSize: number;
   fontFamily: string;
   cursorStyle: CursorStyle;
@@ -32,6 +44,12 @@ interface SettingsState {
   dockWidth: number; // right dock width in px
   hydrated: boolean;
   setTheme: (id: string) => void;
+  setColorScheme: (s: Scheme) => void;
+  setUiFont: (f: UiFont) => void;
+  setDiffColors: (d: DiffColors) => void;
+  setAnimations: (b: boolean) => void;
+  /** apply theme, scheme, font, diff colors and motion to the document */
+  repaint: () => void;
   setFontSize: (n: number) => void;
   setFontFamily: (f: string) => void;
   setCursorStyle: (c: CursorStyle) => void;
@@ -64,8 +82,13 @@ interface SettingsState {
 export const DEFAULT_FONT =
   '"JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", monospace';
 
-export const useSettings = create<SettingsState>()((set) => ({
+export const useSettings = create<SettingsState>()((set, get) => ({
   theme: "t3",
+  colorScheme: "dark",
+  mode: "dark",
+  uiFont: "dm",
+  diffColors: "redgreen",
+  animations: true,
   fontSize: 13,
   fontFamily: DEFAULT_FONT,
   cursorStyle: "block",
@@ -92,8 +115,32 @@ export const useSettings = create<SettingsState>()((set) => ({
   hydrated: false,
 
   setTheme: (id) => {
-    applyTheme(id);
     set({ theme: id });
+    get().repaint();
+  },
+  setColorScheme: (colorScheme) => {
+    set({ colorScheme });
+    get().repaint();
+  },
+  setUiFont: (uiFont) => {
+    set({ uiFont });
+    get().repaint();
+  },
+  setDiffColors: (diffColors) => {
+    set({ diffColors });
+    get().repaint();
+  },
+  setAnimations: (animations) => {
+    set({ animations });
+    get().repaint();
+  },
+  repaint: () => {
+    const s = get();
+    const root = document.documentElement;
+    root.style.setProperty("--font-ui", UI_FONTS[s.uiFont].stack);
+    root.dataset.diff = s.diffColors;
+    root.classList.toggle("reduce-motion", !s.animations);
+    set({ mode: applyTheme(s.theme, s.colorScheme) });
   },
   setFontSize: (n) => set({ fontSize: Math.min(24, Math.max(9, Math.round(n))) }),
   setFontFamily: (f) => set({ fontFamily: f }),
@@ -121,8 +168,17 @@ export const useSettings = create<SettingsState>()((set) => ({
   resetDismissedConfirms: () => set({ dismissedConfirms: [] }),
 
   hydrate: (partial) => {
-    set({ ...partial, hydrated: true });
-    applyTheme(useSettings.getState().theme);
+    // a theme id from an older release falls back to the default rather than lingering unmatched
+    const theme = partial.theme && THEMES.some((t) => t.id === partial.theme) ? partial.theme : "t3";
+    set({ ...partial, theme, hydrated: true });
+    get().repaint();
   },
   markHydrated: () => set({ hydrated: true }),
 }));
+
+// following the OS: repaint when it flips between light and dark
+if (typeof window !== "undefined") {
+  window.matchMedia?.("(prefers-color-scheme: light)").addEventListener("change", () => {
+    if (useSettings.getState().colorScheme === "system") useSettings.getState().repaint();
+  });
+}

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { EditorView, keymap } from "@codemirror/view";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
-import { syntaxHighlighting } from "@codemirror/language";
 import { basicSetup } from "codemirror";
-import { vscodeChrome, vscodeHighlight } from "../lib/editorTheme";
+import { editorTheme } from "../lib/editorTheme";
+import { useSettings } from "../stores/settings";
 import { readFile, writeFile } from "../api";
 import { markFileDirty, takeDiscarded } from "../lib/dirtyFiles";
 import { confirmDialog } from "../stores/confirm";
@@ -47,6 +47,11 @@ export function CodeEditor({
 }) {
   const elRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const themeComp = useRef(new Compartment());
+  const mode = useSettings((s) => s.mode);
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: themeComp.current.reconfigure(editorTheme(mode)) });
+  }, [mode]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false); // so "Saved" only shows after a save, not on open
@@ -126,8 +131,7 @@ export function CodeEditor({
             // (or any long line) runs off the right edge and is only reachable by scrolling sideways.
             EditorView.lineWrapping,
             langComp.of([]),
-            syntaxHighlighting(vscodeHighlight),
-            vscodeChrome,
+            themeComp.current.of(editorTheme(useSettings.getState().mode)),
             Prec.highest(
               keymap.of([
                 { key: "Mod-s", preventDefault: true, run: () => (void save.current(), true) },

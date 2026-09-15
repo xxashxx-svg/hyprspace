@@ -1,10 +1,15 @@
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode } from "./settings";
+import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode, type UiFont, type DiffColors } from "./settings";
+import type { Scheme } from "../themes";
 import { saveState, type EditorId } from "../api";
 
 type Snap = {
   theme: string;
+  colorScheme: Scheme;
+  uiFont: UiFont;
+  diffColors: DiffColors;
+  animations: boolean;
   fontSize: number;
   fontFamily: string;
   cursorStyle: CursorStyle;
@@ -33,6 +38,10 @@ function snapshot(): Snap {
   const s = useSettings.getState();
   return {
     theme: s.theme,
+    colorScheme: s.colorScheme,
+    uiFont: s.uiFont,
+    diffColors: s.diffColors,
+    animations: s.animations,
     fontSize: s.fontSize,
     fontFamily: s.fontFamily,
     cursorStyle: s.cursorStyle,

@@ -17,8 +17,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { THEMES } from "../themes";
-import { useSettings, DEFAULT_FONT, type CursorStyle, type ClaudePermission, type CodexMode } from "../stores/settings";
+import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { useUpdater } from "../stores/updater";
 import { useAuth } from "../stores/auth";
@@ -33,14 +32,8 @@ import { SkillsManager } from "./SkillsManager";
 import { UsagePanel } from "./UsagePanel";
 import { MobileSettings } from "./MobileSettings";
 import { Blurred } from "./Blurred";
-
-const FONTS: { label: string; value: string }[] = [
-  { label: "JetBrainsMono Nerd Font (bundled)", value: DEFAULT_FONT },
-  { label: "Cascadia Code", value: '"Cascadia Code", "Consolas", monospace' },
-  { label: "JetBrains Mono", value: '"JetBrains Mono", "Cascadia Code", monospace' },
-  { label: "Consolas", value: '"Consolas", monospace' },
-  { label: "Courier New", value: '"Courier New", monospace' },
-];
+import { Row, Group, Toggle } from "./settings/controls";
+import { Appearance } from "./settings/Appearance";
 
 const CURSORS: { label: string; value: CursorStyle }[] = [
   { label: "Bar", value: "bar" },
@@ -62,35 +55,6 @@ const TABS: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
 ];
 
 // ---- small building blocks ----
-function Row({ label, desc, children }: { label: string; desc?: string; children: ReactNode }) {
-  return (
-    <div className="set-row">
-      <div className="set-row-info">
-        <div className="set-key">{label}</div>
-        {desc && <div className="set-desc">{desc}</div>}
-      </div>
-      <div className="set-control">{children}</div>
-    </div>
-  );
-}
-
-function Group({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="set-section">
-      <div className="set-label">{label}</div>
-      <div className="set-group">{children}</div>
-    </div>
-  );
-}
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (b: boolean) => void }) {
-  return (
-    <button className={`toggle${on ? " on" : ""}`} onClick={() => onChange(!on)} aria-pressed={on}>
-      <span className="toggle-knob" />
-    </button>
-  );
-}
-
 function CopyBtn({ value }: { value: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -332,84 +296,7 @@ export function Settings() {
               </>
             )}
 
-            {tab === "appearance" && (
-              <>
-                <div className="set-section">
-                  <div className="set-label">Theme</div>
-                  <div className="theme-grid">
-                    {THEMES.map((t) => {
-                      const on = t.id === s.theme;
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          className={`theme-card${on ? " active" : ""}`}
-                          onClick={() => s.setTheme(t.id)}
-                          aria-pressed={on}
-                          style={{ "--sw-accent": t.vars["--accent"], "--sw-on": t.vars["--on-accent"] } as CSSProperties}
-                        >
-                          <div className="theme-card-frame">
-                            <div className="tcp-bar">
-                              <span className="tcp-dot" />
-                              <span className="tcp-dot" />
-                              <span className="tcp-tab" />
-                              <span className="tcp-pill" />
-                            </div>
-                            <div className="tcp-body">
-                              <div className="tcp-rail">
-                                <span className="tcp-nav on" />
-                                <span className="tcp-nav" />
-                                <span className="tcp-nav" />
-                                <span className="tcp-nav" />
-                              </div>
-                              <div className="tcp-main">
-                                <span className="tcp-line lg" />
-                                <span className="tcp-line" />
-                                <span className="tcp-line sm" />
-                                <span className="tcp-btn" />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="theme-card-meta">
-                            <span className="theme-card-dot" />
-                            <span className="theme-card-name">{t.name}</span>
-                            <span className="theme-card-check">
-                              <Check size={12} strokeWidth={3} />
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <Group label="Font">
-                  <Row label="Family" desc="Used in every terminal">
-                    <select className="set-select" value={s.fontFamily} onChange={(e) => s.setFontFamily(e.target.value)}>
-                      {FONTS.map((f) => (
-                        <option key={f.label} value={f.value}>
-                          {f.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Row>
-                  <Row label="Size" desc="In pixels">
-                    <div className="stepper">
-                      <button onClick={() => s.setFontSize(s.fontSize - 1)}>−</button>
-                      <span className="stepper-val">{s.fontSize}</span>
-                      <button onClick={() => s.setFontSize(s.fontSize + 1)}>+</button>
-                    </div>
-                  </Row>
-                  <Row label="Line height" desc="Lower is tighter, higher is airier">
-                    <div className="stepper">
-                      <button onClick={() => s.setLineHeight((s.lineHeight ?? 1.1) - 0.05)}>−</button>
-                      <span className="stepper-val">{(s.lineHeight ?? 1.1).toFixed(2)}</span>
-                      <button onClick={() => s.setLineHeight((s.lineHeight ?? 1.1) + 0.05)}>+</button>
-                    </div>
-                  </Row>
-                </Group>
-              </>
-            )}
+            {tab === "appearance" && <Appearance />}
 
             {tab === "terminal" && (
               <>

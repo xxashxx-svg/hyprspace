@@ -286,7 +286,7 @@
   display: flex;
   gap: 2px;
   padding: 6px 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--ink), 0.08);
 }
 .mp-tab {
   flex: 1;
@@ -309,7 +309,7 @@
   opacity: 0.7;
 }
 .mp-tab:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--ink), 0.05);
 }
 .mp-tab.on {
   border-bottom-color: var(--brand, var(--accent));
@@ -380,7 +380,7 @@
   min-width: 0;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--ink), 0.1);
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.25);
   color: var(--text-1);
@@ -394,7 +394,7 @@
 .mp-custom button {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--ink), 0.1);
   border-radius: 6px;
   background: transparent;
   color: var(--text-1);
@@ -414,13 +414,12 @@
   width: 264px;
   padding: 10px 12px 9px;
   background: var(--surface-3);
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(var(--ink), 0.13);
   border-radius: 12px;
   box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.6),
-    0 2px 8px rgba(0, 0, 0, 0.4),
+    var(--shadow-2),
     0 0 30px -10px color-mix(in srgb, var(--brand) 35%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 0 1px 0 rgba(var(--ink), 0.05);
   transform-origin: bottom left;
   animation: effortIn 0.18s var(--ease);
 }
@@ -490,7 +489,7 @@
   height: 26px;
   border-radius: 13px;
   background: rgba(0, 0, 0, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(var(--ink), 0.05);
   overflow: hidden;
 }
 /* the filled part: a brand gradient, a glow that follows it, and stars drifting through it */
@@ -626,11 +625,11 @@
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(var(--ink), 0.22);
   transition: background 0.2s var(--ease), transform 0.2s var(--ease);
 }
 .effort-stop.lit {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(var(--ink), 0.6);
 }
 .effort-stop.here {
   transform: scale(0);
@@ -757,7 +756,7 @@
   border: none;
   border-radius: 7px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-size: 12.5px;
   font-weight: 500;
@@ -777,7 +776,7 @@
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(var(--ink), 0.18);
 }
 .clone-dest {
   display: flex;

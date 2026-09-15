@@ -22,6 +22,12 @@
   --border-0: rgba(255, 255, 255, 0.035); /* shell dividers: sidebar, titlebar, dock edges */
   --border-1: rgba(255, 255, 255, 0.06);
   --border-2: rgba(255, 255, 255, 0.1);
+  /* the color lines and washes are drawn in, as rgb parts: white on the dark side, black on the
+     light side. use it as rgba(var(--ink), 0.1) instead of a literal white or black */
+  --ink: 255, 255, 255;
+  /* additions and deletions, as rgb parts (Settings → Appearance → Diff colors swaps the pair) */
+  --diff-add: 16, 185, 129;
+  --diff-del: 239, 68, 68;
 
   --status-idle: #737373;
   --status-busy: #f59e0b;
@@ -62,6 +68,10 @@
   --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Code", "Consolas", "Menlo",
     "DejaVu Sans Mono", "Liberation Mono", monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+:root[data-diff="blueorange"] {
+  --diff-add: 59, 130, 246;
+  --diff-del: 249, 115, 22;
 }
 
 /* app-wide scrollbars — thin, rounded, neutral; thumb brightens on hover, matches the T3 chrome.

@@ -21,7 +21,6 @@ import { HomePage } from "./components/HomePage";
 import { Dock } from "./components/dock/Dock";
 import { WhatsNew } from "./components/WhatsNew";
 import { isMac } from "./platform";
-import { applyTheme } from "./themes";
 import { useSessionNamer } from "./ai/autoNameSession";
 import { saveState, loadState, backupState, writePty } from "./api";
 import "./styles/tokens.css";
@@ -205,11 +204,11 @@ export default function App() {
           try {
             useSettings.getState().hydrate(JSON.parse(raw));
           } catch {
-            applyTheme(useSettings.getState().theme);
+            useSettings.getState().repaint();
             useSettings.getState().markHydrated();
           }
         } else {
-          applyTheme(useSettings.getState().theme);
+          useSettings.getState().repaint();
           useSettings.getState().markHydrated();
         }
         // owns save-on-change + cross-window broadcast (the settings window does the same)

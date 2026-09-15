@@ -204,7 +204,7 @@ function StepDefaults({ onNext }: { onNext: () => void }) {
             title={t.blurb}
             onClick={() => useSettings.getState().setTheme(t.id)}
           >
-            <span className="ob-theme-swatch" style={{ background: t.vars["--accent"] }} />
+            <span className="ob-theme-swatch" style={{ background: t.vars.dark["--accent"] }} />
             {t.name}
           </button>
         ))}

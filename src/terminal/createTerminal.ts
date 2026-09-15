@@ -13,12 +13,37 @@ export function termTheme(): ITheme {
   const css = getComputedStyle(document.documentElement);
   const v = (n: string, fb: string) => css.getPropertyValue(n).trim() || fb;
   const bg = v("--bg-terminal", "#161616");
-  return {
+  const base = {
     background: bg,
     foreground: v("--term-fg", "rgb(237, 241, 247)"),
     cursor: v("--term-cursor", "rgb(180, 203, 255)"),
     cursorAccent: bg,
     selectionBackground: v("--term-selection", "rgba(180, 203, 255, 0.25)"),
+  };
+  // the light side: the same 16 slots, deep enough to read on a near-white page
+  if (document.documentElement.dataset.scheme === "light") {
+    return {
+      ...base,
+      black: "rgb(40, 44, 52)",
+      red: "rgb(196, 40, 60)",
+      green: "rgb(36, 132, 68)",
+      yellow: "rgb(170, 116, 0)",
+      blue: "rgb(30, 100, 214)",
+      magenta: "rgb(146, 60, 186)",
+      cyan: "rgb(0, 134, 154)",
+      white: "rgb(120, 128, 140)",
+      brightBlack: "rgb(110, 118, 130)",
+      brightRed: "rgb(216, 60, 80)",
+      brightGreen: "rgb(46, 152, 84)",
+      brightYellow: "rgb(186, 132, 10)",
+      brightBlue: "rgb(50, 120, 236)",
+      brightMagenta: "rgb(166, 80, 206)",
+      brightCyan: "rgb(10, 154, 176)",
+      brightWhite: "rgb(30, 34, 40)",
+    };
+  }
+  return {
+    ...base,
     black: "rgb(24, 30, 38)",
     red: "rgb(255, 122, 142)",
     green: "rgb(134, 231, 149)",

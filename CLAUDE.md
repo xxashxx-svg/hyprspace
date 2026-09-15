@@ -34,7 +34,9 @@ command palette. Neutral, T3-Code-inspired dark UI.
    xterm.js lifecycles. Don't re-add it.
 3. **Styling = vanilla CSS + design tokens.** Use the CSS variables in `src/styles/tokens.css`
    (`--surface-*`, `--text-*`, `--border-*`, `--accent`, `--status-*`). No Tailwind, no CSS-in-JS.
-   Match the existing neutral, low-contrast look.
+   Match the existing neutral, low-contrast look. Every theme has a light and a dark side
+   (`themes.ts` derives both from one hue), so never write a literal white or black wash: a line or
+   fill is `rgba(var(--ink), 0.1)`, which is white-alpha on dark and black-alpha on light.
 4. **Terminal stability.** Don't introduce patterns that frequently unmount/remount `TerminalPane`.
    Always dispose xterm instances + addons on cleanup. PTYs must be killed on app exit (they are —
    `kill_all`) or ConPTY hosts (`OpenConsole.exe`) orphan and burn CPU.

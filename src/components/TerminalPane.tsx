@@ -169,6 +169,7 @@ function TerminalPaneInner({
   const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const themeId = useSettings((s) => s.theme);
+  const mode = useSettings((s) => s.mode);
   const terminalTheme = useSettings((s) => s.terminalTheme);
   const fontSize = useSettings((s) => s.fontSize);
   const fontFamily = useSettings((s) => s.fontFamily);
@@ -723,7 +724,7 @@ function TerminalPaneInner({
     // paint the pane surface (padding ring + corners) with the same bg so edges don't show the old color
     document.documentElement.style.setProperty("--term-surface", termSurface(terminalTheme));
     repaintAllTerminals(); // a new theme means a new atlas, and every pane shares it
-  }, [themeId, terminalTheme]);
+  }, [themeId, mode, terminalTheme]);
 
   // live font change → re-fit + resize the pty
   useEffect(() => {

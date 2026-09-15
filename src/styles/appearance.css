@@ -1,0 +1,330 @@
+/* ---- settings → appearance: color scheme cards, the theme gallery, live previews ---- */
+
+/* the section label with the scheme switch on its right */
+.set-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.set-label-row .set-label {
+  margin-bottom: 0;
+}
+.scheme-seg .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+}
+
+/* the shell in miniature, painted by the live tokens: whatever you pick is what this shows */
+.ap {
+  display: flex;
+  flex-direction: column;
+  height: 236px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+.ap-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--surface-1);
+}
+.ap-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(var(--ink), 0.16);
+}
+.ap-tab {
+  width: 44px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background: rgba(var(--ink), 0.1);
+}
+.ap-pill {
+  margin-left: auto;
+  width: 22px;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.ap-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.ap-rail {
+  width: 152px;
+  flex: 0 0 auto;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--border-0);
+  background: var(--surface-1);
+}
+.ap-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+.ap-row.on {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border-1);
+}
+.ap-mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.ap-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ap-line {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(var(--ink), 0.3);
+}
+.ap-line.dim {
+  background: rgba(var(--ink), 0.12);
+}
+.ap-st {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-idle);
+}
+.ap-st.ok {
+  background: var(--status-ok);
+}
+.ap-st.busy {
+  background: var(--status-busy);
+}
+.ap-grid {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px;
+}
+.ap-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-1);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.ap-pane.focus {
+  border-color: var(--accent);
+}
+.ap-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--surface-1);
+}
+.ap-term {
+  margin: 0;
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--term-fg);
+  overflow: hidden;
+}
+.ap-term .g {
+  color: var(--status-ok);
+}
+.ap-term .b {
+  color: var(--status-awaiting);
+}
+.ap-term .y {
+  color: var(--status-busy);
+}
+.ap-term .d {
+  color: var(--text-3);
+}
+.ap-caret {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  vertical-align: text-bottom;
+  background: var(--term-cursor);
+  animation: termCaret 1.1s steps(2) infinite;
+}
+
+/* theme gallery: one card per theme, an orb for each side. click an orb to take that side too */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 14px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    border-color 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.theme-card:hover {
+  border-color: var(--border-2);
+}
+.theme-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.theme-orbs {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 4px 0 2px;
+}
+.theme-orb {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  /* a soft pool of accent sitting on that side's background */
+  background: radial-gradient(
+    circle at 32% 28%,
+    color-mix(in srgb, var(--o-accent) 85%, var(--o-bg)) 0%,
+    color-mix(in srgb, var(--o-accent) 38%, var(--o-bg)) 42%,
+    var(--o-bg) 80%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--ink), 0.1),
+    0 6px 16px -8px rgba(0, 0, 0, 0.5);
+  transition:
+    transform 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.theme-orb:hover {
+  transform: scale(1.06);
+}
+.theme-orb.on {
+  box-shadow:
+    0 0 0 2px var(--surface-2),
+    0 0 0 4px var(--accent);
+}
+.theme-orb-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-1);
+}
+.theme-card-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.theme-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.theme-card-blurb {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* the two dots in front of the diff color picker show the pair in use */
+.diff-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.diff-pick .set-select {
+  margin-left: 5px;
+}
+.diff-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.diff-dot.add {
+  background: rgb(var(--diff-add));
+}
+.diff-dot.del {
+  background: rgb(var(--diff-del));
+}
+
+/* terminal font preview: a fake build log in the chosen family, size and line height */
+.set-preview {
+  padding: 2px 0 16px;
+}
+.term-preview {
+  padding: 12px 14px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-1);
+  background: var(--bg-terminal);
+  color: var(--term-fg);
+  white-space: pre;
+  overflow: hidden;
+}
+.term-preview .g {
+  color: var(--status-ok);
+}
+.term-preview .b {
+  color: var(--status-awaiting);
+}
+.term-preview .y {
+  color: var(--status-busy);
+}
+.term-preview .d {
+  color: var(--text-3);
+}
+.term-caret {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  vertical-align: text-bottom;
+  background: var(--term-cursor);
+  animation: termCaret 1.1s steps(2) infinite;
+}
+@keyframes termCaret {
+  to {
+    opacity: 0;
+  }
+}

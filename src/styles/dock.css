@@ -320,10 +320,10 @@
   font-size: 10.5px;
 }
 .git-delta .add {
-  color: var(--status-ok);
+  color: rgb(var(--diff-add));
 }
 .git-delta .del {
-  color: var(--status-error);
+  color: rgb(var(--diff-del));
 }
 .git-commit {
   flex: 0 0 auto;

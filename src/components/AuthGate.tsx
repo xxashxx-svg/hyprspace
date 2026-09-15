@@ -37,7 +37,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         if (!raw) return;
         try {
           const s = JSON.parse(raw);
-          if (s?.theme) applyTheme(s.theme);
+          if (s?.theme) applyTheme(s.theme, s.colorScheme ?? "dark");
         } catch {
           /* ignore */
         }

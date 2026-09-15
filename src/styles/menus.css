@@ -154,12 +154,11 @@
   display: flex;
   flex-direction: column;
   background: var(--surface-3);
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(var(--ink), 0.13);
   border-radius: 12px;
   box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.6),
-    0 2px 8px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    var(--shadow-2),
+    inset 0 1px 0 rgba(var(--ink), 0.05);
   overflow: hidden;
   transform-origin: top left;
   animation: ctxIn 0.1s var(--ease);
@@ -171,7 +170,7 @@
   gap: 8px;
   height: 38px;
   padding: 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--ink), 0.08);
   color: var(--text-3);
 }
 .pop-menu-search input {
@@ -225,7 +224,7 @@
 .pop-menu-item:hover,
 .pop-menu-item.active {
   background: color-mix(in srgb, var(--accent) 26%, transparent);
-  color: #fff;
+  color: var(--text-1);
 }
 .pop-menu-item > svg,
 .pop-menu-item > img {
@@ -240,7 +239,7 @@
 }
 .pop-menu-item:hover > svg,
 .pop-menu-item.active > svg {
-  color: #fff;
+  color: var(--text-1);
 }
 .pop-menu-item > span {
   min-width: 0;
@@ -278,7 +277,7 @@
 }
 .pop-menu-item:hover .pop-menu-desc,
 .pop-menu-item.active .pop-menu-desc {
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(var(--ink), 0.72);
 }
 /* trailing count / meta, pushed right */
 .pop-menu-meta {
@@ -291,7 +290,7 @@
 }
 .pop-menu-item:hover .pop-menu-meta,
 .pop-menu-item.active .pop-menu-meta {
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(var(--ink), 0.72);
 }
 /* the current pick */
 .pop-menu-check {
@@ -305,7 +304,7 @@
 .pop-menu-sep {
   height: 1px;
   margin: 5px 4px;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--ink), 0.09);
 }
 .pop-menu-empty {
   padding: 10px 10px 8px;
@@ -317,7 +316,7 @@
   display: flex;
   gap: 12px;
   padding: 6px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(var(--ink), 0.08);
   font-size: 10.5px;
   color: var(--text-3);
 }
@@ -326,7 +325,7 @@
   font-size: 10px;
   padding: 1px 5px;
   margin-right: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ink), 0.12);
   border-radius: 4px;
   color: var(--text-2);
 }

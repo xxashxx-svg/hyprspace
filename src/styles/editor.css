@@ -116,13 +116,13 @@
   color: var(--text-3);
 }
 .editor-save.primary {
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
 }
 .editor-save.primary kbd {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: rgba(var(--ink), 0.18);
+  color: var(--on-accent);
 }
 .editor-save.primary:hover:not(:disabled) {
   background: var(--accent-hover);

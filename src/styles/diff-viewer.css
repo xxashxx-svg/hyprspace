@@ -80,12 +80,12 @@
   background: color-mix(in srgb, var(--status-awaiting) 8%, transparent);
 }
 .dv-line.add {
-  color: #b5f0c2;
-  background: rgba(16, 185, 129, 0.12);
+  color: color-mix(in srgb, rgb(var(--diff-add)) 55%, var(--text-1));
+  background: rgba(var(--diff-add), 0.12);
 }
 .dv-line.del {
-  color: #ffb3ad;
-  background: rgba(239, 68, 68, 0.12);
+  color: color-mix(in srgb, rgb(var(--diff-del)) 55%, var(--text-1));
+  background: rgba(var(--diff-del), 0.12);
 }
 .dv-more {
   margin: 8px 14px;

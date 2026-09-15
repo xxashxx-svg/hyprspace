@@ -215,7 +215,7 @@
   font-weight: 600;
 }
 .space-row.droppable {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--ink), 0.1);
 }
 .space-row.drop-over {
   background: var(--accent-dim);
@@ -441,10 +441,10 @@
   color: var(--text-3);
 }
 .space-sum-add {
-  color: var(--status-ok);
+  color: rgb(var(--diff-add));
 }
 .space-sum-del {
-  color: var(--status-error);
+  color: rgb(var(--diff-del));
 }
 .space-empty {
   padding: 4px 8px 6px;

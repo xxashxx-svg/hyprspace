@@ -213,7 +213,7 @@
    what kept reading as "barely there", regardless of the text colour */
 .pane-tab.active .pane-tab-x {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--ink), 0.09);
 }
 .pane-tab:hover .pane-tab-x {
   color: var(--text-1);
@@ -226,7 +226,7 @@
   color: #ff8b84;
 }
 .pane-tab-x:active {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(var(--ink), 0.18);
   color: #ff5f56;
 }
 .terminal-pane {

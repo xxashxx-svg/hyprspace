@@ -1,11 +1,16 @@
 * {
   box-sizing: border-box;
 }
-/* while a theme is switching, kill transitions so colors snap (no per-element color animation) */
+/* while a theme is switching, kill transitions so colors snap (no per-element color animation).
+   .reduce-motion is the same rule held on: Settings → Appearance → Animations off */
 .no-transitions,
 .no-transitions *,
 .no-transitions *::before,
-.no-transitions *::after {
+.no-transitions *::after,
+.reduce-motion,
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
   transition-duration: 0s !important;
   animation-duration: 0s !important;
 }
@@ -18,6 +23,13 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+/* brand marks drawn in white for the dark side flip to near-black on the light side */
+:root[data-scheme="light"] img[src*="openai"],
+:root[data-scheme="light"] img[src*="grok"],
+:root[data-scheme="light"] img[src*="opencode"],
+:root[data-scheme="light"] img[src*="cursor"] {
+  filter: invert(0.85);
 }
 html,
 body,
