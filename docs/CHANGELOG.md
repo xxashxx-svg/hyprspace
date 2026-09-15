@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.2 — 2026-09-15
+
+- Open the current folder in VS Code or Cursor from the titlebar. The chevron picks the editor or opens the folder in Explorer
+- Git features no longer fail with 'program not found' when git is missing from the app's PATH
+
 ## 0.20.1 — 2026-09-14
 
 - A thread that runs for more than 30 minutes keeps counting instead of dropping back to "now" while the agent is still working.
