@@ -4,6 +4,12 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.4 — 2026-09-15
+
+- New Appearance tab with a live preview of the app, a System, Light or Dark switch, and six themes that each have a light and a dark side
+- Pick the interface font, diff colors (red and green, or blue and orange), and turn animations off
+- The terminal font settings show a live sample
+
 ## 0.20.3 — 2026-09-15
 
 - Git, VS Code and the agent CLIs are found again when the app is started by the installer or the updater
