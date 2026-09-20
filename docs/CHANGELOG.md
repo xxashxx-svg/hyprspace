@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.5 — 2026-09-20
+
+- A thread now reopens on the model it is actually using, so switching model with /model sticks after a restart.
+- Model ids containing brackets, such as the 1M context models, are now passed to the CLI correctly.
+
 ## 0.20.4 — 2026-09-15
 
 - New Appearance tab with a live preview of the app, a System, Light or Dark switch, and six themes that each have a light and a dark side
