@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { hasModelFlag, setModelInCommand, type ProviderId } from "../lib/models";
 
 const AGENT_LABEL: Record<string, string> = {
   claude: "Claude",
@@ -343,14 +344,32 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
     return id;
   },
 
+  // Also refreshes the model already pinned in the saved command, because that text is what a
+  // relaunch replays: /model changes the model from inside the CLI, so without this the pane comes
+  // back on whatever it was first launched with, forever.
+  //
+  // Only ever replaces a pin that is already there. A command with no model flag is deliberately
+  // following the CLI's own default, and adding one here would quietly take that away.
   setSessionModel: (sessionId, model) =>
-    set((s) => ({
-      workspaces: s.workspaces.map((w) =>
-        w.sessions.some((ss) => ss.id === sessionId)
-          ? { ...w, sessions: w.sessions.map((ss) => (ss.id === sessionId ? { ...ss, model } : ss)) }
-          : w,
-      ),
-    })),
+    set((s) => {
+      let changed = false;
+      const workspaces = s.workspaces.map((w) => ({
+        ...w,
+        sessions: w.sessions.map((ss) => {
+          if (ss.id !== sessionId || ss.model === model) return ss;
+          changed = true;
+          const provider = ss.provider as ProviderId;
+          const repin = !!ss.command && !!model && hasModelFlag(ss.command, provider);
+          return {
+            ...ss,
+            model,
+            command: repin ? setModelInCommand(ss.command!, provider, model) : ss.command,
+          };
+        }),
+      }));
+      // this runs on every status-line tick, so don't churn state when nothing moved
+      return changed ? { workspaces } : {};
+    }),
 
   startDraft: (sessionId, command, model) =>
     set((s) => {

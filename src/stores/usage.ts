@@ -5,6 +5,7 @@
 // API is called, which is the only way we're allowed to do this.
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import { useWorkspaces } from "./workspace";
 
 export interface UsageWindow {
   pct: number;
@@ -21,6 +22,8 @@ export interface UsageWindow {
 export interface PaneUsage {
   at: number; // when this pane last reported
   model?: string;
+  /** the model's own id, which is what --model takes. `model` above is the label for people. */
+  modelId?: string;
   ctxPct?: number;
   /** account-wide rate-limit windows, keyed by claude's own name for them. Which ones exist depends
    *  on the plan — a Max account reports an all-models weekly and a Fable one, not an Opus one. */
@@ -86,13 +89,12 @@ function parse(sl: Record<string, unknown>): PaneUsage {
   const rl = (sl.rate_limits ?? {}) as Record<string, unknown>;
   const ctx = (sl.context_window ?? {}) as Record<string, unknown>;
   const model = sl.model;
+  const modelObj = (typeof model === "object" && model ? model : {}) as Record<string, unknown>;
 
   return {
     at: Date.now(),
-    model:
-      typeof model === "string"
-        ? model
-        : ((model ?? {}) as Record<string, unknown>).display_name as string | undefined,
+    model: typeof model === "string" ? model : (modelObj.display_name as string | undefined),
+    modelId: typeof modelObj.id === "string" ? modelObj.id : undefined,
     ctxPct: num(ctx.used_percentage) !== undefined ? clamp(num(ctx.used_percentage)!) : undefined,
     // take whatever windows this plan actually reports rather than assuming a fixed set
     windows: Object.fromEntries(
@@ -191,7 +193,11 @@ export function initUsage() {
   started = true;
   void listen<{ paneId: string; statusLine: Record<string, unknown> }>("agent-usage", (e) => {
     if (!e.payload?.paneId) return;
-    useUsage.getState().apply(e.payload.paneId, e.payload.statusLine ?? {});
+    const { paneId } = e.payload;
+    useUsage.getState().apply(paneId, e.payload.statusLine ?? {});
+    // the status line is the only place that tells us /model happened, so reconcile off it
+    const modelId = useUsage.getState().byPane[paneId]?.modelId;
+    if (modelId) useWorkspaces.getState().setSessionModel(paneId, modelId);
   });
 }
 

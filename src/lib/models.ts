@@ -159,7 +159,10 @@ export function effortNote(provider: ProviderId, modelId: string, level: string,
   return m?.effortNotes?.[level] ?? EFFORT_NOTE[level] ?? "Thinks harder";
 }
 
-const quote = (s: string) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s);
+// Quote anything that isn't a plain identifier. Model ids are typed into a real shell, and some
+// carry characters a shell reads as syntax: claude-opus-5[1m] is a glob in bash, so unquoted it can
+// expand to claude-opus-51 when a file named "1" happens to sit in the folder.
+const quote = (s: string) => (/^[A-Za-z0-9._-]+$/.test(s) ? s : `"${s.replace(/"/g, '\\"')}"`);
 
 /** Extra command-line flags that select a model and effort for one launch. */
 export function modelFlags(provider: ProviderId, model: string, effort: string): string[] {
@@ -184,6 +187,44 @@ export function modelFlags(provider: ProviderId, model: string, effort: string):
       break;
   }
   return flags;
+}
+
+/** The flag each CLI selects a model with, for editing a command we built earlier. */
+const MODEL_FLAG: Partial<Record<ProviderId, string>> = {
+  claude: "--model",
+  codex: "-m",
+  gemini: "-m",
+  opencode: "--model",
+  grok: "--model",
+};
+
+// the flag and its value: either a quoted string (a custom id may contain spaces) or a bare token
+function modelFlagRe(flag: string): RegExp {
+  return new RegExp(`\\s${flag.replace(/[-]/g, "\\-")}(?:\\s+|=)("(?:[^"\\\\]|\\\\.)*"|\\S+)`);
+}
+
+/** Whether a launch command pins a model. A command without one follows the CLI's own default. */
+export function hasModelFlag(cmd: string, provider: ProviderId): boolean {
+  const flag = MODEL_FLAG[provider];
+  return !!flag && modelFlagRe(flag).test(cmd);
+}
+
+/**
+ * Rewrite the model a launch command asks for, leaving the rest of it alone. An empty model drops
+ * the flag, which hands the choice back to the CLI's own default.
+ *
+ * Commands are stored as the text we type into the shell, so changing a pane's model after it was
+ * created means editing that text rather than rebuilding it (the command may since have picked up
+ * --resume, --settings and friends).
+ */
+export function setModelInCommand(cmd: string, provider: ProviderId, model: string): string {
+  const flag = MODEL_FLAG[provider];
+  if (!flag) return cmd;
+  const re = modelFlagRe(flag);
+  if (re.test(cmd)) return cmd.replace(re, model ? ` ${flag} ${quote(model)}` : "");
+  if (!model) return cmd;
+  // no flag yet: put it straight after the program name so it can't land after a `--` passthrough
+  return cmd.replace(/^(\S+)/, `$1 ${flag} ${quote(model)}`);
 }
 
 /** Environment variables that carry settings the CLI has no flag for. None today; kept so a
