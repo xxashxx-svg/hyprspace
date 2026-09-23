@@ -237,61 +237,219 @@ fn claude_project_dir(cwd: &str) -> Option<std::path::PathBuf> {
     )
 }
 
-// Resolve Claude Code's `[Image #N]` terminal marker to the cached image file. Claude stores pasted
-// images at ~/.claude/image-cache/<session-id>/<N>.<ext>, numbered across the session. We find the
-// pane cwd's newest session (its .jsonl stem IS the session id + the image-cache dir name), then look
-// up <N>.* there. Returns the file path, or None if there's no such image yet.
+// Resolve Claude Code's `[Image #N]` terminal marker to a file on disk.
+//
+// Up to CLI 2.1.272 a pasted image was written to ~/.claude/image-cache/<session-id>/<N>.<ext>.
+// Newer CLIs keep it only as base64 inside the session transcript, so that folder is gone and the
+// marker has to be read back out of the .jsonl. Both are handled: the old cache first, then the
+// transcript, whose extracted bytes are saved under ~/.hyprspace/image-cache so the decode happens
+// once. Returns the file path, or None if there's no such image.
 #[tauri::command]
 async fn claude_image_path(cwd: String, n: u32, session_id: Option<String>) -> Option<String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
-            .ok()
-            .filter(|h| !h.is_empty())?;
-        let cache = std::path::Path::new(&home).join(".claude").join("image-cache");
-        // the pane pins its own id as claude's --session-id, so that's the right cache dir. only
-        // guess (newest transcript in the folder) when it isn't there — e.g. a session forked by
-        // /clear, or a pane that was already running before this existed. guessing is what made
-        // two panes in one folder open each other's images.
-        let by_pane = session_id
-            .as_deref()
-            .map(|s| cache.join(s))
-            .filter(|d| d.is_dir());
-        let dir = match by_pane {
-            Some(d) => d,
-            None => {
-                let proj = claude_project_dir(&cwd)?;
-                let newest = std::fs::read_dir(&proj)
-                    .ok()?
-                    .flatten()
-                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
-                    .filter_map(|e| {
-                        let modified = e.metadata().ok()?.modified().ok()?;
-                        let stem = e.path().file_stem()?.to_string_lossy().into_owned();
-                        Some((modified, stem))
-                    })
-                    .max_by_key(|(m, _)| *m)
-                    .map(|(_, stem)| stem)?;
-                cache.join(newest)
-            }
-        };
-        let target = n.to_string();
-        for e in std::fs::read_dir(&dir).ok()?.flatten() {
-            let p = e.path();
-            if p.is_file() && p.file_stem().and_then(|s| s.to_str()) == Some(target.as_str()) {
-                // skip a 0-byte file: claude may still be writing it, and caching that miss beats
-                // handing the viewer a truncated png it can't decode
-                if e.metadata().map(|m| m.len() == 0).unwrap_or(false) {
-                    return None;
-                }
-                return Some(p.to_string_lossy().replace('\\', "/"));
-            }
+        if let Some(p) = legacy_image_cache(&cwd, n, session_id.as_deref()) {
+            return Some(p);
         }
-        None
+        let transcript = claude_transcript(&cwd, session_id.as_deref())?;
+        let stem = transcript.file_stem()?.to_str()?.to_string();
+        extract_marker_image(&stem, n, &transcript)
     })
     .await
     .ok()
     .flatten()
+}
+
+fn claude_home() -> Option<String> {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()
+        .filter(|h| !h.is_empty())
+}
+
+// The transcript this pane's images belong to. The pane pins its own id as claude's --session-id,
+// so that file is the right one; only guess (newest in the folder) when it isn't there — e.g. a
+// session forked by /clear, or a pane that was already running before this existed. Guessing is
+// what made two panes in one folder open each other's images.
+fn claude_transcript(cwd: &str, session_id: Option<&str>) -> Option<std::path::PathBuf> {
+    let proj = claude_project_dir(cwd)?;
+    if let Some(s) = session_id {
+        let own = proj.join(format!("{s}.jsonl"));
+        if own.is_file() {
+            return Some(own);
+        }
+    }
+    std::fs::read_dir(&proj)
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .max_by_key(|(m, _)| *m)
+        .map(|(_, p)| p)
+}
+
+fn legacy_image_cache(cwd: &str, n: u32, session_id: Option<&str>) -> Option<String> {
+    let home = claude_home()?;
+    let cache = std::path::Path::new(&home).join(".claude").join("image-cache");
+    let by_pane = session_id.map(|s| cache.join(s)).filter(|d| d.is_dir());
+    let dir = match by_pane {
+        Some(d) => d,
+        None => cache.join(claude_transcript(cwd, session_id)?.file_stem()?.to_str()?),
+    };
+    let target = n.to_string();
+    for e in std::fs::read_dir(&dir).ok()?.flatten() {
+        let p = e.path();
+        if p.is_file() && p.file_stem().and_then(|s| s.to_str()) == Some(target.as_str()) {
+            // a 0-byte file means claude is still writing it; fall through rather than hand the
+            // viewer a truncated png it can't decode
+            if e.metadata().map(|m| m.len() == 0).unwrap_or(false) {
+                return None;
+            }
+            return Some(p.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    None
+}
+
+// Decode the marker's image out of the transcript, or reuse the last decode. A cached file is good
+// until the transcript changes: a new paste can renumber the markers, and after /clear they restart
+// at 1, so a file older than the transcript is thrown away rather than trusted.
+fn extract_marker_image(stem: &str, n: u32, transcript: &std::path::Path) -> Option<String> {
+    let home = claude_home()?;
+    let dir = std::path::Path::new(&home)
+        .join(".hyprspace")
+        .join("image-cache")
+        .join(stem);
+    let written = std::fs::metadata(transcript).ok()?.modified().ok()?;
+    let target = n.to_string();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.file_stem().and_then(|s| s.to_str()) != Some(target.as_str()) {
+                continue;
+            }
+            let meta = e.metadata().ok();
+            let fresh = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .is_some_and(|m| m >= written);
+            if fresh && meta.map(|m| m.len() > 0).unwrap_or(false) {
+                return Some(p.to_string_lossy().replace('\\', "/"));
+            }
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+    let (bytes, ext) = marker_image_bytes(transcript, n)?;
+    std::fs::create_dir_all(&dir).ok()?;
+    let out = dir.join(format!("{n}.{ext}"));
+    std::fs::write(&out, &bytes).ok()?;
+    Some(out.to_string_lossy().replace('\\', "/"))
+}
+
+// Transcripts run to hundreds of MB, so only the tail is searched, and only lines carrying the
+// marker are parsed. Newest match first: the same user message is written more than once, and the
+// marker also turns up in messages that hold no image (an agent quoting it), which just don't match.
+fn marker_image_bytes(transcript: &std::path::Path, n: u32) -> Option<(Vec<u8>, &'static str)> {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 64 * 1024 * 1024;
+
+    let mut f = std::fs::File::open(transcript).ok()?;
+    let len = f.metadata().ok()?.len();
+    let from = len.saturating_sub(TAIL);
+    f.seek(SeekFrom::Start(from)).ok()?;
+    let mut buf = Vec::with_capacity((len - from) as usize);
+    f.read_to_end(&mut buf).ok()?;
+    if from > 0 {
+        // the first line is cut in half and would never parse
+        let cut = buf.iter().position(|&b| b == b'\n')?;
+        buf.drain(..=cut);
+    }
+    // every position in one pass, then newest first — walking backwards with a fresh search each
+    // time would re-scan the buffer per hit, and a marker can appear dozens of times
+    let needle = format!("[Image #{n}]").into_bytes();
+    let mut hits: Vec<usize> = Vec::new();
+    let mut i = 0;
+    while i + needle.len() <= buf.len() {
+        if buf[i..i + needle.len()] == needle[..] {
+            hits.push(i);
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    let mut parsed = 0;
+    for &at in hits.iter().rev() {
+        let ls = buf[..at].iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+        let le = buf[at..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(buf.len(), |i| at + i);
+        let line = &buf[ls..le];
+        // most lines holding the marker are an agent quoting it back, with nothing attached. they
+        // are also the small ones, so skipping them here is what keeps this to a single parse.
+        if !contains(line, b"\"image\"") {
+            continue;
+        }
+        parsed += 1;
+        if parsed > 32 {
+            break;
+        }
+        if let Some(hit) = image_for_marker(line, n) {
+            return Some(hit);
+        }
+    }
+    None
+}
+
+fn contains(hay: &[u8], needle: &[u8]) -> bool {
+    hay.len() >= needle.len() && hay.windows(needle.len()).any(|w| w == needle)
+}
+
+// Markers and images pair up by position inside one message: the first [Image #..] in the text is
+// the first attachment, and so on. By position, not by number — deleting one paste leaves a gap in
+// the numbering (…65, 67, 68…) while the attachments stay in step.
+fn image_for_marker(line: &[u8], n: u32) -> Option<(Vec<u8>, &'static str)> {
+    use base64::Engine;
+    let v: serde_json::Value = serde_json::from_slice(line).ok()?;
+    let parts = v.get("message")?.get("content")?.as_array()?;
+    let mut marks: Vec<u32> = Vec::new();
+    let mut imgs: Vec<&serde_json::Value> = Vec::new();
+    for p in parts {
+        match p.get("type").and_then(|t| t.as_str()) {
+            Some("text") => marks.extend(marker_numbers(p.get("text")?.as_str()?)),
+            Some("image") => imgs.push(p.get("source")?),
+            _ => {}
+        }
+    }
+    if marks.len() != imgs.len() {
+        return None;
+    }
+    let src = imgs[marks.iter().position(|m| *m == n)?];
+    if src.get("type").and_then(|t| t.as_str()) != Some("base64") {
+        return None;
+    }
+    let ext = match src.get("media_type").and_then(|m| m.as_str()) {
+        Some("image/jpeg") => "jpg",
+        Some("image/gif") => "gif",
+        Some("image/webp") => "webp",
+        _ => "png",
+    };
+    let data = src.get("data")?.as_str()?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
+    Some((bytes, ext))
+}
+
+fn marker_numbers(text: &str) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("[Image #") {
+        let after = &rest[i + "[Image #".len()..];
+        let Some(close) = after.find(']') else { break };
+        if let Ok(v) = after[..close].parse::<u32>() {
+            out.push(v);
+        }
+        rest = &after[close + 1..];
+    }
+    out
 }
 
 fn folder_has_transcript(dir: &std::path::Path) -> bool {
