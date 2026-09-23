@@ -671,6 +671,31 @@ fn expand_env(s: &str) -> String {
     out
 }
 
+// When HyprSpace is started from inside a Claude Code session (a dev build run by an agent, or the
+// app opened from a claude terminal), it inherits that session's own markers, and every pane
+// would pass them on. Claude then treats each pane as a sub-session of the one that launched us:
+// it turns transcript saving off (so nothing can be resumed, and [Image #N] can't be read back),
+// and each pane gets that session's id and messaging token. Panes are independent sessions, so
+// drop the markers. Only these: CLAUDE_CODE_* settings a user sets on purpose (Bedrock, Git Bash
+// path, output limits) are left alone.
+fn drop_claude_session_env() {
+    for k in [
+        "CLAUDECODE",
+        "CLAUDE_PID",
+        "CLAUDE_EFFORT",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ATTENDED",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDE_CODE_SSE_PORT",
+    ] {
+        std::env::remove_var(k);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let argv: Vec<String> = std::env::args().collect();
@@ -695,6 +720,7 @@ pub fn run() {
 
     // adopt the user's real PATH so a GUI or installer launch can find git and the provider CLIs
     fix_path_env();
+    drop_claude_session_env();
 
     // dev builds share the installed app's identity, so both fight over the same WebView2
     // user-data folder — the second instance hangs windowless on the lock. give debug builds
