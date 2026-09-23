@@ -4,6 +4,12 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.20.7 — 2026-09-23
+
+- Hover an [Image #N] or an image path in a terminal to preview it
+- The paste tray labels each image with its [Image #N] and drops it when you erase the marker
+- Claude panes save their history again when HyprSpace is opened from a Claude terminal
+
 ## 0.20.6 — 2026-09-23
 
 - Pasted images show in an Attached tray on the pane, with a bigger preview on hover. Drag it anywhere or fold it down
