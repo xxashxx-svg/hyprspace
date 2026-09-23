@@ -1856,7 +1856,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-tauri"
-version = "0.20.5"
+version = "0.20.6"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
