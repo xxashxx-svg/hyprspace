@@ -1,0 +1,234 @@
+/* ---- images pasted into a pane since its last Enter (components/pane/PasteTray) ---- */
+/* starts pinned top right of the terminal: the prompt lives at the bottom, and old output is the
+   cheaper thing to cover. drag the header to move it anywhere inside the pane */
+.ptray {
+  position: absolute;
+  top: 38px; /* clears the 28px pane header */
+  right: 14px;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px 4px 8px;
+  font-family: var(--font-ui);
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-2));
+  border-radius: 12px;
+  box-shadow:
+    var(--shadow-pop),
+    0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent),
+    inset 0 1px 0 rgba(var(--ink), 0.05);
+  backdrop-filter: blur(10px);
+  animation: ptrayIn 0.16s var(--ease);
+}
+.ptray.flush {
+  top: 10px;
+}
+.ptray.folded {
+  min-width: 0;
+  padding-bottom: 4px;
+}
+@keyframes ptrayIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
+/* header: the drag handle, a count, collapse and clear */
+.ptray-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 4px;
+  border-radius: 8px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.ptray-head:active {
+  cursor: grabbing;
+}
+.ptray-head:hover {
+  background: rgba(var(--ink), 0.04);
+}
+.ptray-grip {
+  color: var(--text-3);
+  opacity: 0.6;
+}
+.ptray-clip {
+  color: var(--accent);
+}
+.ptray-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text-1);
+}
+.ptray-count {
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-1));
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.ptray-gap {
+  flex: 1;
+  min-width: 10px;
+}
+.ptray-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.ptray-btn:hover {
+  background: rgba(var(--ink), 0.08);
+  color: var(--text-1);
+}
+
+.ptray-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 6px 2px;
+}
+.ptray-hint {
+  padding: 4px 8px 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+/* one pasted image: the picture, its size underneath, a dismiss corner on hover */
+.ptray-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ptray-shot {
+  display: block;
+  width: 76px;
+  height: 54px;
+  padding: 0;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-3);
+  cursor: zoom-in;
+  transition:
+    border-color 0.12s var(--ease),
+    box-shadow 0.12s var(--ease),
+    transform 0.12s var(--ease);
+}
+.ptray-shot:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  transform: translateY(-1px);
+}
+.ptray-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ptray-size {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 12px;
+  color: var(--text-3);
+  white-space: pre;
+}
+.ptray-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 1px solid var(--border-2);
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-2);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 0.12s var(--ease),
+    transform 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.ptray-item:hover .ptray-x {
+  opacity: 1;
+  transform: scale(1);
+}
+.ptray-x:hover {
+  color: var(--status-error);
+}
+
+/* hover a thumbnail for a bigger look. opens down and to the left by default, and flips when the
+   tray has been dragged near the bottom or the left of the pane */
+.ptray-peek {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -8px;
+  z-index: 1;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  animation: ptrayIn 0.12s var(--ease);
+}
+.ptray.up .ptray-peek {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.ptray.left .ptray-peek {
+  right: auto;
+  left: -8px;
+}
+.ptray-item:hover .ptray-peek {
+  display: block;
+}
+.ptray-peek img {
+  display: block;
+  max-width: 380px;
+  max-height: 280px;
+  border-radius: 8px;
+}
+.ptray-peek-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 2px 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.ptray-peek-cap span:first-child {
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}

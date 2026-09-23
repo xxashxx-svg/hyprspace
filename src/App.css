@@ -13,6 +13,7 @@
 @import "./styles/controls.css";
 @import "./styles/layout.css";
 @import "./styles/pane.css";
+@import "./styles/paste-tray.css";
 @import "./styles/image-viewer.css";
 @import "./styles/diff-viewer.css";
 @import "./styles/empty-state.css";

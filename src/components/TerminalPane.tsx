@@ -20,6 +20,7 @@ import { claudeCmd } from "../actions";
 import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp, pathExists, claudeImagePath, agentHookSettings } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { noteUserInput, forgetSession } from "../ai/autoNameSession";
+import { PasteTray } from "./pane/PasteTray";
 import { useActivity } from "../stores/activity";
 import { useAgentStatus } from "../stores/agentStatus";
 import { useUsage } from "../stores/usage";
@@ -168,6 +169,8 @@ function TerminalPaneInner({
   const [alive, setAlive] = useState(true);
   const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [pasted, setPasted] = useState<string[]>([]);
+  const pasteRef = useRef<(() => void) | null>(null); // the clipboard paste, for right-click
   const themeId = useSettings((s) => s.theme);
   const mode = useSettings((s) => s.mode);
   const terminalTheme = useSettings((s) => s.terminalTheme);
@@ -375,6 +378,27 @@ function TerminalPaneInner({
     // GPU (WebGL) renderer attaches in the visibility effect below, not here — only the active
     // space's panes hold a GL context, so N mounted spaces can't hit the browser's context cap
 
+    // an image's path goes into the prompt (the agents read images by path) and into the tray,
+    // since the terminal itself only ever shows that path or claude's [Image #N]
+    const attach = (path: string) => {
+      term.paste(pastePath(path));
+      setPasted((l) => (l.includes(path) ? l : [...l, path]));
+    };
+    // text first (like Orca), image only when there's no text. note readText REJECTS when the
+    // clipboard holds no text (it doesn't resolve empty), so the image fallback has to hang off
+    // .catch as well as the empty-string case — otherwise pasting a screenshot does nothing.
+    const pasteClipboard = () => {
+      const pasteImage = () =>
+        clipboardImageToTemp().then((path) => {
+          if (path && !disposed) attach(path);
+        });
+      void readText()
+        .then((t) => (t ? void term.paste(t) : pasteImage()))
+        .catch(pasteImage)
+        .catch(() => {});
+    };
+    pasteRef.current = pasteClipboard;
+
     // Ctrl+Shift+F search · Ctrl+C copies selection (else SIGINT) · Ctrl+V / Ctrl+Shift+V paste
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
@@ -389,7 +413,7 @@ function TerminalPaneInner({
           if (!disposed) void writePty(sessionId, Uint8Array.from([0x1b, 0x76])).catch(() => {}); // ESC v
         };
         clipboardImageToTemp()
-          .then((path) => (path && !disposed ? term.paste(pastePath(path)) : fallback()))
+          .then((path) => (path && !disposed ? attach(path) : fallback()))
           .catch(fallback);
         return false;
       }
@@ -408,17 +432,7 @@ function TerminalPaneInner({
         return !e.shiftKey; // nothing selected: plain Ctrl+C interrupts; Ctrl+Shift+C no-ops
       }
       if (e.code === "KeyV") {
-        // text first (like Orca), image only when there's no text. note readText REJECTS when the
-        // clipboard holds no text (it doesn't resolve empty), so the image fallback has to hang off
-        // .catch as well as the empty-string case — otherwise pasting a screenshot does nothing.
-        const pasteImage = () =>
-          clipboardImageToTemp().then((path) => {
-            if (path && !disposed) term.paste(pastePath(path));
-          });
-        void readText()
-          .then((t) => (t ? void term.paste(t) : pasteImage()))
-          .catch(pasteImage)
-          .catch(() => {});
+        pasteClipboard();
         // returning false only stops xterm's key handling; the browser would still fire its own
         // paste event on the textarea, and xterm pastes that too. This keeps it to one paste.
         e.preventDefault();
@@ -468,6 +482,8 @@ function TerminalPaneInner({
     const enc = new TextEncoder();
     const dataDisp = term.onData((d) => {
       noteUserInput(sessionId, d); // capture the first prompt for the auto-namer (T3-style)
+      // Enter sends the message and Ctrl+C clears it, so either way the tray is done
+      if (d === "\r" || d === "\x03") setPasted((l) => (l.length ? [] : l));
       void writePty(sessionId, enc.encode(d));
     });
     // copy-on-select (opt-in) — via the Tauri clipboard so it works inside the webview
@@ -784,11 +800,12 @@ function TerminalPaneInner({
   // right-click = paste (xterm.paste handles bracketed paste so multi-line input won't pre-submit)
   const handlePaste = (e: RMouseEvent) => {
     e.preventDefault();
-    readText()
-      .then((text) => {
-        if (text) termRef.current?.paste(text);
-      })
-      .catch(() => {});
+    pasteRef.current?.();
+  };
+  const openPasted = (path: string) => {
+    const st = useWorkspaces.getState();
+    const w = st.workspaces.find((x) => x.sessions.some((ss) => ss.id === sessionId));
+    if (w) st.openPathTab(path, { wsId: w.id, sessionId });
   };
 
   return (
@@ -863,6 +880,19 @@ function TerminalPaneInner({
         />
       )}
       <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
+      <PasteTray
+        paths={pasted}
+        flush={!!tabbed}
+        onOpen={openPasted}
+        onDismiss={(p) => {
+          setPasted((l) => l.filter((x) => x !== p));
+          termRef.current?.focus();
+        }}
+        onClear={() => {
+          setPasted([]);
+          termRef.current?.focus();
+        }}
+      />
       {booting && (
         <div className="pane-boot">
           <LoadingState label={`Starting ${PROVIDER_LABEL[provider] ?? "session"}`} />
