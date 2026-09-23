@@ -4,6 +4,19 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.21.0 — 2026-09-24
+
+- Settings has a grouped sidebar and a new Defaults tab for each agent's model, effort and permissions
+- General shows the version and updates in one place, and the About tab is gone
+- The usage panel shows each plan's real limits, and the titlebar meter has Claude and Codex tabs
+- A new intro lets you try folders, threads, the composer, panes and the palette before you start
+- Search and New thread share one row in the sidebar, and New thread asks for a folder
+- The command palette lists threads and hides archived ones, and the old multi-agent launcher is gone
+- The Open button can open a folder in Explorer or Finder, and picking a target no longer launches it
+- A new effort slider, an Ultrathink outline in the composer, and Opus 5.5 in the model list
+- Fixed: Codex failed to start on Windows when an effort level was set
+- Fixed: an agent installed while the app is open now shows up after Check again
+
 ## 0.20.7 — 2026-09-23
 
 - Hover an [Image #N] or an image path in a terminal to preview it
