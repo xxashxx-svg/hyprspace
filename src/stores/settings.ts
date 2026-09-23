@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { applyTheme, THEMES, type Mode, type Scheme } from "../themes";
 import type { EditorId } from "../api";
 
+/** What the titlebar's Open button opens a folder in: an editor, or the OS file manager */
+export type OpenTarget = EditorId | "files";
+
 export type CursorStyle = "bar" | "block" | "underline";
 export type ClaudePermission = "default" | "acceptEdits" | "plan" | "bypass";
 export type CodexMode = "default" | "auto" | "bypass";
@@ -39,7 +42,7 @@ interface SettingsState {
   agentModel: Record<string, string>; // provider id → model id ("" = the CLI's default)
   agentEffort: Record<string, string>; // provider id → effort level ("" = the CLI's default)
   lastProvider: string; // what the composer launched last; the next composer opens on it
-  editor: EditorId; // what the titlebar's Open button launches
+  editor: OpenTarget; // what the titlebar's Open button opens a folder in
   railWidth: number; // left sidebar width in px
   dockWidth: number; // right dock width in px
   hydrated: boolean;
@@ -67,7 +70,7 @@ interface SettingsState {
   setAgentModel: (provider: string, model: string) => void;
   setAgentEffort: (provider: string, effort: string) => void;
   setLastProvider: (id: string) => void;
-  setEditor: (id: EditorId) => void;
+  setEditor: (id: OpenTarget) => void;
   setRailWidth: (n: number) => void;
   setDockWidth: (n: number) => void;
   setOnboarded: (b: boolean) => void;

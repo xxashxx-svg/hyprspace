@@ -111,16 +111,6 @@ lines; on EOF it emits `\u{0}__agent_exit__`. `secrets` maps an env-var name →
 name, read **in Rust** and set on the child env so the value never enters JS (unused by current
 callers, which pass `{}`). Reaped by `kill_all` on exit like the PTYs.
 
-## Multi-agent launcher (`LaunchWorkspace.tsx` + `stores/launchPresets.ts`)
-
-Fan out many agents at once: pick a working folder, a grid size (1–12 terminals), and an agent mix
-(per-provider counts with quick-fill — All Claude / One of each / Split evenly). Launch creates a
-project (`addWorkspace`) then loops `addSession` for each agent command, so `PaneGrid` tiles them.
-Agent panes get a short friendly name (`lib/names.ts`) so identical agents are tellable apart. A
-config (folder + grid + mix) can be saved as a **preset** (`stores/launchPresets.ts`, persisted
-`"launchPresets"`) and relaunched in one click. Opened from Home, the command palette, or the
-titlebar **New** menu.
-
 ## Integrated editor (`CodeEditor.tsx` + `devtools/fs.rs`)
 
 A CodeMirror 6 editor in the Review dock's **Editor** tab. Clicking a file in the Files tree (or its
@@ -184,13 +174,13 @@ on both at once. Two things it does deliberately:
 ## Code structure & animation notes
 
 - **CSS is split per area.** `src/App.css` is just an ordered `@import` index of `src/styles/*.css`
-  (one file per area: rail, home, pane, loops, launcher, editor, …). Edit the area file, not the
+  (one file per area: rail, home, pane, loops, editor, …). Edit the area file, not the
   index; order is preserved so the cascade is identical to the old single file.
 - **`devtools` is a folder module** (`git` / `worktree` / `project` / `fs` / `providers` /
   `skills`), re-exported by `mod.rs` so `devtools::*` paths in `lib.rs` are unchanged. Shared helpers
   (`git`, `home_dir`, `read_json`) live in `mod.rs`.
 - **Smooth UI** uses `@formkit/auto-animate` (rail lists + expand/collapse, the file tree, the Loops
-  list, launcher presets) plus a `.no-transitions` guard toggled in `applyTheme` so a theme switch
+  list) plus a `.no-transitions` guard toggled in `applyTheme` so a theme switch
   snaps colors instead of animating every element. `prefers-reduced-motion` is respected app-wide.
 - **Dev-state isolation.** `persist.rs` honors a `HYPRSPACE_STATE_DIR` env override (unset in release
   builds) so a dev instance can run on a scratch state dir without touching the user's `~/.hyprspace/v2`.

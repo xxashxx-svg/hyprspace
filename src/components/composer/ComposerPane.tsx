@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
-import { ArrowUp, Check, ChevronDown, CornerDownLeft, FileText, Folder, FolderOpen, GitBranch, ImagePlus, Terminal as TerminalIcon, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, CornerDownLeft, FileText, Folder, FolderOpen, GitBranch, ImagePlus, Sparkles, Terminal as TerminalIcon, X } from "lucide-react";
 import { useWorkspaces } from "../../stores/workspace";
 import { useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
@@ -265,6 +265,9 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
   const efforts = effortsFor(provider, choice.model, cat);
   const isShell = provider === "terminal" || provider === "wsl";
   const name = ws?.name ?? "";
+  // "ultrathink" is a Claude Code keyword: it asks Claude to think its hardest on this message.
+  // the other CLIs read it as plain text, so only light it up for Claude
+  const ultra = provider === "claude" && /\bultrathink\b/i.test(text);
 
   return (
     <div className={`composer-pane${compact ? " compact" : ""}`} ref={rootRef}>
@@ -273,7 +276,7 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
           What should we work on{ws ? <> in <span>{name}</span></> : null}?
         </h2>
 
-        <div className="composer" style={{ "--brand": PROVIDER_COLOR[provider] ?? "var(--accent)" } as React.CSSProperties}>
+        <div className={`composer${ultra ? " ultra" : ""}`} style={{ "--brand": PROVIDER_COLOR[provider] ?? "var(--accent)" } as React.CSSProperties}>
           <div className="composer-top">
             {spacePicker && !ws && (
               <button className="composer-chip" onClick={() => void chooseFolder()}>
@@ -412,6 +415,12 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
                   onClose={() => setMenu(null)}
                 />
               </>
+            )}
+            {ultra && (
+              <span className="ultra-badge" title="Claude thinks its hardest on this message">
+                <Sparkles size={12} />
+                <span className="ultra-badge-text">Ultrathink</span>
+              </span>
             )}
 
             <button

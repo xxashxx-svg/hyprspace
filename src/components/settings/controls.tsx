@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
 // The building blocks every settings tab is made of: a labeled row, a card of rows, a switch.
-export function Row({ label, desc, children }: { label: string; desc?: string; children: ReactNode }) {
+export function Row({ icon, label, desc, children }: { icon?: ReactNode; label: string; desc?: ReactNode; children: ReactNode }) {
   return (
     <div className="set-row">
+      {icon && <span className="set-row-ico">{icon}</span>}
       <div className="set-row-info">
         <div className="set-key">{label}</div>
         {desc && <div className="set-desc">{desc}</div>}

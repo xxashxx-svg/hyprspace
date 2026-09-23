@@ -393,6 +393,10 @@ export interface ProviderStatus {
   plan: string | null;
   detail: string | null;
 }
+/** Re-read PATH from the system, so a CLI installed while the app is open can be found. */
+export function refreshPath(): Promise<void> {
+  return invoke("refresh_path");
+}
 export function providerStatus(id: string): Promise<ProviderStatus> {
   return invoke("provider_status", { id });
 }

@@ -1,0 +1,503 @@
+/* ---- Settings → Usage (components/UsagePanel): Limits and Activity. --brand is set per card from
+   the provider's colour, so each card carries its agent's hue and everything else stays neutral ---- */
+.up {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.up-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.up-top > .up-dim {
+  flex: 1;
+}
+.up-seg .seg-btn {
+  padding: 6px 16px;
+  font-weight: 500;
+}
+.up-dim {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+/* one card per provider */
+.up-card {
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow: hidden;
+  animation: upIn 0.2s var(--ease);
+}
+.up-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-1);
+}
+.up-mark {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+}
+.up-mark img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+.up-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.up-plan {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(var(--ink), 0.06);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.up-age {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.up-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* a limit window: the numbers on the left, the bar on the right */
+.up-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+}
+.up-row + .up-row {
+  border-top: 1px solid var(--border-0);
+}
+.up-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.up-row-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.up-big {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.up-big b {
+  margin-right: 3px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.up-row-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.up-row.warn .up-big b {
+  color: color-mix(in srgb, var(--status-busy) 85%, var(--text-1));
+}
+.up-row.crit .up-big b {
+  color: color-mix(in srgb, var(--status-error) 85%, var(--text-1));
+}
+
+/* the bar shows what's LEFT, filled in the agent's colour with a firm edge where it ends */
+.up-track {
+  position: relative;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(var(--ink), 0.05);
+  box-shadow: inset 0 0 0 1px rgba(var(--ink), 0.06);
+  overflow: hidden;
+}
+.up-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--brand) 30%, transparent);
+  border-right: 0 solid var(--brand);
+  transition: width 0.4s var(--ease);
+}
+/* the firm edge marks where a partly filled bar ends. at empty or full it would sit on the bar's
+   rounded end as a stray sliver, so it only shows in between */
+.up-fill.edge {
+  border-right-width: 2px;
+}
+.up-row.warn .up-fill {
+  background: color-mix(in srgb, var(--status-busy) 28%, transparent);
+  border-right-color: var(--status-busy);
+}
+.up-row.crit .up-fill {
+  background: color-mix(in srgb, var(--status-error) 28%, transparent);
+  border-right-color: var(--status-error);
+}
+.up-used {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.up-chip {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-1);
+  color: var(--text-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.up-note {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-0);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.up-callout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--status-busy) 35%, transparent);
+  background: color-mix(in srgb, var(--status-busy) 11%, transparent);
+  color: color-mix(in srgb, var(--status-busy) 75%, var(--text-1));
+  font-size: 13px;
+}
+.up-callout svg {
+  flex: 0 0 auto;
+}
+.up-callout b {
+  font-weight: 650;
+}
+.up-empty {
+  padding: 36px 16px;
+  border: 1px dashed var(--border-2);
+  border-radius: 12px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.up-foot {
+  margin: 2px 2px 0;
+  max-width: 72ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+/* ---- activity ---- */
+/* the summary: one strip, three columns split by hairlines */
+.up-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.up-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 18px 15px;
+  min-width: 0;
+}
+.up-stat + .up-stat {
+  border-left: 1px solid var(--border-1);
+}
+.up-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.up-stat b {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.up-stat b em {
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-3);
+}
+.up-stat-foot {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.up-stat-logos {
+  display: flex;
+  gap: 7px;
+  margin-top: 3px;
+}
+.up-stat-logos img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+.up-stat-logos img.off {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+/* a card's counts: an inline row of figures under the tokens */
+.up-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--border-0);
+}
+.up-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 18px 0 16px;
+}
+.up-metric + .up-metric {
+  border-left: 1px solid var(--border-1);
+}
+.up-metric span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.up-metric b {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.up-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.up-tokens-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.up-split {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(var(--ink), 0.05);
+}
+.up-split .up-seg {
+  min-width: 3px;
+}
+.up-seg.in {
+  background: var(--brand);
+}
+.up-seg.out {
+  background: color-mix(in srgb, var(--brand) 42%, transparent);
+}
+.up-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.up-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.up-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+/* cache reads: said, but kept out of the total and the bar */
+.up-cache {
+  margin-left: auto;
+  color: var(--text-3);
+  opacity: 0.8;
+  cursor: help;
+}
+.up-block {
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border-0);
+}
+.up-block-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.up-model {
+  display: grid;
+  grid-template-columns: 110px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+.up-model-name {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.up-model-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(var(--ink), 0.05);
+  overflow: hidden;
+}
+.up-model-track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--brand);
+}
+.up-model-val {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.up-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 64px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--border-1);
+}
+/* an empty day is a stub, so the calendar still reads when most days are quiet */
+.up-days span {
+  flex: 1;
+  min-width: 2px;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+  background: rgba(var(--ink), 0.08);
+}
+.up-days span.on {
+  background: color-mix(in srgb, var(--brand) 45%, transparent);
+}
+.up-days span.peak {
+  background: var(--brand);
+}
+.up-days-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* while a provider's files are being read */
+.up-skel .up-rows {
+  gap: 10px;
+  padding: 16px;
+}
+.up-sk {
+  display: block;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(90deg, rgba(var(--ink), 0.04), rgba(var(--ink), 0.08), rgba(var(--ink), 0.04));
+  background-size: 200% 100%;
+  animation: upShimmer 1.4s linear infinite;
+  animation-delay: var(--sk-delay, 0s);
+}
+.up-sk.wide {
+  height: 48px;
+}
+.up-reading {
+  animation: upPulse 1.6s ease-in-out infinite;
+}
+.up-spin {
+  animation: upSpin 0.8s linear infinite;
+}
+@keyframes upIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes upShimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes upPulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes upSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .up-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .up-strip {
+    grid-template-columns: 1fr;
+  }
+  .up-stat + .up-stat {
+    border-left: 0;
+    border-top: 1px solid var(--border-1);
+  }
+}

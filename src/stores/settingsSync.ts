@@ -1,8 +1,8 @@
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode, type UiFont, type DiffColors } from "./settings";
+import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode, type UiFont, type DiffColors, type OpenTarget } from "./settings";
 import type { Scheme } from "../themes";
-import { saveState, type EditorId } from "../api";
+import { saveState } from "../api";
 
 type Snap = {
   theme: string;
@@ -28,7 +28,7 @@ type Snap = {
   agentModel: Record<string, string>;
   agentEffort: Record<string, string>;
   lastProvider: string;
-  editor: EditorId;
+  editor: OpenTarget;
   railWidth: number;
   dockWidth: number;
   onboarded: boolean;

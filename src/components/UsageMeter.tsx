@@ -1,19 +1,10 @@
 // Titlebar chip + popover for live provider usage. Claude pushes its numbers at us (see
 // src/stores/usage.ts); codex has to be polled, and only while a codex pane is actually open.
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useUsage,
-  useCodexUsage,
-  useLiveUsage,
-  summarize,
-  toCodexBlock,
-  toLiveBlock,
-  type UsageWindow,
-  type ProviderBlock,
-} from "../stores/usage";
+import { useCodexUsage, useLiveUsage, toCodexBlock, toLiveBlock, type ProviderBlock } from "../stores/usage";
+import { expired, resetLabel, tone, useLimits } from "../lib/limits";
 import { useWorkspaces } from "../stores/workspace";
 import { claudeLiveUsage, codexLiveUsage, providerUsageOne } from "../api";
-import { relTime } from "../lib/time";
 import { PROVIDER_COLOR } from "../lib/brand";
 import claudeLogo from "../assets/brand/claude.svg";
 import openaiLogo from "../assets/brand/openai.svg";
@@ -29,43 +20,7 @@ const LIVE_POLL_MS = 180_000;
 // long enough to read, short enough not to feel like waiting. Matches the close keyframe.
 const CLOSE_MS = 120;
 
-// claude's own warning shape: it compares how much you've spent against how far through the window
-// you are, not against a flat line. 89% with hours left is a problem; 89% with minutes left isn't.
-// Pace needs the window's real length — judging a 7-day window against 5 hours makes everything
-// look critical — so without a known length we fall back to flat thresholds.
-function tone(pct: number, w?: UsageWindow): "" | "warn" | "crit" {
-  if (expired(w)) return "";
-  // the provider's own severity beats anything we can infer, so take it when it's there
-  if (w?.severity === "critical") return "crit";
-  if (w?.severity === "warning") return "warn";
-  if (w?.severity === "normal" && pct < 90) return "";
-  if (pct >= 90) return "crit";
-  const windowMs = w?.windowMs;
-  const left = w?.resetsAt ? w.resetsAt - Date.now() : undefined;
-  if (windowMs && left !== undefined && left > 0 && left <= windowMs) {
-    const elapsed = ((windowMs - left) / windowMs) * 100;
-    if (pct - elapsed > 14) return "crit";
-    if (pct - elapsed > 4) return "warn";
-  }
-  return pct >= 75 ? "warn" : "";
-}
-
 const RANK: Record<string, number> = { "": 0, warn: 1, crit: 2 };
-
-// Once resets_at passes, the window has rolled over and whatever we last heard is the OLD window's
-// final number — usually near 100%. Claude only tells us the new figure on the next turn, so until
-// then we know nothing and must say so rather than showing a stale 100% in red.
-const expired = (w?: UsageWindow) => !!w && (!!w.stale || (!!w.resetsAt && w.resetsAt <= Date.now()));
-
-function resetLabel(w?: UsageWindow): string {
-  if (!w?.resetsAt) return "";
-  const ms = w.resetsAt - Date.now();
-  if (ms <= 0) return "resetting";
-  const m = Math.round(ms / 60000);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  return h < 48 ? `${h}h ${m % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
-}
 
 function Ring({ pct, tone }: { pct: number; tone: string }) {
   const r = 6.6;
@@ -87,23 +42,42 @@ function Ring({ pct, tone }: { pct: number; tone: string }) {
   );
 }
 
-/** one provider: a header, then a row per window it reports */
-function Section({ block, note }: { block: ProviderBlock; note?: string }) {
+// the most urgent tone among a provider's live windows, for the dot on its tab
+function worstTone(block: ProviderBlock): string {
+  return block.windows
+    .filter((w) => !expired(w.win))
+    .map((w) => tone(w.win.pct, w.win))
+    .reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "");
+}
+
+/** one provider: a header, then a row per window it reports. Under a tab, the tab names it,
+ *  so the header keeps only the plan. */
+function Section({ block, note, tabbed }: { block: ProviderBlock; note?: string; tabbed?: boolean }) {
   return (
     <section className="um-card" style={{ "--brand": PROVIDER_COLOR[block.id] ?? "var(--text-1)" } as React.CSSProperties}>
-      <header className="um-head">
-        {LOGO[block.id] && (
-          <span className="um-mark">
-            <img src={LOGO[block.id]} alt="" />
-          </span>
-        )}
-        <span className="um-name">{block.label}</span>
-        {block.plan && (
-          <span className="um-plan" title={block.plan}>
-            {block.plan}
-          </span>
-        )}
-      </header>
+      {!tabbed ? (
+        <header className="um-head">
+          {LOGO[block.id] && (
+            <span className="um-mark">
+              <img src={LOGO[block.id]} alt="" />
+            </span>
+          )}
+          <span className="um-name">{block.label}</span>
+          {block.plan && (
+            <span className="um-plan" title={block.plan}>
+              {block.plan}
+            </span>
+          )}
+        </header>
+      ) : (
+        block.plan && (
+          <header className="um-head slim">
+            <span className="um-plan" title={block.plan}>
+              {block.plan}
+            </span>
+          </header>
+        )
+      )}
       <div className="um-body">
         {block.windows.map(({ key, label, win }) => {
           const gone = expired(win);
@@ -146,13 +120,12 @@ function Section({ block, note }: { block: ProviderBlock; note?: string }) {
 }
 
 export function UsageMeter() {
-  const byPane = useUsage((s) => s.byPane);
-  const codexFromFiles = useCodexUsage((s) => s.codex);
   // a plain boolean, so this doesn't re-render on unrelated workspace churn
   const hasCodex = useWorkspaces((s) =>
     s.workspaces.some((w) => w.sessions.some((x) => x.provider === "codex")),
   );
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"claude" | "codex">("claude");
   // the panel has to stay mounted while it animates out, so closing is a state of its own
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -249,34 +222,7 @@ export function UsageMeter() {
     };
   }, [open]);
 
-  const sum = useMemo(() => summarize(byPane), [byPane]);
-  const liveClaude = useLiveUsage((s) => s.claude);
-  const liveCodex = useLiveUsage((s) => s.codex);
-  const liveClaudeNote = useLiveUsage((s) => s.claudeNote);
-
-  const fromStatusLine: ProviderBlock | null = useMemo(() => {
-    if (!sum) return null;
-    const windows = [
-      ...(sum.five ? [{ key: "five_hour", label: "Session · 5h", win: sum.five }] : []),
-      ...sum.others,
-    ];
-    // The header chip: the model in use. Names carry marketing suffixes ("Opus 5 (1M context)") and
-    // panes can be on different models, so trim the parenthetical and count the rest rather than
-    // joining them — a long string here stretched the whole popover.
-    const seen = [...new Set(sum.models.map((m) => m.replace(/\s*\(.*\)\s*$/, "").trim()))];
-    const plan = seen.length ? seen[0] + (seen.length > 1 ? ` +${seen.length - 1}` : "") : undefined;
-    return windows.length ? { id: "claude", label: "Claude", plan, windows } : null;
-  }, [sum]);
-
-  // The live reading wins, but the status line still knows which model is running right now, which
-  // the endpoint never says — so keep that label when we have it.
-  const claude: ProviderBlock | null = useMemo(() => {
-    if (!liveClaude) return fromStatusLine;
-    return { ...liveClaude, plan: fromStatusLine?.plan ?? liveClaude.plan, note: liveClaudeNote };
-  }, [liveClaude, liveClaudeNote, fromStatusLine]);
-
-  // the live reading when the endpoint answered, else whatever the rollout files had
-  const codex = liveCodex ?? codexFromFiles;
+  const { claude, codex, codexNote, claudeStale } = useLimits();
 
   // The ring follows the most urgent window across every provider, otherwise it would sit calmly on
   // claude's session limit while codex was the thing about to run out. A window that is already
@@ -299,15 +245,10 @@ export function UsageMeter() {
   const anyWindow = (claude?.windows.length ?? 0) + (codex?.windows.length ?? 0) > 0;
   if (!worst && !anyWindow) return null;
 
-  // codex only records its windows mid-session, so a number can easily be weeks old — say so
-  const codexAge = !liveCodex && codexFromFiles?.updatedAt ? relTime(codexFromFiles.updatedAt) : undefined;
-  const codexNote =
-    liveCodex?.note ?? (codexAge ? (codexAge === "now" ? "Just updated." : `As of ${codexAge} ago.`) : undefined);
-
   return (
     <div className="um" ref={ref}>
       <button
-        className={`um-chip ${worst?.t ?? ""}${!worst || sum?.stale ? " stale" : ""}`}
+        className={`um-chip ${worst?.t ?? ""}${!worst || claudeStale ? " stale" : ""}`}
         title={
           worst
             ? `${worst.label}: ${Math.round(worst.win.pct)}% used${
@@ -324,9 +265,27 @@ export function UsageMeter() {
 
       {open && (
         <div className={`um-pop${closing ? " closing" : ""}`}>
-          {claude && <Section block={claude} note={claude.note} />}
-          {claude && sum?.stale && <div className="um-stale">No agent has reported in a while.</div>}
-          {codex && <Section block={codex} note={codexNote} />}
+          {claude && codex && (
+            <div className="um-tabs" role="tablist">
+              {[claude, codex].map((b) => {
+                const t = worstTone(b);
+                return (
+                  <button key={b.id} role="tab" aria-selected={tab === b.id} className={tab === b.id ? "on" : ""} onClick={() => setTab(b.id as "claude" | "codex")}>
+                    {LOGO[b.id] && <img src={LOGO[b.id]} alt="" />}
+                    {b.label}
+                    {t && <i className={`um-tab-dot ${t}`} title="Close to a limit" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {claude && (!codex || tab === "claude") && (
+            <>
+              <Section block={claude} note={claude.note} tabbed={!!codex} />
+              {claudeStale && <div className="um-stale">No agent has reported in a while.</div>}
+            </>
+          )}
+          {codex && (!claude || tab === "codex") && <Section block={codex} note={codexNote} tabbed={!!claude} />}
         </div>
       )}
     </div>

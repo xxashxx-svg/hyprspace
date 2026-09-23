@@ -1,0 +1,187 @@
+/* ---- Settings → General (components/settings/General): the app card, then plain rows with icons ---- */
+.gn-app {
+  margin-bottom: 26px;
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.gn-app-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+}
+.gn-logo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  border: 1px solid var(--border-1);
+  background: rgba(var(--ink), 0.04);
+}
+.gn-app-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gn-app-name {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+.gn-ver {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.gn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.gn-status i {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.gn-status.ok i {
+  background: var(--status-ok);
+}
+.gn-status.busy i {
+  background: var(--status-busy);
+  animation: gnPulse 1.2s ease-in-out infinite;
+}
+.gn-status.new {
+  color: var(--text-1);
+}
+.gn-status.new i {
+  background: var(--accent);
+}
+.gn-status.err {
+  color: color-mix(in srgb, var(--status-error) 70%, var(--text-2));
+}
+.gn-status.err i {
+  background: var(--status-error);
+}
+@keyframes gnPulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.gn-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+.gn-spin {
+  animation: gnSpin 0.8s linear infinite;
+}
+@keyframes gnSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* download progress: a hairline under the header, sliding when the size is unknown */
+.gn-progress {
+  position: relative;
+  height: 2px;
+  margin: 0 16px 14px;
+  border-radius: 2px;
+  background: rgba(var(--ink), 0.08);
+  overflow: hidden;
+}
+.gn-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.3s var(--ease);
+}
+.gn-progress.indet span {
+  width: 30%;
+  animation: gnSlide 1.1s ease-in-out infinite;
+}
+@keyframes gnSlide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+.gn-app-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border-0);
+  background: rgba(var(--ink), 0.02);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.gn-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.gn-link:hover {
+  background: rgba(var(--ink), 0.06);
+  color: var(--text-1);
+}
+
+/* rows that lead with an icon (settings/controls Row's icon prop) */
+.set-row-ico {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: -10px;
+  border-radius: 8px;
+  background: rgba(var(--ink), 0.05);
+  color: var(--text-2);
+}
+.set-row-ico svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.9;
+}
+.set-row-ico + .set-row-info {
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .gn-app-main,
+  .gn-app-foot {
+    flex-wrap: wrap;
+  }
+}

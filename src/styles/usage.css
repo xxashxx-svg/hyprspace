@@ -112,6 +112,65 @@
 .um-card {
   padding: 8px 12px 12px;
 }
+/* Claude and Codex as tabs, when both report */
+.um-tabs {
+  display: flex;
+  gap: 3px;
+  margin: 6px 8px 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(var(--ink), 0.05);
+}
+.um-tabs button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.um-tabs button:hover {
+  color: var(--text-1);
+}
+.um-tabs button.on {
+  background: var(--surface-3);
+  color: var(--text-1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.um-tabs img {
+  width: 12px;
+  height: 12px;
+}
+.um-tabs button:not(.on) img {
+  opacity: 0.6;
+}
+.um-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-busy);
+}
+.um-tab-dot.crit {
+  background: var(--status-error);
+}
+.um-head.slim {
+  height: 18px;
+  margin-bottom: 8px;
+}
+.um-head.slim .um-plan {
+  margin-left: 0;
+  max-width: 100%;
+}
 .um-card + .um-card {
   border-top: 1px solid var(--border-1);
 }

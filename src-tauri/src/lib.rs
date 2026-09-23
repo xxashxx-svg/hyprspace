@@ -649,6 +649,14 @@ fn fix_path_env() {
     std::env::set_var("PATH", merged.join(";"));
 }
 
+// The PATH above is read once at startup, so a CLI installed while the app is open stays invisible
+// to every check and every new pane until a restart. Re-reading it is cheap on Windows (two registry
+// values) and one login shell elsewhere, so the agent check runs this first.
+#[tauri::command]
+async fn refresh_path() {
+    let _ = tauri::async_runtime::spawn_blocking(fix_path_env).await;
+}
+
 // registry PATH entries are REG_EXPAND_SZ, so `%SystemRoot%\system32` style references are literal
 #[cfg(windows)]
 fn expand_env(s: &str) -> String {
@@ -814,6 +822,7 @@ pub fn run() {
             devtools::file_op,
             devtools::find_files,
             devtools::provider_status,
+            refresh_path,
             devtools::provider_usage_one,
             devtools::list_skills,
             devtools::skill_read,

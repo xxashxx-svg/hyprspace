@@ -163,10 +163,15 @@ fn provider_status_blocking(id: &str) -> ProviderStatus {
             }
         }
         "grok" => {
-            // grok Build CLI: browser OAuth cached under ~/.grok, or an XAI_API_KEY in the env.
+            // grok Build CLI: `grok login` keeps one entry per auth scope in ~/.grok/auth.json, each
+            // with a key. The folder alone proves nothing: the installer creates it before any login.
+            let login = read_json(home.join(".grok").join("auth.json")).and_then(|v| {
+                v.as_object()?.values().find(|e| e["key"].is_string()).cloned()
+            });
             if std::env::var("XAI_API_KEY").is_ok() {
                 st.detail = Some("Authenticated via XAI_API_KEY".into());
-            } else if home.join(".grok").exists() {
+            } else if let Some(entry) = login {
+                st.account = entry["email"].as_str().map(String::from);
                 st.detail = Some("Signed in".into());
             } else {
                 st.detail = Some("Not signed in — run `grok` or set XAI_API_KEY".into());

@@ -1,39 +1,29 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { getVersion } from "@tauri-apps/api/app";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { Fragment, useEffect, type CSSProperties, type ReactNode } from "react";
 import {
   ArrowLeft,
   Bot,
   Check,
-  Copy,
   Gauge,
-  Info,
   Palette,
-  RefreshCw,
   SlidersHorizontal,
   Smartphone,
   SquareTerminal,
-  Terminal as TerminalIcon,
   X,
   Zap,
 } from "lucide-react";
-import { useSettings, type CursorStyle, type ClaudePermission, type CodexMode } from "../stores/settings";
+import { useSettings, type CursorStyle } from "../stores/settings";
 import { useUi } from "../stores/ui";
-import { useUpdater } from "../stores/updater";
-import { useAuth } from "../stores/auth";
-import { useProviders } from "../stores/providers";
 import { useWorkspaces } from "../stores/workspace";
 import { PALETTES } from "../terminal/palettes";
-import { relTime } from "../lib/time";
-import { AGENT_IDS, CLAUDE_PERMISSIONS, CODEX_MODES, EFFORT_LABEL, effortsFor, type ProviderId } from "../lib/models";
-import { catalogFor } from "../stores/providers";
-import { PROVIDER_LOGO, PROVIDER_NAME, PROVIDER_DESC } from "../lib/brand";
 import { SkillsManager } from "./SkillsManager";
 import { UsagePanel } from "./UsagePanel";
 import { MobileSettings } from "./MobileSettings";
-import { Blurred } from "./Blurred";
 import { Row, Group, Toggle } from "./settings/controls";
+import { General } from "./settings/General";
+import { useVersion } from "../lib/version";
+import { useUpdater } from "../stores/updater";
 import { Appearance } from "./settings/Appearance";
+import { Defaults } from "./settings/Defaults";
 
 const CURSORS: { label: string; value: CursorStyle }[] = [
   { label: "Bar", value: "bar" },
@@ -41,106 +31,17 @@ const CURSORS: { label: string; value: CursorStyle }[] = [
   { label: "Underline", value: "underline" },
 ];
 
-type Tab = "general" | "appearance" | "terminal" | "agents" | "usage" | "skills" | "mobile" | "about";
+type Tab = "general" | "appearance" | "terminal" | "agents" | "usage" | "skills" | "mobile";
 
-const TABS: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
-  { id: "general", label: "General", desc: "Account and app behavior", icon: <SlidersHorizontal strokeWidth={1.75} /> },
-  { id: "appearance", label: "Appearance", desc: "Theme and fonts", icon: <Palette strokeWidth={1.75} /> },
-  { id: "terminal", label: "Terminal", desc: "Colors, cursor, rendering", icon: <SquareTerminal strokeWidth={1.75} /> },
-  { id: "agents", label: "Agents", desc: "Default model, effort, and permissions per agent", icon: <Bot strokeWidth={1.75} /> },
-  { id: "usage", label: "Usage", desc: "What each agent has used", icon: <Gauge strokeWidth={1.75} /> },
-  { id: "skills", label: "Skills", desc: "Reusable instructions for Claude", icon: <Zap strokeWidth={1.75} /> },
-  { id: "mobile", label: "Mobile", desc: "Mirror spaces and terminals to your phone", icon: <Smartphone strokeWidth={1.75} /> },
-  { id: "about", label: "About", desc: "Version and updates", icon: <Info strokeWidth={1.75} /> },
+const TABS: { id: Tab; group: string; label: string; desc: string; icon: ReactNode }[] = [
+  { id: "general", group: "App", label: "General", desc: "Updates, behavior and privacy", icon: <SlidersHorizontal strokeWidth={1.75} /> },
+  { id: "appearance", group: "App", label: "Appearance", desc: "Theme and fonts", icon: <Palette strokeWidth={1.75} /> },
+  { id: "terminal", group: "App", label: "Terminal", desc: "Colors, cursor, rendering", icon: <SquareTerminal strokeWidth={1.75} /> },
+  { id: "agents", group: "Agents", label: "Defaults", desc: "What each agent starts with: model, effort and permissions", icon: <Bot strokeWidth={1.75} /> },
+  { id: "usage", group: "Agents", label: "Usage", desc: "What each agent has used", icon: <Gauge strokeWidth={1.75} /> },
+  { id: "skills", group: "Agents", label: "Skills", desc: "Reusable instructions for Claude", icon: <Zap strokeWidth={1.75} /> },
+  { id: "mobile", group: "Devices", label: "Mobile", desc: "Mirror spaces and terminals to your phone", icon: <Smartphone strokeWidth={1.75} /> },
 ];
-
-// ---- small building blocks ----
-function CopyBtn({ value }: { value: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      className="acct-copy"
-      title="Copy"
-      onClick={() => {
-        void writeText(value);
-        setDone(true);
-        setTimeout(() => setDone(false), 1200);
-      }}
-    >
-      {done ? <Check size={13} /> : <Copy size={13} />}
-    </button>
-  );
-}
-
-// The default model for one agent: the catalog, plus a box for any other id.
-function ModelSelect({ provider }: { provider: ProviderId }) {
-  const value = useSettings((s) => s.agentModel[provider] ?? "");
-  const set = useSettings((s) => s.setAgentModel);
-  const codexModels = useProviders((p) => p.codexModels);
-  const cat = catalogFor(provider, codexModels);
-  const known = cat.models.some((m) => m.id === value);
-  const [custom, setCustom] = useState(!known);
-  return (
-    <div className="set-model">
-      <select
-        className="set-select"
-        value={custom ? "__custom" : value}
-        onChange={(e) => {
-          if (e.target.value === "__custom") {
-            setCustom(true);
-            return;
-          }
-          setCustom(false);
-          set(provider, e.target.value);
-        }}
-      >
-        {cat.models.map((m) => (
-          <option key={m.id || "default"} value={m.id}>
-            {m.label}
-          </option>
-        ))}
-        {cat.customModel && <option value="__custom">Other…</option>}
-      </select>
-      {custom && (
-        <input
-          className="set-input"
-          autoFocus
-          placeholder={cat.modelHint ?? "model id"}
-          defaultValue={known ? "" : value}
-          onBlur={(e) => set(provider, e.currentTarget.value.trim())}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function EffortSelect({ provider }: { provider: ProviderId }) {
-  const value = useSettings((s) => s.agentEffort[provider] ?? "");
-  const model = useSettings((s) => s.agentModel[provider] ?? "");
-  const set = useSettings((s) => s.setAgentEffort);
-  const codexModels = useProviders((p) => p.codexModels);
-  const efforts = effortsFor(provider, model, catalogFor(provider, codexModels));
-  if (!efforts.length) return null;
-  return (
-    <select className="set-select" value={value} onChange={(e) => set(provider, e.target.value)}>
-      <option value="">Default</option>
-      {efforts.map((lvl) => (
-        <option key={lvl} value={lvl}>
-          {EFFORT_LABEL[lvl] ?? lvl}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function fmtDate(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
 
 /** The in-app settings screen. */
 export function Settings() {
@@ -150,34 +51,11 @@ export function Settings() {
   const tab: Tab = TABS.some((t) => t.id === rawTab) ? (rawTab as Tab) : "general";
 
   const s = useSettings();
-  const providers = useProviders((p) => p.status);
-  const codexModels = useProviders((p) => p.codexModels);
-  const checking = useProviders((p) => p.checking);
-  const checkedAt = useProviders((p) => p.checkedAt);
-  const refreshProviders = useProviders((p) => p.refresh);
-  useEffect(() => {
-    if (tab === "agents" && checkedAt == null) void refreshProviders();
-  }, [tab, checkedAt, refreshProviders]);
 
-  const phase = useUpdater((u) => u.phase);
-  const detail = useUpdater((u) => u.detail);
-  const update = useUpdater((u) => u.update);
-  const checkNow = useUpdater((u) => u.checkNow);
-  const install = useUpdater((u) => u.install);
-
-  const authUser = useAuth((a) => a.user);
-  const signingIn = useAuth((a) => a.signingIn);
-  const signOut = useAuth((a) => a.signOut);
   const workspaces = useWorkspaces((w) => w.workspaces);
   const activeId = useWorkspaces((w) => w.activeId);
   const focusedSessionId = useWorkspaces((w) => w.focusedSessionId);
 
-  const [version, setVersion] = useState("");
-  useEffect(() => {
-    getVersion()
-      .then(setVersion)
-      .catch(() => {});
-  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -187,46 +65,37 @@ export function Settings() {
   }, [close]);
 
   const active = TABS.find((t) => t.id === tab) ?? TABS[0];
-  const fullName = ((authUser?.user_metadata?.full_name as string) || authUser?.email || "").trim();
-  const avatar = typeof authUser?.user_metadata?.avatar_url === "string" ? authUser.user_metadata.avatar_url : null;
-  const initial = (fullName || "?")[0]?.toUpperCase() ?? "?";
+  const version = useVersion();
+  const phase = useUpdater((u) => u.phase);
+  const ready = phase === "available";
   const skillsCwd = (() => {
     const w = workspaces.find((x) => x.id === activeId);
     return w?.sessions.find((x) => x.id === focusedSessionId)?.cwd || w?.cwd || "";
   })();
-  const updateText =
-    phase === "checking"
-      ? "Checking"
-      : phase === "available"
-        ? `Version ${update?.version} is ready to install`
-        : phase === "downloading"
-          ? detail
-          : phase === "uptodate"
-            ? "You are on the latest version"
-            : phase === "error"
-              ? detail
-              : "Not checked yet";
 
   return (
     <div className="settings-screen">
       <nav className="settings-nav">
         <div className="settings-brand">Settings</div>
-        {TABS.map((t) => (
-          <button key={t.id} className={`settings-nav-item${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
-            {t.icon}
-            {t.label}
-          </button>
+        {TABS.map((t, i) => (
+          <Fragment key={t.id}>
+            {(i === 0 || TABS[i - 1].group !== t.group) && <div className="settings-group">{t.group}</div>}
+            <button className={`settings-nav-item${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
+              {t.icon}
+              <span className="settings-nav-label">{t.label}</span>
+              {t.id === "general" && ready && <i className="settings-nav-dot" title="An update is ready" />}
+            </button>
+          </Fragment>
         ))}
         <div className="settings-nav-bottom">
-          {authUser && (
-            <button className="settings-acct" onClick={() => setTab("general")} title="Account">
-              {avatar ? <img src={avatar} alt="" referrerPolicy="no-referrer" /> : <span className="settings-acct-ava">{initial}</span>}
-              <span className="settings-acct-name">{fullName.split("@")[0] || "Account"}</span>
-            </button>
-          )}
-          <button className="settings-nav-item settings-back" onClick={close} title="Back (Esc)">
-            <ArrowLeft strokeWidth={1.75} />
-            Back
+          <button className="settings-back" onClick={close}>
+            <ArrowLeft size={15} strokeWidth={2} />
+            Back to app
+            <kbd>Esc</kbd>
+          </button>
+          <button className={`settings-foot${ready ? " ready" : ""}`} onClick={() => setTab("general")} title="Updates">
+            <span className="settings-foot-ver">HyprSpace {version && `v${version}`}</span>
+            <span className="settings-foot-state">{ready ? "Update ready" : phase === "uptodate" ? "Up to date" : ""}</span>
           </button>
         </div>
       </nav>
@@ -244,57 +113,7 @@ export function Settings() {
 
         <div className="settings-content">
           <div className="settings-page">
-            {tab === "general" && (
-              <>
-                <Group label="Account">
-                  {authUser ? (
-                    <>
-                      <div className="acct-row">
-                        {avatar ? <img className="acct-avatar" src={avatar} alt="" referrerPolicy="no-referrer" /> : <div className="acct-avatar acct-avatar-fallback">{initial}</div>}
-                        <div className="acct-meta">
-                          <div className="acct-name">{fullName || authUser.email}</div>
-                          <div className="acct-email">
-                            <Blurred text={authUser.email ?? ""} />
-                          </div>
-                        </div>
-                        <button className="btn" onClick={() => void signOut()}>
-                          Sign out
-                        </button>
-                      </div>
-                      <Row label="Member since">
-                        <span className="set-val">{fmtDate(authUser.created_at)}</span>
-                      </Row>
-                      <Row label="Account id">
-                        <span className="set-val set-val-copy">
-                          <code>{authUser.id}</code>
-                          <CopyBtn value={authUser.id} />
-                        </span>
-                      </Row>
-                    </>
-                  ) : (
-                    <Row label="Not signed in" desc="HyprSpace runs the CLIs already on this machine. An account only carries these settings between devices.">
-                      <button className="btn primary" disabled={signingIn} onClick={() => useUi.getState().openSignIn()}>
-                        {signingIn ? "Waiting" : "Sign in"}
-                      </button>
-                    </Row>
-                  )}
-                </Group>
-
-                <Group label="Behavior">
-                  <Row label="Name panes after their task" desc="Codex writes a short title from the first prompt. Off, panes are named after their folder.">
-                    <Toggle on={s.autoNameAgents} onChange={s.setAutoNameAgents} />
-                  </Row>
-                  <Row label="Anonymous launch ping" desc="One ping per launch with a random install id, the version, and the OS. Never prompts, output, paths, or project names.">
-                    <Toggle on={s.analytics} onChange={s.setAnalytics} />
-                  </Row>
-                  <Row label="Hidden confirmations" desc="Bring back the dialogs you dismissed with 'don't ask again'.">
-                    <button className="btn" disabled={s.dismissedConfirms.length === 0} onClick={() => s.resetDismissedConfirms()}>
-                      {s.dismissedConfirms.length ? "Show them again" : "None hidden"}
-                    </button>
-                  </Row>
-                </Group>
-              </>
-            )}
+            {tab === "general" && <General />}
 
             {tab === "appearance" && <Appearance />}
 
@@ -379,118 +198,12 @@ export function Settings() {
               </>
             )}
 
-            {tab === "agents" && (
-              <>
-                <div className="set-bar">
-                  <span>{checkedAt ? `Checked ${relTime(checkedAt)} ago` : "Checking"}</span>
-                  <button className="btn" disabled={checking} onClick={() => void refreshProviders()}>
-                    <RefreshCw size={13} className={checking ? "spin" : ""} />
-                    Check again
-                  </button>
-                </div>
-                {AGENT_IDS.map((id) => {
-                  const st = providers[id];
-                  return (
-                    <div className="set-section" key={id}>
-                      <div className="agent-head">
-                        <img className="agent-mark" src={PROVIDER_LOGO[id]} alt="" />
-                        <span className="agent-name">{PROVIDER_NAME[id]}</span>
-                        <span className="agent-desc">{PROVIDER_DESC[id]}</span>
-                        {st?.version && <span className="agent-ver">v{st.version}</span>}
-                      </div>
-                      <div className={`agent-status ${!st ? "muted" : st.installed ? (st.account ? "ok" : "warn") : "err"}`}>
-                        <span className="agent-status-dot" />
-                        {!st
-                          ? "Checking"
-                          : !st.installed
-                            ? `Not installed. The ${id} command is not on PATH.`
-                            : st.account
-                              ? (
-                                  <>
-                                    Signed in as <Blurred text={st.account} />
-                                    {st.plan ? `, ${st.plan}` : ""}
-                                  </>
-                                )
-                              : st.detail || "Installed"}
-                      </div>
-                      <div className="set-group">
-                        <Row label="Model" desc="Used for new sessions. The composer can change it per session.">
-                          <ModelSelect provider={id} />
-                        </Row>
-                        {effortsFor(id, s.agentModel[id] ?? "", catalogFor(id, codexModels)).length > 0 && (
-                          <Row label="Effort" desc="How hard the model thinks before it answers">
-                            <EffortSelect provider={id} />
-                          </Row>
-                        )}
-                        {id === "claude" && (
-                          <Row label="Permissions" desc="What Claude may do without asking">
-                            <select className="set-select" value={s.claudePermission} onChange={(e) => s.setClaudePermission(e.target.value as ClaudePermission)}>
-                              {CLAUDE_PERMISSIONS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                          </Row>
-                        )}
-                        {id === "gemini" && (
-                          <Row label="YOLO mode" desc="Run actions without asking">
-                            <Toggle on={s.geminiYolo} onChange={s.setGeminiYolo} />
-                          </Row>
-                        )}
-                        {id === "codex" && (
-                          <Row label="Approvals" desc="What Codex may do without asking">
-                            <select className="set-select" value={s.codexMode} onChange={(e) => s.setCodexMode(e.target.value as CodexMode)}>
-                              {CODEX_MODES.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                          </Row>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="set-hint">
-                  <TerminalIcon size={12} /> Terminal and WSL open a plain shell and have no options.
-                </div>
-              </>
-            )}
+            {tab === "agents" && <Defaults />}
 
             {tab === "usage" && <UsagePanel />}
             {tab === "skills" && <SkillsManager cwd={skillsCwd} />}
             {tab === "mobile" && <MobileSettings />}
 
-            {tab === "about" && (
-              <>
-                <Group label="HyprSpace">
-                  <Row label="Version">
-                    <span className="set-val">{version || "…"}</span>
-                  </Row>
-                  <Row label="Updates" desc={updateText}>
-                    {phase === "available" ? (
-                      <button className="btn primary" onClick={() => void install()}>
-                        Restart and update
-                      </button>
-                    ) : (
-                      <button className="btn" onClick={() => void checkNow()} disabled={phase === "checking" || phase === "downloading"}>
-                        {phase === "checking" ? "Checking" : "Check now"}
-                      </button>
-                    )}
-                  </Row>
-                  <Row label="Intro" desc="The first-run walkthrough">
-                    <button className="btn" onClick={() => useUi.getState().openOnboarding()}>
-                      Show again
-                    </button>
-                  </Row>
-                </Group>
-                <p className="set-blurb">
-                  A workspace for terminal agents. Runs the Claude, Codex, Gemini, OpenCode, and Grok CLIs you already have, side by side, on your own machine.
-                </p>
-              </>
-            )}
           </div>
         </div>
       </div>

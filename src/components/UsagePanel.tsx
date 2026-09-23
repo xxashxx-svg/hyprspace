@@ -1,27 +1,16 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import {
-  providerUsageOne,
-  type ProviderUsage,
-  type UsageWindow,
-  type UsageDay,
-  type UsageModel,
-} from "../api";
 import { RotateCw, TriangleAlert } from "lucide-react";
+import { providerUsageOne, type ProviderUsage, type UsageDay, type UsageModel } from "../api";
+import type { ProviderBlock, UsageWindow } from "../stores/usage";
+import { expired, resetLabel, tone, useLimits } from "../lib/limits";
+import { PROVIDER_COLOR, PROVIDER_LOGO } from "../lib/brand";
+import { relTime } from "../lib/time";
 import { Blurred } from "./Blurred";
-import claudeLogo from "../assets/brand/claude.svg";
-import geminiLogo from "../assets/brand/gemini.svg";
-import openaiLogo from "../assets/brand/openai.svg";
-import opencodeLogo from "../assets/brand/opencode.svg";
-import grokLogo from "../assets/brand/grok.svg";
 
-// same brand marks the launcher / providers use (Codex = OpenAI)
-const LOGO: Record<string, string> = {
-  claude: claudeLogo,
-  codex: openaiLogo,
-  gemini: geminiLogo,
-  opencode: opencodeLogo,
-  grok: grokLogo,
-};
+// Settings → Usage, in two views. Limits is what the plan allows and how much is left, from the
+// same live readings the titlebar meter polls, so opening this never fetches anything extra.
+// Activity is what each agent has done, read from its own files on this machine.
+type View = "limits" | "activity";
 
 function fmt(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
@@ -30,122 +19,188 @@ function fmt(n: number): string {
   return n.toLocaleString();
 }
 
-// turn a rolling-window length into a friendly label
-function windowLabel(min: number): string {
-  if (!min) return "Limit";
-  if (min <= 60) return `${min}m window`;
-  const h = min / 60;
-  if (h <= 23) return `${Math.round(h)}h window`;
-  const d = h / 24;
-  if (Math.abs(d - 7) < 0.6) return "Weekly limit";
-  return `${Math.round(d)}-day window`;
+// the moment a window resets, as a clock time: "11:20 PM" today, "Fri 9:00 AM" further out
+function resetsAt(ms: number): string {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return ms - Date.now() < 20 * 3600_000 ? time : `${d.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
-function resetLabel(resetsAt: number): string {
-  if (!resetsAt) return "";
-  const secs = resetsAt - Math.floor(Date.now() / 1000);
-  if (secs <= 0) return "resets soon";
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  if (h >= 24) return `resets in ${Math.floor(h / 24)}d ${h % 24}h`;
-  if (h > 0) return `resets in ${h}h ${m}m`;
-  return `resets in ${m}m`;
-}
+// ---------------------------------------------------------------- limits
 
-function LimitBar({ w }: { w: UsageWindow }) {
-  const pct = Math.max(0, Math.min(100, w.usedPercent));
+function LimitRow({ label, win }: { label: string; win: UsageWindow }) {
+  const gone = expired(win);
+  const used = Math.round(win.pct);
+  const left = 100 - used;
+  const t = tone(win.pct, win);
   return (
-    <div className="usage-limit">
-      <div className="usage-limit-top">
-        <span className="usage-limit-label">{windowLabel(w.windowMinutes)}</span>
-        <span className="usage-limit-val">
-          <b data-hot={pct >= 80}>{pct.toFixed(0)}%</b>
-          {w.resetsAt ? ` · ${resetLabel(w.resetsAt)}` : ""}
+    <div className={`up-row ${t}`}>
+      <div className="up-row-info">
+        <span className="up-row-label">{label}</span>
+        <span className="up-big">
+          {gone ? (
+            "—"
+          ) : (
+            <>
+              <b>{left}%</b> left
+            </>
+          )}
+        </span>
+        <span className="up-row-sub">
+          {gone
+            ? "Window reset. Updates on the next turn."
+            : win.resetsAt && used > 0
+              ? `+${used}% back in ${resetLabel(win)}`
+              : win.resetsAt
+                ? `Full, resets in ${resetLabel(win)}`
+                : `${used}% used`}
         </span>
       </div>
-      <div className="usage-limit-track">
-        <div className="usage-limit-fill" style={{ width: `${pct}%` }} data-hot={pct >= 80} />
-      </div>
-    </div>
-  );
-}
-
-// tokens = the headline metric per provider. The headline counts input + output only — the same
-// definition Claude's own /usage stats use — since cache re-reads dwarf real work by ~100x and
-// would make the number meaningless. The bar + legend still show the full split including cache.
-function Tokens({ u }: { u: ProviderUsage }) {
-  const total = Math.max(1, u.totalTokens);
-  const parts = [
-    { key: "in", n: u.inputTokens, label: "in" },
-    { key: "out", n: u.outputTokens, label: "out" },
-    { key: "cache", n: u.cacheTokens, label: "cache" },
-  ].filter((p) => p.n > 0);
-  return (
-    <div className="usage-tokens">
-      <div className="usage-tokens-top">
-        <span className="usage-tokens-val">
-          {fmt(u.inputTokens + u.outputTokens)} <em>tokens</em>
-        </span>
-        {u.tokensWindow && <span className="usage-tokens-win">{u.tokensWindow}</span>}
-      </div>
-      <div className="usage-tokens-bar">
-        {parts.map((p) => (
-          <span key={p.key} className={`usage-seg ${p.key}`} style={{ width: `${(p.n / total) * 100}%` }} />
-        ))}
-      </div>
-      <div className="usage-tokens-legend">
-        {parts.map((p) => (
-          <span key={p.key} className="usage-leg">
-            <i className={`usage-dot ${p.key}`} />
-            {fmt(p.n)} {p.label}
+      <div className="up-track" title={gone ? undefined : `${used}% used`}>
+        <i className={`up-fill${!gone && left > 0 && left < 100 ? " edge" : ""}`} style={{ width: `${gone ? 0 : left}%` }} />
+        {!gone && <span className="up-used">{used}% used</span>}
+        {!gone && win.resetsAt && (
+          <span className="up-chip">
+            <RotateCw size={10} strokeWidth={2.4} />
+            {resetsAt(win.resetsAt)}
           </span>
-        ))}
+        )}
       </div>
     </div>
   );
 }
 
-function Stat({ label, value, sub, hot }: { label: string; value: string; sub?: string; hot?: boolean }) {
+function ExtraRow({ extra }: { extra: NonNullable<ProviderBlock["extra"]> }) {
+  const cur = extra.currency === "USD" ? "$" : "";
+  const pct = Math.round(extra.percent);
   return (
-    <div className="usage-stat">
-      <span className="usage-stat-val" data-hot={!!hot}>
-        {value}
-      </span>
-      <span className="usage-stat-label">{label}</span>
-      {sub && <span className="usage-stat-sub">{sub}</span>}
-    </div>
-  );
-}
-
-function Sparkline({ days, unit }: { days: UsageDay[]; unit: string }) {
-  const max = Math.max(1, ...days.map((d) => d.value));
-  const peak = days.reduce((a, b) => (b.value > a.value ? b : a), days[0]);
-  return (
-    <div className="usage-activity">
-      <div className="usage-activity-top">
-        <span>Recent activity</span>
-        <span className="usage-activity-peak">
-          peak {fmt(peak?.value ?? 0)} {unit}
+    <div className="up-row">
+      <div className="up-row-info">
+        <span className="up-row-label">Extra usage</span>
+        <span className="up-big">
+          <b>
+            {cur}
+            {extra.used.toFixed(2)}
+          </b>{" "}
+          of {cur}
+          {extra.limit.toFixed(2)}
         </span>
+        <span className="up-row-sub">This month</span>
       </div>
-      <div className="usage-spark">
-        {days.map((d, i) => (
-          <span
-            key={i}
-            className="usage-spark-bar"
-            data-peak={d.value === max && max > 1}
-            style={{ height: `${Math.max(6, Math.round((d.value / max) * 100))}%` }}
-            title={`${d.date}: ${d.value.toLocaleString()} ${unit}`}
-          />
-        ))}
+      <div className="up-track spent">
+        <i className={`up-fill${pct > 0 && pct < 100 ? " edge" : ""}`} style={{ width: `${pct}%` }} />
+        <span className="up-used">{pct}% used</span>
       </div>
     </div>
   );
 }
 
-// "claude-opus-4-8" -> "Opus 4.8", "claude-haiku-4-5-20251001" -> "Haiku 4.5",
-// and legacy version-first ids too: "claude-3-5-sonnet-20241022" -> "Sonnet 3.5".
-// non-claude ids (e.g. "<synthetic>") pass through raw.
+function LimitCard({ block, note }: { block: ProviderBlock; note?: string }) {
+  return (
+    <section className="up-card" style={{ "--brand": PROVIDER_COLOR[block.id] ?? "var(--accent)" } as CSSProperties}>
+      <header className="up-head">
+        <span className="up-mark">{PROVIDER_LOGO[block.id] && <img src={PROVIDER_LOGO[block.id]} alt="" />}</span>
+        <span className="up-name">{block.id === "claude" ? "Claude" : block.label}</span>
+        {block.plan && <span className="up-plan">{block.plan}</span>}
+        {block.updatedAt && (
+          <span className="up-age">{relTime(block.updatedAt) === "now" ? "Updated just now" : `Updated ${relTime(block.updatedAt)} ago`}</span>
+        )}
+      </header>
+      <div className="up-rows">
+        {block.windows.map(({ key, label, win }) => (
+          <LimitRow key={key} label={label} win={win} />
+        ))}
+        {block.extra && <ExtraRow extra={block.extra} />}
+      </div>
+      {note && <div className="up-note">{note}</div>}
+    </section>
+  );
+}
+
+function Limits() {
+  const { claude, codex, codexNote, claudeStale, claudeMissing, codexMissing } = useLimits();
+  const cards: { block: ProviderBlock; note?: string }[] = [];
+  if (claude) cards.push({ block: claude, note: claude.note ?? (claudeStale ? "No agent has reported in a while." : undefined) });
+  if (codex) cards.push({ block: codex, note: codexNote });
+  return (
+    <>
+      {claudeMissing && (
+        <div className="up-callout">
+          <TriangleAlert size={14} />
+          <span>
+            <b>Claude:</b> {claudeMissing}
+          </span>
+        </div>
+      )}
+      {codexMissing && (
+        <div className="up-callout">
+          <TriangleAlert size={14} />
+          <span>
+            <b>Codex:</b> {codexMissing}
+          </span>
+        </div>
+      )}
+      {cards.map((c) => (
+        <LimitCard key={c.block.id} block={c.block} note={c.note} />
+      ))}
+      {!cards.length && !claudeMissing && !codexMissing && (
+        <div className="up-empty">No limits yet. They show up here once Claude or Codex is signed in on this machine.</div>
+      )}
+      {cards.length > 0 && (
+        <p className="up-foot">
+          A bar turns amber or red when you're using it up faster than the window runs out. Gemini, OpenCode and Grok
+          don't report plan limits, so they only show under Activity.
+        </p>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- activity
+
+// tokens = the headline per provider. It counts input + output only, the same definition Claude's
+// own /usage stats use. Cache re-reads dwarf real work (often 100x or more) and cost a fraction as
+// much, so they sit on their own line rather than swamping the bar.
+function Tokens({ u }: { u: ProviderUsage }) {
+  const real = u.inputTokens + u.outputTokens;
+  const inPct = real ? (u.inputTokens / real) * 100 : 0;
+  return (
+    <div className="up-tokens">
+      <div className="up-tokens-top">
+        <span className="up-big">
+          <b>{fmt(real)}</b> tokens
+        </span>
+        {u.tokensWindow && <span className="up-dim">{u.tokensWindow}</span>}
+      </div>
+      {real > 0 && (
+        <>
+          <div className="up-split" title={`${fmt(u.inputTokens)} in, ${fmt(u.outputTokens)} out`}>
+            {u.inputTokens > 0 && <span className="up-seg in" style={{ width: `${inPct}%` }} />}
+            {u.outputTokens > 0 && <span className="up-seg out" style={{ width: `${100 - inPct}%` }} />}
+          </div>
+          <div className="up-legend">
+            <span>
+              <i className="up-seg in" />
+              {fmt(u.inputTokens)} in
+            </span>
+            <span>
+              <i className="up-seg out" />
+              {fmt(u.outputTokens)} out
+            </span>
+            {u.cacheTokens > 0 && (
+              <span className="up-cache" title="Re-reading cached context costs a fraction of new input, so it isn't counted in the total">
+                + {fmt(u.cacheTokens)} read from cache
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// "claude-opus-4-8" -> "Opus 4.8", "claude-haiku-4-5-20251001" -> "Haiku 4.5", and the older
+// version-first ids too: "claude-3-5-sonnet-20241022" -> "Sonnet 3.5". Other ids pass through.
 function prettyModel(id: string): string {
   if (!id.startsWith("claude-")) return id;
   const parts = id.replace(/^claude-/, "").replace(/-\d{8}$/, "").split("-");
@@ -155,146 +210,127 @@ function prettyModel(id: string): string {
   return nums.length ? `${name} ${nums.join(".")}` : name;
 }
 
-// lifetime magnitude per model — single hue, direct value labels. in + out only (Claude's own
-// /usage definition); the full split incl. cache lives in each row's tooltip.
 function Models({ models }: { models: UsageModel[] }) {
   const real = (m: UsageModel) => m.inputTokens + m.outputTokens;
   const shown = [...models].sort((a, b) => real(b) - real(a)).slice(0, 6);
   const max = Math.max(1, ...shown.map(real));
   return (
-    <div className="usage-models">
-      <div className="usage-activity-top">
+    <div className="up-block">
+      <div className="up-block-head">
         <span>By model</span>
-        <span className="usage-activity-peak">all time · in+out</span>
+        <span className="up-dim">all time, in and out</span>
       </div>
       {shown.map((m) => (
-        <div
-          key={m.model}
-          className="usage-model"
-          title={`${m.model}: ${fmt(m.inputTokens)} in · ${fmt(m.outputTokens)} out · ${fmt(m.cacheTokens)} cache`}
-        >
-          <span className="usage-model-name">{prettyModel(m.model)}</span>
-          <span className="usage-model-track">
+        <div key={m.model} className="up-model" title={`${m.model}: ${fmt(m.inputTokens)} in, ${fmt(m.outputTokens)} out, ${fmt(m.cacheTokens)} cache`}>
+          <span className="up-model-name">{prettyModel(m.model)}</span>
+          <span className="up-model-track">
             <i style={{ width: `${(real(m) / max) * 100}%` }} />
           </span>
-          <span className="usage-model-val">{fmt(real(m))}</span>
+          <span className="up-model-val">{fmt(real(m))}</span>
         </div>
       ))}
     </div>
   );
 }
 
-// every rolling window across every provider, hottest first
-function hotWindows(data: ProviderUsage[]): { p: ProviderUsage; w: UsageWindow }[] {
-  const all: { p: ProviderUsage; w: UsageWindow }[] = [];
-  for (const p of data) {
-    if (!p.signedIn) continue;
-    for (const w of [p.primary, p.secondary]) if (w) all.push({ p, w });
+const pad = (n: number) => String(n).padStart(2, "0");
+const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const shortDate = (d: Date) => d.toLocaleDateString([], { month: "short", day: "numeric" });
+
+// One slot per day for the last 30, so two active days read as two bars on a calendar rather than
+// two walls of colour. If nothing falls in the last 30 days (a stats file that hasn't caught up),
+// the window ends on the latest day there is instead, and says so.
+function Days({ days, unit }: { days: UsageDay[]; unit: string }) {
+  const N = 30;
+  const byDate = new Map(days.map((d) => [d.date, d.value]));
+  const build = (end: Date) =>
+    Array.from({ length: N }, (_, i) => {
+      const d = new Date(end);
+      d.setDate(end.getDate() - (N - 1 - i));
+      return { key: dayKey(d), date: d, value: byDate.get(dayKey(d)) ?? 0 };
+    });
+  const today = new Date();
+  let slots = build(today);
+  let endsToday = true;
+  if (!slots.some((s) => s.value > 0)) {
+    const last = days.map((d) => d.date).sort().pop();
+    if (!last) return null;
+    slots = build(new Date(`${last}T12:00:00`));
+    endsToday = false;
   }
-  return all.sort((a, b) => b.w.usedPercent - a.w.usedPercent);
-}
-
-function Overview({ data }: { data: ProviderUsage[] }) {
-  const on = data.filter((p) => p.signedIn);
-  // in + out only, matching the per-card headline (cache re-reads would swamp it)
-  const tokens = on.reduce((n, p) => n + p.inputTokens + p.outputTokens, 0);
-  const sessions = on.reduce((n, p) => n + p.sessions, 0);
-  const hot = hotWindows(data)[0];
+  const active = slots.filter((s) => s.value > 0);
+  if (!active.length) return null;
+  const max = Math.max(...active.map((s) => s.value));
+  const peak = active.reduce((a, b) => (b.value > a.value ? b : a));
   return (
-    <div className="usage-overview">
-      <Stat label="Tokens · recent" value={fmt(tokens)} />
-      <Stat label="Sessions" value={sessions.toLocaleString()} />
-      {hot ? (
-        <Stat
-          label={`${hot.p.label} · ${windowLabel(hot.w.windowMinutes).toLowerCase()}`}
-          value={`${Math.max(0, Math.min(100, hot.w.usedPercent)).toFixed(0)}%`}
-          sub={resetLabel(hot.w.resetsAt)}
-          hot={hot.w.usedPercent >= 80}
-        />
-      ) : (
-        <Stat label="Tracked limits" value="—" />
-      )}
-      <Stat label="Connected" value={`${on.length}/${data.length}`} />
-    </div>
-  );
-}
-
-function Alerts({ data }: { data: ProviderUsage[] }) {
-  const hot = hotWindows(data).filter((x) => x.w.usedPercent >= 80);
-  if (!hot.length) return null;
-  return (
-    <>
-      {hot.map((x, i) => (
-        <div key={i} className="usage-alert">
-          <TriangleAlert size={14} />
-          <b>{x.p.label}</b>
-          <span>
-            {windowLabel(x.w.windowMinutes).toLowerCase()} at {x.w.usedPercent.toFixed(0)}%
-            {x.w.resetsAt ? ` · ${resetLabel(x.w.resetsAt)}` : ""}
-          </span>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function UsageCard({ u }: { u: ProviderUsage }) {
-  const hasCounts = u.sessions > 0 || u.messages > 0 || u.toolCalls > 0 || u.activeDays > 0;
-  const hasBody =
-    u.signedIn &&
-    (u.primary || u.secondary || u.totalTokens > 0 || hasCounts || u.daily.length > 1 || u.models.length > 0);
-  return (
-    <div className={`usage-card${u.signedIn ? "" : " off"}`}>
-      <div className="usage-card-head">
-        <span className="usage-ico">{LOGO[u.id] && <img src={LOGO[u.id]} alt="" />}</span>
-        <div className="usage-card-title">
-          <span className="usage-name">{u.label}</span>
-          {u.account ? (
-            <span className="usage-acct">
-              <Blurred text={u.account} />
-            </span>
-          ) : (
-            !u.signedIn && <span className="usage-acct">Not connected</span>
-          )}
-        </div>
-        <div className="usage-badges">
-          {u.plan && <span className="usage-badge">{u.plan}</span>}
-          {u.tier && <span className="usage-badge dim">{u.tier} tier</span>}
-        </div>
+    <div className="up-block">
+      <div className="up-block-head">
+        <span>{endsToday ? "Last 30 days" : `30 days to ${shortDate(slots[N - 1].date)}`}</span>
+        <span className="up-dim">
+          {active.length} active {active.length === 1 ? "day" : "days"}, peak {fmt(peak.value)} {unit} on {shortDate(peak.date)}
+        </span>
       </div>
-
-      {hasBody && (
-        <div className="usage-body">
-          {(u.primary || u.secondary) && (
-            <div className="usage-limits">
-              {u.primary && <LimitBar w={u.primary} />}
-              {u.secondary && <LimitBar w={u.secondary} />}
-            </div>
-          )}
-
-          {u.totalTokens > 0 && <Tokens u={u} />}
-
-          {u.models.length > 0 && <Models models={u.models} />}
-
-          {hasCounts && (
-            <div className="usage-stats">
-              {u.sessions > 0 && <Stat label="Sessions" value={u.sessions.toLocaleString()} />}
-              {u.messages > 0 && <Stat label="Messages" value={u.messages.toLocaleString()} />}
-              {u.toolCalls > 0 && <Stat label="Tool calls" value={u.toolCalls.toLocaleString()} />}
-              {u.activeDays > 0 && <Stat label="Active days" value={u.activeDays.toLocaleString()} />}
-            </div>
-          )}
-
-          {u.daily.length > 1 && <Sparkline days={u.daily} unit={u.dailyUnit ?? "msgs"} />}
-        </div>
-      )}
-
-      {u.note && <div className="usage-note">{u.note}</div>}
+      <div className="up-days">
+        {slots.map((s) => (
+          <span
+            key={s.key}
+            className={s.value ? (s === peak ? "peak" : "on") : ""}
+            style={s.value ? { height: `${Math.max(10, (s.value / max) * 100)}%` } : undefined}
+            title={s.value ? `${shortDate(s.date)}: ${s.value.toLocaleString()} ${unit}` : `${shortDate(s.date)}: nothing`}
+          />
+        ))}
+      </div>
+      <div className="up-days-axis">
+        <span>{shortDate(slots[0].date)}</span>
+        <span>{endsToday ? "Today" : shortDate(slots[N - 1].date)}</span>
+      </div>
     </div>
   );
 }
 
-// scans stream in per provider — the slow one (claude) shouldn't hold up the rest
+function ActivityCard({ u }: { u: ProviderUsage }) {
+  const counts = [
+    { label: "Sessions", n: u.sessions },
+    { label: "Messages", n: u.messages },
+    { label: "Tool calls", n: u.toolCalls },
+    { label: "Active days", n: u.activeDays },
+  ].filter((c) => c.n > 0);
+  const hasBody = u.totalTokens > 0 || counts.length > 0 || u.daily.length > 1 || u.models.length > 0;
+  return (
+    <section className="up-card" style={{ "--brand": PROVIDER_COLOR[u.id] ?? "var(--accent)" } as CSSProperties}>
+      <header className="up-head">
+        <span className="up-mark">{PROVIDER_LOGO[u.id] && <img src={PROVIDER_LOGO[u.id]} alt="" />}</span>
+        <span className="up-name">{u.label}</span>
+        {u.plan && <span className="up-plan">{u.plan}</span>}
+        {u.account && (
+          <span className="up-age">
+            <Blurred text={u.account} />
+          </span>
+        )}
+      </header>
+      {hasBody && (
+        <div className="up-rows">
+          {u.totalTokens > 0 && <Tokens u={u} />}
+          {counts.length > 0 && (
+            <div className="up-metrics">
+              {counts.map((c) => (
+                <div key={c.label} className="up-metric">
+                  <span>{c.label}</span>
+                  <b>{c.n.toLocaleString()}</b>
+                </div>
+              ))}
+            </div>
+          )}
+          {u.models.length > 0 && <Models models={u.models} />}
+          {u.daily.length > 1 && <Days days={u.daily} unit={u.dailyUnit ?? "msgs"} />}
+        </div>
+      )}
+      {u.note && <div className="up-note">{u.note}</div>}
+    </section>
+  );
+}
+
+// scans stream in per provider, so the slow one (claude, with a long history) doesn't hold up the rest
 const PROVIDERS = [
   { id: "claude", label: "Claude Code" },
   { id: "codex", label: "Codex" },
@@ -303,48 +339,89 @@ const PROVIDERS = [
   { id: "grok", label: "Grok" },
 ];
 
-// skeleton with the real brand + name, so the panel feels "there" while it fills in
-function ProviderSkeleton({ id, label, i }: { id: string; label: string; i: number }) {
+function Skeleton({ id, label, i }: { id: string; label: string; i: number }) {
   return (
-    <div className="usage-card usage-skeleton" style={{ "--sk-delay": `${i * -0.18}s` } as CSSProperties}>
-      <div className="usage-card-head">
-        <span className="usage-ico">{LOGO[id] && <img src={LOGO[id]} alt="" />}</span>
-        <div className="usage-card-title">
-          <span className="usage-name">{label}</span>
-          <span className="usage-acct usage-reading">Reading local files…</span>
-        </div>
-        <span className="sk sk-badge" />
+    <section className="up-card up-skel" style={{ "--sk-delay": `${i * -0.18}s` } as CSSProperties}>
+      <header className="up-head">
+        <span className="up-mark">{PROVIDER_LOGO[id] && <img src={PROVIDER_LOGO[id]} alt="" />}</span>
+        <span className="up-name">{label}</span>
+        <span className="up-age up-reading">{id === "claude" ? "Reading its history. A long one takes a while." : "Reading local files"}</span>
+      </header>
+      <div className="up-rows">
+        <span className="up-sk wide" />
+        <span className="up-sk" />
       </div>
-      <div className="usage-body">
-        <span className="sk sk-bar" />
-        <div className="usage-stats">
-          <span className="sk sk-tile" />
-          <span className="sk sk-tile" />
-          <span className="sk sk-tile" />
-        </div>
-      </div>
-    </div>
+    </section>
   );
 }
 
-function OverviewSkeleton() {
+function Activity({ cards, pending }: { cards: Record<string, ProviderUsage>; pending: Set<string> }) {
+  const data = PROVIDERS.map((p) => cards[p.id]).filter(Boolean);
+  const on = data.filter((p) => p.signedIn);
+  const off = data.filter((p) => !p.signedIn);
+  const tokens = on.reduce((n, p) => n + p.inputTokens + p.outputTokens, 0);
+  const sessions = on.reduce((n, p) => n + p.sessions, 0);
   return (
-    <div className="usage-overview">
-      {[0, 1, 2, 3].map((i) => (
-        <span key={i} className="sk sk-tile" style={{ "--sk-delay": `${i * -0.1}s` } as CSSProperties} />
-      ))}
-    </div>
+    <>
+      {on.length > 0 && (
+        <div className="up-strip">
+          <div className="up-stat">
+            <span className="up-stat-label">Tokens</span>
+            <b>{fmt(tokens)}</b>
+            <span className="up-stat-foot">In and out, recent</span>
+          </div>
+          <div className="up-stat">
+            <span className="up-stat-label">Sessions</span>
+            <b>{sessions.toLocaleString()}</b>
+            <span className="up-stat-foot">
+              Across {on.length} {on.length === 1 ? "agent" : "agents"}
+            </span>
+          </div>
+          <div className="up-stat">
+            <span className="up-stat-label">Signed in</span>
+            <b>
+              {on.length} <em>of {PROVIDERS.length}</em>
+            </b>
+            <span className="up-stat-logos">
+              {PROVIDERS.map((p) => {
+                const live = !!cards[p.id]?.signedIn;
+                return PROVIDER_LOGO[p.id] ? (
+                  <img key={p.id} src={PROVIDER_LOGO[p.id]} alt="" className={live ? "" : "off"} title={live ? p.label : `${p.label}, not signed in`} />
+                ) : null;
+              })}
+            </span>
+          </div>
+        </div>
+      )}
+      {PROVIDERS.map((p, i) => {
+        const u = cards[p.id];
+        if (u?.signedIn) return <ActivityCard key={p.id} u={u} />;
+        if (!u && pending.has(p.id)) return <Skeleton key={p.id} id={p.id} label={p.label} i={i} />;
+        return null;
+      })}
+      {off.length > 0 && (
+        <p className="up-foot">
+          Not signed in on this machine: {off.map((p) => p.label).join(", ")}.
+        </p>
+      )}
+      {data.length > 0 && <p className="up-foot">Everything here comes from each tool's own files on this machine. No network calls, no tokens spent.</p>}
+    </>
   );
 }
+
+// ---------------------------------------------------------------- panel
 
 export function UsagePanel() {
+  const [view, setView] = useState<View>("limits");
   const [cards, setCards] = useState<Record<string, ProviderUsage>>({});
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [, setTick] = useState(0);
-  const genRef = useRef(0); // load generation — stale in-flight scans must not clobber newer ones
+  const genRef = useRef(0); // load generation: a stale scan still in flight must not clobber a newer one
+  const loadedRef = useRef(false);
 
   // fire all five scans at once and let each card land on its own
   const load = () => {
+    loadedRef.current = true;
     const gen = ++genRef.current;
     setPending(new Set(PROVIDERS.map((p) => p.id)));
     for (const p of PROVIDERS) {
@@ -363,62 +440,37 @@ export function UsagePanel() {
         });
     }
   };
-  useEffect(load, []);
-  // keep "resets in" countdowns fresh + re-scan every few minutes while the tab is open
+  // the file scans are the slow part, so they wait until Activity is actually opened
   useEffect(() => {
-    const tick = setInterval(() => setTick((n) => n + 1), 30_000);
-    const auto = setInterval(load, 5 * 60_000);
-    return () => {
-      clearInterval(tick);
-      clearInterval(auto);
-    };
+    if (view === "activity" && !loadedRef.current) load();
+  }, [view]);
+  // countdowns move on their own, so re-render every 30s
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
   }, []);
 
   const loading = pending.size > 0;
-  const data = PROVIDERS.map((p) => cards[p.id]).filter(Boolean);
-  const connected = data.filter((p) => p.signedIn).length;
-  const reading = PROVIDERS.filter((p) => pending.has(p.id) && !cards[p.id]).map((p) => p.label);
-
   return (
-    <div className="usage">
-      <div className="usage-bar">
-        <span className="usage-summary">
-          {reading.length
-            ? `Reading ${reading.join(", ")}…`
-            : `${connected} of ${PROVIDERS.length} providers connected`}
-        </span>
-        <button className="btn" onClick={load} disabled={loading}>
-          <RotateCw size={13} className={loading ? "usage-spin" : ""} /> Refresh
-        </button>
-      </div>
-
-      {data.length > 0 ? (
-        // never regress from data back to a skeleton — a provider that failed once would
-        // otherwise flicker the whole strip on every refresh
-        <>
-          <Alerts data={data} />
-          <Overview data={data} />
-        </>
-      ) : (
-        loading && <OverviewSkeleton />
-      )}
-
-      {PROVIDERS.map((p, i) =>
-        cards[p.id] ? (
-          <UsageCard key={p.id} u={cards[p.id]} />
-        ) : pending.has(p.id) ? (
-          <ProviderSkeleton key={`sk-${p.id}`} id={p.id} label={p.label} i={i} />
-        ) : null,
-      )}
-
-      {!loading && data.length === 0 && <div className="usage-empty">No provider usage found.</div>}
-
-      {data.length > 0 && (
-        <div className="usage-foot">
-          Everything here is read from each tool's own files on this machine. No network calls, no
-          tokens used.
+    <div className="up">
+      <div className="up-top">
+        <div className="seg up-seg" role="tablist" aria-label="Usage view">
+          {(["limits", "activity"] as const).map((v) => (
+            <button key={v} role="tab" aria-selected={view === v} className={`seg-btn${view === v ? " active" : ""}`} onClick={() => setView(v)}>
+              {v === "limits" ? "Limits" : "Activity"}
+            </button>
+          ))}
         </div>
-      )}
+        <span className="up-dim">
+          {view === "limits" ? "Refreshes every 3 minutes" : loading ? "Reading local files" : "From each agent's own files"}
+        </span>
+        {view === "activity" && (
+          <button className="btn" onClick={load} disabled={loading}>
+            <RotateCw size={13} className={loading ? "up-spin" : ""} /> Refresh
+          </button>
+        )}
+      </div>
+      {view === "limits" ? <Limits /> : <Activity cards={cards} pending={pending} />}
     </div>
   );
 }

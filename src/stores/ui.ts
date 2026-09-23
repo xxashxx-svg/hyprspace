@@ -1,8 +1,7 @@
 import { create } from "zustand";
 
 interface UiState {
-  view: "home" | "space" | "launch"; // home composer, a workspace, or the multi-agent launcher
-  launchReturn: "home" | "space"; // where the launcher's Cancel/Esc sends you back to
+  view: "home" | "space"; // the home composer, or a workspace
   railCollapsed: boolean;
   // Which pane is fullscreen, PER PROJECT. A single global id meant maximizing in one project
   // silently wiped the other's — you'd come back and find it tiled again.
@@ -32,8 +31,6 @@ interface UiState {
   setSettingsTab: (t: string) => void;
   openNewProject: () => void;
   closeNewProject: () => void;
-  openLaunch: () => void;
-  closeLaunch: () => void;
   togglePalette: () => void;
   setPalette: (b: boolean) => void;
   toggleDock: () => void;
@@ -48,7 +45,6 @@ interface UiState {
 
 export const useUi = create<UiState>()((set) => ({
   view: "home", // land on the dashboard
-  launchReturn: "home",
   railCollapsed: false,
   maximizedByWs: {},
   fileDropId: null,
@@ -88,9 +84,6 @@ export const useUi = create<UiState>()((set) => ({
   setSettingsTab: (t) => set({ settingsTab: t }),
   openNewProject: () => set({ newProjectOpen: true }),
   closeNewProject: () => set({ newProjectOpen: false }),
-  // open the full-page launcher, remembering the page to return to on Cancel/Esc
-  openLaunch: () => set((s) => (s.view === "launch" ? {} : { view: "launch", launchReturn: s.view })),
-  closeLaunch: () => set((s) => ({ view: s.launchReturn })),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),
   setPalette: (b) => set({ paletteOpen: b }),
   toggleDock: () => set((s) => ({ dockOpen: !s.dockOpen })),

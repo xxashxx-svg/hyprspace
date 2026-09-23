@@ -137,9 +137,15 @@
   padding: 0 8px 0 7px;
   color: var(--text-1);
 }
-.tb-open-main img {
+.tb-open-main img,
+.tb-open-main svg {
   width: 14px;
   height: 14px;
+}
+/* a one-colour editor mark (Cursor) takes the text colour, full strength, like the others' logos */
+.editor-mark,
+.pop-menu-item > svg.editor-mark {
+  color: var(--text-1);
 }
 .tb-open-caret {
   width: 20px;

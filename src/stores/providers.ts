@@ -1,7 +1,7 @@
 // Which agent CLIs are installed on this machine, what they report about themselves, and the
 // model catalog Codex keeps locally. Checked once at startup and again on demand from Settings.
 import { create } from "zustand";
-import { providerStatus, getHomeDir, readFile, type ProviderStatus } from "../api";
+import { providerStatus, refreshPath, getHomeDir, readFile, type ProviderStatus } from "../api";
 import { AGENT_IDS, CATALOG, type AgentCatalog, type ModelOption, type ProviderId } from "../lib/models";
 
 interface ProvidersState {
@@ -56,6 +56,7 @@ export const useProviders = create<ProvidersState>()((set, get) => ({
   refresh: async () => {
     if (get().checking) return;
     set({ checking: true });
+    await refreshPath().catch(() => {});
     await Promise.all([
       ...AGENT_IDS.map(async (id) => {
         const st = await providerStatus(id).catch<ProviderStatus>(() => ({

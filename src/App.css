@@ -8,6 +8,9 @@
 @import "./styles/sessions.css";
 @import "./styles/menus.css";
 @import "./styles/settings.css";
+@import "./styles/usage-panel.css";
+@import "./styles/defaults.css";
+@import "./styles/general.css";
 @import "./styles/appearance.css";
 @import "./styles/skills.css";
 @import "./styles/controls.css";
@@ -22,7 +25,6 @@
 @import "./styles/pane-drag.css";
 @import "./styles/titlebar.css";
 @import "./styles/new-project.css";
-@import "./styles/launcher.css";
 @import "./styles/editor.css";
 @import "./styles/usage.css";
 @import "./styles/rail-collapse.css";

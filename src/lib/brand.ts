@@ -5,6 +5,9 @@ import openaiLogo from "../assets/brand/openai.svg";
 import opencodeLogo from "../assets/brand/opencode.svg";
 import grokLogo from "../assets/brand/grok.svg";
 import linuxLogo from "../assets/brand/linux.svg";
+import explorerLogo from "../assets/brand/explorer.png";
+import finderLogo from "../assets/brand/finder.svg";
+import { isMac, isWindows } from "../platform";
 
 export const PROVIDER_LOGO: Record<string, string> = {
   claude: claudeLogo,
@@ -57,3 +60,7 @@ export const PROVIDER_NAME: Record<string, string> = {
   media: "Media",
   diff: "Diff",
 };
+
+// the OS file manager's own icon, for "Open folder in Explorer / Finder". Linux has no one file
+// manager to draw, so it gets none and callers fall back to a plain folder
+export const FILE_MANAGER_LOGO: string | null = isWindows ? explorerLogo : isMac ? finderLogo : null;

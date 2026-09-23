@@ -5,8 +5,7 @@
 
 HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
 Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
-resume, drag-to-swap, a multi-agent **launcher** (fan out N agents in a folder at once), and a
-command palette. Neutral, T3-Code-inspired dark UI.
+resume, drag-to-swap, and a command palette. Neutral, T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
@@ -91,15 +90,15 @@ src/                         React frontend
   App.tsx                    shell layout
   App.css                    ordered @import index of styles/*.css (edit the per-area file, not this)
   styles/tokens.css          design tokens (theme variables)
-  styles/<area>.css          per-area component CSS (rail, home, pane, loops, launcher, editor, …) —
+  styles/<area>.css          per-area component CSS (rail, home, pane, loops, editor, …) —
                              split out of the old monolithic App.css so agents don't collide
   components/                UI: Titlebar, Rail (sidebar) + SessionRow, PaneGrid, TerminalPane,
                              HomePage, composer/ (ComposerPane, ModelPicker), dock/ (Dock, FilesPanel,
-                             GitPanel), Settings, NewProjectDialog, CommandPalette, LaunchWorkspace
-                             (multi-agent launcher), Menu (anchored dropdown), CodeEditor, Logo, …
+                             GitPanel), Settings, NewProjectDialog, CommandPalette, Menu (anchored
+                             dropdown), CodeEditor, Logo, …
   stores/                    Zustand: workspace, ui, settings, settingsSync, git, activity, skills,
                              agentStatus, usage, providers (installed CLIs), auth, updater,
-                             notifications, confirm, launchPresets, bridge (mobile)
+                             notifications, confirm, bridge (mobile)
   api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
                              never invoke() directly
   mobileBridge.ts            state mirror + action handler for the phone app (see mobile/)
@@ -148,10 +147,6 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
   **typed into the shell as keystrokes** — not passed as argv. Provider command strings come from
   `actions.ts` (`claudeCmd`/`geminiCmd`/`codexCmd`/`WSL_CMD`) and are constant (no user/LLM data
   interpolated into them).
-- **Launcher.** `LaunchWorkspace` (opened from Home / palette / titlebar) fans out N agents in a
-  folder at once: pick a folder → grid size → agent mix (quick-fill), then `addWorkspace` + N
-  `addSession` calls so `PaneGrid` tiles them. Saved configs are `stores/launchPresets.ts`; agent
-  panes get friendly names (`lib/names.ts`).
 - **Composer.** `components/composer/ComposerPane` is where a session starts: pick the agent, model
   and effort (`ModelPicker`, catalog in `lib/models.ts`, installed CLIs from `stores/providers.ts`),
   type a task, press Enter. "New session" (`actions.newSession`) adds a **draft** session

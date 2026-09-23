@@ -9,7 +9,6 @@ Work is organised into **projects** (a folder) and **open spaces** (a scratch sp
 each sit in a different folder). Every pane is a real PTY running a real agent CLI, so anything you'd
 normally do in a terminal still works.
 
-- **Multi-agent launcher.** Fan out N agents across a folder in one shot, tiled automatically.
 - **Per-pane resume**, drag-to-swap panes, and a command palette.
 - **Loops.** Scheduled, interval, until-done or manual agents, with mandatory stop limits and
   optional git-worktree isolation.
@@ -97,6 +96,8 @@ Found a security issue? Don't open an issue. See [SECURITY.md](./SECURITY.md).
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+The File Explorer icon in the Open menu is by [Icons8](https://icons8.com), used under their free license.
 
 ---
 

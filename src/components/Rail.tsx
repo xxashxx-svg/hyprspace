@@ -1,13 +1,13 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { Archive, ArchiveRestore, ChevronRight, Copy, FolderOpen, FolderPlus, Pencil, Plus, Search, Settings as SettingsIcon, SquarePen, Trash2, X } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronRight, Copy, FolderOpen, Pencil, Plus, Search, Settings as SettingsIcon, SquarePen, Trash2, X } from "lucide-react";
 import { useUi } from "../stores/ui";
 import { useSettings } from "../stores/settings";
 import { useWorkspaces } from "../stores/workspace";
 import { kbd } from "../platform";
-import { pickFolder, revealPath } from "../api";
-import { newSession } from "../actions";
+import { revealPath } from "../api";
+import { newSession, openFolderAsSpace } from "../actions";
 import { onBranchResolved } from "../lib/branches";
 import { SessionRow, useDiffSummary } from "./SessionRow";
 
@@ -43,7 +43,6 @@ export function Rail() {
   const focusedSessionId = useWorkspaces((s) => s.focusedSessionId);
   const setActive = useWorkspaces((s) => s.setActive);
   const setFocused = useWorkspaces((s) => s.setFocused);
-  const addWorkspace = useWorkspaces((s) => s.addWorkspace);
   const removeWorkspace = useWorkspaces((s) => s.removeWorkspace);
   const renameWorkspace = useWorkspaces((s) => s.renameWorkspace);
   const setArchived = useWorkspaces((s) => s.setArchived);
@@ -93,12 +92,6 @@ export function Rail() {
     if (wid !== activeId) setActive(wid);
     setFocused(sid);
     useUi.getState().goSpace();
-  };
-  const openFolder = async () => {
-    const folder = await pickFolder();
-    if (!folder) return;
-    addWorkspace(folder.split(/[\\/]/).filter(Boolean).pop() || "Project", folder);
-    if (view !== "home") useUi.getState().goSpace();
   };
 
   // Dragging, done imperatively so a pointermove never re-renders the list. A thread drags to
@@ -220,43 +213,35 @@ export function Rail() {
 
   return (
     <div className={`rail${collapsed ? " hidden" : ""}`} style={{ "--rail-w": `${width}px` } as React.CSSProperties}>
-      {/* Starting something is what the sidebar gets used for most, so it leads. New thread opens a
-          composer in the space you're in. The folder button beside it adds a whole new space: that's
-          what the old "Open new thread" row at the bottom actually did, under the wrong name. */}
-      <div className="rail-top">
-        <button className="rail-new" title={`New thread (${kbd("Ctrl+Shift+N")})`} onClick={newSession}>
-          <SquarePen size={14} />
-          <span className="rail-new-label">New thread</span>
-          {/* the shortcut only fits once the rail is wide enough; at its 200px minimum it would
-              crowd the label, so it waits for the room rather than getting clipped */}
-          {width >= 260 && <span className="rail-new-kbd">{kbd("Ctrl Shift N")}</span>}
+      {/* One row: search fills it, and the square button starts a thread. The titlebar's + already
+          opens a composer in the space you're in, so this one starts somewhere new: pick a folder,
+          and it opens as a space with a composer waiting in it. */}
+      <div className="rail-nav">
+        <label className="rail-search">
+          <Search size={14} />
+          <input
+            className="rail-search-input"
+            placeholder="Search"
+            value={filter}
+            spellCheck={false}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setFilter("");
+            }}
+          />
+          {filter ? (
+            <button className="rail-search-clear" title="Clear" onClick={() => setFilter("")}>
+              <X size={12} />
+            </button>
+          ) : (
+            <button className="rail-search-key" title="Search everything (command palette)" onClick={() => useUi.getState().setPalette(true)}>
+              {kbd("Ctrl K")}
+            </button>
+          )}
+        </label>
+        <button className="rail-new" title="New thread: pick a folder and start a thread in it" onClick={() => void openFolderAsSpace()}>
+          <SquarePen size={15} />
         </button>
-        <button className="rail-folder" title="Open a folder as a new space" onClick={() => void openFolder()}>
-          <FolderPlus size={15} />
-        </button>
-      </div>
-
-      <div className="rail-search-box">
-        <Search size={14} />
-        <input
-          className="rail-search-input"
-          placeholder="Search threads"
-          value={filter}
-          spellCheck={false}
-          onChange={(e) => setFilter(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setFilter("");
-          }}
-        />
-        {filter ? (
-          <button className="rail-search-clear" title="Clear" onClick={() => setFilter("")}>
-            <X size={12} />
-          </button>
-        ) : (
-          <button className="rail-search-kbd" title="Search everything (command palette)" onClick={() => useUi.getState().setPalette(true)}>
-            {kbd("Ctrl K")}
-          </button>
-        )}
       </div>
 
       <div className="rail-scroll">

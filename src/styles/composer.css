@@ -407,18 +407,17 @@
   cursor: default;
 }
 
-/* ---- effort slider: one stop per level, in the agent's colors ---- */
+/* ---- effort slider: a stop per level with its name underneath, in the agent's colors ---- */
 .effort-pop {
   position: fixed;
   z-index: 150;
-  width: 264px;
-  padding: 10px 12px 9px;
+  width: max(300px, calc(var(--effort-n) * 48px + 30px));
+  padding: 11px 15px 10px;
   background: var(--surface-3);
   border: 1px solid rgba(var(--ink), 0.13);
   border-radius: 12px;
   box-shadow:
     var(--shadow-2),
-    0 0 30px -10px color-mix(in srgb, var(--brand) 35%, transparent),
     inset 0 1px 0 rgba(var(--ink), 0.05);
   transform-origin: bottom left;
   animation: effortIn 0.18s var(--ease);
@@ -427,10 +426,6 @@
   from {
     opacity: 0;
     transform: translateY(6px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 .effort-head {
@@ -462,125 +457,105 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* the brand's light stop washes out on a light page, so it's mixed toward the text colour */
 .effort-name {
   font-size: 13px;
   font-weight: 650;
-  color: var(--brand2);
-  animation: effortWord 0.22s var(--ease);
+  color: color-mix(in srgb, var(--brand2) 70%, var(--text-1));
+  animation: effortWord 0.2s var(--ease);
+}
+/* hovering another label previews it; dimmed so it doesn't read as already chosen */
+.effort-name.preview {
+  opacity: 0.6;
 }
 .effort-blurb {
-  margin: 2px 0 9px 26px;
+  margin: 2px 0 14px 26px;
   font-size: 11px;
   color: var(--text-3);
-  animation: effortWord 0.26s var(--ease);
+  animation: effortWord 0.24s var(--ease);
 }
 @keyframes effortWord {
   from {
     opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+    transform: translateY(3px);
   }
 }
-.effort-track {
+
+/* the rail: a thin track, the filled part in the brand gradient, a dot per stop, and the thumb.
+   .effort-line is inset by the thumb's radius so a stop at 0% or 100% sits under the thumb's
+   centre, the same way the native range input places its own (invisible) thumb */
+.effort-rail {
   position: relative;
-  height: 26px;
-  border-radius: 13px;
-  background: rgba(0, 0, 0, 0.35);
-  box-shadow: inset 0 1px 0 rgba(var(--ink), 0.05);
-  overflow: hidden;
+  height: 22px;
 }
-/* the filled part: a brand gradient, a glow that follows it, and stars drifting through it */
+.effort-line {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
+  background: rgba(var(--ink), 0.1);
+}
 .effort-fill {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: var(--effort-pct);
-  min-width: 26px;
-  border-radius: 13px;
-  overflow: hidden;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--brand) 55%, #1a1a1a), var(--brand) 70%, var(--brand2));
-  box-shadow: 0 0 16px color-mix(in srgb, var(--brand) 50%, transparent);
-  transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--brand2));
+  box-shadow: 0 0 10px -2px color-mix(in srgb, var(--brand) 60%, transparent);
+  transition: width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.effort-stars {
-  position: absolute;
-  inset: 0;
-  width: 200%;
-  background:
-    radial-gradient(circle at 7% 40%, rgba(255, 255, 255, 0.55) 0 1px, transparent 2.2px),
-    radial-gradient(circle at 17% 68%, rgba(255, 255, 255, 0.35) 0 1px, transparent 2px),
-    radial-gradient(circle at 26% 28%, rgba(255, 255, 255, 0.5) 0 1px, transparent 2.2px),
-    radial-gradient(circle at 36% 60%, rgba(255, 255, 255, 0.3) 0 1px, transparent 2px),
-    radial-gradient(circle at 44% 36%, rgba(255, 255, 255, 0.45) 0 1px, transparent 2px);
-  background-size: 50% 100%;
-  animation: effortDrift 9s linear infinite;
-}
-.effort-stars.far {
-  opacity: 0.6;
-  background-position: 25% 0;
-  animation-duration: 16s;
-}
-@keyframes effortDrift {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-/* a ring of light that bursts from the thumb on every change */
-.effort-flash {
+.effort-dot {
   position: absolute;
   top: 50%;
-  left: calc(13px + (100% - 26px) * var(--effort-pct) / 100%);
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
   border-radius: 50%;
-  pointer-events: none;
-  z-index: 3;
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand2) 70%, transparent);
-  animation: effortFlash 0.5s var(--ease) forwards;
+  background: rgba(var(--ink), 0.3);
+  transition: background 0.2s var(--ease), opacity 0.2s var(--ease);
 }
-@keyframes effortFlash {
-  from {
-    opacity: 1;
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand2) 70%, transparent);
-  }
-  to {
-    opacity: 0;
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--brand2) 0%, transparent);
-  }
+/* on the filled part the dots sit on brand colour in either theme, so they stay light */
+.effort-dot.lit {
+  background: rgba(255, 255, 255, 0.75);
 }
-/* our thumb glides; the native one underneath is invisible but still takes the drag and focus */
+.effort-dot.here {
+  opacity: 0;
+}
 .effort-thumb {
   position: absolute;
-  top: 3px;
-  left: calc(3px + (100% - 26px) * var(--effort-pct) / 100%);
-  width: 20px;
-  height: 20px;
+  top: 50%;
+  left: var(--effort-pct);
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface-2);
+  border: 3px solid var(--brand);
   box-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.5),
-    0 0 0 2px color-mix(in srgb, var(--brand) 55%, transparent);
+    0 0 0 4px color-mix(in srgb, var(--brand) 18%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
   pointer-events: none;
-  z-index: 3;
-  transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.15s var(--ease), transform 0.12s var(--ease);
+  transition:
+    left 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.15s var(--ease),
+    transform 0.12s var(--ease);
 }
-.effort-track:hover .effort-thumb {
+.effort-rail:hover .effort-thumb {
   box-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.5),
-    0 0 0 4px color-mix(in srgb, var(--brand) 40%, transparent);
+    0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
 }
-.effort-track:active .effort-thumb {
-  transform: scale(1.08);
+.effort-rail:active .effort-thumb {
+  transform: scale(1.1);
 }
-.effort-track input[type="range"] {
+/* the native input takes the drag, the arrow keys and focus, with its own thumb the same size as
+   ours so its stops line up with the dots */
+.effort-rail input[type="range"] {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -590,78 +565,70 @@
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
-  z-index: 4;
+  z-index: 2;
 }
-.effort-track input[type="range"]::-webkit-slider-runnable-track {
-  height: 26px;
+.effort-rail input[type="range"]::-webkit-slider-runnable-track {
+  height: 22px;
   background: transparent;
 }
-.effort-track input[type="range"]::-webkit-slider-thumb {
+.effort-rail input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  margin-top: 3px;
-  border-radius: 50%;
+  width: 18px;
+  height: 22px;
   background: transparent;
 }
-.effort-track input[type="range"]:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  border-radius: 13px;
-}
-.effort-stops {
-  position: absolute;
-  left: 13px;
-  right: 13px;
-  top: 0;
-  bottom: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  pointer-events: none;
-  z-index: 1;
-}
-.effort-stop {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: rgba(var(--ink), 0.22);
-  transition: background 0.2s var(--ease), transform 0.2s var(--ease);
-}
-.effort-stop.lit {
-  background: rgba(var(--ink), 0.6);
-}
-.effort-stop.here {
-  transform: scale(0);
-}
-/* the two ends, clickable to jump straight there */
-.effort-ends {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-  padding: 0 2px;
-}
-.effort-tick {
+.effort-rail input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 22px;
   border: 0;
   background: transparent;
-  color: var(--text-3);
-  font: inherit;
-  font-size: 10px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.15s var(--ease);
 }
-.effort-tick:hover {
+.effort-rail input[type="range"]:focus-visible {
+  outline: none;
+}
+.effort-rail:has(input:focus-visible) .effort-thumb {
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--brand) 30%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* a name under every stop, clickable to jump there. the ends align to the rail's edges so a long
+   name can't hang out of the popover */
+.effort-labels {
+  position: relative;
+  height: 16px;
+  margin: 6px 9px 0;
+}
+.effort-lbl {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--text-3);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s var(--ease);
+}
+.effort-lbl.first {
+  transform: translateX(-9px);
+}
+.effort-lbl.last {
+  transform: translateX(calc(-100% + 9px));
+}
+.effort-lbl:hover {
   color: var(--text-1);
 }
-.effort-tick.on {
-  color: var(--brand2);
+.effort-lbl.on {
+  color: var(--text-1);
   font-weight: 600;
 }
 @media (prefers-reduced-motion: reduce) {
-  .effort-stars,
-  .effort-flash,
   .effort-name,
   .effort-blurb {
     animation: none;
@@ -1042,4 +1009,79 @@
 }
 .composer {
   position: relative;
+}
+
+/* ---- ultrathink: "ultrathink" in a Claude prompt lights the composer up ---- */
+/* a spinning rainbow line drawn only in the border band: a mask cuts out the middle, so the
+   see-through composer never picks up a tint behind the text */
+@property --ultra-ang {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.composer.ultra,
+.composer.ultra:focus-within {
+  --u1: #ff5f6d;
+  --u2: #ffb347;
+  --u3: #4fd1a5;
+  --u4: #4fa8ff;
+  --u5: #b46cff;
+  border-color: transparent;
+  box-shadow: var(--shadow-2); /* the rainbow line replaces the usual focus ring */
+}
+.composer.ultra::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 1.5px;
+  border-radius: calc(var(--radius-3) + 1px);
+  background: conic-gradient(from var(--ultra-ang), var(--u1), var(--u2), var(--u3), var(--u4), var(--u5), var(--u1));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: ultraSpin 3s linear infinite;
+}
+@keyframes ultraSpin {
+  to {
+    --ultra-ang: 360deg;
+  }
+}
+/* the label beside the effort chip, so the rainbow line says what it means */
+.ultra-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(var(--ink), 0.05);
+  border: 1px solid rgba(var(--ink), 0.08);
+  animation: ultraIn 0.18s var(--ease);
+}
+.ultra-badge svg {
+  color: #b46cff;
+}
+.ultra-badge-text {
+  font-size: 12px;
+  font-weight: 650;
+  background: linear-gradient(90deg, #ff5f6d, #ffb347, #4fd1a5, #4fa8ff, #b46cff, #ff5f6d);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ultraText 3s linear infinite;
+}
+@keyframes ultraText {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes ultraIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 }

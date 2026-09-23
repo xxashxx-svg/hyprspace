@@ -23,98 +23,47 @@
 .rail-resize:active {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
-/* the top of the rail: start a thread, or open a folder as a new space */
-.rail-top {
+/* the top of the rail: one row, a search field and a square New thread button beside it */
+.rail-nav {
   flex: 0 0 auto;
   display: flex;
+  align-items: center;
   gap: 6px;
-  margin: 8px 8px 6px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border-0);
+  margin-bottom: 4px;
 }
-.rail-new {
+.rail-search {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
-  padding: 0 6px 0 9px;
+  height: 32px;
+  padding: 0 6px 0 10px;
   border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--text-1);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
-}
-.rail-new:hover {
-  background: var(--surface-3);
-  border-color: color-mix(in srgb, var(--text-3) 40%, transparent);
-}
-.rail-new > svg {
-  flex: 0 0 auto;
+  background: rgba(var(--ink), 0.04);
   color: var(--text-3);
+  cursor: text;
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease),
+    box-shadow 0.12s var(--ease);
+}
+.rail-search > svg {
+  flex: 0 0 auto;
   transition: color 0.12s var(--ease);
 }
-.rail-new:hover > svg {
-  color: var(--text-1);
+.rail-search:hover {
+  background: rgba(var(--ink), 0.06);
 }
-.rail-new-label {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.rail-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.rail-new-kbd {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--text-3);
-  border: 1px solid var(--border-1);
-  border-radius: 4px;
-  padding: 1px 5px;
-}
-.rail-folder {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border-1);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  transition: background 0.12s var(--ease), color 0.12s var(--ease);
-}
-.rail-folder:hover {
-  background: var(--surface-2);
-  color: var(--text-1);
-}
-.rail-search-box {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 8px 6px;
-  padding: 0 8px;
-  height: 30px;
-  border: 1px solid var(--border-1);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--text-3);
-  transition: border-color 0.12s var(--ease);
-}
-.rail-search-box:focus-within {
-  border-color: color-mix(in srgb, var(--text-3) 55%, transparent);
-}
-.rail-search-box > svg {
-  flex: 0 0 auto;
+.rail-search:focus-within > svg {
+  color: var(--accent);
 }
 .rail-search-input {
   flex: 1;
@@ -129,33 +78,59 @@
 .rail-search-input::placeholder {
   color: var(--text-3);
 }
+/* the palette shortcut, as a keycap; clicking it opens the palette */
+.rail-search-key {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--border-1);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.rail-search-key:hover {
+  color: var(--text-1);
+  border-color: var(--border-2);
+}
 .rail-search-clear {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
 }
 .rail-search-clear:hover {
-  background: var(--surface-3);
+  background: rgba(var(--ink), 0.08);
   color: var(--text-1);
 }
-.rail-search-kbd {
+/* New thread: a square that matches the search field beside it */
+.rail-new {
   flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-3);
-  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--border-1);
-  border-radius: 4px;
-  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(var(--ink), 0.04);
+  color: var(--text-2);
   cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.rail-new:hover {
+  background: rgba(var(--ink), 0.08);
+  color: var(--text-1);
 }
 .rail-scroll {
   flex: 1;

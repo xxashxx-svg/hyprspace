@@ -2,10 +2,9 @@
 // They read stores via getState() so they work outside React render.
 import { confirmDialog } from "./stores/confirm";
 import { isFileDirty, markDiscarded } from "./lib/dirtyFiles";
-import { useNotifications } from "./stores/notifications";
 import { useWorkspaces } from "./stores/workspace";
 import { useUi } from "./stores/ui";
-import { pickFolders, worktreeCreate } from "./api";
+import { pickFolder, pickFolders } from "./api";
 import { useSettings, type ClaudePermission, type CodexMode } from "./stores/settings";
 import { modelFlags, type ProviderId } from "./lib/models";
 
@@ -115,32 +114,14 @@ export function newSession() {
   useUi.getState().goSpace();
 }
 
-export const newClaude = () => launchInActive(claudeCmd());
-export const newGemini = () => launchInActive(geminiCmd());
-export const newCodex = () => launchInActive(codexCmd());
-export const newOpencode = () => launchInActive(opencodeCmd());
-export const newGrok = () => launchInActive(grokCmd());
-export const newWsl = () => launchInActive(WSL_CMD);
 export const newTerminal = () => launchInActive();
 
-// Launch a Claude agent in its own isolated git worktree (branch hs/agent-N) so it can
-// work in parallel without colliding with other agents in the same repo.
-export async function newClaudeInWorktree() {
-  const ws = activeWs();
-  if (!ws || !ws.cwd) {
-    useNotifications.getState().add({
-      title: "New agent",
-      body: "Open a project workspace (with a folder) first.",
-    });
-    return;
-  }
-  const name = `agent-${ws.sessions.length + 1}`;
-  try {
-    const path = await worktreeCreate(ws.cwd, name);
-    useWorkspaces.getState().addSession(ws.id, claudeCmd(), path);
-  } catch (e) {
-    useNotifications.getState().add({ title: "Couldn't create worktree", body: String(e) });
-  }
+/** Pick a folder and open it as a new space. */
+export async function openFolderAsSpace() {
+  const folder = await pickFolder();
+  if (!folder) return;
+  useWorkspaces.getState().addWorkspace(folder.split(/[\\/]/).filter(Boolean).pop() || "Project", folder);
+  if (useUi.getState().view !== "home") useUi.getState().goSpace();
 }
 
 // close a pane; for a running AI session, confirm first so an agent mid-task

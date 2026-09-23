@@ -268,8 +268,6 @@ fn claude_usage() -> ProviderUsage {
     if u.total_tokens > 0 {
         u.tokens_window = Some(format!("last {RECENT_DAYS} days"));
     }
-    u.note =
-        Some("Weekly & session limits live on claude.ai → Settings → Usage (or /usage in a pane).".into());
     u
 }
 

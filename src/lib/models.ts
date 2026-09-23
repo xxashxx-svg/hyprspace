@@ -20,17 +20,31 @@ export type ProviderId = "claude" | "gemini" | "codex" | "opencode" | "grok" | "
 //   and-sandbox` (alias `--yolo`) shows as "permissions: YOLO mode" in its session header.
 // One list each, used by every screen that offers the choice — they drifted into three different
 // vocabularies when each screen kept its own copy.
-export const CLAUDE_PERMISSIONS: { value: ClaudePermission; label: string }[] = [
-  { value: "default", label: "Ask each time" },
-  { value: "acceptEdits", label: "Accept edits" },
-  { value: "plan", label: "Plan mode" },
-  { value: "bypass", label: "Bypass permissions" },
+/** A permission mode: what an agent may do without asking. `says` is the one line a person reads to
+ *  choose; `risky` marks the mode that skips every question. Listed most careful first. */
+export interface PermissionMode<T> {
+  value: T;
+  label: string;
+  says: string;
+  risky?: boolean;
+}
+
+export const CLAUDE_PERMISSIONS: PermissionMode<ClaudePermission>[] = [
+  { value: "plan", label: "Plan mode", says: "Reads and plans only. Changes nothing until you approve the plan." },
+  { value: "default", label: "Ask each time", says: "Asks before every file edit and every command." },
+  { value: "acceptEdits", label: "Accept edits", says: "Edits files on its own. Still asks before running commands." },
+  { value: "bypass", label: "Bypass permissions", says: "Runs everything without asking. Only use it in folders you trust.", risky: true },
 ];
 
-export const CODEX_MODES: { value: CodexMode; label: string }[] = [
-  { value: "default", label: "Ask each time" },
-  { value: "auto", label: "Agent" },
-  { value: "bypass", label: "YOLO" },
+export const CODEX_MODES: PermissionMode<CodexMode>[] = [
+  { value: "default", label: "Ask each time", says: "Asks before edits and commands." },
+  { value: "auto", label: "Agent", says: "Works freely inside the folder. Asks before anything outside it." },
+  { value: "bypass", label: "YOLO", says: "No sandbox and no questions. Only use it in folders you trust.", risky: true },
+];
+
+export const GEMINI_MODES: PermissionMode<boolean>[] = [
+  { value: false, label: "Ask each time", says: "Asks before running any tool." },
+  { value: true, label: "YOLO", says: "Runs every tool without asking. Only use it in folders you trust.", risky: true },
 ];
 
 export const AGENT_IDS: ProviderId[] = ["claude", "codex", "gemini", "opencode", "grok"];
@@ -65,6 +79,7 @@ export const CATALOG: Record<ProviderId, AgentCatalog> = {
     models: [
       DEFAULT,
       { id: "claude-fable-5-1", label: "Fable 5.1", note: "Most capable" },
+      { id: "claude-opus-5-5", label: "Opus 5.5" },
       { id: "claude-opus-5", label: "Opus 5" },
       { id: "claude-sonnet-5", label: "Sonnet 5" },
       { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", note: "Fastest" },
@@ -174,7 +189,10 @@ export function modelFlags(provider: ProviderId, model: string, effort: string):
       break;
     case "codex":
       if (model) flags.push("-m", quote(model));
-      if (effort) flags.push("-c", quote(`model_reasoning_effort="${effort}"`));
+      // bare, not model_reasoning_effort="high": codex reads a value that isn't TOML as a plain
+      // string, and PowerShell has no \" escape, so the quoted form split into two arguments there.
+      // The second one arrived as the first prompt ("medium\") and the effort as "\".
+      if (effort) flags.push("-c", quote(`model_reasoning_effort=${effort}`));
       break;
     case "gemini":
       if (model) flags.push("-m", quote(model));

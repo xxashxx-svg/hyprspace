@@ -1,39 +1,58 @@
-/* ---- command palette (Ctrl+Shift+P) ---- */
+/* ---- command palette (Ctrl+K / Ctrl+Shift+P): commands grouped into sections, each row an icon, a
+   label with an optional line under it, and its shortcut as keycaps ---- */
 .cmdk-overlay {
   position: fixed;
   inset: 0;
   z-index: 350;
-  background: rgba(0, 0, 0, 0.45);
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding-bottom: 6vh;
+  align-items: flex-start;
+  padding-top: 13vh;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  animation: cmdkFade 0.12s var(--ease);
+}
+@keyframes cmdkFade {
+  from {
+    opacity: 0;
+  }
 }
 .cmdk {
-  width: 540px;
+  width: 620px;
   max-width: 92vw;
-  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
   border: 1px solid var(--border-2);
-  border-radius: var(--radius-3);
-  box-shadow: var(--shadow-2);
+  border-radius: 14px;
+  box-shadow:
+    var(--shadow-2),
+    inset 0 1px 0 rgba(var(--ink), 0.05);
   overflow: hidden;
-  animation: fdoIn 0.12s var(--ease);
+  animation: cmdkIn 0.14s var(--ease);
 }
+@keyframes cmdkIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
 .cmdk-input-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 16px;
+  gap: 11px;
+  height: 52px;
+  padding: 0 14px 0 18px;
   border-bottom: 1px solid var(--border-1);
 }
 .cmdk-search-ico {
   flex: 0 0 auto;
-  color: var(--text-3);
+  color: var(--accent);
 }
 .cmdk-input {
   flex: 1;
   min-width: 0;
-  padding: 14px 0;
   background: transparent;
   border: none;
   color: var(--text-1);
@@ -44,16 +63,41 @@
 .cmdk-input::placeholder {
   color: var(--text-3);
 }
+/* keycaps, shared by the Esc badge, the row shortcuts and the footer */
+.cmdk kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(var(--ink), 0.06);
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-bottom-width: 2px;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+.cmdk-esc {
+  flex: 0 0 auto;
+}
+
 .cmdk-list {
-  max-height: 320px;
+  max-height: min(430px, 56vh);
   overflow-y: auto;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  padding: 6px 8px 8px;
+}
+.cmdk-section {
+  padding: 10px 10px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
 }
 .cmdk-empty {
-  padding: 16px;
+  padding: 28px 16px;
   text-align: center;
   color: var(--text-3);
   font-size: 13px;
@@ -61,52 +105,90 @@
 .cmdk-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 9px 11px;
+  gap: 11px;
+  width: 100%;
+  min-height: 38px;
+  padding: 5px 10px 5px 6px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-1);
+  border-radius: 9px;
   color: var(--text-1);
   font: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  width: 100%;
 }
 .cmdk-item.active {
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.cmdk-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cmdk-hint {
+/* the icon sits in a small tile that takes the accent when its row is highlighted */
+.cmdk-ico {
   flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--text-3);
-  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(var(--ink), 0.05);
+  color: var(--text-2);
+  transition:
+    background 0.1s var(--ease),
+    color 0.1s var(--ease);
+}
+.cmdk-ico img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+.cmdk-item.active .cmdk-ico {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: color-mix(in srgb, var(--accent) 60%, var(--text-1));
 }
 .cmdk-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
-.cmdk-sub {
-  font-size: 11px;
-  color: var(--text-3);
-  font-family: var(--font-mono);
+.cmdk-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cmdk-section {
-  padding: 8px 11px 3px;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.cmdk-sub {
+  font-size: 11.5px;
   color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-sub.mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.cmdk-keys {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 3px;
+}
+
+.cmdk-foot {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-1);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cmdk-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cmdk-foot kbd {
+  min-width: 18px;
+  height: 18px;
+  font-size: 10px;
 }

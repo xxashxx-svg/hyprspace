@@ -29,9 +29,6 @@ import "./App.css";
 // pages/dialogs that only appear behind a condition are code-split — their chunks load on
 // first open, not at startup. always-mounted stuff (Titlebar/Rail/PaneGrid/HomePage) stays static.
 const Settings = lazy(() => import("./components/Settings").then((m) => ({ default: m.Settings })));
-const LaunchWorkspace = lazy(() =>
-  import("./components/LaunchWorkspace").then((m) => ({ default: m.LaunchWorkspace })),
-);
 const NewProjectDialog = lazy(() =>
   import("./components/NewProjectDialog").then((m) => ({ default: m.NewProjectDialog })),
 );
@@ -318,7 +315,6 @@ export default function App() {
       <div className="app-body">
         <Rail />
         {view === "home" && <HomePage />}
-        <Suspense fallback={null}>{view === "launch" && <LaunchWorkspace />}</Suspense>
         {/* kept mounted (PTYs stay alive) but hidden unless we're in a space */}
         <div className="workspace-view" style={{ display: view === "space" ? "flex" : "none" }}>
           <PaneGrid />
