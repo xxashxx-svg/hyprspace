@@ -20,7 +20,8 @@ import { claudeCmd } from "../actions";
 import { createPty, writePty, resizePty, pausePty, resumePty, killPty, claudeResumeMode, revealPath, worktreeCreate, clipboardImageToTemp, pathExists, claudeImagePath, agentHookSettings } from "../api";
 import { appendOutput, dropOutput, recentOutput } from "../terminal/buffers";
 import { noteUserInput, forgetSession } from "../ai/autoNameSession";
-import { PasteTray } from "./pane/PasteTray";
+import { PasteTray, type Pasted } from "./pane/PasteTray";
+import { ImagePeek } from "./pane/ImagePeek";
 import { useActivity } from "../stores/activity";
 import { useAgentStatus } from "../stores/agentStatus";
 import { useUsage } from "../stores/usage";
@@ -169,7 +170,8 @@ function TerminalPaneInner({
   const [alive, setAlive] = useState(true);
   const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [pasted, setPasted] = useState<string[]>([]);
+  const [pasted, setPasted] = useState<Pasted[]>([]);
+  const [peek, setPeek] = useState<{ path: string; x: number; y: number } | null>(null); // hovered image link
   const pasteRef = useRef<(() => void) | null>(null); // the clipboard paste, for right-click
   const themeId = useSettings((s) => s.theme);
   const mode = useSettings((s) => s.mode);
@@ -287,6 +289,25 @@ function TerminalPaneInner({
       existCache.set(abs, { ok, at: Date.now() });
       return ok;
     };
+    // hovering an image link previews it beside the mouse. the short wait keeps a sweep across
+    // output from flashing previews, and the token drops an answer that lands after you've moved on
+    let peekTimer: ReturnType<typeof setTimeout> | undefined;
+    let peekTok = 0;
+    const peekAt = (e: MouseEvent, resolve: () => Promise<string | null>) => {
+      clearTimeout(peekTimer);
+      const tok = ++peekTok;
+      const { clientX: x, clientY: y } = e;
+      peekTimer = setTimeout(() => {
+        void resolve().then((path) => {
+          if (path && tok === peekTok && !disposed) setPeek({ path, x, y });
+        });
+      }, 200);
+    };
+    const unpeek = () => {
+      clearTimeout(peekTimer);
+      peekTok++;
+      setPeek(null);
+    };
     const imgLinks = term.registerLinkProvider({
       provideLinks(lineNo, cb) {
         const ll = logicalLine(lineNo);
@@ -324,8 +345,11 @@ function TerminalPaneInner({
             decorations: { underline: true, pointerCursor: true },
             activate(event) {
               if (!event.ctrlKey && !event.metaKey) return;
+              unpeek();
               void checkExists(abs).then((ok) => ok && openImg(abs));
             },
+            hover: (e) => peekAt(e, () => checkExists(abs).then((ok) => (ok ? abs : null))),
+            leave: unpeek,
           });
         }
         cb(out.length ? out : undefined);
@@ -365,8 +389,11 @@ function TerminalPaneInner({
             decorations: { underline: true, pointerCursor: true },
             activate(event) {
               if (!event.ctrlKey && !event.metaKey) return;
+              unpeek();
               void resolveMarker(n).then((p) => p && openImg(p));
             },
+            hover: (e) => peekAt(e, () => resolveMarker(n)),
+            leave: unpeek,
           });
         }
         cb(out.length ? out : undefined);
@@ -378,12 +405,67 @@ function TerminalPaneInner({
     // GPU (WebGL) renderer attaches in the visibility effect below, not here — only the active
     // space's panes hold a GL context, so N mounted spaces can't hit the browser's context cap
 
+    // Claude's input box as drawn on screen: the ❯ line sitting right under a rule, down to the
+    // next rule. Returns the [Image #N] numbers in it, or null when there's no input box to read
+    // (a permission dialog, a picker, a CLI that draws it differently). Null means "don't know",
+    // and the tray then keeps its cards, so a change in how claude draws can only ever leave a
+    // card up too long, never take one down wrongly.
+    const rule = (t: string) => /[─━═]{8,}/.test(t);
+    const promptMarkers = (): Set<number> | null => {
+      const buf = term.buffer.active;
+      const row = (y: number) => buf.getLine(y)?.translateToString(true) ?? "";
+      const end = buf.baseY + term.rows;
+      for (let y = end - 1; y > buf.baseY; y--) {
+        if (!/^[\s│]*[❯>]\s/.test(row(y)) || !rule(row(y - 1))) continue;
+        const lines: string[] = [];
+        for (let k = y; k < end && !rule(row(k)); k++) lines.push(row(k).trim());
+        // claude wraps the input itself at spaces, so a marker can break at "[Image ⏎ #14]"
+        const text = lines.join(" ");
+        return new Set([...text.matchAll(/\[Image #(\d+)\]/g)].map((m) => Number(m[1])));
+      }
+      return null;
+    };
+
     // an image's path goes into the prompt (the agents read images by path) and into the tray,
     // since the terminal itself only ever shows that path or claude's [Image #N]
     const attach = (path: string) => {
+      const before = isClaude ? promptMarkers() : null;
       term.paste(pastePath(path));
-      setPasted((l) => (l.includes(path) ? l : [...l, path]));
+      setPasted((l) => (l.some((x) => x.path === path) ? l : [...l, { path }]));
+      if (!before) return;
+      // claude swaps the pasted path for [Image #N] a beat later. the number that turns up new
+      // is this image's, which is what lets the tray drop the card when you delete the marker
+      let tries = 0;
+      const learn = () => {
+        if (disposed) return;
+        const fresh = [...(promptMarkers() ?? [])].filter((n) => !before.has(n)).sort((a, b) => a - b);
+        if (!fresh.length) {
+          if (++tries < 20) setTimeout(learn, 150);
+          return;
+        }
+        setPasted((l) => {
+          const taken = new Set(l.map((x) => x.n));
+          const n = fresh.find((f) => !taken.has(f));
+          return n == null ? l : l.map((x) => (x.path === path ? { ...x, n } : x));
+        });
+      };
+      setTimeout(learn, 150);
     };
+    // claude redraws its input box on every edit, so a deleted marker shows up as a write
+    let syncTimer: ReturnType<typeof setTimeout> | undefined;
+    const syncDisp = term.onWriteParsed(() => {
+      if (!isClaude) return;
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        if (disposed) return;
+        const now = promptMarkers();
+        if (!now) return;
+        setPasted((l) => {
+          const keep = l.filter((x) => x.n == null || now.has(x.n));
+          return keep.length === l.length ? l : keep;
+        });
+      }, 120);
+    });
     // text first (like Orca), image only when there's no text. note readText REJECTS when the
     // clipboard holds no text (it doesn't resolve empty), so the image fallback has to hang off
     // .catch as well as the empty-string case — otherwise pasting a screenshot does nothing.
@@ -661,6 +743,9 @@ function TerminalPaneInner({
       window.removeEventListener("focus", redraw);
       dataDisp.dispose();
       selDisp.dispose();
+      syncDisp.dispose();
+      clearTimeout(syncTimer);
+      clearTimeout(peekTimer);
       links.dispose();
       imgLinks.dispose();
       markerLinks.dispose();
@@ -880,12 +965,13 @@ function TerminalPaneInner({
         />
       )}
       <div className="pane-term" ref={ref} onContextMenu={handlePaste} />
+      {peek && <ImagePeek key={peek.path} path={peek.path} x={peek.x} y={peek.y} />}
       <PasteTray
-        paths={pasted}
+        items={pasted}
         flush={!!tabbed}
         onOpen={openPasted}
         onDismiss={(p) => {
-          setPasted((l) => l.filter((x) => x !== p));
+          setPasted((l) => l.filter((x) => x.path !== p));
           termRef.current?.focus();
         }}
         onClear={() => {

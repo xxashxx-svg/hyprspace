@@ -2,6 +2,12 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 
 import { ChevronDown, ChevronUp, GripVertical, Paperclip, X } from "lucide-react";
 import { readImageFile } from "../../api";
 
+// One pasted image. `n` is claude's [Image #N] for it, once the pane has seen the marker appear.
+export interface Pasted {
+  path: string;
+  n?: number;
+}
+
 // Where the tray sits inside its pane once dragged, and which way its hover preview should open
 // so it never runs off the pane's edge.
 interface Spot {
@@ -15,13 +21,13 @@ interface Spot {
 // claude's [Image #N], so this is the one place you can see what the agent is about to get.
 // It stays mounted while empty, so a drag or a collapse sticks for the pane's life.
 export function PasteTray({
-  paths,
+  items,
   flush,
   onOpen,
   onDismiss,
   onClear,
 }: {
-  paths: string[];
+  items: Pasted[];
   flush: boolean; // no pane header above (a tab in a group), so sit at the top edge
   onOpen: (path: string) => void;
   onDismiss: (path: string) => void;
@@ -54,7 +60,7 @@ export function PasteTray({
     window.addEventListener("pointerup", up);
   };
 
-  if (!paths.length) return null;
+  if (!items.length) return null;
   const cls = ["ptray", flush && !spot && "flush", !open && "folded", spot?.up && "up", spot?.left && "left"]
     .filter(Boolean)
     .join(" ");
@@ -64,7 +70,7 @@ export function PasteTray({
         <GripVertical size={12} className="ptray-grip" />
         <Paperclip size={12} className="ptray-clip" />
         <span className="ptray-title">Attached</span>
-        <span className="ptray-count">{paths.length}</span>
+        <span className="ptray-count">{items.length}</span>
         <span className="ptray-gap" />
         <button className="ptray-btn" title={open ? "Collapse" : "Expand"} onPointerDown={(e) => e.stopPropagation()} onClick={() => setOpen((o) => !o)}>
           {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -76,8 +82,8 @@ export function PasteTray({
       {open && (
         <>
           <div className="ptray-row">
-            {paths.map((p) => (
-              <Thumb key={p} path={p} onOpen={onOpen} onDismiss={onDismiss} />
+            {items.map((it) => (
+              <Thumb key={it.path} path={it.path} n={it.n} onOpen={onOpen} onDismiss={onDismiss} />
             ))}
           </div>
           <div className="ptray-hint">Goes in with your next message</div>
@@ -87,7 +93,17 @@ export function PasteTray({
   );
 }
 
-function Thumb({ path, onOpen, onDismiss }: { path: string; onOpen: (p: string) => void; onDismiss: (p: string) => void }) {
+function Thumb({
+  path,
+  n,
+  onOpen,
+  onDismiss,
+}: {
+  path: string;
+  n?: number;
+  onOpen: (p: string) => void;
+  onDismiss: (p: string) => void;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [size, setSize] = useState("");
   useEffect(() => {
@@ -103,9 +119,12 @@ function Thumb({ path, onOpen, onDismiss }: { path: string; onOpen: (p: string) 
   return (
     <div className="ptray-item">
       <button className="ptray-shot" title="Open full size" onClick={() => onOpen(path)}>
-        {src && <img src={src} alt="" onLoad={(e) => setSize(`${e.currentTarget.naturalWidth} × ${e.currentTarget.naturalHeight}`)} />}
+        {src && <img src={src} alt="" onLoad={(e) => setSize(`${e.currentTarget.naturalWidth}×${e.currentTarget.naturalHeight}`)} />}
       </button>
-      <span className="ptray-size">{size || " "}</span>
+      <span className="ptray-size">
+        {n != null && <b>#{n}</b>}
+        {size || " "}
+      </span>
       <button className="ptray-x" title="Dismiss" onClick={() => onDismiss(path)}>
         <X size={10} strokeWidth={2.5} />
       </button>
@@ -113,7 +132,10 @@ function Thumb({ path, onOpen, onDismiss }: { path: string; onOpen: (p: string) 
         <div className="ptray-peek">
           <img src={src} alt="" />
           <div className="ptray-peek-cap">
-            <span>{size}</span>
+            <span>
+              {n != null && <b>[Image #{n}]</b>}
+              {size}
+            </span>
             <span>Click to open</span>
           </div>
         </div>

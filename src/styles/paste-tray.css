@@ -157,6 +157,13 @@
   color: var(--text-3);
   white-space: pre;
 }
+/* claude's own number for the image, so a card can be matched to its [Image #N] in the prompt */
+.ptray-size b,
+.ptray-peek-cap b {
+  margin-right: 5px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-1));
+}
 .ptray-x {
   position: absolute;
   top: -6px;
@@ -231,4 +238,27 @@
 .ptray-peek-cap span:first-child {
   font-family: var(--font-mono);
   color: var(--text-2);
+}
+
+/* ---- hover preview for image links in the terminal (components/pane/ImagePeek) ---- */
+/* the same card as the tray's peek, but fixed to the window so it follows the mouse */
+.img-peek {
+  position: fixed;
+  left: -9999px; /* placed after measuring, so it never paints at a wrong spot first */
+  top: 0;
+  z-index: 400;
+  padding: 6px;
+  font-family: var(--font-ui);
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-2));
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  animation: ptrayIn 0.12s var(--ease);
+}
+.img-peek img {
+  display: block;
+  max-width: 420px;
+  max-height: 300px;
+  border-radius: 8px;
 }
