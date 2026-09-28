@@ -651,30 +651,6 @@
   font-size: 12.5px;
   color: var(--text-2);
 }
-/* a thin sweep along the top while git runs */
-.clone-progress {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent-hover), transparent);
-  background-size: 40% 100%;
-  background-repeat: no-repeat;
-  opacity: 0;
-}
-.clone.busy .clone-progress {
-  opacity: 1;
-  animation: clone-sweep 1.1s ease-in-out infinite;
-}
-@keyframes clone-sweep {
-  from {
-    background-position: -40% 0;
-  }
-  to {
-    background-position: 140% 0;
-  }
-}
 .clone-head {
   display: flex;
   align-items: center;
@@ -745,19 +721,125 @@
   border-radius: 4px;
   background: rgba(var(--ink), 0.18);
 }
-.clone-dest {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+/* the two choices: a label column, then a segmented pick with its consequence under it */
+.clone-rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-0);
 }
 .clone-label {
+  padding-top: 7px;
+  color: var(--text-3);
+}
+.clone-choice {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.clone-seg {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  background: rgba(var(--ink), 0.04);
+}
+.clone-seg button {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.clone-seg button:hover:not(:disabled) {
+  color: var(--text-1);
+}
+.clone-seg button.on {
+  background: var(--surface-3);
+  color: var(--text-1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.clone-seg button:disabled:not(.on) {
+  color: var(--text-3);
+  cursor: default;
+}
+/* "Other folder" opens the picker; it's an action, so it sizes to its text and never lights up */
+.clone-seg .clone-other {
   flex: 0 0 auto;
   color: var(--text-3);
 }
+.clone-seg .clone-other svg {
+  flex: 0 0 auto;
+}
+.clone-seg em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.clone-says {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+/* while git runs: a real bar once it reports a percentage, a sweep until then */
+.clone-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.clone-bar {
+  position: relative;
+  flex: 0 0 38%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(var(--ink), 0.08);
+  overflow: hidden;
+}
+.clone-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s var(--ease);
+}
+.clone-bar.sweep i {
+  width: 35%;
+  animation: clone-sweep 1.1s ease-in-out infinite;
+}
+@keyframes clone-sweep {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
 /* the destination reads as one path: folder chip, separator, name */
 .clone-path {
-  flex: 1;
+  align-self: flex-start;
+  max-width: 100%;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -810,7 +892,8 @@
   color: var(--text-3);
 }
 .clone-name {
-  flex: 1;
+  /* the name keeps its width; a long parent path is what gives way, from the left */
+  flex: 0 0 auto;
   min-width: 60px;
   height: 100%;
   padding: 0 6px 0 0;
@@ -820,13 +903,9 @@
   font: inherit;
   outline: none;
 }
-.clone-note,
-.clone-error {
-  font-size: 11.5px;
-  color: var(--text-3);
-}
 .clone-error {
   display: flex;
+  font-size: 11.5px;
   align-items: flex-start;
   gap: 6px;
   color: var(--status-error);

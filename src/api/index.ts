@@ -358,8 +358,12 @@ export function agentSessions(provider: string, cwd: string): Promise<AgentSessi
   return invoke("agent_sessions", { provider, cwd });
 }
 /** Clone `url` into `<parent>/<name>`. Resolves to the new folder. */
-export function gitClone(url: string, parent: string, name: string): Promise<string> {
-  return invoke("git_clone", { url, parent, name });
+/** Clone into `parent/name`, or with `here` straight into an empty `parent`. git's progress lines
+ *  arrive on `onProgress` while it runs. Resolves to the folder. */
+export function gitClone(url: string, parent: string, name: string, here: boolean, onProgress: (line: string) => void): Promise<string> {
+  const channel = new Channel<string>();
+  channel.onmessage = (msg) => onProgress(String(msg));
+  return invoke("git_clone", { url, parent, name, here, onProgress: channel });
 }
 export function gitInitRepo(opts: {
   cwd: string;

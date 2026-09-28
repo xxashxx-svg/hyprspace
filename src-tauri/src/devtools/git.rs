@@ -508,30 +508,103 @@ pub async fn git_file_op(cwd: String, op: String, path: String) -> Result<(), St
 // create_dir_all is idempotent, so this is safe to call on an existing folder too; we only
 // write the seed files when they're absent, never clobbering something already there.
 
-/// `git clone <url>` into `<parent>/<name>`. Returns the new folder. Refuses to clone over an
-/// existing folder so a typo cannot merge two checkouts.
+/// `git clone <url>` into `<parent>/<name>`, or with `here` straight into `<parent>` when it's
+/// empty. Returns the folder. Refuses to clone over an existing folder so a typo cannot merge two
+/// checkouts. Streams git's progress lines to `on_progress` as they arrive.
 #[tauri::command]
-pub async fn git_clone(url: String, parent: String, name: String) -> Result<String, String> {
+pub async fn git_clone(
+    url: String,
+    parent: String,
+    name: String,
+    here: bool,
+    on_progress: tauri::ipc::Channel<String>,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
         let url = url.trim();
         let name = name.trim();
-        if url.is_empty() || parent.is_empty() || name.is_empty() {
-            return Err("Need a repository, a folder and a name.".to_string());
-        }
-        if name.contains(['/', '\\']) || name == "." || name == ".." {
-            return Err("The folder name cannot contain slashes.".to_string());
+        if url.is_empty() || parent.is_empty() {
+            return Err("Need a repository and a folder.".to_string());
         }
         // anything that starts with a dash would be read as a git option
         if url.starts_with('-') {
             return Err("That does not look like a repository URL.".to_string());
         }
-        let dest = Path::new(&parent).join(name);
-        if dest.exists() {
-            return Err(format!("{} already exists.", dest.display()));
-        }
+        // `here` clones straight into `parent`, which git only allows when it's empty
+        let dest = if here {
+            let p = Path::new(&parent);
+            if p.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false) {
+                return Err(format!("{} isn't empty, so the repository can't go straight into it.", p.display()));
+            }
+            p.to_path_buf()
+        } else {
+            if name.is_empty() {
+                return Err("Give the new folder a name.".to_string());
+            }
+            if name.contains(['/', '\\']) || name == "." || name == ".." {
+                return Err("The folder name cannot contain slashes.".to_string());
+            }
+            let d = Path::new(&parent).join(name);
+            if d.exists() {
+                return Err(format!("{} already exists.", d.display()));
+            }
+            d
+        };
         std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
         let dest_s = dest.to_string_lossy().to_string();
-        git(&parent, &["clone", "--", url, &dest_s])?;
+
+        // --progress makes git report even though nobody's attached; it writes the counters to
+        // stderr, redrawing each with \r, so every \r or \n ends a line worth passing on
+        let mut cmd = git_cmd();
+        cmd.arg("-C").arg(&parent).args(["clone", "--progress", "--", url, &dest_s]);
+        cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
+        // there's no console to type a password into, so a prompt would hang the clone forever
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        let mut child = cmd.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "git is not installed, or is not on PATH.".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+        let mut err = child.stderr.take().ok_or("git gave no output")?;
+        let mut buf = [0u8; 4096];
+        let mut line: Vec<u8> = Vec::new();
+        let mut tail: Vec<String> = Vec::new();
+        loop {
+            let n = err.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            for &b in &buf[..n] {
+                if b != b'\r' && b != b'\n' {
+                    line.push(b);
+                    continue;
+                }
+                let text = String::from_utf8_lossy(&line).trim().to_string();
+                line.clear();
+                if text.is_empty() {
+                    continue;
+                }
+                let _ = on_progress.send(text.clone());
+                tail.push(text);
+                if tail.len() > 8 {
+                    tail.remove(0);
+                }
+            }
+        }
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() {
+            // git's own reason is on its fatal:/error: lines; the counters around them are noise
+            let why: Vec<&str> = tail
+                .iter()
+                .map(String::as_str)
+                .filter(|l| l.starts_with("fatal") || l.starts_with("error") || l.starts_with("remote: "))
+                .collect();
+            return Err(if why.is_empty() { tail.join("\n") } else { why.join("\n") });
+        }
         Ok(dest_s)
     })
     .await

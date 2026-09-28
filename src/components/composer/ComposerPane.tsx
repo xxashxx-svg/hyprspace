@@ -4,9 +4,9 @@ import { useWorkspaces } from "../../stores/workspace";
 import { useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { clipboardImageToTemp, getHomeDir, gitClone, pickFile, pickFolder, readImageFile, type AgentSession } from "../../api";
+import { clipboardImageToTemp, getHomeDir, gitClone, listDir, pickFile, pickFolder, readImageFile, type AgentSession } from "../../api";
 import { parseRepoUrl, splitRepoPrompt, type RepoRef } from "../../lib/repoUrl";
-import { ClonePanel } from "./ClonePanel";
+import { ClonePanel, type CloneInto, type CloneOpen } from "./ClonePanel";
 import { RecentSessions } from "./RecentSessions";
 import { branchOf, onBranchResolved } from "../../lib/branches";
 import { commandFor, resumeCmd } from "../../actions";
@@ -128,6 +128,10 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
   const [cloneName, setCloneName] = useState("");
   const [cloning, setCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
+  const [cloneInto, setCloneInto] = useState<CloneInto>("new");
+  const [cloneOpen, setCloneOpen] = useState<CloneOpen>("new");
+  const [cloneLine, setCloneLine] = useState<string | null>(null);
+  const [parentEmpty, setParentEmpty] = useState<boolean | null>(null);
   const repoUrl = cloneReq?.repo.url;
   useEffect(() => {
     if (!repoUrl) return;
@@ -140,6 +144,21 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
     if (cwd) setCloneParent(cwd);
     else void getHomeDir().then((h) => setCloneParent((p) => p || h)).catch(() => {});
   }, [repoUrl, cwd, cloneParent]);
+  // git only clones straight into an empty folder, so "straight into" needs to know which it is
+  useEffect(() => {
+    if (!repoUrl || !cloneParent) return;
+    let alive = true;
+    listDir(cloneParent)
+      .then((l) => {
+        if (!alive) return;
+        setParentEmpty(l.length === 0);
+        if (l.length) setCloneInto("new");
+      })
+      .catch(() => alive && setParentEmpty(true)); // doesn't exist yet: the clone creates it
+    return () => {
+      alive = false;
+    };
+  }, [repoUrl, cloneParent]);
 
   // a repository link on the clipboard gets a one-click offer while the box is empty
   const [clipRepo, setClipRepo] = useState<RepoRef | null>(null);
@@ -190,19 +209,44 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
   }, [text]);
 
   const clone = async () => {
-    if (!cloneReq || !cloneParent || !cloneName.trim() || cloning) return;
+    if (!cloneReq || !cloneParent || cloning) return;
+    const here = cloneInto === "here";
+    if (!here && !cloneName.trim()) return;
     setCloning(true);
     setCloneError(null);
+    setCloneLine(null);
     try {
-      const path = await gitClone(cloneReq.repo.url, cloneParent, cloneName.trim());
+      const path = await gitClone(cloneReq.repo.url, cloneParent, cloneName.trim(), here, setCloneLine);
+      const folderName = path.split(/[\\/]/).filter(Boolean).pop() || cloneName.trim();
+      const task = withFiles(cloneReq.rest, files.map((f) => f.path));
+      const cmd = commandFor(choice.provider, { model: choice.model, effort: choice.effort });
       const st = useWorkspaces.getState();
-      const id = st.addWorkspace(cloneName.trim(), path);
-      useUi.getState().goSpace();
-      if (cloneReq.rest) {
-        const cmd = commandFor(choice.provider, { model: choice.model, effort: choice.effort });
-        const paneId = st.addSession(id, cmd, path);
-        if (choice.model) st.setSessionModel(paneId, choice.model);
-        queuePrompt(paneId, cmd, withFiles(cloneReq.rest, files.map((f) => f.path)));
+      if (cloneOpen === "here" && ws) {
+        // this thread starts now, in the clone. the empty-space composer has no thread yet, so it
+        // gets one in this space, pinned to the clone's folder
+        let paneId: string;
+        if (session) {
+          st.startDraft(session.id, cmd, choice.model || undefined, path);
+          paneId = session.id;
+        } else {
+          paneId = st.addSession(ws.id, cmd, path);
+          if (choice.model) st.setSessionModel(paneId, choice.model);
+        }
+        st.setFocused(paneId);
+        useUi.getState().goSpace();
+        queuePrompt(paneId, cmd, task);
+      } else {
+        // straight into a folder that's already in the sidebar: use that entry, don't add a twin
+        const same = (a: string, b: string) => a.replace(/[\\/]+$/, "").toLowerCase() === b.replace(/[\\/]+$/, "").toLowerCase();
+        const known = st.workspaces.find((w) => w.cwd && same(w.cwd, path));
+        const id = known ? known.id : st.addWorkspace(folderName, path);
+        if (known) st.setActive(known.id);
+        useUi.getState().goSpace();
+        if (cloneReq.rest) {
+          const paneId = st.addSession(id, cmd, path);
+          if (choice.model) st.setSessionModel(paneId, choice.model);
+          queuePrompt(paneId, cmd, task);
+        }
       }
       reset();
     } catch (e) {
@@ -273,7 +317,13 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
     <div className={`composer-pane${compact ? " compact" : ""}`} ref={rootRef}>
       <div className="composer-wrap">
         <h2 className="composer-title">
-          What should we work on{ws ? <> in <span>{name}</span></> : null}?
+          {cloneReq ? (
+            <>
+              Clone <span>{cloneReq.repo.name}</span>
+            </>
+          ) : (
+            <>What should we work on{ws ? <> in <span>{name}</span></> : null}?</>
+          )}
         </h2>
 
         <div className={`composer${ultra ? " ultra" : ""}`} style={{ "--brand": PROVIDER_COLOR[provider] ?? "var(--accent)" } as React.CSSProperties}>
@@ -441,10 +491,18 @@ export function ComposerPane({ wsId, sessionId, spacePicker, compact }: Props) {
             repo={cloneReq.repo}
             parent={cloneParent}
             name={cloneName}
+            into={cloneInto}
+            open={cloneOpen}
+            parentEmpty={parentEmpty}
+            canOpenHere={!!ws}
+            agent={PROVIDER_NAME[choice.provider] ?? "The agent"}
             busy={cloning}
+            line={cloneLine}
             error={cloneError}
             onParent={() => void pickFolder().then((p) => p && setCloneParent(p))}
             onName={setCloneName}
+            onInto={setCloneInto}
+            onOpen={setCloneOpen}
             onClone={() => void clone()}
           />
         ) : (

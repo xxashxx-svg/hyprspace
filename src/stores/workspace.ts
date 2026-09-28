@@ -169,7 +169,7 @@ interface WorkspaceState {
   /** a composer pane in the grid; returns its id */
   addDraft: (wsId: string, cwd?: string) => string;
   /** launch a draft: give it a command and it becomes a normal pane under the same id */
-  startDraft: (sessionId: string, command: string | undefined, model?: string) => void;
+  startDraft: (sessionId: string, command: string | undefined, model?: string, cwd?: string) => void;
   // open a file as its own pane (image → image viewer, anything else → code editor), placed right
   // after `anchor` (ctrl+click in a terminal) or after the focused pane of the active space.
   openPathTab: (path: string, anchor?: { wsId: string; sessionId: string }) => void;
@@ -371,7 +371,7 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
       return changed ? { workspaces } : {};
     }),
 
-  startDraft: (sessionId, command, model) =>
+  startDraft: (sessionId, command, model, cwd) =>
     set((s) => {
       const used = new Set(s.workspaces.flatMap((w) => w.sessions.map((ss) => ss.title)));
       return {
@@ -381,8 +381,9 @@ export const useWorkspaces = create<WorkspaceState>()((set) => ({
             ...w,
             sessions: w.sessions.map((ss) => {
               if (ss.id !== sessionId) return ss;
-              const { provider, title } = deriveProviderTitle(command, ss.cwd ?? w.cwd, used);
-              const next: Session = { ...ss, command, provider, title, model };
+              // a cwd moves the thread to another folder as it starts, e.g. a repo just cloned for it
+              const { provider, title } = deriveProviderTitle(command, cwd ?? ss.cwd ?? w.cwd, used);
+              const next: Session = { ...ss, command, provider, title, model, ...(cwd != null ? { cwd } : {}) };
               delete next.draft;
               return next;
             }),
