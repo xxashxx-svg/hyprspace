@@ -427,7 +427,17 @@ export function Rail() {
               setMenu(null);
             }}
           />
-          <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+          <div
+            className="ctx-menu"
+            style={{ left: menu.x, top: menu.y }}
+            ref={(el) => {
+              // right-click near the bottom of the sidebar and the menu would run off the window:
+              // measure it and pull it back on screen
+              if (!el) return;
+              el.style.top = `${Math.max(8, Math.min(menu.y, window.innerHeight - el.offsetHeight - 8))}px`;
+              el.style.left = `${Math.max(8, Math.min(menu.x, window.innerWidth - el.offsetWidth - 8))}px`;
+            }}
+          >
             <div className="ctx-head">{menuWs.name}</div>
             <button
               className="ctx-item"
