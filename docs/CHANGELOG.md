@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.21.1 — 2026-09-28
+
+- Cloning a repository lets you pick the folder, clone straight into an empty one, and open it in this thread or a new one
+- The clone card shows real download progress, and a private repo fails with git's message instead of hanging
+- Hovering an image in a prompt you haven't sent yet shows the image
+- The sidebar's right-click menu stays on screen near the bottom of the window
+
 ## 0.21.0 — 2026-09-24
 
 - Settings has a grouped sidebar and a new Defaults tab for each agent's model, effort and permissions
