@@ -81,16 +81,24 @@ $at = $log.IndexOf("`n## ")
 if ($at -lt 0) { $log = $log.TrimEnd() + "`n`n" + $entry } else { $log = $log.Substring(0, $at + 1) + $entry + $log.Substring($at + 1) }
 Set-Text docs/CHANGELOG.md $log
 
-# ---- notes file for the release body (CI copies it into the updater manifest)
-$notesFile = Join-Path $env:TEMP "hyprspace-release-notes.md"
-Set-Text $notesFile ((($bullets | ForEach-Object { "- $_" }) -join "`n") + "`n")
-
 # ---- commit, tag, push
 Run "git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock docs/CHANGELOG.md"
 Run "git commit -q -m `"release: $tag`""
 Run "git tag $tag"
 Run "git push origin main"
 Run "git push origin $tag"
+
+# ---- the release body, laid out like GitHub's own generated notes: what changed, who made it
+# (GitHub turns the @mentions into a row of avatars), and the full diff. The contributors are the
+# accounts behind the commits since the last tag, so it only ever names people who did the work.
+# CI copies this body into the updater manifest too.
+$prev = "v$cur"
+$logins = @(gh api "repos/$Repo/compare/$prev...$tag" --jq ".commits[].author.login" 2>$null | Where-Object { $_ } | Sort-Object -Unique)
+$body = "## What's changed`n`n" + (($bullets | ForEach-Object { "- $_" }) -join "`n") + "`n"
+if ($logins.Count -gt 0) { $body += "`n## Contributors`n`n" + (($logins | ForEach-Object { "@$_" }) -join " ") + "`n" }
+$body += "`n**Full changelog**: https://github.com/$Repo/compare/$prev...$tag`n"
+$notesFile = Join-Path $env:TEMP "hyprspace-release-notes.md"
+Set-Text $notesFile $body
 
 # ---- a draft release with the notes; CI attaches the builds and publishes it when all are in
 Run "gh release create $tag --repo $Repo --draft --title `"HyprSpace $new`" --notes-file `"$notesFile`""
