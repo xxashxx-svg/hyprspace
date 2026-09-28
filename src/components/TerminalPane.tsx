@@ -171,6 +171,12 @@ function TerminalPaneInner({
   const [booting, setBooting] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [pasted, setPasted] = useState<Pasted[]>([]);
+  // the tray, for the link provider below: a marker in a prompt you haven't sent isn't in the
+  // transcript yet, but the tray already knows which pasted file it is
+  const pastedRef = useRef<Pasted[]>([]);
+  useEffect(() => {
+    pastedRef.current = pasted;
+  }, [pasted]);
   const [peek, setPeek] = useState<{ path: string; x: number; y: number } | null>(null); // hovered image link
   const pasteRef = useRef<(() => void) | null>(null); // the clipboard paste, for right-click
   const themeId = useSettings((s) => s.theme);
@@ -362,7 +368,10 @@ function TerminalPaneInner({
     const markerCache = new Map<number, { path: string | null; at: number }>();
     const markerFresh = (h: { path: string | null; at: number } | undefined) =>
       !!h && Date.now() - h.at < (h.path ? 60_000 : 4000);
+    const trayPath = (n: number) => pastedRef.current.find((x) => x.n === n)?.path ?? null;
     const resolveMarker = async (n: number) => {
+      const own = trayPath(n);
+      if (own) return own;
       const hit = markerCache.get(n);
       if (markerFresh(hit)) return hit!.path;
       const path = await claudeImagePath(cwd, n, sessionId).catch(() => null);
@@ -380,8 +389,9 @@ function TerminalPaneInner({
           const n = parseInt(m[1], 10);
           const hit = markerCache.get(n);
           const fresh = markerFresh(hit);
-          if (fresh && !hit!.path) continue; // known to resolve to nothing
-          if (!fresh) void resolveMarker(n); // warm for the next hover
+          const inTray = !!trayPath(n);
+          if (!inTray && fresh && !hit!.path) continue; // known to resolve to nothing
+          if (!inTray && !fresh) void resolveMarker(n); // warm for the next hover
           const range = { start: ll.at(m.index), end: ll.at(m.index + m[0].length - 1) };
           out.push({
             text: `[Image #${n}]`,
