@@ -13,7 +13,8 @@ name: release
 # exist from deploy.ps1; if not, the first job creates a draft).
 #
 # Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD, RELEASES_TOKEN.
-# Optional Apple signing/notarization secrets are read if present.
+# Optional: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY code-sign the
+# Mac app when set, so macOS permission grants survive updates (see docs/BUILD-MAC.md).
 
 on:
   workflow_dispatch:
@@ -78,6 +79,11 @@ jobs:
     # be re-scoped whenever it expires, which is what broke the 0.12.0 darwin publish.
     permissions:
       contents: write
+    env:
+      # macOS pins permission grants (Screen Recording, Accessibility...) to the app's signature.
+      # Without a certificate that signature is only a hash of the binary, so each update looks like
+      # a new app and the grants stop applying. A certificate keeps the identity the same.
+      HAS_MAC_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -88,22 +94,32 @@ jobs:
           targets: aarch64-apple-darwin
       - name: Install dependencies
         run: npm install
+      # two variants because the Apple variables can't be passed empty: tauri-action then
+      # attempts codesign and fails.
       - name: Build + sign macOS app
+        if: env.HAS_MAC_CERT != 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # For notarized Mac builds later: add the Apple secrets, then UNCOMMENT these.
-          # (Passing them while empty makes tauri-action attempt codesign and fail, so they
-          # stay commented until real certs exist.)
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        with:
+          # the config's bundle target is nsis (Windows); override for the Mac app + updater tarball
+          args: --target aarch64-apple-darwin --bundles app,dmg
+      - name: Build + sign macOS app with the code-signing certificate
+        if: env.HAS_MAC_CERT == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # For notarized builds later: add these secrets, then UNCOMMENT. A missing secret is
+          # still passed as an empty value, so they stay commented until they exist.
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          # the config's bundle target is nsis (Windows); override for the Mac app + updater tarball
           args: --target aarch64-apple-darwin --bundles app,dmg
       - name: Merge darwin into the release manifest + publish
         env:
