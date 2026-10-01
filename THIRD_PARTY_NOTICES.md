@@ -1,0 +1,39 @@
+# Third-party notices
+
+HyprSpace's own code is under the license in `LICENSE`. Code adapted from other projects keeps
+its original license, listed here.
+
+## zeron
+
+Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron) at commit
+`80b946b`:
+
+- `apps/hyprspace/src/term/emulator.rs` from `crates/ui/src/terminal/emulator.rs`
+- `apps/hyprspace/src/term/keys.rs` and `apps/hyprspace/src/term/paint.rs` from
+  `crates/ui/src/terminal/view.rs`
+- the headless `claude` invocation in `apps/hyprspace/src/claude.rs` follows
+  `crates/harness/src/claude/mod.rs` and `wire.rs`
+
+```
+MIT License
+
+Copyright (c) 2026 Wing
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
