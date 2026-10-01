@@ -103,7 +103,8 @@ apps/hyprspace/       the binary
 - The engine runs in-process behind a typed channel boundary, so a headless mode or the phone can
   attach later without rework (zeron's "headed or headless" design, minus its sync).
 - **GPUI source:** upstream Zed at `20d29fc6bc2fc2b58d1fff8d8e0503b9ba7f41d8` (`main` on
-  2026-10-02) for `gpui`, `gpui_platform` and `gpui_tokio`, set once in the root `Cargo.toml`.
+  2026-10-02) for `gpui` and `gpui_platform`, set once in the root `Cargo.toml` (the spike also
+  used `gpui_tokio`; phase 2 dropped it, see [adr/0002](./adr/0002-channel-boundary.md)).
   Every Zed crate it pulls in is Apache-2.0, it built and ran on Windows with no patches, and
   zeron's fork `zeronsh/zui` only adds visual effects we don't need. Reasons in
   [adr/0001-gpui-source.md](./adr/0001-gpui-source.md).
@@ -196,3 +197,38 @@ no input handler), mouse selection, scrollback, resize under load.
 
 **Next (phase 2).** Move `pty.rs`, the emulator and the stream-json parsing into crates per the
 layout above, add the CI check, and grow `apps/hyprspace` from there.
+
+## Phase 2 results
+
+Done on 2026-10-02 locally; the coordinator confirms the CI check on both OSes.
+
+**What exists.** The workspace has the layout above, minus nothing:
+
+- `crates/proto`: `Command`, `Event`, `RunEvent`, `SessionId`, the `Client` channel end, and the
+  records the engine returns (git, agents, usage). No GPUI.
+- `crates/harness`: the spike's one-run Claude stream-json adapter and `SESSION_ENV`. Phase 3
+  turns it into the `Harness` trait.
+- `crates/engine`: `Engine::start` and its command loop, plus copies of the Tauri Rust: `pty`,
+  `hooks` (agenthook), `git/` (status, commit, setup, worktree), `providers`, `sessions` (resume
+  list and resume mode), `skills`, `usage/local`, `usage/live` (the 180s Claude floor is now
+  enforced here), `persist` (state in `~/.hyprspace/native`), and `env` (PATH rebuild, Claude
+  session markers). What was left behind and why: [adr/0003](./adr/0003-copy-not-move-from-src-tauri.md).
+- `crates/theme`: dark tokens and the 256-color terminal palette as plain data.
+- `crates/ui`: `Root` (grid and event router), `transcript.rs`, `terminal/` (emulator, keys,
+  paint, view). Depends on `proto` and `theme`, never on `engine`.
+- `apps/hyprspace`: about 100 lines that start the engine, open the window and shut down on quit.
+  `--chats` is now `--structured` (docs/CONTEXT.md).
+- `docs/CONTEXT.md` for the vocabulary, ADRs 0002 (channel shape) and 0003 (copy, not move).
+- `.github/workflows/check.yml`: fmt, clippy `-D warnings` and tests on `windows-latest` and
+  `macos-latest`, toolchain 1.98.1, Metal toolchain fetched on macOS when the image lacks it.
+
+**Checked.** 75 tests pass on Windows. `cargo clippy --target aarch64-apple-darwin` is clean for
+the whole workspace when run with TLS turned off (aws-lc needs a mac C compiler) and a stub
+`shaders.metallib` (built by `xcrun metal` on a mac), so the macOS code paths type-check. The app
+ran with one structured and one terminal session: the reply streamed, keys posted to the window
+reached claude's prompt, and closing it left no child processes.
+
+**Not wired yet.** Only terminal and structured-session commands cross the channel. Git, usage,
+skills, providers, resume list, hooks and persistence are tested library calls with no command;
+each gets one when the UI first needs it.
+

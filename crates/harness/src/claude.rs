@@ -1,31 +1,16 @@
-// One structured Claude turn: the user's own `claude` binary in headless stream-json mode, the
-// same invocation zeron's harness uses. Inference stays on the user's subscription through their
-// CLI; no SDK, no API key, no token.
+// One structured Claude run: the user's own `claude` binary in headless stream-json mode, the
+// same invocation zeron's harness uses (MIT, see THIRD_PARTY_NOTICES.md). Inference stays on the
+// user's subscription through their CLI; no SDK, no API key, no token.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Stdio;
 
-use futures::channel::mpsc::UnboundedSender;
+use hyprspace_proto::RunEvent;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-/// Env a parent Claude Code session leaves behind. A child claude that inherits these thinks it
-/// is nested inside that session, so every spawn strips them (from `drop_claude_session_env` in
-/// src-tauri/src/lib.rs).
-pub const SESSION_ENV: &[&str] = &[
-    "CLAUDECODE",
-    "CLAUDE_PID",
-    "CLAUDE_EFFORT",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_EXECPATH",
-    "CLAUDE_CODE_CHILD_SESSION",
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_CODE_SESSION_ATTENDED",
-    "CLAUDE_CODE_MESSAGING_SOCKET",
-    "CLAUDE_CODE_MESSAGING_TOKEN",
-    "CLAUDE_CODE_SSE_PORT",
-];
+use crate::SESSION_ENV;
 
 const ARGS: &[&str] = &[
     "--print",
@@ -40,24 +25,8 @@ const ARGS: &[&str] = &[
     "stdio",
 ];
 
-#[derive(Debug, PartialEq)]
-pub enum Event {
-    Init {
-        model: String,
-    },
-    Delta(String),
-    /// A tool asked for approval. The spike has no approval UI yet, so it is denied.
-    Denied(String),
-    Done {
-        ok: bool,
-        ms: u64,
-        text: String,
-    },
-    Failed(String),
-}
-
 enum Frame {
-    Event(Event),
+    Event(RunEvent),
     Permission { id: String, tool: String },
     Skip,
 }
@@ -73,14 +42,16 @@ fn parse(line: &str) -> Frame {
             .to_string()
     };
     match v.get("type").and_then(Value::as_str) {
-        Some("system") if s(&v, "subtype") == "init" => Frame::Event(Event::Init {
+        Some("system") if s(&v, "subtype") == "init" => Frame::Event(RunEvent::Started {
             model: s(&v, "model"),
         }),
         // subagent output carries a parent tool id; only the main thread's text goes in the reply
         Some("stream_event") if v["parent_tool_use_id"].is_null() => {
             let delta = &v["event"]["delta"];
             if v["event"]["type"] == "content_block_delta" && delta["type"] == "text_delta" {
-                Frame::Event(Event::Delta(s(delta, "text")))
+                Frame::Event(RunEvent::Text {
+                    text: s(delta, "text"),
+                })
             } else {
                 Frame::Skip
             }
@@ -89,7 +60,7 @@ fn parse(line: &str) -> Frame {
             id: s(&v, "request_id"),
             tool: s(&v["request"], "tool_name"),
         },
-        Some("result") => Frame::Event(Event::Done {
+        Some("result") => Frame::Event(RunEvent::Finished {
             ok: !v["is_error"].as_bool().unwrap_or(false),
             ms: v["duration_ms"].as_u64().unwrap_or(0),
             text: s(&v, "result"),
@@ -115,7 +86,7 @@ fn deny_line(request_id: &str) -> String {
     .to_string()
 }
 
-fn command(program: &str, cwd: &PathBuf) -> Command {
+fn command(program: &str, cwd: &Path) -> Command {
     let mut cmd = Command::new(program);
     if program == "cmd" {
         // npm installs claude as a .cmd shim, which only cmd.exe resolves
@@ -135,14 +106,17 @@ fn command(program: &str, cwd: &PathBuf) -> Command {
     cmd
 }
 
-/// Runs one turn and streams events to `tx`. Dropping the future kills the child.
-pub async fn run(prompt: String, cwd: PathBuf, tx: UnboundedSender<Event>) {
-    if let Err(e) = turn(&prompt, &cwd, &tx).await {
-        let _ = tx.unbounded_send(Event::Failed(e.to_string()));
+/// Runs one prompt to its result, reporting each event to `emit`. Dropping the future kills the
+/// child, which is how the engine stops a session.
+pub async fn run(prompt: String, cwd: &Path, mut emit: impl FnMut(RunEvent)) {
+    if let Err(e) = turn(&prompt, cwd, &mut emit).await {
+        emit(RunEvent::Failed {
+            message: e.to_string(),
+        });
     }
 }
 
-async fn turn(prompt: &str, cwd: &PathBuf, tx: &UnboundedSender<Event>) -> anyhow::Result<()> {
+async fn turn(prompt: &str, cwd: &Path, emit: &mut impl FnMut(RunEvent)) -> anyhow::Result<()> {
     let mut child = match command("claude", cwd).spawn() {
         Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::NotFound => {
             command("cmd", cwd).spawn()?
@@ -153,7 +127,7 @@ async fn turn(prompt: &str, cwd: &PathBuf, tx: &UnboundedSender<Event>) -> anyho
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
 
-    // stdin stays open: closing it would end the session after this turn
+    // stdin stays open: closing it would end the session after this run
     stdin
         .write_all(format!("{}\n", user_line(prompt)).as_bytes())
         .await?;
@@ -162,15 +136,13 @@ async fn turn(prompt: &str, cwd: &PathBuf, tx: &UnboundedSender<Event>) -> anyho
     let mut lines = BufReader::new(stdout).lines();
     while let Some(line) = lines.next_line().await? {
         match parse(&line) {
-            Frame::Event(e) => {
-                let _ = tx.unbounded_send(e);
-            }
+            Frame::Event(e) => emit(e),
             Frame::Permission { id, tool } => {
                 stdin
                     .write_all(format!("{}\n", deny_line(&id)).as_bytes())
                     .await?;
                 stdin.flush().await?;
-                let _ = tx.unbounded_send(Event::Denied(tool));
+                emit(RunEvent::Denied { tool });
             }
             Frame::Skip => {}
         }
@@ -188,7 +160,7 @@ async fn turn(prompt: &str, cwd: &PathBuf, tx: &UnboundedSender<Event>) -> anyho
 mod tests {
     use super::*;
 
-    fn event(line: &str) -> Option<Event> {
+    fn event(line: &str) -> Option<RunEvent> {
         match parse(line) {
             Frame::Event(e) => Some(e),
             _ => None,
@@ -202,7 +174,7 @@ mod tests {
             event(
                 r#"{"type":"system","subtype":"init","model":"claude-opus-5-5","session_id":"s"}"#
             ),
-            Some(Event::Init {
+            Some(RunEvent::Started {
                 model: "claude-opus-5-5".into()
             })
         );
@@ -210,13 +182,13 @@ mod tests {
             event(
                 r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}},"parent_tool_use_id":null}"#
             ),
-            Some(Event::Delta("hi".into()))
+            Some(RunEvent::Text { text: "hi".into() })
         );
         assert_eq!(
             event(
                 r#"{"type":"result","subtype":"success","is_error":false,"duration_ms":3796,"result":"hi"}"#
             ),
-            Some(Event::Done {
+            Some(RunEvent::Finished {
                 ok: true,
                 ms: 3796,
                 text: "hi".into()
@@ -243,5 +215,13 @@ mod tests {
             matches!(parse(line), Frame::Permission { id, tool } if id == "r1" && tool == "Bash")
         );
         assert!(deny_line("r1").contains(r#""behavior":"deny""#));
+    }
+
+    #[test]
+    fn user_line_is_one_stream_json_message() {
+        let v: Value = serde_json::from_str(&user_line("hi\nthere")).unwrap();
+        assert_eq!(v["type"], "user");
+        assert_eq!(v["message"]["content"], "hi\nthere");
+        assert!(!user_line("a\nb").contains('\n'));
     }
 }

@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["apps/hyprspace"]
+members = [
+    "crates/proto",
+    "crates/harness",
+    "crates/engine",
+    "crates/theme",
+    "crates/ui",
+    "apps/hyprspace",
+]
 # The Tauri app builds on its own until the GPUI app reaches parity (docs/REWRITE.md).
 exclude = ["src-tauri", "mobile"]
 
@@ -10,18 +17,28 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+hyprspace-proto = { path = "crates/proto" }
+hyprspace-harness = { path = "crates/harness" }
+hyprspace-engine = { path = "crates/engine" }
+hyprspace-theme = { path = "crates/theme" }
+hyprspace-ui = { path = "crates/ui" }
+
 # GPUI from one upstream Zed commit, all three crates at the same rev.
 # Why upstream and not a fork: docs/adr/0001-gpui-source.md.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "20d29fc6bc2fc2b58d1fff8d8e0503b9ba7f41d8" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "20d29fc6bc2fc2b58d1fff8d8e0503b9ba7f41d8", features = ["font-kit"] }
-gpui_tokio = { git = "https://github.com/zed-industries/zed", rev = "20d29fc6bc2fc2b58d1fff8d8e0503b9ba7f41d8" }
 
 alacritty_terminal = "0.26"
 portable-pty = "0.9"
-tokio = { version = "1", features = ["process", "io-util", "rt", "macros", "sync"] }
+tokio = { version = "1", features = ["process", "io-util", "rt", "rt-multi-thread", "macros", "sync", "time"] }
 futures = "0.3"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
+base64 = "0.22"
+# usage endpoints (engine/src/usage/live.rs); rustls so no OpenSSL is needed on any build host
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+tempfile = "3"
 
 [profile.dev]
 opt-level = 0

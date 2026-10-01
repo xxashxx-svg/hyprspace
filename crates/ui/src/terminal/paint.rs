@@ -6,8 +6,9 @@ use gpui::{
     SharedString, TextAlign, TextRun, Window, fill, font, point, px, size,
 };
 
+use super::cell_color;
 use super::emulator::{Cell, CellColor};
-use crate::theme;
+use crate::colors::{THEME, hsla};
 
 const FONT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 1.3;
@@ -33,7 +34,7 @@ pub struct Frame {
 }
 
 pub fn measure(bounds: Bounds<Pixels>, window: &mut Window) -> Grid {
-    let mut mono = font(theme::MONO);
+    let mut mono = font(hyprspace_theme::MONO);
     // A terminal is a fixed grid: ligatures would fold several cells into one glyph and shift the
     // rest of the row off the columns the cursor and backgrounds use.
     mono.features = FontFeatures(std::sync::Arc::new(vec![
@@ -76,7 +77,7 @@ pub fn prepare(
             .map(|c| c.colors().1)
             .chain(std::iter::once(CellColor::Background));
         for (col, bg) in bgs.enumerate() {
-            let color = (bg != CellColor::Background).then(|| theme::cell(bg));
+            let color = (bg != CellColor::Background).then(|| cell_color(bg));
             if run.map(|(_, c)| Some(c)) != Some(color) {
                 if let Some((start, c)) = run {
                     let at = point(grid.origin.x + grid.cell_w * start as f32, y);
@@ -97,7 +98,7 @@ pub fn prepare(
         );
         fill(
             Bounds::new(at, size(grid.cell_w, grid.line_h)),
-            theme::cursor(),
+            hsla(THEME.cursor),
         )
     });
     Frame {
@@ -165,7 +166,7 @@ fn shape_row(line: &[Cell], grid: &Grid, window: &Window) -> Vec<(usize, ShapedL
         if text.is_empty() {
             start = col;
         }
-        let mut color = theme::cell(cell.colors().0);
+        let mut color = cell_color(cell.colors().0);
         if cell.dim {
             color.a *= 0.6;
         }

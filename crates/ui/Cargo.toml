@@ -1,0 +1,13 @@
+[package]
+name = "hyprspace-ui"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hyprspace-proto.workspace = true
+hyprspace-theme.workspace = true
+gpui.workspace = true
+alacritty_terminal.workspace = true
+futures.workspace = true

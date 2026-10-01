@@ -1,35 +1,26 @@
-// A structured Claude session: the prompt and the streamed reply as a transcript.
+// The transcript of a structured session: the prompt and the streamed reply.
 
 use std::path::PathBuf;
 
-use futures::StreamExt;
-use futures::channel::mpsc;
-use gpui::{Context, IntoElement, Render, Task, Window, div, prelude::*, relative};
-use gpui_tokio::Tokio;
+use gpui::{Context, IntoElement, Render, Window, div, prelude::*, relative};
+use hyprspace_proto::{Client, Command, RunEvent, SessionId};
 
-use crate::claude::{self, Event};
-use crate::theme;
+use crate::colors;
 
-pub struct ChatView {
-    id: u64,
+pub struct TranscriptView {
+    id: SessionId,
     prompt: String,
     model: Option<String>,
     reply: String,
     status: String,
-    _turn: Task<Result<(), gpui_tokio::JoinError>>,
-    _pump: Task<()>,
 }
 
-impl ChatView {
-    pub fn new(id: u64, prompt: &str, cwd: PathBuf, cx: &mut Context<Self>) -> Self {
-        let (tx, mut rx) = mpsc::unbounded();
-        let turn = Tokio::spawn(cx, claude::run(prompt.to_string(), cwd, tx));
-        let pump = cx.spawn(async move |this, cx| {
-            while let Some(event) = rx.next().await {
-                if this.update(cx, |chat, cx| chat.apply(event, cx)).is_err() {
-                    break;
-                }
-            }
+impl TranscriptView {
+    pub fn new(id: SessionId, prompt: &str, cwd: PathBuf, client: &Client) -> Self {
+        client.send(Command::OpenStructured {
+            id,
+            cwd,
+            prompt: prompt.to_string(),
         });
         Self {
             id,
@@ -37,22 +28,20 @@ impl ChatView {
             model: None,
             reply: String::new(),
             status: "Starting claude".into(),
-            _turn: turn,
-            _pump: pump,
         }
     }
 
-    fn apply(&mut self, event: Event, cx: &mut Context<Self>) {
+    pub fn apply(&mut self, event: RunEvent, cx: &mut Context<Self>) {
         match event {
-            Event::Init { model } => {
+            RunEvent::Started { model } => {
                 self.model = Some(model);
                 self.status = "Working".into();
             }
-            Event::Delta(text) => self.reply.push_str(&text),
-            Event::Denied(tool) => {
+            RunEvent::Text { text } => self.reply.push_str(&text),
+            RunEvent::Denied { tool } => {
                 self.status = format!("Denied {tool}. Approvals aren't built yet.")
             }
-            Event::Done { ok, ms, text } => {
+            RunEvent::Finished { ok, ms, text } => {
                 if self.reply.is_empty() {
                     self.reply = text;
                 }
@@ -63,13 +52,18 @@ impl ChatView {
                     format!("Failed after {secs:.1}s")
                 };
             }
-            Event::Failed(e) => self.status = e,
+            RunEvent::Failed { message } => self.status = message,
         }
+        cx.notify();
+    }
+
+    pub fn fail(&mut self, message: String, cx: &mut Context<Self>) {
+        self.status = message;
         cx.notify();
     }
 }
 
-impl Render for ChatView {
+impl Render for TranscriptView {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let title = match &self.model {
             Some(m) => format!("Claude · {m}"),
@@ -79,19 +73,19 @@ impl Render for ChatView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme::bg())
-            .text_color(theme::text())
+            .bg(colors::bg())
+            .text_color(colors::text())
             .child(
                 div()
                     .px_3()
                     .py_2()
                     .text_xs()
-                    .text_color(theme::muted())
+                    .text_color(colors::muted())
                     .child(title),
             )
             .child(
                 div()
-                    .id(("chat", self.id))
+                    .id(("transcript", self.id.0))
                     .flex_1()
                     .overflow_y_scroll()
                     .px_3()
@@ -105,7 +99,7 @@ impl Render for ChatView {
                             .px_3()
                             .py_2()
                             .rounded_lg()
-                            .bg(theme::surface())
+                            .bg(colors::surface())
                             .child(self.prompt.clone()),
                     )
                     .child(div().text_sm().child(self.reply.clone())),
@@ -115,7 +109,7 @@ impl Render for ChatView {
                     .px_3()
                     .py_2()
                     .text_xs()
-                    .text_color(theme::muted())
+                    .text_color(colors::muted())
                     .child(self.status.clone()),
             )
     }

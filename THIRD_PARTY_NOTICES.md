@@ -8,11 +8,13 @@ its original license, listed here.
 Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron) at commit
 `80b946b`:
 
-- `apps/hyprspace/src/term/emulator.rs` from `crates/ui/src/terminal/emulator.rs`
-- `apps/hyprspace/src/term/keys.rs` and `apps/hyprspace/src/term/paint.rs` from
+- `crates/ui/src/terminal/emulator.rs` from `crates/ui/src/terminal/emulator.rs`
+- `crates/ui/src/terminal/keys.rs` and `crates/ui/src/terminal/paint.rs` from
   `crates/ui/src/terminal/view.rs`
-- the headless `claude` invocation in `apps/hyprspace/src/claude.rs` follows
+- the headless `claude` invocation in `crates/harness/src/claude.rs` follows
   `crates/harness/src/claude/mod.rs` and `wire.rs`
+- the crate split (`proto`, `harness`, `engine`, `ui`, `theme`) and `docs/CONTEXT.md` follow
+  zeron's layout and its `CONTEXT.md`
 
 ```
 MIT License

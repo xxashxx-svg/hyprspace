@@ -1,0 +1,62 @@
+name: check
+
+# The rewrite's check (docs/REWRITE.md, Code standard): fmt, clippy with warnings as errors, and
+# the tests, for the whole Cargo workspace on Windows and macOS. A red check blocks the phase.
+# The Tauri app (src-tauri) sits outside the workspace and is not built here.
+
+on:
+  push:
+    branches: [rewrite]
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "apps/**"
+      - "crates/**"
+      - ".github/workflows/check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same toolchain Zed pins at our GPUI rev, so fmt and clippy match a local run.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      # GPUI compiles its Metal shaders at build time with `xcrun metal`. Xcode 26 ships the
+      # Metal toolchain as a separate download, so fetch it when the runner image lacks it.
+      - name: Metal toolchain
+        if: runner.os == 'macOS'
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # only the rewrite branch writes the cache; pull requests restore it
+          save-if: ${{ github.ref == 'refs/heads/rewrite' }}
+
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: test
+        run: cargo test --workspace --locked

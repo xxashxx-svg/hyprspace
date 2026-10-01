@@ -1,44 +1,27 @@
-// GPUI rewrite spike (docs/REWRITE.md, step 1): structured Claude sessions beside terminal
-// sessions in one window, chats first, laid out as a grid.
-// `hyprspace [--chats N] [--terms N] [--prompt TEXT] [--launch CMD]`, default one of each.
+// The HyprSpace binary: starts the engine, opens the window, and wires the two together.
+// `hyprspace [--structured N] [--terms N] [--prompt TEXT] [--launch CMD]`, default one of each.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-mod chat;
-mod claude;
-mod pty;
-mod term;
-mod theme;
+use std::path::PathBuf;
 
-use gpui::{
-    AnyView, App, Bounds, Context, Focusable, IntoElement, Render, TitlebarOptions, Window,
-    WindowBounds, WindowOptions, div, prelude::*, px, size,
-};
+use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use hyprspace_engine::Engine;
+use hyprspace_ui::{Layout, Root};
 
-use chat::ChatView;
-use pty::PtyManager;
-use term::TerminalView;
-
-struct Args {
-    chats: usize,
-    terms: usize,
-    prompt: String,
-    /// Typed into each terminal's shell.
-    launch: String,
-}
-
-fn args() -> Args {
-    let mut out = Args {
-        chats: 1,
+fn layout(args: impl Iterator<Item = String>, cwd: PathBuf) -> Layout {
+    let mut out = Layout {
+        structured: 1,
         terms: 1,
         prompt: "In two short sentences, say hello and name the model you are.".into(),
         launch: "claude".into(),
+        cwd,
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = args;
     while let Some(flag) = it.next() {
         let value = it.next().unwrap_or_default();
         match flag.as_str() {
-            "--chats" => out.chats = value.parse().unwrap_or(1),
+            "--structured" => out.structured = value.parse().unwrap_or(1),
             "--terms" => out.terms = value.parse().unwrap_or(1),
             "--prompt" => out.prompt = value,
             "--launch" => out.launch = value,
@@ -48,49 +31,17 @@ fn args() -> Args {
     out
 }
 
-struct Root {
-    panes: Vec<AnyView>,
-}
-
-impl Render for Root {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let cols = (self.panes.len() as f32).sqrt().ceil().max(1.0) as usize;
-        let rows = self.panes.chunks(cols).map(|row| {
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .children(row.iter().map(|pane| {
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .border_1()
-                        .border_color(theme::border())
-                        .child(pane.clone())
-                }))
-        });
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(theme::bg())
-            .font_family(".SystemUIFont")
-            .text_color(theme::text())
-            .children(rows)
-    }
-}
-
 fn main() {
-    let args = args();
+    // SAFETY: first thing in main, before the engine or GPUI start any thread.
+    unsafe { hyprspace_engine::env::prepare() };
+
     let cwd = std::env::current_dir().unwrap_or_default();
-    let ptys = PtyManager::default();
+    let layout = layout(std::env::args().skip(1), cwd);
+    let (engine, client, events) = Engine::start().expect("start the engine");
 
     gpui_platform::application().run(move |cx: &mut App| {
-        gpui_tokio::init(cx);
-
-        let kill = ptys.clone();
         cx.on_app_quit(move |_| {
-            kill.kill_all();
+            engine.shutdown();
             async {}
         })
         .detach();
@@ -106,23 +57,43 @@ fn main() {
             ..Default::default()
         };
         cx.open_window(options, |window, cx| {
-            let mut panes = Vec::new();
-            for id in 0..args.chats as u64 {
-                let chat = cx.new(|cx| ChatView::new(id, &args.prompt, cwd.clone(), cx));
-                panes.push(AnyView::from(chat));
-            }
-            let dir = cwd.to_string_lossy();
-            for id in 0..args.terms as u64 {
-                let ptys = ptys.clone();
-                let term = cx.new(|cx| TerminalView::new(id, ptys, &dir, &args.launch, cx));
-                if id == 0 {
-                    window.focus(&term.focus_handle(cx), cx);
-                }
-                panes.push(AnyView::from(term));
-            }
-            cx.new(|_| Root { panes })
+            cx.new(|cx| Root::new(layout, client, events, window, cx))
         })
         .expect("open the window");
         cx.activate(true);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Layout {
+        layout(args.iter().map(|s| s.to_string()), PathBuf::from("/w"))
+    }
+
+    #[test]
+    fn defaults_to_one_of_each() {
+        let l = parse(&[]);
+        assert_eq!((l.structured, l.terms), (1, 1));
+        assert_eq!(l.launch, "claude");
+        assert_eq!(l.cwd, PathBuf::from("/w"));
+    }
+
+    #[test]
+    fn reads_flags_and_ignores_unknown_ones() {
+        let l = parse(&[
+            "--terms",
+            "4",
+            "--structured",
+            "0",
+            "--launch",
+            "",
+            "--what",
+            "x",
+        ]);
+        assert_eq!((l.structured, l.terms), (0, 4));
+        assert_eq!(l.launch, "");
+        assert_eq!(parse(&["--terms", "many"]).terms, 1);
+    }
 }
