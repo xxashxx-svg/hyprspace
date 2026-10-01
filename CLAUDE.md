@@ -9,8 +9,8 @@ resume, drag-to-swap, and a command palette. Neutral, T3-Code-inspired dark UI.
 
 - **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
   `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
-- **Platforms:** Windows (primary, built locally) + macOS and Linux (both built in CI). Linux ships as
-  an AppImage (self-updating) plus a `.deb` (no auto-update — Tauri's updater is AppImage-only).
+- **Platforms:** Windows (primary, built locally) + macOS (built in CI). Linux was dropped on
+  2026-10-02 because nobody used it; don't add Linux builds or Linux-only work.
   Platform-conditional UI wording lives in `src/platform.ts`; don't inline OS ternaries in components.
 - **Companion app:** [`mobile/`](./mobile/README.md) — an Expo/React Native Android app that pairs
   over your LAN and mirrors spaces, panes and live terminals. Its own app, its own versioning.
@@ -72,9 +72,9 @@ npm run tauri build        # production build (Windows NSIS installer by default
 
 Releases are cut by `deploy.ps1` (in the repo): it bumps the three version files, writes the
 changelog entry, commits and tags, opens a draft GitHub release with the notes, and runs
-`.github/workflows/release.yml`. CI builds and signs Windows, macOS and Linux with the updater key
-held in the repo's secrets, merges each into `latest.json`, and publishes the draft when all three
-are in. No machine needs the signing key.
+`.github/workflows/release.yml`. CI builds and signs Windows and macOS with the updater key held
+in the repo's secrets, merges each into `latest.json`, and publishes the draft when both are in.
+No machine needs the signing key.
 
 **Verifying a change in dev:** TS changes hot-reload (run `npx tsc --noEmit` to typecheck). Rust
 changes (`src-tauri/`) trigger a recompile + app relaunch — confirm with `cargo check` in
@@ -211,4 +211,3 @@ Full design details (session/cwd pinning, the hook backend, PTY coalescing):
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — how the tricky subsystems work
 - [docs/VERSIONING.md](./docs/VERSIONING.md) — when to bump which digit
 - [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) — building the macOS app locally
-- [docs/BUILD-LINUX.md](./docs/BUILD-LINUX.md) — building the Linux AppImage/`.deb`, WebKitGTK notes

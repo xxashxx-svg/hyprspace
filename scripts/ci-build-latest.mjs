@@ -5,7 +5,7 @@
 // <artifactsDir>/latest.json. The first job has no manifest to start from, so the notes come from
 // the release body deploy.ps1 wrote.
 //
-// Platform-agnostic on purpose: the mac and linux jobs run the same command, and adding a target
+// Platform-agnostic on purpose: the windows and mac jobs run the same command, and adding a target
 // (say darwin-x86_64) is a row in PLATFORMS rather than a new script.
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -21,13 +21,10 @@ const version = tag.replace(/^v/, "");
 const files = readdirSync(dir);
 const base = `https://github.com/${repo}/releases/download/${tag}`;
 
-// Tauri's updater key → the bundle suffixes that carry it, best first. Linux is listed twice
-// because the AppImage updater artifact is a .AppImage.tar.gz on some Tauri versions and the bare
-// .AppImage on others; whichever this build produced is the one we use.
+// Tauri's updater key → the bundle suffixes that carry it, best first.
 const PLATFORMS = [
   { key: "windows-x86_64", suffixes: ["-setup.exe"] },
   { key: "darwin-aarch64", suffixes: [".app.tar.gz"] },
-  { key: "linux-x86_64", suffixes: [".AppImage.tar.gz", ".AppImage"] },
 ];
 
 // the release notes deploy.ps1 put on the (draft) release; falls back to a bare version line
@@ -65,8 +62,8 @@ const added = [];
 for (const { key, suffixes } of PLATFORMS) {
   for (const suffix of suffixes) {
     // Pick the first bundle that actually HAS a signature, not merely the first that matches the
-    // suffix: the jobs also drop an unsigned stable-named copy alongside (HyprSpace-linux-x86_64
-    // .AppImage next to HyprSpace_1.2.3_amd64.AppImage) for the website's download link, and that
+    // suffix: the jobs also drop an unsigned stable-named copy alongside (HyprSpace-windows-x64
+    // -setup.exe next to HyprSpace_1.2.3_x64-setup.exe) for the website's download link, and that
     // one sorts first. An unsigned bundle can't be served to the updater — the client would reject
     // it — so a candidate without a .sig is skipped rather than published.
     const bundle = files

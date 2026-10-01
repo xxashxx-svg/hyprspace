@@ -1,8 +1,8 @@
 ﻿<#
 .SYNOPSIS
   Cut a HyprSpace release: bump the version, write the changelog entry, commit and tag, open a
-  draft GitHub release with the notes, then run the release workflow. CI builds and signs Windows,
-  macOS and Linux with the updater key it holds as a secret, fills in latest.json, and publishes
+  draft GitHub release with the notes, then run the release workflow. CI builds and signs Windows and
+  macOS with the updater key it holds as a secret, fills in latest.json, and publishes
   the draft once every platform is in. No machine needs the signing key.
 
 .USAGE
@@ -106,4 +106,4 @@ Run "gh workflow run release.yml --repo $Repo -f tag=$tag"
 
 Write-Host ""
 Write-Host "Draft opened: https://github.com/$Repo/releases/tag/$tag" -ForegroundColor Green
-Write-Host "CI is building Windows, macOS and Linux and will publish it: gh run watch --repo $Repo" -ForegroundColor Green
+Write-Host "CI is building Windows and macOS and will publish it: gh run watch --repo $Repo" -ForegroundColor Green

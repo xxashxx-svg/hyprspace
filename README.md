@@ -23,18 +23,17 @@ credentials.
 ## Install
 
 ```sh
-curl -fsSL https://hyprspace.dev/install.sh | sh     # macOS and Linux
+curl -fsSL https://hyprspace.dev/install.sh | sh     # macOS
 ```
 
 ```powershell
 irm https://hyprspace.dev/install.ps1 | iex          # Windows
 ```
 
-Linux gets the self-updating AppImage in `~/.local/bin` plus a menu entry, macOS gets the app in
-`/Applications`, Windows runs the signed per-user installer (no admin prompt). Both scripts are
+macOS gets the app in `/Applications`, Windows runs the signed per-user installer (no admin prompt). Both scripts are
 plain text — [read install.sh](https://hyprspace.dev/install.sh) before you pipe it anywhere. If
 you'd rather click a button, the [releases page](https://github.com/xxashxx-svg/hyprspace/releases)
-has the `.exe`, `.dmg`, `.AppImage` and `.deb`.
+has the `.exe` and `.dmg`. HyprSpace ships for Windows and macOS; Linux builds stopped in October 2026.
 
 Everything below is for building it from source.
 
@@ -46,8 +45,6 @@ Everything below is for building it from source.
   Tools), plus the WebView2 runtime. WebView2 already ships with Windows 11 and current Windows 10;
   otherwise grab the evergreen installer from Microsoft.
 - **macOS:** `xcode-select --install`. See [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) for producing a `.dmg`.
-- **Linux:** the standard Tauri deps (`webkit2gtk-4.1`, `libsoup-3.0`, `librsvg2`, `build-essential`).
-  Linux mostly works but isn't shipped.
 
 To launch agents you'll also want at least one agent CLI installed and logged in (`claude`, `gemini`,
 or `codex`). Panes running a plain shell work without any of them.
