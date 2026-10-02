@@ -173,7 +173,8 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Settings: appearance (themes, light and dark), defaults, usage, skills, general
 - [x] Intro
 - [x] Open in editor or Explorer/Finder
-- [ ] Installers, auto-update, CI release for Windows and macOS (built in phase 6c; tick once
+- [x] Installers, auto-update, CI release for Windows and macOS (release dry run 36972542053
+  built and signed both platforms and installed over the real v0.21.1 on the Windows runner) (built in phase 6c; tick once
   the release.yml dry run passes on both runners)
 - [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above)
 
