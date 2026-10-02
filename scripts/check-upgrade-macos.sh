@@ -5,7 +5,7 @@
 #
 #   scripts/check-upgrade-macos.sh <tauri HyprSpace.app> <feed folder> <out folder> [port]
 #
-# The Tauri app is built from src-tauri with its updater feed at http://127.0.0.1:<port>; the
+# The Tauri app is built from the v0.21.1 tag with its updater feed at http://127.0.0.1:<port>; the
 # feed folder holds latest.json and the signed HyprSpace.app.tar.gz it names, and this script
 # serves it. The app gets a project, starts, and its updater has to download the tarball, verify
 # it, swap the bundle and relaunch into the GPUI app, which has to bring the project over. Logs,

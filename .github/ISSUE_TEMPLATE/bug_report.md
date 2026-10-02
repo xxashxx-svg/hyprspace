@@ -17,9 +17,9 @@ assignees: ''
 **Environment**
 - OS: <!-- Windows 10/11, or macOS + version -->
 - HyprSpace version: <!-- Settings → About, or the installer filename -->
-- Installed build or `npm run tauri dev`?
+- Installed build or `cargo run`?
 - Agent CLI in use: <!-- claude / gemini / codex / plain shell — and its version if you have it -->
 
 **Logs / screenshots**
-<!-- Anything from the devtools console (Ctrl+Shift+I in a dev build) or the terminal output.
+<!-- Anything the app printed (run it from a terminal to see its output) or the agent's output.
      Scrub any API keys or paths you'd rather not share. -->

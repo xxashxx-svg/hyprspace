@@ -1,215 +1,212 @@
 # Architecture
 
-How the non-obvious subsystems work. For the high-level map + constraints, see
-[../CLAUDE.md](../CLAUDE.md).
+How the non-obvious subsystems work. For the high-level map and the constraints, see
+[../CLAUDE.md](../CLAUDE.md). The words (space, thread, session, run, harness) are defined in
+[CONTEXT.md](./CONTEXT.md), and each decision's reasons are in [adr/](./adr/).
 
 ## Topology
 
-A Tauri app = a Rust **main process** + a **webview** (the React app). They talk over Tauri IPC:
-- React → Rust: `invoke("command", args)`. **All commands are wrapped in `src/api/index.ts`** —
-  components import those typed wrappers, never `invoke()` directly.
-- Rust → React: a `Channel<T>` (streaming, used for PTY bytes, agent/service output) or events.
-- Sync `#[tauri::command]` runs on the UI thread → anything slow/filesystem-heavy is `async fn` +
-  `tauri::async_runtime::spawn_blocking` so the window never freezes.
+One process. `apps/hyprspace/src/main.rs` fixes the process environment (`engine::env::prepare`),
+starts the engine, opens one GPUI window with `ui::Root`, and calls `Engine::shutdown` on quit.
 
-The webview only ever loads **local bundled assets** — no remote page is loaded into an
-IPC-privileged window. The realistic threat to the IPC surface is a renderer XSS, which is why CSP
-matters.
+```
+ui (GPUI, main thread)  --Command-->  engine (own tokio runtime)  --> harness, PTYs, git, disk
+                        <--Event----
+```
 
-## Spaces & sessions (`stores/workspace.ts`)
+- **The channel** (`crates/proto`) is two unbounded queues: `Command` in, `Event` out, plain serde
+  enums. The UI holds a `Client` and drains one `Events` stream, routing each event to the view it
+  names. Commands are fire and forget; a failure comes back as an event (ADR 0002).
+- **The engine** runs a two-worker tokio runtime. Its command loop takes one command at a time, so
+  keystrokes reach a PTY in the order they were typed. Slow requests (`--version` checks, the
+  resume-list scan, `git clone`, folder and git work) go to the blocking pool and answer with
+  their own event, so typing queued behind them isn't held up (ADR 0005).
+- **App requests** that aren't about a session (`LoadState`, `SaveState`, `LoadAgents`,
+  `ListResumable`, `Clone`, and the `Folder`, `Usage`, `Skills` and `Update` families) carry a
+  request id or the path they're about instead of a `SessionId`.
+- **Only the binary sees both sides.** `ui` depends on `proto` and `theme`, never on `engine`;
+  `proto` and `engine` never depend on GPUI. A headless engine later means serializing the same
+  enums over a socket; the proto tests already round-trip every variant through JSON.
 
-- A **workspace** is a **project** (has a `cwd` folder) or an **open space** (`kind: "open"`, a
-  scratch space; panes can each target a different folder, so the space itself may have no `cwd`).
-- A workspace holds `sessions` (panes). Each session has an id, a launch `command`, a `cwd`, a
-  `provider` (claude/gemini/codex/terminal/wsl), and runtime flags (started, etc.).
-- The store persists to disk via `persist.rs` (debounced in `App.tsx`).
-- Because open spaces can have an empty `cwd`, cwd fallbacks use `??` (preserve `""`) not `||`.
+## Startup and environment (`engine/src/env.rs`)
 
-## PTY subsystem (`pty.rs` ↔ `TerminalPane.tsx`)
+Runs first in `main`, before any thread exists, because it mutates the process environment that
+every shell, CLI and git child inherits:
 
-- `PtyManager` owns `Mutex<HashMap<id, Session>>`. `create` spawns a shell via `portable-pty`
-  (ConPTY on Windows) with `args: []` — i.e. a bare `powershell`/`$SHELL`. The pane's launch command
-  is **typed into the shell as keystrokes** (`writePty(... toRun + "\r")`), never passed as argv.
-  So no user/LLM string becomes a process argument.
-- **Byte coalescing:** stdout is read on a thread and coalesced (small time/size window) before
-  being sent over the `Channel` so fast output doesn't flood the UI but interactive echo stays snappy.
-- **Lifecycle:** a wait thread emits an `Exit` control when the child dies. `kill_all()` runs on app
-  exit (`lib.rs` RunEvent) and drops every master PTY → `ClosePseudoConsole` → ends the ConPTY host.
-  This is essential: orphaned `OpenConsole.exe` hosts busy-spin at high CPU. Locks use a
-  poison-tolerant helper (`unwrap_or_else(|e| e.into_inner())`).
+- **PATH rebuild.** An app started from Explorer, Finder or the Dock gets a thin PATH. The engine
+  rebuilds the user's real one (the registry on Windows, a login shell on macOS) so `claude`,
+  `codex`, Homebrew and npm globals resolve.
+- **Claude session markers dropped.** If HyprSpace itself was started from inside a Claude Code
+  session, the markers it set (`harness::SESSION_ENV`) would leak into every child and confuse the
+  CLIs we start.
+- **Ctrl+C taken back.** A parent that started us with Ctrl+C ignored passes that on to every
+  child, so Ctrl+C would reach PowerShell's prompt but never stop the command under it.
 
-## Where new projects go (`lib/projects.ts`)
+## Structured sessions (`crates/harness`)
 
-`projectsBaseDir()` resolves the Settings → Workspace "Projects folder" (default
-`~/Documents/HyprSpace`) and `joinPath` builds the folder under it. Anything that creates a project —
-today the New Project dialog — goes through it so they all agree on the location.
+One `Harness` per agent starts a `Session`, a tokio task that owns the CLI process and its stdio:
 
-## Startup actions (`lib/startup.ts` ↔ `StartupSettings.tsx` + `StartupRunner.tsx`)
+```rust
+Harness::start(Launch, Emit) -> io::Result<Session>
+Session::send(Prompt)            // starts a run, or steers the live one
+Session::interrupt()             // ends the live run as Interrupted, the session stays open
+Session::answer(request, Answer) // Allow, AllowAlways or Deny for a RunEvent::Approval
+drop(session)                    // kills the CLI
+```
 
-Per-folder startup tasks (dev server, db, watchers) configured in Settings → Startup; the per-folder
-list + env live in `stores/projectConfig.ts`. Each task launches as a normal **terminal pane**
-(`addSession` with the task's command) — there is no separate background-process runtime. Config is
-keyed by folder (`folderKey`), so two projects at the same folder share one config, and launches are
-deduped by command across every workspace at that folder so the same server never starts twice.
-`maybeAutostart` fires the folder's `runOnOpen` actions the first time it's opened each session;
-actions flagged `runOnWorktree` also fire when a worktree is created for the folder.
+- **Claude** runs the user's own `claude` with `--print --input-format stream-json --output-format
+  stream-json --verbose --include-partial-messages --replay-user-messages
+  --permission-prompt-tool stdio`. `--verbose` is required for stream-json output. `can_use_tool`
+  control requests become approvals.
+- **Codex** runs its app-server and talks JSON-RPC over stdio (`thread/start`, `turn/start`,
+  `turn/steer`, `turn/interrupt`); command and file-change approval requests become approvals.
+- **One `send`, not send and steer.** Only the harness knows without a race whether a run is live,
+  so a prompt sent mid-run steers and one sent between runs starts a run.
+- **Exactly one `Finished` per run.** A Claude `now` steer cuts the current turn with a `result`.
+  The harness writes each steer with a `uuid` and holds a `result` that arrives before the steer is
+  echoed back, releasing it after 5 seconds of quiet if the CLI absorbed the steer. Steers go as
+  `priority: "next"` while a tool call is open, because `now` aborts the tool.
+- **Interrupts give up after 5 seconds**: the CLI is killed and the session reports `Failed`.
+- **Approvals are never auto-answered.** The permission mode (`Plan`, `Ask`, `Auto`, `Bypass`)
+  maps to Claude's `--permission-mode` and Codex's `approvalPolicy` and `sandbox` (table in ADR
+  0004). Bypass is the way to skip the questions.
+- **Resume pins Claude's folder.** `claude --resume <id>` only finds a conversation from the folder
+  it started in, so the harness reads the `cwd` recorded in `~/.claude/projects/*/<id>.jsonl` and
+  spawns there. Codex threads carry their own folder.
+- **Subagents report under their call.** Claude frames with a `parent_tool_use_id` become
+  `SubagentTool`, `SubagentToolDone` and `SubagentText` keyed by the Agent call, never folded into
+  the main reply. A background subagent can finish after the run; the CLI then takes a turn of its
+  own, reported as `Woke` followed by a normal run.
+- **Tests** drive both adapters through `fixtures/fake_cli`, a Rust fake of both CLIs built as a
+  bin of the harness crate so it runs on both CI runners. `examples/live.rs` runs one real
+  session, which is where a protocol change in a CLI shows up.
+- **Catalog.** `catalog.rs` holds the models and effort levels per agent, plus Codex's own
+  `~/.codex/models_cache.json` when it exists.
 
-## Automations (`stores/loops.ts` + `lib/automations.ts`)
+## Journals and saved state (`engine/src/journal.rs`, `persist.rs`, `requests.rs`)
 
-HyprSpace's scheduled agents. A **`LoopDef`** is a saved definition (persisted as `"loops"`, a map
-keyed by id); its live `LoopRun` (status / logs / worktree path / host pane) is **in-memory only** —
-automations run only while the app is open. Finished runs land in a persisted per-automation history
-(`"loop-history"`). UI: the **Automations** page reached from the rail (`LoopsPage.tsx`, with
-`AutomationEditor.tsx` as the inline editor and `LoopRunView.tsx` as the run view), plus
-command-palette entries and a titlebar badge while any run.
+- **State.** `proto::state::AppState` (spaces, threads with their `Launch`, grids, composer picks,
+  appearance, `intro_seen`, `seen_version`) is the UI's shape; the engine writes it whole to
+  `~/.hyprspace/native/state.json`. `HYPRSPACE_STATE_DIR` points a dev build elsewhere.
+- **The store** (`persist::Store`) is single-writer and crash-safe: temp file, fsync, atomic
+  rename, under one poison-tolerant lock. `load` tells "absent" (`Ok(None)`) from an IO error
+  (`Err`); after a real read error the engine refuses to save, so a bad disk moment can't wipe the
+  sidebar. A file that won't parse is moved aside as `<name>.corrupt-<ts>.json` and the default
+  comes back. Names are reduced to a safe token so they can't leave the folder.
+- **Journals.** Each structured thread appends every prompt, answer and run event to
+  `journals/thread-<id>.jsonl`, joining streamed text into one line per reply. After a restart the
+  transcript replays it through the same calls it uses for live events. The CLI's own thread id
+  lands in the thread's `Launch.resume` when `Started` arrives, so the next prompt reopens the
+  conversation. A crash loses only the reply that was still streaming. Journals aren't trimmed yet.
+- **The Tauri app's state** (`~/.hyprspace/v2`) is imported once, read only, when
+  `native/state.json` doesn't exist (`legacy.rs`, ADR 0012): projects become spaces, open spaces'
+  folders become spaces of their own, theme, agent picks, permission, widths and
+  `lastSeenVersion` come along. Panes don't become threads; the resume list covers them.
 
-### The engine runs in a real pane (on the subscription)
-When an automation fires, the engine (`lib/automations.ts`):
-1. optionally cuts a **worktree** (`worktreeCreate`, branch `hs/auto-<name>`, idempotent) so the
-   agent can't touch the working tree — the run view exposes **Review changes**; a folder that isn't
-   a git repo just runs in place;
-2. resolves the folder's workspace (creating one **without activating it** — a scheduled fire must
-   never switch the space you're looking at) and launches a normal claude pane as a background tab
-   (`addTab`/`addSession` with `focus: false, ephemeral: true`). The launch command is the constant
-   `claudeCmd(permissionMode)` — same path as any pane, on the logged-in CLI / subscription;
-3. waits for the pane's claude TUI to come up — its **status line** reporting for that pane
-   (`useUsage.byPane`) is the readiness signal — then **types the task into the TUI** as keystrokes.
-   The prompt never rides a shell command line, so there is nothing to quote and no shell that could
-   misparse it. If the TUI never reports (CLI missing), the run errors out instead of typing at a
-   bare shell;
-4. watches the pane's **agent hooks** (`useAgentStatus`): `Stop` after a `working` state = the run
-   is `done`.
+## Terminal sessions (`engine/src/pty.rs`, `terminal.rs`, `hooks.rs`, `ui/src/terminal/`)
 
-**Ephemeral panes.** An automation's pane is marked `ephemeral: true`: `PaneGrid` mounts it even in
-a space you haven't opened this session (without spawning the space's other saved panes), and
-`App.tsx`'s save filter drops it from the persisted layout — a saved automation pane would relaunch
-its agent on the next app start.
+- **PTYs.** `PtyManager` spawns a bare shell through `portable-pty` (ConPTY on Windows) with
+  `TERM` set, because GUI-launched apps inherit none and CLIs then drop color. A reader thread
+  feeds a bounded channel (real backpressure, no dropped bytes) into a **coalescer**: the first
+  bytes after a quiet moment go out at once, so keystroke echo is instant, and a sustained stream
+  batches to one frame (16 ms) or 16 KB. Output crosses the channel as `TerminalOutput` batches.
+- **Lifecycle.** `child.wait()` runs off-thread, then `TerminalExit` is sent. Killing a session
+  drops its master PTY off-thread, because closing a pseudoconsole can block until the process
+  tree detaches. `kill_all` runs from `Engine::shutdown` on quit: orphaned `OpenConsole.exe` hosts
+  busy-spin at about 8% CPU each. Locks recover from poisoning, so one panic can't brick PTY I/O.
+- **Launching agents.** `terminal.rs` builds `claude ...`, `codex ...` or `gemini ...` from fixed
+  flags and catalog ids (anything past a plain token is quoted) and the PTY types it into the shell
+  once it first prints, so the user's profile and PATH apply. User text never enters the command
+  line. Claude gets the composer's prompt typed in when its status line first reports, which is
+  when its TUI reads input. Codex and Gemini have no such signal, and keys typed on a timer once
+  answered Codex's "update available" dialog, so they start with the prompt as their own argument,
+  read from `HYPRSPACE_PROMPT`, which no shell re-parses (ADR 0006).
+- **A Claude thread owns its conversation id.** The UI picks a UUID when it creates the thread; the
+  engine passes `--session-id <id>` the first time and `--resume <id>` once Claude's transcript
+  for that folder exists.
+- **Hooks.** Each Claude terminal session gets a scoped `--settings` file whose hooks
+  (`UserPromptSubmit`, `Stop`, `SessionStart`, `Notification`, `SubagentStop`, `PreToolUse`,
+  `PostToolUse`) and status line re-invoke our own binary: `hyprspace agent-hook <port>
+  <session>` or `hyprspace status-line <port> <session>`. That short-lived process reads the
+  payload from stdin and posts it to a loopback listener on an OS-picked port, so the sidebar
+  shows Working, Needs your answer and Done as they happen. Session ids are checked against
+  `[A-Za-z0-9_-]` because they go into a command and a path. Approving a permission produces no
+  hook of its own, which is why `PostToolUse` is wired: it's what ends a "needs your answer" state.
+  `HYPRSPACE_DEBUG_HOOKS=1` logs payloads; it's off by default because they hold prompts. Codex and
+  Gemini rows show no live state (no hooks).
+- **The emulator lives in the UI.** `ui/src/terminal/` folds bytes through `alacritty_terminal`
+  (selection, scrollback, find, modes, cursor), answers terminal queries itself, paints the grid on
+  a canvas with block and line characters drawn as rectangles, and reads text through GPUI's input
+  handler, so IME, dead keys and AltGr work. Keys with a meaning are encoded in `keys.rs`; links
+  and `path:line:col` open on ctrl+click; pasted bitmaps are saved as PNGs and pasted as paths.
+  `Root` keeps one view per thread, so moving a pane never rebuilds an emulator.
 
-### Modes & scheduling
-- **manual** — runs once when you hit Run.
-- **interval** — every `intervalSec`; **cron** — `nextFire(schedule)` from `everyMin`, a daily
-  `HH:MM`, or a raw 5-field cron (`lib/cron.ts`).
-- Scheduled automations **re-arm after each run** (`finish()` arms the next fire instead of tearing
-  the controller down), and ones with `enabled` set are armed on app start by `LoopRunner.tsx`.
-  Manual automations never auto-run.
+## Panes, dock and viewer (`ui/src/panes/`, `dock/`, `viewer/`, `engine/src/folder.rs`)
 
-### The stop guard (an automation can never run forever)
-Every run has a **wall-clock budget** (`stop.timeBudgetMin`, defaulted to 60 when unset). Hitting it
-calls `finish("error")`, which **closes the run's pane** — the agent dies with the run rather than
-grinding on unwatched. `stopLoop` closes the pane the same way; the only pane that outlives its run
-is a successfully finished one-shot, kept so you can read what the agent did. There is no headless
-path, no API key, and no keychain involvement — the retired headless engine (per-iteration
-`claude -p` on an `ANTHROPIC_API_KEY`) was deleted with `lib/loops.ts`/`loophook.rs`, and old defs
-(other providers, `maxIterations`-era stop guards) are migrated onto this engine on load.
+- **Tiles, not tabs.** Each space's `Grid` (saved in `AppState`) holds the panes on screen in
+  layout order, the focused and maximized one, the preset per pane count, and dragged track sizes
+  per layout. Presets are the Tauri app's grid.ts, as data in `layout.rs`. Panes sit on fractions
+  of the frame, so a dragged boundary needs no measuring; a boundary a pane spans stays fixed.
+- **The grid is a view over the threads.** Clicking a sidebar row puts that thread in the focused
+  pane; ctrl+click adds a pane. Closing a pane leaves the thread running and in the sidebar. A
+  removed or archived thread drops out of the grid when it is drawn, so saved grids never need
+  tidying (ADR 0007).
+- **One viewer pane per space** shows a file or one file's diff, read only, colored by
+  `crates/syntax` (tree-sitter) with the theme's terminal palette. Reads are capped at 2 MB; past
+  that, or for media, the file goes to the user's editor.
+- **Folder requests** ride `Command::Folder` / `Event::Folder`: listings, reads, git status, stage,
+  commit, push, diffs, the installed openers, and open-in. Git calls take one lock, because two
+  quick ticks would otherwise race for git's `index.lock`. Change paths are relative to the repo
+  root, so stage and diff work when the dock follows a subfolder. The dock polls git every four
+  seconds while it is out.
+- **Opening things outside the app** (`open.rs`): VS Code or Cursor with `--goto file:line:col`,
+  Explorer or Finder for folders. Only paths that exist reach a launcher. `HYPRSPACE_OPEN_LOG`
+  appends each launch's command line to a file instead of running it.
 
-### Agent runner (`agent.rs`)
-`AgentManager` runs **one** provider turn per call, headless — no PTY, no pane. Today its only
-caller is the pane auto-namer (`ai/autoNameSession.ts`, one short `codex exec` per unnamed pane).
-`start(id, cwd, args, env, secrets, prompt, ch)` spawns the argv (via `cmd /c …` on Windows so the
-`.cmd` shim resolves), writes the prompt to stdin then closes it, and streams stdout+stderr as
-lines; on EOF it emits `\u{0}__agent_exit__`. `secrets` maps an env-var name → an OS-keychain secret
-name, read **in Rust** and set on the child env so the value never enters JS (unused by current
-callers, which pass `{}`). Reaped by `kill_all` on exit like the PTYs.
+## Usage (`engine/src/usage/`, `ui/src/usage/`)
 
-## Integrated editor (`CodeEditor.tsx` + `devtools/fs.rs`)
+- **Live limits** (`live.rs`) read the token each CLI already stores and send it to that
+  provider's own usage endpoint, per CLAUDE.md rule 1. The engine owns the floor: a request inside
+  180 s (Claude) or 60 s (Codex) is answered from the last reading, and 429 or 5xx backs off. So no
+  view can ask faster by mistake. `HYPRSPACE_USAGE_FIXTURES` reads files instead of the network.
+- **Free sources.** The hook listener tees Claude's status line; `status.rs` turns its
+  `rate_limits` into the same shape the endpoint gives, sent per session. Codex's session files
+  are read only while its live reading has no windows. `local.rs` aggregates each CLI's own files
+  for Settings' activity view, display only.
+- **One entity** (`ui::usage::Limits`) asks on a 30-second tick when each provider is due and holds
+  every reading, so the ring above the panes and Settings never disagree (ADR 0009).
 
-A CodeMirror 6 editor in the Review dock's **Editor** tab. Clicking a file in the Files tree (or its
-context menu) calls `openInEditor` (`stores/ui.ts`), which reads the file via `read_file`
-(`devtools/fs.rs`, capped at 2 MB, rejects binary) and shows it with syntax highlighting; **Ctrl/⌘+S**
-or the autosave toggle writes it back via `write_file`. Themed to the app tokens with one-dark colors.
+## Updates and installers (`crates/update`, `engine/src/update.rs`, `scripts/package-*`)
 
-## Mobile bridge (`bridge.rs` + `mobileBridge.ts` ↔ [`mobile/`](../mobile/README.md))
+- **One feed, one key.** The app reads `releases/latest/download/latest.json`
+  (`{ version, notes, pub_date, platforms }`, written by `scripts/ci-build-latest.mjs`) and checks
+  each download's minisign signature against the key the Tauri app shipped with. The feed URL and
+  key can only be swapped at compile time (`option_env!`), never at run time.
+- **Only an installed copy updates.** A copy next to the installer's `uninstall.exe`, or inside a
+  `.app`, is installed; `cargo run` and `target/release` builds answer `Unmanaged` and never check.
+- **Windows.** The engine downloads, verifies and starts the NSIS installer with the Tauri updater's
+  own arguments (`/P /R /UPDATE /ARGS`) and the UI quits. The installer
+  (`apps/hyprspace/package/windows/installer.nsi`) keeps the Tauri installer's identity: same
+  per-user registry keys and folder, one Apps entry, `hyprspace-tauri.exe` deleted and its
+  shortcuts pointed at `hyprspace.exe`. It closes only processes whose image is in its own install
+  folder, with `WM_CLOSE` first so the app kills its PTYs the normal way (ADR 0010).
+- **macOS.** The engine unpacks the `.app.tar.gz` over the bundle and a detached shell reopens it
+  once this process is gone. `scripts/package-macos.sh` assembles the bundle, signs it (Developer
+  ID when the secrets exist, ad hoc otherwise) and builds the dmg.
+- **Leftover downloads** from both updaters are swept from the temp folder at launch, with retries
+  while the installer that just ran still holds its file (ADR 0011).
+- **The UI** checks on launch, every 6 hours and on focus after 15 minutes, shows a corner card with
+  "Restart and update", and shows What's new from the bundled `docs/CHANGELOG.md` on the first
+  launch of a new version.
+- **CI.** `release.yml` signs with the `TAURI_SIGNING_PRIVATE_KEY` secret through
+  `npx @tauri-apps/cli signer sign` (the key format is Tauri's) and checks every signature with
+  `cargo run -p hyprspace-update --example verify` before uploading. `upgrade-test.yml` builds the
+  v0.21.1 Tauri app from its tag and watches its real updater install the GPUI app on both
+  platforms.
 
-How the Android companion app sees your desktop. Off by default; **Settings → Mobile** turns it on and
-shows the pairing QR.
+## Provider status (`engine/src/providers.rs`)
 
-**Transport.** `bridge.rs` is a hand-rolled WebSocket server on the LAN (6768 by default, walking up
-to 8 ports if that's taken). Hand-rolled because the framing we need is ~100 lines and it keeps a
-network-facing dependency tree out of an app that otherwise has none; `sha1` for the handshake digest
-is the only addition. A connection must send `hello` with the pairing token within 8s or it's dropped,
-and `PROTOCOL` must match on both sides — a version mismatch is reported rather than half-working.
-The token is minted and persisted by the frontend (`stores/bridge.ts`, `crypto.getRandomValues`);
-Rust only ever compares against it, in constant time.
-
-**State is pushed, never introspected.** Rust knows nothing about spaces or panes. `mobileBridge.ts`
-subscribes to the workspace / agent-status / usage / automations stores, debounces 250 ms, and calls
-`bridge_publish` with a snapshot whenever it actually changed. The bridge stores the last one verbatim
-and fans it out, so a phone's lists move the moment the desktop's do — and a phone connecting later
-gets the current picture immediately.
-
-**Terminals.** `PtyManager` keeps a rolling 64 KB tail per session plus its current size, and holds
-one tap that the bridge registers at startup (`bridge::attach`). On `sub` the phone gets the tail
-replayed in 16 KB chunks (so it paints a screen at once) and then live coalesced output; keystrokes
-come back as `in` and go straight to `PtyManager::write`. The phone renders at the *desktop's*
-cols/rows and scales to fit — it never resizes the PTY, which would reflow the desktop's own view out
-from under whoever's sitting at it.
-
-**Nothing here may stall a terminal.** The tap runs on the PTY coalescer thread, so each peer has a
-bounded outbound queue and a full one **drops frames** rather than applying backpressure. A phone on
-bad wifi degrades its own mirror and nothing else.
-
-**Anything else** (launch a pane, wake a space, git changes/diff/commit, run an automation, create a
-project) is a generic `req` → Tauri event → `mobileBridge.ts` handler → `bridge_reply`, so the phone
-reuses the same `src/api` wrappers the UI does and Rust stays a relay.
-
-**The phone never does path math.** It can't know whether the desktop uses `\` or `/`, so browsing is
-a round trip: `fs.browse` takes either an absolute `path` or an `into` (a child folder's *name*) and
-the desktop joins it with `joinPath`. It answers with the resolved `path`, its `parent`, and the
-desktop's `sep` — `sep` is for rendering a `folder<sep>name` preview only, never for building a path
-to send back. `project.create` follows the same rule: the phone sends `parent` + `name` (or an
-existing `folder`) and the desktop resolves it.
-
-`project.create` runs the desktop's own New Project sequence in the same order — `createProjectDir` →
-`addWorkspace` → `gitInit` → N × `addSession` — so a project made from the phone is
-indistinguishable from one made at the desk, and the state push that follows is what makes it appear
-on both at once. Two things it does deliberately:
-
-- **`addWorkspace(…, { activate: false })`** — a project created from the phone must not yank the
-  desktop away from whatever it's showing. It still appears in the rail immediately. Pass
-  `open: true` to switch the desktop's view on purpose.
-- **`activateWorkspace(id)` when panes were asked for** — PTYs only mount for an *activated* space.
-  `addWorkspace` sets `activeId`, which is a different thing; without the explicit activate the panes
-  would sit in state and never start.
-
-## Code structure & animation notes
-
-- **CSS is split per area.** `src/App.css` is just an ordered `@import` index of `src/styles/*.css`
-  (one file per area: rail, home, pane, loops, editor, …). Edit the area file, not the
-  index; order is preserved so the cascade is identical to the old single file.
-- **`devtools` is a folder module** (`git` / `worktree` / `project` / `fs` / `providers` /
-  `skills`), re-exported by `mod.rs` so `devtools::*` paths in `lib.rs` are unchanged. Shared helpers
-  (`git`, `home_dir`, `read_json`) live in `mod.rs`.
-- **Smooth UI** uses `@formkit/auto-animate` (rail lists + expand/collapse, the file tree, the Loops
-  list) plus a `.no-transitions` guard toggled in `applyTheme` so a theme switch
-  snaps colors instead of animating every element. `prefers-reduced-motion` is respected app-wide.
-- **Dev-state isolation.** `persist.rs` honors a `HYPRSPACE_STATE_DIR` env override (unset in release
-  builds) so a dev instance can run on a scratch state dir without touching the user's `~/.hyprspace/v2`.
-
-## Provider command builders (`actions.ts`)
-
-`claudeCmd(mode)`, `geminiCmd(yolo)`, `codexCmd(mode)`, `WSL_CMD` produce **constant** command
-strings from the user's Settings → Providers preferences (no interpolation of dynamic/LLM data).
-`launchInActive` adds a session to the active space — and for open spaces pops a folder picker so
-each pane can target a different folder. This is the single launch path the top **New** menu uses.
-
-## Persistence (`persist.rs`)
-
-A single-writer, crash-safe JSON store at `~/.hyprspace/v2/<name>.json`: temp file → fsync →
-atomic rename, under one (poison-tolerant) lock. `load` distinguishes "file absent" (Ok(None)) from
-"IO error" (Err) so a transient error never looks like a first run and clobbers data. The `name` is
-sanitized to a safe token so it can't traverse out of the dir. The TS stores (`workspace`,
-`settings`, `loops`, …) serialize their state into this.
-
-## Auth (`oauth.rs` + `lib/supabase.ts` + `stores/auth.ts`)
-
-The app's **own** sign-in (Google via Supabase) — entirely separate from claude.ai. It uses a
-loopback listener (`127.0.0.1:8765`) for the OAuth redirect and PKCE (Supabase validates the
-`code_verifier`). This is **not** the Claude subscription auth — that's handled entirely by the
-`claude` CLI we spawn. Credential files are only ever read for display-only fields.
-
-## Provider status (`devtools/providers.rs::provider_status`)
-
-For Settings → Providers: runs `<cli> --version` (args passed separately, never a shell string) and
-reads `~/.claude.json` / `.credentials.json` / Codex `auth.json` for **display-only** account/plan
-fields (a JWT is base64-decoded **without verification**, purely to show email/plan — no trust
-decision, never forwarded).
+Runs `<cli> --version` (arguments passed separately, never a shell string) and reads
+`~/.claude.json`, `.credentials.json` and Codex's `auth.json` for **display-only** account and plan
+fields. A JWT is base64-decoded **without verification**, only to show an email or plan: no trust
+decision, never forwarded.

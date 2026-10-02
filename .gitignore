@@ -16,10 +16,9 @@ dist-ssr
 website/node_modules
 website/dist
 
-# local env — .env.example is the tracked template
+# local env
 .env
 .env.*
-!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -39,8 +38,6 @@ website/dist
 # local release build artifacts
 release-artifacts/
 
-# intermediate icon raster (regenerate with: node scripts/gen-icon.mjs)
-scripts/logo-1024.png
 .playwright-mcp/
 
 # tsc -b build info
@@ -57,5 +54,8 @@ scripts/license-keygen.mjs
 # deploy.ps1 stages the release assets here
 dist-release/
 
-# the GPUI rewrite workspace
+# the Cargo workspace
 /target
+
+# left behind in older checkouts by the deleted Tauri app (its build output and generated files)
+/src-tauri/

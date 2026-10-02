@@ -1,23 +1,35 @@
-# HyprSpace — project guide
+# HyprSpace project guide
 
 > Read this first. It's the canonical guide for anyone (human or AI agent) working on this repo.
 > Deep dives live in [`docs/`](./docs/README.md).
 
-HyprSpace is a **multi-terminal AI workspace** — a Tauri 2 + React desktop app that tiles Claude
-Code / Gemini / Codex / shell sessions across **projects** and **open spaces**, with per-pane
-resume, drag-to-swap, and a command palette. Neutral, T3-Code-inspired dark UI.
+> **History:** HyprSpace was rebuilt from a Tauri + React app into this native GPUI app in
+> October 2026. [`docs/REWRITE.md`](./docs/REWRITE.md) records why, the phases, and what was left
+> behind; the last Tauri release is the `v0.21.1` tag.
 
-- **Stack:** Tauri 2 (Rust) · React 19 + TypeScript + Vite · Zustand state · xterm.js (WebGL) ·
-  `portable-pty` (Rust) · Supabase (auth only) · auto-update via Tauri updater + minisign.
-- **Platforms:** Windows (primary, built locally) + macOS (built in CI). Linux was dropped on
-  2026-10-02 because nobody used it; don't add Linux builds or Linux-only work.
-  Platform-conditional UI wording lives in `src/platform.ts`; don't inline OS ternaries in components.
-- **Companion app:** [`mobile/`](./mobile/README.md) — an Expo/React Native Android app that pairs
-  over your LAN and mirrors spaces, panes and live terminals. Its own app, its own versioning.
+HyprSpace is a **native desktop workspace for coding agents**, written in Rust on GPUI (Zed's GPU
+UI framework). Each folder is a **space** in the sidebar, and each conversation in it is a
+**thread**. A thread runs as a **structured session** (Claude or Codex driven over its machine
+protocol and drawn as a transcript with tool calls, approvals and diffs) or as a **terminal
+session** (a real PTY running a shell, or an agent CLI interactively). Threads tile in a grid of
+panes, with a files and git dock, a read-only file viewer, a usage meter and a command palette.
+The words are defined once in [`docs/CONTEXT.md`](./docs/CONTEXT.md); use exactly those.
+
+- **Stack:** Rust 1.98.1 (edition 2024) · GPUI and `gpui_platform` pinned to one upstream Zed
+  commit · `alacritty_terminal` for the emulator · `portable-pty` (ConPTY on Windows) · tokio in
+  the engine · `pulldown-cmark` for markdown · tree-sitter for the viewer · self-update with the
+  minisign key the Tauri app used.
+- **Platforms:** Windows (primary, built locally) + macOS on Apple silicon (built in CI). Linux was
+  dropped on 2026-10-02 because nobody used it; don't add Linux builds or Linux-only work.
+- **Companion app:** [`mobile/`](./mobile/README.md) is an Expo/React Native Android app. It paired
+  with the Tauri app's LAN bridge, which left with the Tauri app, so it has nothing to pair with
+  until it is redone (docs/REWRITE.md). Its own app, its own versioning.
 
 ---
 
-## ⚠️ Critical constraints — do not violate
+## Critical constraints: do not violate
+
+Rule 1's wording predates structured sessions and still names Tauri-era files; Ash will update it.
 
 1. **Subscription compliance (most important).** All *inference* runs on the user's
    **subscription** by spawning their already-logged-in `claude` CLI — nothing else. **NEVER** build
@@ -29,185 +41,187 @@ resume, drag-to-swap, and a command palette. Neutral, T3-Code-inspired dark UI.
    account's own limits for display. The token is read per request, never stored or forwarded
    anywhere else. Respect the poll cadence in that file: Claude's bucket is shared with Claude Code
    itself, so 180s is the floor.
-2. **No `React.StrictMode`.** It's intentionally disabled in `main.tsx` — double-mounting corrupts
-   xterm.js lifecycles. Don't re-add it.
-3. **Styling = vanilla CSS + design tokens.** Use the CSS variables in `src/styles/tokens.css`
-   (`--surface-*`, `--text-*`, `--border-*`, `--accent`, `--status-*`). No Tailwind, no CSS-in-JS.
-   Match the existing neutral, low-contrast look. Every theme has a light and a dark side
-   (`themes.ts` derives both from one hue), so never write a literal white or black wash: a line or
-   fill is `rgba(var(--ink), 0.1)`, which is white-alpha on dark and black-alpha on light.
-4. **Terminal stability.** Don't introduce patterns that frequently unmount/remount `TerminalPane`.
-   Always dispose xterm instances + addons on cleanup. PTYs must be killed on app exit (they are —
-   `kill_all`) or ConPTY hosts (`OpenConsole.exe`) orphan and burn CPU.
-5. **Version numbers are managed by `deploy.ps1` only.** Never hand-edit the `version` in
-   `tauri.conf.json` / `package.json` / `Cargo.toml`. See [docs/VERSIONING.md](./docs/VERSIONING.md).
+2. **Keep the boundaries.** `proto` and `engine` never depend on GPUI, and `ui` reaches the engine
+   only through the typed channel in `hyprspace-proto` (commands in, events out). A crate that
+   wants to cross that line gets a new type in `proto` instead. Only `apps/hyprspace` sees both
+   sides. Reasons: [docs/adr/0002](./docs/adr/0002-channel-boundary.md).
+3. **Colors come from `crates/theme`.** No hard-coded colors anywhere in `ui`. The tokens and all
+   six themes are ported from the Tauri app's `tokens.css` and `themes.ts`: each theme is one hue
+   with a light and a dark side derived from it (in oklch), so never write a literal white or black
+   wash. A line or fill is the theme's ink at an alpha, which is white-alpha on dark and
+   black-alpha on light. Buttons and highlights use the accent tokens; accent goes on the one
+   primary action. Match the existing neutral, low-contrast look.
+4. **Terminal stability.** PTYs must be killed on exit (they are: `Engine::shutdown` runs the PTY
+   manager's `kill_all`) or ConPTY hosts (`OpenConsole.exe`) orphan and burn CPU. `Root` keeps one
+   view per thread (`views`); don't rebuild a terminal view and its emulator when the grid or the
+   layout changes.
+5. **Version numbers are managed by `deploy.ps1` only.** Never hand-edit the `version` in the root
+   `Cargo.toml`'s `[workspace.package]` (every crate inherits it) or the workspace entries in
+   `Cargo.lock`. See [docs/VERSIONING.md](./docs/VERSIONING.md).
 6. **Never ship unless the user explicitly asks.** Do NOT run `deploy.ps1` / publish a release on
    your own — multiple agents may be working at once, and a surprise release is hard to undo. Same
-   for commit/push: only when asked. Otherwise work in dev mode (HMR); `main` is default, branch
+   for commit/push: only when asked. Otherwise work with `cargo run`; `main` is default, branch
    before committing if asked.
 7. **Release notes are written at ship time, not per task.** Don't keep a running changelog while you
    work. When the user asks to ship, look at what changed since the last release
    (`git log <lastTag>..HEAD`) and write a few short user-facing bullets — pass them as the
    `deploy.ps1` notes; it records them in `docs/CHANGELOG.md` and the in-app "What's new".
-8. **Analytics stay boring and honest.** `src/lib/analytics.ts` sends ONE event (`app_opened`) with a
-   random install id, version and OS — off in dev, off without `VITE_POSTHOG_KEY`, off at one click in
-   Settings. This repo is public: if you add a property, the Settings copy and the file's header
-   comment must change in the same commit. Never send prompts, terminal output, paths, project names,
-   or anything joined to an account.
-9. **Code style:** clear and conventional over casual. Comment the why, not the what. New UI code
-   goes in a folder per area (`components/composer`, `components/dock`) with one stylesheet per
-   area in `styles/`.
+8. **Analytics stay boring and honest.** The GPUI app sends no analytics: no events, no install
+   id. The Tauri app's one PostHog event (`app_opened`) was left behind with it. The only requests
+   the app makes on its own are the update check (`latest.json` on GitHub releases, then the
+   installer it names) and the usage endpoints of rule 1. This repo is public: adding analytics is
+   Ash's call, needs an off switch in Settings, and the Settings copy must say exactly what is sent
+   in the same commit. Never send prompts, terminal output, paths, project names, or anything
+   joined to an account.
+9. **Code style:** clear and conventional over casual. Comment the why, not the what. UI code goes
+   in a folder per area (`crates/ui/src/composer`, `crates/ui/src/dock`), one concern per file; a
+   file past about 600 lines is a sign to split it. A choice someone would later question gets a
+   short entry in `docs/adr/`. Dead code leaves with the change that orphans it.
 10. **Copy:** every string a user reads is plain English. No em dashes, no curly quotes, no
    filler. One idea per sentence. Say what happens, not how it feels.
 
 ---
 
-## Run / build / deploy (quick reference)
+## Run, build and check (quick reference)
 
 ```bash
-npm install
-npm run tauri dev          # dev with HMR (Vite + Rust). This is how you work day-to-day.
-npm run tauri build        # production build (Windows NSIS installer by default)
+cargo run -p hyprspace                # the app, debug build (dependencies build at opt-level 2)
+cargo run -p hyprspace -- <folder>    # open a folder as a space, the way `code .` does
+cargo build --release -p hyprspace    # target/release/hyprspace(.exe)
+./scripts/package-windows.ps1         # release build + NSIS installer in target/package
+bash scripts/package-macos.sh         # on a Mac: HyprSpace.app, its .app.tar.gz and a dmg
 ```
 
-Releases are cut by `deploy.ps1` (in the repo): it bumps the three version files, writes the
-changelog entry, commits and tags, opens a draft GitHub release with the notes, and runs
-`.github/workflows/release.yml`. CI builds and signs Windows and macOS with the updater key held
-in the repo's secrets, merges each into `latest.json`, and publishes the draft when both are in.
-No machine needs the signing key.
+**The check** (CI runs it on Windows and macOS for every push to `main` and `rewrite`,
+`.github/workflows/check.yml`; a red check blocks a merge):
 
-**Verifying a change in dev:** TS changes hot-reload (run `npx tsc --noEmit` to typecheck). Rust
-changes (`src-tauri/`) trigger a recompile + app relaunch — confirm with `cargo check` in
-`src-tauri/` and that the rebuilt `target/debug/hyprspace-tauri.exe` is newer than your edit.
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+```
+
+UI changes are checked by running the app. A dev build shares `~/.hyprspace/native` with an
+installed copy; set `HYPRSPACE_STATE_DIR` to a scratch folder to keep them apart.
+
+Releases are cut by `deploy.ps1`: it bumps the workspace version and `Cargo.lock`, writes the
+changelog entry, commits and tags, opens a draft GitHub release with the notes, and runs
+`.github/workflows/release.yml`. CI builds Windows and macOS with `scripts/package-*`, signs what
+the updaters install with the key held in the repo's secrets, merges each into `latest.json`, and
+publishes the draft when both are in. No machine needs the signing key. A dry run touches no
+release: `gh workflow run release.yml --ref <branch> -f dry_run=true`.
 
 ---
 
 ## Repo map
 
 ```
-src/                         React frontend
-  main.tsx                   entry (NO StrictMode), store hydration
-  App.tsx                    shell layout
-  App.css                    ordered @import index of styles/*.css (edit the per-area file, not this)
-  styles/tokens.css          design tokens (theme variables)
-  styles/<area>.css          per-area component CSS (rail, home, pane, loops, editor, …) —
-                             split out of the old monolithic App.css so agents don't collide
-  components/                UI: Titlebar, Rail (sidebar) + SessionRow, PaneGrid, TerminalPane,
-                             HomePage, composer/ (ComposerPane, ModelPicker), dock/ (Dock, FilesPanel,
-                             GitPanel), Settings, NewProjectDialog, CommandPalette, Menu (anchored
-                             dropdown), CodeEditor, Logo, …
-  stores/                    Zustand: workspace, ui, settings, settingsSync, git, activity, skills,
-                             agentStatus, usage, providers (installed CLIs), auth, updater,
-                             notifications, confirm, bridge (mobile)
-  api/index.ts               typed bridge over Tauri invoke()/Channel — components import THIS,
-                             never invoke() directly
-  mobileBridge.ts            state mirror + action handler for the phone app (see mobile/)
-  actions.ts                 shared actions (launch panes, worktrees, close) + provider cmd builders
-  platform.ts                OS detection + platform-conditional bits (modifier keys, shells)
-  themes.ts                  theme definitions applied over styles/tokens.css
-  ai/                        autoNameSession.ts — titles a pane from the user's first prompt (Codex)
-  lib/                       models.ts (agent catalog: models, efforts, flags), composer.ts (type a
-                             prompt into a pane once its CLI is up), agentHeuristics.ts (row state
-                             for CLIs without hooks), grid.ts (layouts + resizable boundaries),
-                             brand.ts (provider marks), projects.ts, time.ts, branches.ts
-
-src-tauri/                   Rust backend
-  src/lib.rs                 all #[tauri::command] registrations + app lifecycle (kill_all on exit)
-  src/pty.rs                 PtyManager — ConPTY/portable-pty, byte coalescing
-  src/agent.rs               AgentManager — one headless provider turn (used by the pane auto-namer)
-  src/agenthook.rs           loopback listener feeding claude's hooks + status line into the app
-                             (live agent state, usage meter)
-  src/bridge.rs              LAN WebSocket server the Android app talks to (off by default)
-  src/devtools/              dev-cockpit commands, split into git.rs, worktree.rs, project.rs, fs.rs,
-                             providers.rs, skills.rs, usage.rs (per-provider usage read from
-                             local CLI files, display-only) (+ mod.rs re-exports + shared helpers)
-  src/persist.rs             crash-safe JSON state store (~/.hyprspace/v2)
-  src/oauth.rs               loopback listener for the app's own Google/Supabase sign-in (PKCE)
-  src/license.rs             Ed25519 license verification
-  src/ai.rs                  ai_name_space (auto-name open spaces)
-  tauri.conf.json            app config, version, updater endpoint + pubkey, capabilities
-  capabilities/default.json  Tauri permission grants
-
-mobile/                      the Android companion app — its own Expo + React Native app (see its README)
-docs/                        documentation (start at docs/README.md)
-website/                     the marketing site — its own Vite + React + Tailwind app (bun)
+Cargo.toml                   the workspace: members, the app version, GPUI's pinned rev
+apps/hyprspace/              the binary: starts the engine, opens the window, `agent-hook` and
+                             `status-line` subcommands for Claude's hooks; assets/ (icons),
+                             package/ (NSIS script, macOS Info.plist)
+crates/
+  proto/                     the channel: Command, Event, RunEvent, Launch, AppState, Grid, folder,
+                             usage, skills and update messages. No GPUI
+  harness/                   Harness trait + claude/ (stream-json) and codex/ (app-server)
+                             adapters, catalog.rs (models and efforts), fixtures/fake_cli (tests)
+  engine/                    everything that isn't drawing. No GPUI. pty.rs, terminal.rs (agent
+                             launch commands), hooks.rs (Claude hook listener), journal.rs,
+                             requests.rs (state, agents, resume list, clone), folder.rs + git/,
+                             open.rs, usage/ (live.rs, local.rs, status.rs), providers.rs,
+                             sessions.rs, skills.rs, persist.rs, legacy.rs (Tauri state import),
+                             update.rs, env.rs (PATH rebuild, Ctrl+C, Claude session markers)
+  ui/                        the GPUI app: root/, sidebar/, composer/, transcript/, terminal/,
+                             panes/, dock/, viewer/, palette/, settings/, skills/, usage/,
+                             update/, intro/, markdown/, input/ (text box with IME), widgets.rs
+  theme/                     tokens and the six themes, light and dark, as plain data
+  syntax/                    tree-sitter highlighting for the viewer. No GPUI
+  update/                    feed, signature check, install; examples/verify.rs for CI
+scripts/                     package-windows.ps1, package-macos.sh, ci-build-latest.mjs
+                             (writes latest.json), check-windows-install.ps1, the upgrade test's
+                             check-upgrade-*.{ps1,sh} and tauri-autoinstall.patch, logo.svg
+mobile/                      the Android app, its own Expo + React Native project (see its README)
+website/                     the marketing site, its own Vite + React + Tailwind app (bun)
+docs/                        documentation (start at docs/README.md); adr/ holds the decisions
+.github/workflows/           check.yml, release.yml, upgrade-test.yml
 CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contributors)
-.github/workflows/release.yml  macOS CI build (merges darwin into the release manifest)
 ```
 
 ---
 
 ## Architecture in one screen
 
-- **Spaces model.** A `workspace` is either a **project** (a folder, `kind !== "open"`) or an
-  **open space** (`kind: "open"`, a scratch space whose panes can each be in a different folder).
-  Each holds `sessions` (panes). State lives in `stores/workspace.ts`, persisted via `persist.rs`.
-- **Panes = PTYs.** `TerminalPane` ↔ a `PtyManager` session. A pane runs a bare shell
-  (`powershell`/`$SHELL`) and the launch command (e.g. `claude --permission-mode acceptEdits`) is
-  **typed into the shell as keystrokes** — not passed as argv. Provider command strings come from
-  `actions.ts` (`claudeCmd`/`geminiCmd`/`codexCmd`/`WSL_CMD`) and are constant (no user/LLM data
-  interpolated into them).
-- **Composer.** `components/composer/ComposerPane` is where a session starts: pick the agent, model
-  and effort (`ModelPicker`, catalog in `lib/models.ts`, installed CLIs from `stores/providers.ts`),
-  type a task, press Enter. "New session" (`actions.newSession`) adds a **draft** session
-  (`Session.draft`) that renders as a composer pane in the grid; submitting calls `startDraft`, which
-  turns it into a normal pane under the same id, and `lib/composer.ts` **types the prompt in as
-  keystrokes** once the CLI is up (claude: its status line; other CLIs: a fixed delay). An empty
-  space shows a composer too. Under the box: the CLI's saved conversations for the folder
-  (`agent_sessions` reads claude's transcripts and codex's rollouts; `actions.resumeCmd` reopens
-  one), and a clone card when the text starts with a repository link (`git_clone`). Terminal path
-  only, no SDK, no token.
-- **Model / effort flags.** `actions.commandFor(provider, choice)` builds the launch command; the
-  per-agent defaults live in settings (`agentModel`, `agentEffort`) and the composer edits them.
-  Claude takes `--effort low|medium|high|xhigh|max`, Codex `-c model_reasoning_effort=...`. Effort
-  levels are per model: Codex's list (and each model's levels, up to `ultra`) is read from its own
-  `~/.codex/models_cache.json` by `stores/providers.ts`; the static catalog is the fallback.
-- **Sidebar.** One resizable column (`Rail`): search, then every space as a section that folds open
-  to its threads (`SessionRow`), the active space open by default with its working tree's file
-  count and line deltas. Rows drag to reorder; dropping on another space moves the pane there.
-  A space can be archived (`Workspace.archived`): it parks under an "Archived" group at the bottom
-  with its panes still running. Row state comes from
-  claude's hooks (`stores/agentStatus`) or, for CLIs without hooks, from the terminal output
-  (`lib/agentHeuristics`: recent output = working, a question in the last lines = waiting).
-- **Usage.** The meter prefers `devtools/live_usage.rs`, which reads the account's real limits from
-  each provider's usage endpoint (see rule 1) every 180s for Claude and 60s for Codex, with a
-  cooldown on 429/5xx. When that can't answer — signed out, offline, rate limited with nothing
-  cached — it falls back to what arrives for free: claude's status line pushing `rate_limits` every
-  turn (`stores/usage.ts`, fed by `agenthook.rs`), and codex's rollout files (`devtools/usage.rs`).
-- **Right dock.** `components/dock/Dock` (Ctrl+Shift+G): Files (`FilesPanel`, a lazy tree with git
-  decorations) and Git (`GitPanel`, tick files to stage, summary + description, commit to the branch,
-  push when ahead). It follows the focused pane's folder. Resizable from its left edge.
-- **Pane grid.** Layout presets in `lib/grid.ts`; the boundaries between tracks that no pane spans
-  are draggable (`resizableBoundaries`), and dragged weights persist per layout in
-  `Workspace.tracks`. The pane header is a grip, the agent mark, the name, and a close button;
-  double-click it to maximize.
-- **Editor.** `CodeEditor` (CodeMirror) opens as a pane tab when you ctrl+click a file path in a
-  terminal, or a file in the dock's Files tab. A changed file in the Git tab opens its diff as a
-  pane the same way (`DiffViewer`, `Session.diff`).
-- **IPC discipline.** Components call `src/api/index.ts` wrappers, never `invoke()` directly. Sync
-  Tauri commands run on the UI thread, so anything filesystem-heavy is `async fn` + `spawn_blocking`.
-- **Windows note.** `claude` is a `.cmd` shim, so it's spawned via `cmd /c claude …` so PATHEXT
-  resolves it. Prompts go over stdin to avoid shell-escaping.
+- **Engine and UI.** `apps/hyprspace` starts the engine (`Engine::start`, its own two-worker tokio
+  runtime) and hands the two channel ends to `ui::Root`. The UI sends `Command`s, fire and forget;
+  the engine answers with `Event`s, each naming the session or request it is about. The command
+  loop handles one command at a time, so keystrokes reach a PTY in order; slow work (git, clones,
+  `--version` checks) goes to the blocking pool.
+- **Spaces and threads.** `proto::state::AppState` holds the spaces (one folder each, no open
+  spaces since ADR 0008), their threads (each with the `Launch` it resumes with), each space's
+  `Grid`, the composer's picks and the appearance. The UI owns its shape; the engine saves it
+  whole to `~/.hyprspace/native/state.json`. On a first run the engine imports the Tauri app's
+  `~/.hyprspace/v2`, read only (ADR 0012).
+- **Structured sessions.** `harness::Harness::start` returns a `Session` that owns the CLI process:
+  `send` starts a run or steers the live one, `interrupt` ends it, `answer` replies to an
+  approval, drop kills the CLI. Claude runs as `claude --print --input-format stream-json
+  --output-format stream-json --verbose --permission-prompt-tool stdio ...`; Codex as its
+  app-server over JSON-RPC. Both become `RunEvent`s, with exactly one `Finished` per run. Each
+  thread's events are appended to a journal and replayed after a restart (ADR 0004, 0005).
+- **Terminal sessions.** `engine/src/pty.rs` spawns a bare shell; `terminal.rs` builds the agent's
+  launch command from fixed flags and catalog ids and types it into the shell once it first
+  prints. User text never goes into a command line: Claude gets the prompt typed in at its first
+  status line, Codex and Gemini read it from `HYPRSPACE_PROMPT`. Claude's hooks re-invoke our
+  binary (`hyprspace agent-hook`), which posts to a loopback listener for the sidebar's live state
+  (ADR 0006). The UI's `terminal/` folds bytes through `alacritty_terminal` and paints the grid.
+- **Composer.** Agent, model, effort, permission (`Plan`, `Ask`, `Auto`, `Bypass`, mapped per CLI
+  in ADR 0004), structured or terminal, the resume list (the CLI's saved conversations for the
+  folder), and a clone card when the text starts with a repository link.
+- **Panes, dock and viewer.** Each space's `Grid` tiles the threads on screen with grid.ts's
+  presets, draggable boundaries, drag-to-swap and double-click to maximize. Clicking a sidebar row
+  replaces the focused pane; ctrl+click adds one. The dock (Ctrl+Shift+G) has the file tree and the
+  git tab; one read-only viewer pane per space shows a file or a diff. Folder work rides
+  `Command::Folder` behind one git lock (ADR 0007).
+- **Usage.** `engine/src/usage/live.rs` reads each provider's usage endpoint (rule 1) and answers
+  inside the floor (180s Claude, 60s Codex) from its last reading, backing off on 429 and 5xx. One
+  `ui::usage::Limits` entity holds every reading for the ring and Settings, and falls back to
+  Claude's status-line reports and Codex's session files (ADR 0009).
+- **Updates.** `crates/update` reads the same `latest.json` and verifies with the same key the Tauri
+  app used. Only an installed copy updates itself; `cargo run` builds never do (ADR 0010, 0011).
 
-Full design details (session/cwd pinning, the hook backend, PTY coalescing):
-**[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
+Full design details: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** and
+**[docs/adr/](./docs/adr/)**.
 
 ---
 
 ## Gotchas learned the hard way
 
-- **`claude --resume <id>` is folder-scoped.** A session only resumes in the directory it was
-  created in, so anything that resumes has to pin the `cwd` the session was created with. If a
-  resume fails ("No conversation found"), drop the dead session id and start fresh.
-- **Open spaces have no `cwd`** — code that pins/falls-back to cwd uses `??` (not `||`) so an empty
-  string is preserved, not replaced.
-- **CSP is currently `null`.** A strict CSP breaks Vite dev HMR, so it's a production-build task,
-  not a dev change.
-- **Persisted state names** are sanitized to a token in `persist.rs`, and large blobs are capped on
-  save so the store can't grow unbounded.
+- **`claude --resume <id>` is folder-scoped.** A conversation only resumes in the directory it was
+  created in, so the Claude harness looks the id up under `~/.claude/projects/` and spawns in the
+  folder its transcript records, whatever `cwd` the caller passed.
+- **Never type into an agent CLI on a timer.** An Enter meant for a Codex prompt once landed on
+  Codex's "update available" dialog and upgraded the user's codex. Type only after a real signal
+  (Claude's status line), or pass the prompt at start.
+- **ConPTY hosts orphan.** Every exit path has to end in `Engine::shutdown`. Check for leftover
+  `OpenConsole.exe`, shells and CLIs after closing the app.
+- **A `.cmd` shim runs through `cmd /c`.** Killing `cmd` can leave the node child behind; the
+  native `claude.exe` is unaffected.
+- **Ctrl+C can arrive ignored.** A parent that started us with Ctrl+C ignored passes that on to
+  every shell; `env.rs` takes it back at startup.
+- **`secondary` in a key binding** is Ctrl on Windows and Cmd on macOS. The palette's Ctrl+K is
+  bound outside the `Terminal` context only, because Ctrl+K is kill-line in a shell.
+- **Checks without side effects.** `HYPRSPACE_OPEN_LOG` logs editor and Explorer launches instead
+  of running them, and `HYPRSPACE_USAGE_FIXTURES` reads usage from files instead of spending the
+  request bucket Claude Code shares.
+- **The update feed and key are compile-time only** (`HYPRSPACE_UPDATE_FEED`,
+  `HYPRSPACE_UPDATE_PUBKEY` through `option_env!`), so a shipped build can't be pointed elsewhere.
+- **Persisted names** (state files, journals) are sanitized to a token so they can't leave their
+  folder. Journals are never trimmed yet.
 
 ## Docs index
-- [docs/README.md](./docs/README.md) — index of everything below
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — how the tricky subsystems work
-- [docs/VERSIONING.md](./docs/VERSIONING.md) — when to bump which digit
-- [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) — building the macOS app locally
+- [docs/README.md](./docs/README.md): index of everything below
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md): how the tricky subsystems work
+- [docs/CONTEXT.md](./docs/CONTEXT.md): the domain words
+- [docs/adr/](./docs/adr/): decisions and their reasons
+- [docs/VERSIONING.md](./docs/VERSIONING.md): when to bump which digit
+- [docs/BUILD-MAC.md](./docs/BUILD-MAC.md): building the macOS app locally
+- [docs/REWRITE.md](./docs/REWRITE.md): the GPUI rewrite, as history

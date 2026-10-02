@@ -1,3 +1,6 @@
 # Shell scripts must stay LF everywhere. A CRLF install.sh dies with "bad interpreter" the moment
 # anyone pipes it into sh, and Windows checkouts convert by default.
 *.sh text eol=lf
+
+# A patch applies byte for byte, so a CRLF checkout would stop it matching the files it patches.
+*.patch text eol=lf

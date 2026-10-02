@@ -208,7 +208,7 @@ export function PaletteVignette() {
 /** the review dock's diff */
 export function DiffVignette() {
   return (
-    <Panel label="src-tauri/src/agenthook.rs">
+    <Panel label="crates/engine/src/hooks.rs">
       <div className={`${mono} px-3 pb-3`}>
         <div style={{ color: T3 }}>126 fn post(port: u16, body: &amp;str) &#123;</div>
         <div style={{ background: "rgba(16,185,129,0.1)", color: "#86efac" }}>127 + let addr = SocketAddr::from(..);</div>

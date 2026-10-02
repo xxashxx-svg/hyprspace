@@ -152,8 +152,8 @@ const TABS = [
   {
     key: "src",
     label: "From source",
-    cmd: `git clone ${REPO} && cd hyprspace && npm install && npm run tauri dev`,
-    note: "Needs Node and the Rust toolchain.",
+    cmd: `git clone ${REPO} && cd hyprspace && cargo run --release -p hyprspace`,
+    note: "Needs the Rust toolchain.",
   },
 ]
 

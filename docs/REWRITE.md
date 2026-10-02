@@ -1,7 +1,9 @@
 # HyprSpace native rewrite (GPUI)
 
 The brief for rebuilding HyprSpace as a native Rust app on GPUI, with structured agent sessions as
-the main experience. Decided by Ash on 2026-10-02. Read this whole file before touching the rewrite.
+the main experience. Decided by Ash on 2026-10-02. **Done on 2026-10-02:** every phase below is
+complete and the Tauri app is deleted (see "Deleting the Tauri app" at the end). This file is now
+history; CLAUDE.md is the guide to the app as it is.
 
 ## Decisions
 
@@ -47,6 +49,7 @@ fresh session can pick up exactly where the last one stopped.
    Windows and macOS. Every current user updates through the Tauri updater, so the first GPUI
    release has to install through it: see "Upgrading from the Tauri app" below.
    *Done when* every checklist row is ticked; then delete `src/`, `src-tauri/` and the npm setup.
+   **Done 2026-10-02:** every row ticked, and the Tauri app and the npm setup deleted.
 
 ## Code standard
 
@@ -100,7 +103,7 @@ Facts as of 2026-10-02. Recheck the sources before shipping structured Claude se
 ## Architecture
 
 ```
-Cargo.toml            workspace (src-tauri stays outside it until the Tauri app is deleted)
+Cargo.toml            workspace (src-tauri stayed outside it until the Tauri app was deleted)
 crates/
   proto/              wire and domain types shared by everything: sessions, events, tool calls
   harness/            Harness trait + claude/, codex/ adapters, process spawning, fake-CLI tests
@@ -587,3 +590,35 @@ changes the workflow or its scripts also runs it).
 versions (tauri 2.11.2, which relaunches the binary the new Info.plist names; updater 2.10.1).
 Linux v0.21.1 users find no `linux-x86_64` entry, which their updater reads as up to date.
 
+## Deleting the Tauri app
+
+Done on 2026-10-02, step 6's last part. The last Tauri release stays reachable as the `v0.21.1`
+tag, which is what upgrade-test.yml builds.
+
+**Deleted:** `src/` (the React app), `src-tauri/` (its Rust backend, icons and Tauri config),
+`public/`, `index.html`, `vite.config.ts`, `tsconfig.json`, `tsconfig.node.json`,
+`eslint.config.js`, `package.json`, `package-lock.json`, `.env.example` (Supabase and PostHog keys
+only the webview read), and the untracked `dist/` (Vite output). Also `scripts/gen-icon.mjs` and
+`scripts/site-shot.mjs`: both needed `sharp` from the root npm setup, and `gen-icon.mjs` fed
+`tauri icon`. The app's icons are checked in under `apps/hyprspace/assets`. Kept: `mobile/` and
+`website/` with their own package files, and `scripts/ci-build-latest.mjs`, which uses only Node's
+built-ins and runs with `node` in CI.
+
+**Changed to match:**
+
+- `upgrade-test.yml` builds the Tauri app from a `git worktree` of `v0.21.1` in `$RUNNER_TEMP`
+  (inside the checkout, the root Cargo workspace would claim its `src-tauri`). The test switch
+  that used to live in `src/components/Updater.tsx` is now `scripts/tauri-autoinstall.patch`,
+  applied to the worktree's index; the job fails unless that file is the only change from the tag.
+- `release.yml` no longer installs a root npm setup for the Android job (`termHtml.ts` is
+  committed). `check.yml` also runs on pushes to `main`. `deploy.ps1` bumps only the workspace
+  version and `Cargo.lock`. The root `Cargo.toml` no longer excludes `src-tauri`; `.gitignore`
+  ignores a leftover `src-tauri/` in older checkouts.
+- CLAUDE.md, README.md, CONTRIBUTING.md, SECURITY.md, the PR and bug templates, and docs/
+  (README, ARCHITECTURE, VERSIONING, BUILD-MAC) now describe the GPUI app. CLAUDE.md rule 1 is
+  unchanged; Ash rewrites it for structured sessions (Billing and compliance).
+
+**Left as is:** comments in `crates/` that say which `src-tauri` or `src` file code was copied
+from (the files are in the tag), the ADRs and this file (history), `docs/CHANGELOG.md`, and
+`mobile/`, which paired with the deleted `src-tauri/src/bridge.rs` and has nothing to pair with
+until it is redone. The GPUI app sends no analytics; the Tauri app's PostHog event left with it.

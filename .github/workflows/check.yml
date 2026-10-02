@@ -1,12 +1,11 @@
 name: check
 
-# The rewrite's check (docs/REWRITE.md, Code standard): fmt, clippy with warnings as errors, and
-# the tests, for the whole Cargo workspace on Windows and macOS. A red check blocks the phase.
-# The Tauri app (src-tauri) sits outside the workspace and is not built here.
+# The check (CLAUDE.md, Run, build and check): fmt, clippy with warnings as errors, and the
+# tests, for the whole Cargo workspace on Windows and macOS. A red check blocks a merge.
 
 on:
   push:
-    branches: [rewrite]
+    branches: [main, rewrite]
   pull_request:
     paths:
       - "Cargo.toml"
@@ -51,8 +50,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          # only the rewrite branch writes the cache; pull requests restore it
-          save-if: ${{ github.ref == 'refs/heads/rewrite' }}
+          # only pushed branches write the cache; pull requests restore it
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: fmt
         run: cargo fmt --all --check

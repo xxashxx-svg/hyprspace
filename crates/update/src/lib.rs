@@ -1,10 +1,11 @@
 //! Self-update, compatible with the Tauri app's release pipeline on purpose.
 //!
 //! CI publishes `latest.json` on each GitHub release (`scripts/ci-build-latest.mjs`) and signs
-//! every installer with the minisign key whose public half lives in `src-tauri/tauri.conf.json`.
-//! The Tauri app updates from that same file and key, and so does this crate: one feed, one key,
-//! so the last Tauri version can install the first GPUI release and the GPUI app keeps updating
-//! from the same place afterwards (docs/REWRITE.md, "Upgrading from the Tauri app").
+//! every installer with the minisign key whose public half the Tauri app shipped in its
+//! `src-tauri/tauri.conf.json` (see the v0.21.1 tag). The Tauri app updates from that same file
+//! and key, and so does this crate: one feed, one key, so the last Tauri version can install the
+//! first GPUI release and the GPUI app keeps updating from the same place afterwards
+//! (docs/REWRITE.md, "Upgrading from the Tauri app").
 //!
 //! Flow: [`check`] reads the feed and returns an [`Update`] when it's newer, [`download`] fetches
 //! the artifact and refuses it unless the signature verifies, [`stage`] writes it to disk, then
@@ -27,9 +28,9 @@ pub const ENDPOINT: &str = match option_env!("HYPRSPACE_UPDATE_FEED") {
     None => "https://github.com/xxashxx-svg/hyprspace/releases/latest/download/latest.json",
 };
 
-/// The updater's public key, byte for byte the `plugins.updater.pubkey` in
-/// `src-tauri/tauri.conf.json`: base64 of a minisign public key file. A test build swaps in a
-/// test key with `HYPRSPACE_UPDATE_PUBKEY` at build time, like [`ENDPOINT`].
+/// The updater's public key, byte for byte the `plugins.updater.pubkey` in the Tauri app's
+/// `src-tauri/tauri.conf.json` (v0.21.1): base64 of a minisign public key file. A test build swaps
+/// in a test key with `HYPRSPACE_UPDATE_PUBKEY` at build time, like [`ENDPOINT`].
 pub const PUBKEY: &str = match option_env!("HYPRSPACE_UPDATE_PUBKEY") {
     Some(key) => key,
     None => {

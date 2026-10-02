@@ -1,23 +1,27 @@
 # HyprSpace
 
-A multi-terminal AI workspace. Tile a bunch of Claude Code / Gemini / Codex / shell sessions side by
-side and drive them all from one window. Built with Tauri 2 and React.
+A native desktop workspace for coding agents. Run Claude Code, Codex, Gemini and plain shells side
+by side in one window. Written in Rust on [GPUI](https://github.com/zed-industries/zed), Zed's GPU
+UI framework.
 
 ![HyprSpace workspace](./website/src/assets/shots/workspace.png)
 
-Work is organised into **projects** (a folder) and **open spaces** (a scratch space whose panes can
-each sit in a different folder). Every pane is a real PTY running a real agent CLI, so anything you'd
-normally do in a terminal still works.
+Each folder you work in is a **space** in the sidebar, and each conversation in it is a
+**thread**. A thread runs one of two ways:
 
-- **Per-pane resume**, drag-to-swap panes, and a command palette.
-- **Loops.** Scheduled, interval, until-done or manual agents, with mandatory stop limits and
-  optional git-worktree isolation.
-- **Git review dock** plus an integrated CodeMirror editor for reviewing and fixing what the agents
-  did.
-- **Startup services** per folder, themes, and auto-update.
+- **Structured session.** Claude or Codex is driven over its own machine protocol and drawn as a
+  transcript: streaming replies, tool calls, diffs, and approval prompts you answer in place. You
+  can steer a run while it works, interrupt it, and pick it back up after a restart.
+- **Terminal session.** A real PTY running your shell, or an agent CLI interactively, so anything
+  you'd do in a terminal still works. Claude's hooks keep the sidebar's status live.
 
-It runs agents on *your* CLIs and *your* logins. HyprSpace spawns the `claude` / `gemini` / `codex`
-binary you already have installed and authenticated, and never touches your subscription
+Threads tile in a grid of panes you can resize, swap and maximize. A dock shows the folder's file
+tree and a git tab (stage, commit, push, diffs), a viewer shows files with highlighting, and a
+usage meter shows your Claude and Codex limits. A command palette (Ctrl+K, or Cmd+K on a Mac)
+reaches the rest.
+
+It runs agents on *your* CLIs and *your* logins. HyprSpace spawns the `claude` / `codex` /
+`gemini` binary you already have installed and authenticated, and never touches your subscription
 credentials.
 
 ## Install
@@ -31,56 +35,58 @@ irm https://hyprspace.dev/install.ps1 | iex          # Windows
 ```
 
 macOS gets the app in `/Applications`, Windows runs the signed per-user installer (no admin prompt). Both scripts are
-plain text — [read install.sh](https://hyprspace.dev/install.sh) before you pipe it anywhere. If
+plain text: [read install.sh](https://hyprspace.dev/install.sh) before you pipe it anywhere. If
 you'd rather click a button, the [releases page](https://github.com/xxashxx-svg/hyprspace/releases)
-has the `.exe` and `.dmg`. HyprSpace ships for Windows and macOS; Linux builds stopped in October 2026.
+has the `.exe` and `.dmg`. HyprSpace ships for Windows and macOS on Apple silicon; Linux builds
+stopped in October 2026. An installed copy updates itself.
 
 Everything below is for building it from source.
 
 ## Prerequisites
 
-- **Rust**, stable toolchain, via [rustup](https://rustup.rs).
-- **Node 18+** (20 or 22 recommended) and npm.
+- **Rust 1.98.1** via [rustup](https://rustup.rs) (`rustup toolchain install 1.98.1`), the
+  toolchain CI uses.
 - **Windows:** the MSVC C++ build tools ("Desktop development with C++" in the Visual Studio Build
-  Tools), plus the WebView2 runtime. WebView2 already ships with Windows 11 and current Windows 10;
-  otherwise grab the evergreen installer from Microsoft.
-- **macOS:** `xcode-select --install`. See [docs/BUILD-MAC.md](./docs/BUILD-MAC.md) for producing a `.dmg`.
+  Tools). [NSIS 3](https://nsis.sourceforge.io) only if you build the installer.
+- **macOS:** Xcode, plus its Metal toolchain (`xcodebuild -downloadComponent MetalToolchain`), since
+  GPUI compiles its shaders at build time. See [docs/BUILD-MAC.md](./docs/BUILD-MAC.md).
 
-To launch agents you'll also want at least one agent CLI installed and logged in (`claude`, `gemini`,
-or `codex`). Panes running a plain shell work without any of them.
+To launch agents you'll also want at least one agent CLI installed and logged in (`claude`,
+`codex` or `gemini`). Terminal sessions running a plain shell work without any of them.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/xxashxx-svg/hyprspace.git
 cd hyprspace
-npm install
-npm run tauri dev
+cargo run -p hyprspace
 ```
 
-First run compiles the Rust side, so give it a few minutes. After that TS changes hot-reload, and
-Rust changes trigger a recompile and relaunch.
+The first build compiles GPUI and the rest of the dependency tree, so give it a few minutes.
+`cargo run -p hyprspace -- <folder>` opens straight into that folder.
 
-Sign-in is optional. If you want it, copy `.env.example` to `.env` and fill in `VITE_SUPABASE_URL`
-and `VITE_SUPABASE_ANON_KEY` from your own Supabase project. Leave them blank and the app skips the
-sign-in gate entirely, which is usually what you want locally.
+A dev build keeps its state in `~/.hyprspace/native`, the same place an installed copy does. Set
+`HYPRSPACE_STATE_DIR` to another folder to keep the two apart.
 
-Production build:
+Release build and installers:
 
 ```bash
-npm run tauri build       # Windows NSIS installer by default
+cargo build --release -p hyprspace    # target/release/hyprspace(.exe)
+./scripts/package-windows.ps1         # Windows: target/package/HyprSpace_<version>_x64-setup.exe
+bash scripts/package-macos.sh         # macOS: target/package/HyprSpace.app and a .dmg
 ```
 
 ## Architecture
 
-The short version: panes are PTYs managed by Rust (`src-tauri/src/pty.rs`), the launch command gets
-typed into the shell as keystrokes rather than passed as argv, state lives in Zustand stores and is
-persisted by `src-tauri/src/persist.rs`, and the frontend never calls Tauri `invoke()` directly but
-goes through `src/api/index.ts`.
+The short version: a Cargo workspace where the engine (sessions, PTYs, git, usage, persistence)
+never depends on the UI, and the GPUI app reaches it only through a typed channel of commands and
+events. Structured sessions run through one adapter per CLI (`crates/harness`); terminal sessions
+are PTYs whose launch command is typed into the shell, never built from user text.
 
 - **[CLAUDE.md](./CLAUDE.md)** is the project guide: repo map, hard constraints, architecture
   overview. Read it before writing code. It's written for humans and AI agents alike.
-- **[docs/](./docs/README.md)** goes deeper on the subsystems, versioning, and the security audit.
+- **[docs/](./docs/README.md)** goes deeper on the subsystems, the decisions behind them, and
+  versioning.
 
 ## Contributing
 
@@ -92,7 +98,8 @@ Found a security issue? Don't open an issue. See [SECURITY.md](./SECURITY.md).
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE). Code adapted from other projects is credited in
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
 The File Explorer icon in the Open menu is by [Icons8](https://icons8.com), used under their free license.
 
@@ -100,6 +107,6 @@ The File Explorer icon in the Open menu is by [Icons8](https://icons8.com), used
 
 ### Releasing (maintainers)
 
-Releases are cut with maintainer-local tooling that bumps the version files, builds and signs the
-installer, and publishes it with an update manifest. It needs the project's signing keys, so it's
-maintainer-only. Bump levels: [docs/VERSIONING.md](./docs/VERSIONING.md).
+`deploy.ps1` bumps the version, writes the changelog, tags, and hands the build to CI, which signs
+the installers with the project's updater key held in the repo's secrets. Bump levels:
+[docs/VERSIONING.md](./docs/VERSIONING.md).

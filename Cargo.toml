@@ -10,13 +10,13 @@ members = [
     "crates/update",
     "apps/hyprspace",
 ]
-# The Tauri app builds on its own until the GPUI app reaches parity (docs/REWRITE.md).
-exclude = ["src-tauri", "mobile"]
+# The Android app is its own Expo project, not part of this workspace.
+exclude = ["mobile"]
 
 [workspace.package]
 # The app's version, for every crate. deploy.ps1 bumps it with each release (docs/VERSIONING.md);
-# never edit it by hand. It matches the Tauri app's numbering so its updater sees the GPUI
-# release as newer.
+# never edit it by hand. It continues the Tauri app's numbering, so that app's updater saw the
+# first GPUI release as newer.
 version = "0.21.1"
 edition = "2024"
 license = "MIT"

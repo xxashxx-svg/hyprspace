@@ -2,15 +2,18 @@ name: upgrade-test
 
 # Proves the last Tauri version updates into the GPUI app (docs/REWRITE.md, "Upgrading from the
 # Tauri app"). Each job builds and signs the GPUI app the way release.yml does, with the real
-# updater key, and builds the Tauri app from src-tauri, which is v0.21.1's code, with three build
-# overrides: its feed is a server on the runner, its version is one below so the feed is newer,
-# and it presses "Restart & update" itself (VITE_UPDATE_AUTOINSTALL, inert in a normal build).
-# Its real updater then downloads, verifies with the real public key, installs and relaunches,
-# and scripts/check-upgrade-*.{ps1,sh} check what the user ends up with.
+# updater key. It builds the Tauri app from a second checkout of the v0.21.1 tag, since that code
+# left this branch, with one patch and three build overrides. The patch
+# (scripts/tauri-autoinstall.patch) makes it press "Restart & update" itself when built with
+# VITE_UPDATE_AUTOINSTALL=1, and is inert otherwise. The overrides point its feed at a server on
+# the runner, set its version one below so the feed is newer, and turn off updater artifacts. Its
+# real updater then downloads, verifies with the real public key, installs and relaunches, and
+# scripts/check-upgrade-*.{ps1,sh} check what the user ends up with.
 #
 # Run: gh workflow run upgrade-test.yml --ref rewrite
-# A push to rewrite that changes this file or the check scripts also runs it: GitHub only offers
-# workflow_dispatch for a workflow it has seen run, and this one isn't on the default branch.
+# A push to rewrite that changes this file, the patch or the check scripts also runs it: GitHub
+# only offers workflow_dispatch for a workflow it has seen run, and this one isn't on the default
+# branch.
 #
 # It never creates, edits or uploads to a release: the token is read-only and nothing here calls
 # `gh release`. Results are workflow artifacts (upgrade-windows, upgrade-macos).
@@ -22,12 +25,13 @@ on:
     paths:
       - .github/workflows/upgrade-test.yml
       - scripts/check-upgrade-*
+      - scripts/tauri-autoinstall.patch
 
 permissions:
   contents: read
 
 env:
-  # the Tauri release users have now; the job checks src/ and src-tauri/ still match it
+  # the Tauri release users have now, built from its tag with only the patch above on top
   LAST_TAURI: v0.21.1
   # what the test build of the Tauri app calls itself, so the GPUI version reads as newer
   TAURI_AS: "0.21.0"
@@ -43,6 +47,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the LAST_TAURI tag
+      # Outside this checkout: inside it, the root Cargo workspace would claim src-tauri.
+      - name: The Tauri app under test is the last release's code
+        shell: bash
+        run: |
+          tauri="$RUNNER_TEMP/tauri"
+          git worktree add --detach "$tauri" "$LAST_TAURI"
+          # applied to the index, where the file is LF as committed, then written out
+          git -C "$tauri" apply --cached "$GITHUB_WORKSPACE/scripts/tauri-autoinstall.patch"
+          git -C "$tauri" checkout -- src/components/Updater.tsx
+          changed=$(git -C "$tauri" status --porcelain)
+          echo "changed from $LAST_TAURI: ${changed:-nothing}"
+          if [ "$changed" != "M  src/components/Updater.tsx" ]; then
+            echo "::error::The Tauri app differs from $LAST_TAURI beyond the test switch in Updater.tsx"
+            exit 1
+          fi
+          git -C "$tauri" diff --cached
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -54,17 +74,7 @@ jobs:
           key: upgrade-test
           workspaces: |
             . -> target
-            src-tauri -> target
-      - name: The Tauri app under test is the last release's code
-        shell: bash
-        run: |
-          changed=$(git diff --name-only "$LAST_TAURI" HEAD -- src src-tauri index.html vite.config.ts package.json package-lock.json public tsconfig.json tsconfig.node.json)
-          echo "changed since $LAST_TAURI: ${changed:-nothing}"
-          if [ "$changed" != "src/components/Updater.tsx" ]; then
-            echo "::error::The Tauri app differs from $LAST_TAURI beyond the test switch in Updater.tsx"
-            exit 1
-          fi
-          git diff "$LAST_TAURI" HEAD -- src/components/Updater.tsx
+            ${{ runner.temp }}/tauri/src-tauri -> target
       - name: NSIS
         shell: pwsh
         run: |
@@ -100,6 +110,7 @@ jobs:
           cat feed/latest.json
       - name: Build the Tauri app with its feed on this runner
         shell: bash
+        working-directory: ${{ runner.temp }}/tauri
         env:
           VITE_UPDATE_AUTOINSTALL: "1"
         run: |
@@ -109,7 +120,7 @@ jobs:
       - name: Let the Tauri app update itself into the GPUI app
         shell: pwsh
         run: |
-          $old = (Get-Item "src-tauri/target/release/bundle/nsis/HyprSpace_${env:TAURI_AS}_x64-setup.exe").FullName
+          $old = (Get-Item "$env:RUNNER_TEMP/tauri/src-tauri/target/release/bundle/nsis/HyprSpace_${env:TAURI_AS}_x64-setup.exe").FullName
           ./scripts/check-upgrade-windows.ps1 -Old $old -Feed feed -Out upgrade-logs -Port $env:FEED_PORT
       - name: Keep the logs and screenshots
         if: always()
@@ -127,6 +138,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Outside this checkout: inside it, the root Cargo workspace would claim src-tauri.
+      - name: The Tauri app under test is the last release's code
+        run: |
+          tauri="$RUNNER_TEMP/tauri"
+          git worktree add --detach "$tauri" "$LAST_TAURI"
+          # applied to the index, where the file is LF as committed, then written out
+          git -C "$tauri" apply --cached "$GITHUB_WORKSPACE/scripts/tauri-autoinstall.patch"
+          git -C "$tauri" checkout -- src/components/Updater.tsx
+          changed=$(git -C "$tauri" status --porcelain)
+          echo "changed from $LAST_TAURI: ${changed:-nothing}"
+          if [ "$changed" != "M  src/components/Updater.tsx" ]; then
+            echo "::error::The Tauri app differs from $LAST_TAURI beyond the test switch in Updater.tsx"
+            exit 1
+          fi
+          git -C "$tauri" diff --cached
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -141,15 +167,7 @@ jobs:
           key: upgrade-test
           workspaces: |
             . -> target
-            src-tauri -> target
-      - name: The Tauri app under test is the last release's code
-        run: |
-          changed=$(git diff --name-only "$LAST_TAURI" HEAD -- src src-tauri index.html vite.config.ts package.json package-lock.json public tsconfig.json tsconfig.node.json)
-          echo "changed since $LAST_TAURI: ${changed:-nothing}"
-          if [ "$changed" != "src/components/Updater.tsx" ]; then
-            echo "::error::The Tauri app differs from $LAST_TAURI beyond the test switch in Updater.tsx"
-            exit 1
-          fi
+            ${{ runner.temp }}/tauri/src-tauri -> target
       # ad hoc signed, as release.yml does until the Apple secrets exist
       - name: Build and bundle the GPUI app (as release.yml does)
         run: bash scripts/package-macos.sh
@@ -174,6 +192,7 @@ jobs:
           '
           cat feed/latest.json
       - name: Build the Tauri app with its feed on this runner
+        working-directory: ${{ runner.temp }}/tauri
         env:
           VITE_UPDATE_AUTOINSTALL: "1"
         run: |
@@ -181,7 +200,7 @@ jobs:
           conf="{\"version\":\"$TAURI_AS\",\"bundle\":{\"createUpdaterArtifacts\":false},\"plugins\":{\"updater\":{\"endpoints\":[\"http://127.0.0.1:$FEED_PORT/latest.json\"],\"dangerousInsecureTransportProtocol\":true}}}"
           node node_modules/@tauri-apps/cli/tauri.js build --bundles app --config "$conf"
       - name: Let the Tauri app update itself into the GPUI app
-        run: bash scripts/check-upgrade-macos.sh src-tauri/target/release/bundle/macos/HyprSpace.app feed upgrade-logs "$FEED_PORT"
+        run: bash scripts/check-upgrade-macos.sh "$RUNNER_TEMP/tauri/src-tauri/target/release/bundle/macos/HyprSpace.app" feed upgrade-logs "$FEED_PORT"
       - name: Keep the logs and screenshots
         if: always()
         uses: actions/upload-artifact@v4

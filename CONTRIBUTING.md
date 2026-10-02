@@ -1,25 +1,28 @@
 # Contributing to HyprSpace
 
-Thanks for taking a look. The frontend is TypeScript on Vite, the backend is Rust on Tauri 2.
+Thanks for taking a look. HyprSpace is a Rust app on GPUI, built as one Cargo workspace.
 
 ## Getting set up
 
 Prerequisites and the clone-to-running steps are in the
-[README](./README.md#prerequisites). Once `npm run tauri dev` works, you're ready.
+[README](./README.md#prerequisites). Once `cargo run -p hyprspace` opens a window, you're ready.
 
 To actually launch agents you need whichever CLI you want to use already installed and logged in
-(`claude`, `gemini`, `codex`). HyprSpace spawns them, it never authenticates on their behalf.
+(`claude`, `codex`, `gemini`). HyprSpace spawns them, it never authenticates on their behalf.
 
 ## Repo layout
 
 [CLAUDE.md](./CLAUDE.md) has the full repo map and an architecture overview, and it's the canonical
 reference. Read it first. The one-paragraph version:
 
-- `src/` is the React frontend. `components/` for UI, `stores/` for Zustand state, `api/index.ts` for
-  the typed bridge over Tauri `invoke()`, `styles/` for per-area CSS.
-- `src-tauri/src/` is the Rust side. `lib.rs` registers every command, `pty.rs` is the terminal
-  backend, `devtools/` is the git/fs/project command surface, `persist.rs` is the state store.
-- `docs/` is the deeper material, starting at [docs/README.md](./docs/README.md).
+- `apps/hyprspace` is the binary. It starts the engine, opens the window, and wires the two
+  together.
+- `crates/proto` is the typed channel between UI and engine, `crates/engine` does everything that
+  isn't drawing (sessions, PTYs, git, usage, persistence), `crates/harness` drives Claude and Codex
+  over their machine protocols, and `crates/ui` is the GPUI app. `theme`, `syntax` and `update`
+  are what their names say.
+- `docs/` is the deeper material, starting at [docs/README.md](./docs/README.md). The domain words
+  are in [docs/CONTEXT.md](./docs/CONTEXT.md) and the decisions in [docs/adr/](./docs/adr/).
 - `website/` is the marketing site, a separate Vite app with its own
   [README](./website/README.md).
 
@@ -28,20 +31,19 @@ reference. Read it first. The one-paragraph version:
 The full list of hard constraints lives in [CLAUDE.md](./CLAUDE.md). The ones that bite contributors
 most often:
 
-- **Vanilla CSS and design tokens only.** Use the variables in `src/styles/tokens.css`. No Tailwind
-  and no CSS-in-JS in the app. (The `website/` sub-project does use Tailwind. That's deliberate and
-  separate.)
-- **No `React.StrictMode`.** It's off in `main.tsx` on purpose, because double-mounting corrupts
-  xterm.js lifecycles. Don't re-add it.
-- **Don't churn `TerminalPane`.** Avoid patterns that frequently unmount and remount it, and always
-  dispose xterm instances and addons on cleanup. Orphaned ConPTY hosts burn CPU.
-- **Components call `src/api/index.ts`**, never `invoke()` directly. Filesystem-heavy Tauri commands
-  should be `async fn` plus `spawn_blocking`, since sync commands run on the UI thread.
-- **Keep comments minimal and casual.** Explain tricky logic only, lowercase, short. Match the
-  surrounding code rather than your own preferred style.
-- **Never hand-edit version numbers.** `deploy.ps1` owns the `version` field in
-  `src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`. A PR that bumps them will
-  be asked to revert it.
+- **Respect the boundary.** `proto` and `engine` never depend on GPUI, and `ui` never calls the
+  engine directly. It sends a `Command` and handles the `Event` that comes back. Something new that
+  has to cross gets a type in `proto`.
+- **No hard-coded colors in `ui`.** Use the tokens in `crates/theme`. Every theme has a light and a
+  dark side, so a line or fill is the theme's ink at an alpha, never a literal white or black.
+- **Don't orphan processes.** Every PTY and agent CLI has to die when its session closes and when
+  the app quits, or ConPTY hosts pile up and burn CPU.
+- **User text never goes into a command line.** Launch commands are built from fixed flags and
+  catalog ids. Prompts are typed in after the CLI is up or passed through an environment variable.
+- **Comment the why, not the what.** Match the surrounding code rather than your own preferred
+  style, and use the words in `docs/CONTEXT.md`.
+- **Never hand-edit version numbers.** `deploy.ps1` owns the `version` in the root `Cargo.toml`
+  and the workspace entries in `Cargo.lock`. A PR that bumps them will be asked to revert it.
 
 One more that's easy to trip over: HyprSpace runs Claude on the user's own subscription by spawning
 their already-logged-in `claude` CLI. Don't add a custom claude.ai OAuth flow, and don't read or
@@ -51,14 +53,14 @@ display-only fields like email or plan is fine.
 ## Checks before you push
 
 ```bash
-npm run typecheck     # tsc --noEmit, frontend
-npm run lint          # eslint
-cd src-tauri && cargo check
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 ```
 
-`npm run lint` currently reports warnings and no errors. Warnings are fine to leave, but don't add
-new ones. There's no test suite yet, so run the app and exercise whatever you changed. TS
-hot-reloads, Rust changes trigger a recompile and relaunch.
+CI runs the same three on Windows and macOS. The harness tests drive each adapter against a fake
+CLI, so they need no agent installed. UI changes aren't covered by tests: run the app and exercise
+whatever you changed.
 
 ## Opening a PR
 

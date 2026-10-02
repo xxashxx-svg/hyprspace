@@ -1,10 +1,8 @@
 # Versioning
 
 HyprSpace uses **adapted Semantic Versioning**: `MAJOR.MINOR.PATCH` (e.g. `0.2.5`). Every release
-bumps the version through the maintainer's release tooling. The source of truth is the Cargo
-workspace's `version` in the root `Cargo.toml`, which every crate of the GPUI app inherits; the
-Tauri app's three files (`tauri.conf.json`, `package.json`, `src-tauri/Cargo.toml`) move with it
-until that app is deleted.
+bumps the version through `deploy.ps1`. The one source of truth is the Cargo workspace's
+`version` in the root `Cargo.toml`, which every crate inherits.
 
 ```
    0   .   2   .   5
@@ -37,10 +35,11 @@ minor. Big shift / it's a new era → major.
 
 ## Hard rules (the updater depends on these)
 
-- **Always increase.** The Tauri updater compares versions; a flat or lower number means "no
-  update." Never reuse or roll back a version.
+- **Always increase.** The updater compares versions (the app's own, and the Tauri app's on
+  machines that never updated); a flat or lower number means "no update." Never reuse or roll back
+  a version.
 - **One bump per release.** Don't hand-edit version fields — `deploy.ps1` updates the workspace
-  (`Cargo.toml` and the workspace crates in `Cargo.lock`) and the Tauri files, tags `v<new>`, and
+  (`Cargo.toml` and the workspace crates in `Cargo.lock`), tags `v<new>`, and
   writes the manifest with the same number, so the in‑app version (Settings, General), git tag,
   and update feed can't drift. Release CI refuses a tag that doesn't match the workspace version.
 - **The GPUI app continues the Tauri app's numbers.** It started at 0.21.1, the last Tauri
@@ -48,7 +47,7 @@ minor. Big shift / it's a new era → major.
 
 ## The Android app ([`mobile/`](../mobile/README.md))
 
-The phone app ships through a different channel (a GitHub release asset, not the Tauri updater), so
+The phone app ships through a different channel (a GitHub release asset, not the desktop updater), so
 it has **its own version line** — `deploy.ps1` doesn't touch it. Same digit meanings as above; bump
 it with:
 
@@ -70,8 +69,9 @@ the two can't drift; the script refuses a bump that wouldn't increase it.
 
 ### Protocol version — the part that isn't SemVer
 
-`PROTOCOL` (in `src-tauri/src/bridge.rs` and `mobile/src/rpc.ts`) versions the *wire format*, and
-moves independently of both app versions. It matters more than usual here because **a sideloaded APK
+`PROTOCOL` (in `mobile/src/rpc.ts`, and in the Tauri app's `src-tauri/src/bridge.rs` up to
+v0.21.1) versions the *wire format*, and moves independently of both app versions. The GPUI app has
+no bridge yet; whichever desktop side the phone pairs with next follows the rules below. It matters more than usual here because **a sideloaded APK
 does not auto-update**: if the desktop only accepted its own exact protocol, every bump would
 silently brick every phone in the wild until each was manually reinstalled.
 

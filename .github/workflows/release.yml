@@ -256,11 +256,9 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install dependencies
         working-directory: mobile
-        # the desktop's node_modules too: the terminal WebView is generated from its @xterm/xterm,
-        # so both halves render with the same emulator (mobile/scripts/build-term.mjs)
-        run: |
-          npm install --prefix ..
-          npm install
+        # the terminal WebView ships prebuilt (mobile/src/terminal/termHtml.ts); its generator
+        # needed the deleted desktop npm setup and now keeps the committed copy
+        run: npm install
       - name: Restore the signing key
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

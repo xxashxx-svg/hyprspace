@@ -7,7 +7,7 @@
 .USAGE
   scripts/check-upgrade-windows.ps1 -Old <tauri-setup.exe> -Feed <folder> -Out <folder> [-Port 8765]
 
-  -Old is a Tauri app built from src-tauri with its updater feed at http://127.0.0.1:<Port>.
+  -Old is a Tauri app built from the v0.21.1 tag with its updater feed at http://127.0.0.1:<Port>.
   -Feed holds latest.json and the signed GPUI installer it names; this script serves it.
   Installs the Tauri app the way a user had it, gives it a project, starts it and waits. Its
   updater has to download the GPUI installer, verify it, run it and quit; the installer has to
