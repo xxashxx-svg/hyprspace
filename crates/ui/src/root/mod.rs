@@ -83,6 +83,8 @@ pub struct Root {
     pub(crate) appearance_at: Option<Point<Pixels>>,
     /// A folder named on the command line, opened once the state has loaded.
     pub(crate) open_arg: Option<PathBuf>,
+    /// Panes, the dock and the viewers (`crate::panes`).
+    pub(crate) work: crate::panes::Work,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -123,6 +125,7 @@ impl Root {
                 }
             }
         });
+        let work = crate::panes::Work::new(client.clone(), window, cx);
         Self {
             client,
             state: AppState::default(),
@@ -140,6 +143,7 @@ impl Root {
             archived_open: false,
             appearance_at: None,
             open_arg: open,
+            work,
             _pump: pump,
             _subs: subs,
         }
@@ -204,6 +208,7 @@ impl Root {
                     cx.notify();
                 }
             }
+            Event::Folder(e) => self.folder_event(e, cx),
             Event::AgentState { id, state } => {
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.status.insert(thread, Status::from(state));

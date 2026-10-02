@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::agents::{Agent, AgentInfo, AgentSession, AgentState};
+use crate::folder::{FolderCommand, FolderEvent};
 use crate::run::{Answer, Launch, Prompt, RunEvent};
 use crate::state::{AppState, Entry};
 
@@ -101,6 +102,8 @@ pub enum Command {
         name: String,
         here: bool,
     },
+    /// The file tree, the git tab, the viewer and the open-in actions (`folder.rs`).
+    Folder(FolderCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,6 +160,7 @@ pub enum Event {
         request: u64,
         result: Result<PathBuf, String>,
     },
+    Folder(FolderEvent),
 }
 
 #[cfg(test)]
@@ -237,6 +241,12 @@ mod tests {
                 line: Some(3),
                 col: None,
             },
+            Command::Folder(FolderCommand::Stage {
+                cwd: PathBuf::from("/w"),
+                path: "a.rs".into(),
+                stage: true,
+            }),
+            Command::Folder(FolderCommand::Openers),
         ];
         for cmd in &cmds {
             assert_eq!(&round_trip(cmd), cmd);
@@ -295,6 +305,17 @@ mod tests {
                 request: 3,
                 result: Err("no such repo".into()),
             },
+            Event::Folder(FolderEvent::Dir {
+                path: PathBuf::from("/w"),
+                entries: Ok(vec![crate::folder::DirEntry {
+                    name: "src".into(),
+                    dir: true,
+                }]),
+            }),
+            Event::Folder(FolderEvent::Git {
+                cwd: PathBuf::from("/w"),
+                status: Default::default(),
+            }),
         ];
         for event in &events {
             assert_eq!(&round_trip(event), event);

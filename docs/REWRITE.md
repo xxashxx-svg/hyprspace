@@ -165,14 +165,14 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Composer: agent, model, effort, permission mode, resume past sessions, clone with choices
 - [x] Structured transcript: streaming markdown, tool calls, approvals, diffs, images in prompts
 - [x] Terminal sessions: selection, scrollback, search, links, ctrl+click paths, paste images
-- [ ] Panes or tabs for several sessions at once
-- [ ] Dock: files tree, git stage, commit, push, diff view
-- [ ] File viewing (CodeMirror replacement, or open in the external editor at first)
+- [x] Panes or tabs for several sessions at once
+- [x] Dock: files tree, git stage, commit, push, diff view
+- [x] File viewing (CodeMirror replacement, or open in the external editor at first)
 - [ ] Usage meter with the live limits rules
 - [ ] Command palette
 - [ ] Settings: appearance (themes, light and dark), defaults, usage, skills, general
 - [ ] Intro
-- [ ] Open in editor or Explorer/Finder
+- [x] Open in editor or Explorer/Finder
 - [ ] Installers, auto-update, CI release for Windows and macOS
 - [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above)
 
@@ -392,4 +392,45 @@ is the same shape as the text box's). Gemini is not installed here; its command 
 macOS builds in CI only. Mouse reports for clicks (only the wheel is reported). Codex and Gemini
 rows show no live state (no hooks). Testing let an automated Enter reach Codex's update dialog,
 which updated the user's codex to 0.160.0; that path is gone (ADR 0006).
+
+## Phase 6a results
+
+Done on 2026-10-02. The Panes, Dock, File viewing and Open in editor rows are ticked. Shapes and
+reasons: [adr/0007](./adr/0007-panes-dock-and-viewer.md). Screenshots are in the phase 6a
+agent's scratchpad (`p6a/`), with `60-side-by-side-panes.png`, `61-pane-headers.png` and
+`62-bar-controls.png` against the installed Tauri app.
+
+**What exists.**
+
+- `proto`: `grid.rs` (`Grid`, `Pane`, `Tracks`, saved on each `Space`), `folder.rs`
+  (`FolderCommand` and `FolderEvent` behind `Command::Folder` and `Event::Folder`, `GitStatus`,
+  `DirEntry`, `Opener`), `AppState.dock` and `AppState.open_with`.
+- `engine`: `folder.rs` (listings, reads capped at 2 MB, git status, stage, commit, push and
+  diff run at the repo root behind one lock), `open.rs` (installed editors, Explorer or Finder,
+  the `HYPRSPACE_OPEN_LOG` dry run), `git::root`.
+- `crates/syntax`: tree-sitter highlighting for 19 languages, per-line ranges, no GPUI.
+- `ui/src/panes/`: the grid (`layout.rs` holds grid.ts's presets), pane headers with grip, mark,
+  name, status and close, drag-to-swap, double-click to maximize, draggable boundaries, and the
+  bar with new thread, layout picker, Open split button and dock toggle. `ui/src/dock/`: Files
+  (lazy tree, git colors on files and their folders, the viewed file marked) and Git (ticks,
+  summary and description, commit, commit and push, push when ahead, click for the diff).
+  `ui/src/viewer/`: code with line numbers and the target line and column lit, and diffs with
+  old and new line numbers.
+
+**Checked in the running app**, input posted to its own window, launches logged by
+`HYPRSPACE_OPEN_LOG`: three terminal threads tiled, every 3-pane preset offered, "1 left, 2
+right" picked, a column and a row boundary dragged, a pane dragged onto another swapped their
+sessions, double-click maximized and restored, close, sidebar click replaced the focused pane
+and ctrl+click added one, a structured thread in a pane; Ctrl+Shift+G, the tree expanding with
+M and U marks, a file opened from the tree, a terminal ctrl+click on `src/app.ts:4:10` opened
+the viewer at line 4 column 10, the dock following a pane in a subfolder, dock resize; tick to
+stage, commit with a description, push to a local bare repo in a temp folder; the Open menu
+listing VS Code, Cursor and Explorer and logging `code.cmd <dir>`, `cursor.cmd <dir>` and
+`explorer <dir>`; layout, dock and viewer pane back after a restart.
+
+**Not done or not checked.** macOS builds in CI only (Finder and `open -a` are unit tested). The
+viewer has no text selection or find yet. The Tauri app's file tree context menu (new file,
+rename, delete, copy path), its file filter and discard in the git tab were not carried over.
+The sidebar has no "Open beside" or "Open in" entries (they belong to the sidebar's code).
+Drags can't leave the grid to move a pane into another space.
 

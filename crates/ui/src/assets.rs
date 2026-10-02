@@ -39,6 +39,20 @@ const FILES: &[(&str, &[u8])] = files!(
     "brand/claude.svg",
     "brand/openai.svg",
     "brand/gemini.svg",
+    // panes, the dock, the viewer and the Open button
+    "icons/grip-vertical.svg",
+    "icons/layout-grid.svg",
+    "icons/panel-right.svg",
+    "icons/folder-tree.svg",
+    "icons/refresh-cw.svg",
+    "icons/file.svg",
+    "icons/file-code.svg",
+    "icons/file-diff.svg",
+    "icons/external-link.svg",
+    "brand/vscode.svg",
+    "brand/cursor.svg",
+    "brand/finder.svg",
+    "brand/explorer.png",
 );
 
 /// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono
@@ -110,7 +124,7 @@ mod tests {
 
     #[test]
     fn every_file_is_an_svg_and_loads() {
-        for (path, bytes) in FILES {
+        for (path, bytes) in FILES.iter().filter(|(p, _)| p.ends_with(".svg")) {
             assert!(
                 std::str::from_utf8(bytes).unwrap().contains("<svg"),
                 "{path}"
@@ -118,7 +132,7 @@ mod tests {
             assert!(Assets.load(path).unwrap().is_some());
         }
         assert!(Assets.load("icons/nope.svg").unwrap().is_none());
-        assert_eq!(Assets.list("brand/").unwrap().len(), 3);
+        assert_eq!(Assets.list("brand/").unwrap().len(), 7);
     }
 
     #[test]

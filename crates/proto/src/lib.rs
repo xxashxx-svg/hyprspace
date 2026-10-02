@@ -7,7 +7,9 @@
 
 pub mod agents;
 pub mod channel;
+pub mod folder;
 pub mod git;
+pub mod grid;
 pub mod run;
 pub mod state;
 pub mod usage;
@@ -15,6 +17,8 @@ pub mod wire;
 
 pub use agents::{Agent, AgentState};
 pub use channel::{Client, Events};
+pub use folder::{FolderCommand, FolderEvent, Opener};
+pub use grid::{Grid, Pane};
 pub use run::{Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 pub use state::{AppState, Entry, Space, Thread, ThreadKind};
 pub use wire::{Command, Event, SessionId};

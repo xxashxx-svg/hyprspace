@@ -1,7 +1,7 @@
 // Reading a working tree: what changed, the diff of one file, and the branch.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use hyprspace_proto::git::{BranchInfo, FileChange};
 
@@ -10,6 +10,15 @@ use super::{Result, empty, git, git_cmd};
 /// Whether `cwd` is inside a git work tree.
 pub fn is_repo(cwd: &Path) -> bool {
     !empty(cwd) && git(cwd, &["rev-parse", "--is-inside-work-tree"]).is_ok()
+}
+
+/// The top folder of the repo holding `cwd`, which change paths are relative to.
+pub fn root(cwd: &Path) -> Option<PathBuf> {
+    if empty(cwd) {
+        return None;
+    }
+    let top = git(cwd, &["rev-parse", "--show-toplevel"]).ok()?;
+    Some(PathBuf::from(top.trim()))
 }
 
 /// Changed files in the repo containing `cwd`, with +/- line counts where git has them. Not a
@@ -187,6 +196,10 @@ mod tests {
         assert!(diff(cwd, "a.txt").unwrap().contains("+two"));
         assert!(diff(cwd, "new.txt").unwrap().contains("+hi"));
 
+        assert_eq!(
+            root(cwd).unwrap().canonicalize().unwrap(),
+            cwd.canonicalize().unwrap()
+        );
         let bi = branch_info(cwd);
         assert!(bi.is_repo);
         assert_eq!(bi.branch, "main");

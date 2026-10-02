@@ -4,6 +4,7 @@ members = [
     "crates/proto",
     "crates/harness",
     "crates/engine",
+    "crates/syntax",
     "crates/theme",
     "crates/ui",
     "apps/hyprspace",
@@ -20,6 +21,7 @@ publish = false
 hyprspace-proto = { path = "crates/proto" }
 hyprspace-harness = { path = "crates/harness" }
 hyprspace-engine = { path = "crates/engine" }
+hyprspace-syntax = { path = "crates/syntax" }
 hyprspace-theme = { path = "crates/theme" }
 hyprspace-ui = { path = "crates/ui" }
 

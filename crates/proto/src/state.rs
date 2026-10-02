@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::agents::Agent;
+use crate::folder::Opener;
+use crate::grid::Grid;
 use crate::run::{Launch, Permission, Prompt, RunEvent};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -21,6 +23,9 @@ pub struct AppState {
     pub sidebar_width: f32,
     pub composer: ComposerPrefs,
     pub appearance: Appearance,
+    pub dock: DockPrefs,
+    /// What the Open button opens a space's folder in.
+    pub open_with: Opener,
 }
 
 impl Default for AppState {
@@ -32,6 +37,8 @@ impl Default for AppState {
             sidebar_width: 272.0,
             composer: ComposerPrefs::default(),
             appearance: Appearance::default(),
+            dock: DockPrefs::default(),
+            open_with: Opener::default(),
         }
     }
 }
@@ -77,6 +84,8 @@ pub struct Space {
     pub folded: bool,
     /// Newest first.
     pub threads: Vec<Thread>,
+    /// The panes on screen and how they are laid out.
+    pub grid: Grid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -140,6 +149,33 @@ pub enum ThreadKind {
         #[serde(default)]
         run: Option<Launch>,
     },
+}
+
+/// The right dock: whether it is out, how wide, and which tab.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DockPrefs {
+    pub open: bool,
+    pub width: f32,
+    pub tab: DockTab,
+}
+
+impl Default for DockPrefs {
+    fn default() -> Self {
+        Self {
+            open: false,
+            width: 320.0,
+            tab: DockTab::Files,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DockTab {
+    #[default]
+    Files,
+    Git,
 }
 
 /// The theme (an id from `hyprspace_theme::THEMES`) and which side of it to show.

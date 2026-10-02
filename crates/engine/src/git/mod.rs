@@ -12,7 +12,7 @@ use std::process::Command;
 
 pub use commit::{commit, create_pr, file_op, pr_defaults, push};
 pub use setup::{clone, create_project_dir, init, init_repo};
-pub use status::{branch_info, changes, diff, is_repo};
+pub use status::{branch_info, changes, diff, is_repo, root};
 pub use worktree::{create_worktree, remove_worktree};
 
 pub type Result<T> = std::result::Result<T, String>;
@@ -101,6 +101,19 @@ pub(crate) mod testing {
         ] {
             super::git(dir, args).unwrap();
         }
+    }
+
+    /// A bare repo standing in for a remote, so pushes never leave the temp folder.
+    pub fn bare(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        super::git(dir, &["init", "-q", "--bare", "-b", "main"]).unwrap();
+    }
+
+    /// Adds `remote` as origin and pushes the current branch there with tracking.
+    pub fn push_upstream(dir: &Path, remote: &Path) {
+        let url = remote.to_string_lossy();
+        super::git(dir, &["remote", "add", "origin", &url]).unwrap();
+        super::git(dir, &["push", "-q", "-u", "origin", "HEAD"]).unwrap();
     }
 
     pub fn commit_all(dir: &Path, msg: &str) {

@@ -5,13 +5,16 @@ mod assets;
 mod attach;
 mod colors;
 mod composer;
+mod dock;
 mod input;
 mod markdown;
+mod panes;
 mod root;
 mod sidebar;
 mod terminal;
 mod time;
 mod transcript;
+mod viewer;
 mod widgets;
 
 pub use assets::Assets;
@@ -21,4 +24,5 @@ pub use root::Root;
 pub fn init(cx: &mut gpui::App) {
     assets::load_fonts(cx);
     input::bind_keys(cx);
+    panes::bind_keys(cx);
 }

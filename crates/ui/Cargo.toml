@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 hyprspace-proto.workspace = true
 hyprspace-theme.workspace = true
+hyprspace-syntax.workspace = true
 gpui.workspace = true
 alacritty_terminal.workspace = true
 futures.workspace = true

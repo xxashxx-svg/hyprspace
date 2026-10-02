@@ -117,7 +117,7 @@ impl Root {
 
     /// Makes the view for a thread. `first` goes out as the first prompt; `history` reads the
     /// thread's journal first, for a thread from an earlier run of the app.
-    fn make_view(
+    pub(crate) fn make_view(
         &mut self,
         thread: &Thread,
         first: Option<Prompt>,
@@ -157,9 +157,9 @@ impl Root {
                 let (cwd, run) = (cwd.clone(), run.clone());
                 let prompt = first.as_ref().map(typed);
                 let v = cx.new(|cx| TerminalView::new(session, client, cwd, run, prompt, cx));
-                let sub = cx.subscribe(&v, |root, _, e: &TerminalEvent, _| match e {
+                let sub = cx.subscribe(&v, |root, _, e: &TerminalEvent, cx| match e {
                     TerminalEvent::OpenFile { path, line, col } => {
-                        root.open_file(path.clone(), *line, *col)
+                        root.open_file(path.clone(), *line, *col, cx)
                     }
                 });
                 self._subs.push(sub);
@@ -200,10 +200,17 @@ impl Root {
         cx.notify();
     }
 
-    /// Opens a file a terminal pointed at. Until the app has a file viewer (REWRITE.md phase 6)
-    /// it goes to the user's editor; this is the one place that changes when the viewer lands.
-    pub(crate) fn open_file(&self, path: PathBuf, line: Option<u32>, col: Option<u32>) {
-        self.client.send(Command::OpenFile { path, line, col });
+    /// Opens a file a terminal pointed at, in the space's viewer pane at its line. The event
+    /// comes without the window, so the workbench picks it up on its next draw.
+    pub(crate) fn open_file(
+        &mut self,
+        path: PathBuf,
+        line: Option<u32>,
+        col: Option<u32>,
+        cx: &mut Context<Self>,
+    ) {
+        self.work.pending = Some((path, line, col));
+        cx.notify();
     }
 
     pub(crate) fn start_thread(
@@ -245,6 +252,7 @@ impl Root {
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, prompt, false, cx);
+        self.place_thread(thread.id, true);
         if resumed && let Some(View::Structured(v)) = self.views.get(&thread.id) {
             v.update(cx, |v, cx| {
                 v.note(
@@ -276,6 +284,7 @@ impl Root {
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, None, false, cx);
+        self.place_thread(thread.id, true);
         self.open_thread(thread.id, window, cx);
     }
 
@@ -287,6 +296,8 @@ impl Root {
         if !self.views.contains_key(&id) {
             self.make_view(&thread, None, true, cx);
         }
+        // ctrl+click (cmd on macOS) opens it beside the panes on screen instead of in place
+        self.place_thread(id, window.modifiers().secondary());
         self.screen = Screen::Thread(id);
         self.state.active = Some(id);
         self.save();
@@ -326,6 +337,12 @@ impl Root {
             Screen::Compose(None) => true,
         };
         if !still_there {
+            if let Screen::Thread(gone) = self.screen
+                && let Some(next) = self.next_pane_after(gone)
+            {
+                self.open_thread(next, window, cx);
+                return;
+            }
             let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
             self.compose(first, window, cx);
         }

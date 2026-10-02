@@ -6,6 +6,7 @@
 //! called directly for now; each gains a command in proto when the UI first needs it.
 
 pub mod env;
+mod folder;
 pub mod git;
 pub mod hooks;
 pub mod journal;
@@ -32,6 +33,7 @@ use hyprspace_proto::{Client, Command, Entry, Event, Events, SessionId};
 use tokio::runtime::Runtime;
 use tokio::task::block_in_place;
 
+use folder::Folders;
 use journal::Journal;
 use persist::Store;
 use pty::PtyManager;
@@ -118,6 +120,7 @@ async fn serve(
 ) {
     let journals = store.dir().join("journals");
     let requests = Requests::new(store, tx.clone());
+    let folders = Folders::default();
     let mut structured: HashMap<SessionId, Live> = HashMap::new();
     while let Some(cmd) = rx.next().await {
         match cmd {
@@ -252,6 +255,7 @@ async fn serve(
                     let _ = open::open_file(&path, line, col);
                 });
             }
+            Command::Folder(cmd) => folders.handle(cmd, tx.clone()),
         }
     }
 }
@@ -382,6 +386,33 @@ mod tests {
         client.send(Command::LoadState);
         match events.recv_timeout(wait).unwrap() {
             Event::State { state: s } => assert_eq!(s, state),
+            other => panic!("unexpected {other:?}"),
+        }
+        engine.shutdown();
+    }
+
+    #[test]
+    fn folder_requests_answer_through_the_channel() {
+        use hyprspace_proto::{FolderCommand, FolderEvent};
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi\n").unwrap();
+        let (engine, client, events) = Engine::start_in(dir.path().join("state")).unwrap();
+        let events = forward(events);
+        client.send(Command::Folder(FolderCommand::ReadFile {
+            path: dir.path().join("a.txt"),
+        }));
+        match events.recv_timeout(Duration::from_secs(10)).unwrap() {
+            Event::Folder(FolderEvent::File { text, .. }) => assert_eq!(text.unwrap(), "hi\n"),
+            other => panic!("unexpected {other:?}"),
+        }
+        client.send(Command::Folder(FolderCommand::ListDir {
+            path: dir.path().into(),
+        }));
+        match events.recv_timeout(Duration::from_secs(10)).unwrap() {
+            Event::Folder(FolderEvent::Dir { entries, .. }) => {
+                let names: Vec<_> = entries.unwrap().into_iter().map(|e| e.name).collect();
+                assert_eq!(names, ["state", "a.txt"]);
+            }
             other => panic!("unexpected {other:?}"),
         }
         engine.shutdown();

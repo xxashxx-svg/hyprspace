@@ -34,7 +34,14 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
   approvals and diffs.
 - **Journal**: the engine's file of a thread's prompts, answers and run events
   (`journals/thread-<id>.jsonl`), replayed to rebuild its transcript after a restart.
-- **Pane**: one cell of the window's grid, showing one session.
+- **Pane**: one cell of a space's grid, showing a thread's session or the viewer.
+- **Grid**: the panes a space shows, their layout and the sizes the user dragged. Saved with the
+  space. A thread opened from the sidebar takes the focused pane's place; ctrl+click adds it.
+- **Viewer**: the read-only pane that shows a file or one file's diff. A space has at most one.
+- **Dock**: the right panel (Ctrl+Shift+G) with the file tree and the git tab for the focused
+  thread's folder.
+- **Opener**: an app that opens a folder: a code editor, or Explorer on Windows and Finder on
+  macOS.
 - **Agent**: a coding CLI the user has installed and signed in to (`claude`, `codex`, `gemini`,
   `opencode`, `grok`). Also called a **provider** where the subject is the account behind it
   (sign-in, plan, usage).

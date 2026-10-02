@@ -31,6 +31,9 @@ Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron)
   as styled text)
 - the sidebar's drag-to-resize edge in `crates/ui/src/sidebar/mod.rs` follows `resize_handle`
   and `on_sidebar_drag` in `crates/ui/src/shell.rs`
+- `crates/syntax/src/lib.rs` (the grammar set and versions, the capture table, the Rust and
+  Markdown query fixes, and the precedence between overlapping captures) follows
+  `crates/syntax/src/lib.rs`
 
 ```
 MIT License
