@@ -1,6 +1,7 @@
 // Grid painting. Backgrounds, selection, find highlights and the cursor are quads at
-// `cell_w * col`; text is shaped per row. Sizes follow the Tauri app's xterm setup: 13px
-// JetBrains Mono, line height 1.1, and the pane's 12/18/10 padding (styles/pane.css).
+// `cell_w * col`; text is shaped per row. Sizes follow the Tauri app's xterm setup: line height
+// 1.1 and the pane's 12/18/10 padding (styles/pane.css). The font and its size are the user's,
+// from Settings, Appearance (13px JetBrains Mono unless changed).
 // Approach from zeron's terminal view (MIT, see THIRD_PARTY_NOTICES.md).
 
 use gpui::{
@@ -13,7 +14,6 @@ use super::emulator::{Cell, CellColor, Cursor, Mark, Shape};
 use super::{cell_color, glyphs};
 use crate::colors::{self, hsla, theme};
 
-pub const FONT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 1.1;
 pub const PAD_X: f32 = 18.0;
 pub const PAD_TOP: f32 = 12.0;
@@ -62,7 +62,7 @@ impl Grid {
 }
 
 pub fn mono() -> Font {
-    let mut mono = font(hyprspace_theme::MONO);
+    let mut mono = font(crate::settings::terminal_font().0);
     // A terminal is a fixed grid: ligatures would fold several cells into one glyph and shift the
     // rest of the row off the columns the cursor and backgrounds use.
     mono.features = FontFeatures(std::sync::Arc::new(vec![
@@ -73,14 +73,19 @@ pub fn mono() -> Font {
     mono
 }
 
+fn font_size() -> f32 {
+    crate::settings::terminal_font().1
+}
+
 pub fn measure(bounds: Bounds<Pixels>, window: &mut Window) -> Grid {
-    let font_size = px(FONT_SIZE);
+    let size = font_size();
+    let font_size = px(size);
     let ts = window.text_system();
     let id = ts.resolve_font(&mono());
-    let cell_w = ts.em_advance(id, font_size).unwrap_or(px(FONT_SIZE * 0.6));
+    let cell_w = ts.em_advance(id, font_size).unwrap_or(px(size * 0.6));
     // xterm's row: the font's own line box times the line height setting
     let natural = f32::from(ts.ascent(id, font_size)) + f32::from(ts.descent(id, font_size)).abs();
-    let line_h = px((natural * LINE_HEIGHT).round().max(FONT_SIZE));
+    let line_h = px((natural * LINE_HEIGHT).round().max(size));
     let w = f32::from(bounds.size.width) - 2.0 * PAD_X - BAR_W;
     let h = f32::from(bounds.size.height) - PAD_TOP - PAD_BOTTOM;
     Grid {
@@ -251,7 +256,7 @@ pub fn prepare(grid: &Grid, lines: &[Vec<Cell>], extras: Extras, window: &Window
         let at = grid.cell_bounds(p.row, p.col, 1).origin;
         let shaped = window.text_system().shape_line(
             SharedString::from(p.text.to_string()),
-            px(FONT_SIZE),
+            px(font_size()),
             &[TextRun {
                 len: p.text.len(),
                 font: mono(),
@@ -365,7 +370,7 @@ fn shape_row(line: &[Cell], cursor: Option<usize>, window: &Window) -> Vec<(usiz
         }
         let shaped = window.text_system().shape_line(
             SharedString::from(std::mem::take(text)),
-            px(FONT_SIZE),
+            px(font_size()),
             runs,
             None,
         );

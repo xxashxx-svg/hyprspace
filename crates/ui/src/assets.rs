@@ -87,6 +87,10 @@ const FILES: &[(&str, &[u8])] = files!(
     "logo/top.svg",
     "logo/left.svg",
     "logo/right.svg",
+    // Settings: the Shortcuts and About tabs, and the terminal font size stepper
+    "icons/keyboard.svg",
+    "icons/info.svg",
+    "icons/minus.svg",
 );
 
 /// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono

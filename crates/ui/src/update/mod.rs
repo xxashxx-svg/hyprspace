@@ -1,7 +1,7 @@
 // The app updating itself, after the Tauri app's updater store and toast (src/stores/updater.ts,
 // src/components/Updater.tsx): it checks on launch, every 6 hours, and when the window comes back
 // after 15 minutes away, quietly. When a release is out, a small card in the corner offers to
-// restart and update; Settings, General shows the same state with a button to check now. The
+// restart and update; Settings, About shows the same state with a button to check now. The
 // engine does the downloading and installing (engine/src/update.rs).
 //
 // After an update the first launch shows what's new in this version, from the changelog built
@@ -147,12 +147,18 @@ impl Updater {
         true
     }
 
+    /// This version's notes again, from Settings, About.
+    pub fn show_whats_new(&mut self, cx: &mut Context<Self>) {
+        self.whats_new = Some(changelog::notes(VERSION));
+        cx.notify();
+    }
+
     pub fn close_whats_new(&mut self, cx: &mut Context<Self>) {
         self.whats_new = None;
         cx.notify();
     }
 
-    /// The line under the version in Settings, General.
+    /// The line under the version in Settings, About.
     pub(crate) fn status(&self) -> String {
         match &self.phase {
             Phase::Idle => "Checks for updates on launch".into(),
@@ -174,6 +180,11 @@ impl Updater {
             _ => None,
         }
     }
+}
+
+/// Whether the built-in changelog has notes for this version. A build between releases has none.
+pub(crate) fn has_notes() -> bool {
+    !changelog::notes(VERSION).is_empty()
 }
 
 fn step_text(step: Step) -> String {

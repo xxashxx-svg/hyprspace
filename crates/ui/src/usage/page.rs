@@ -65,9 +65,7 @@ pub(super) fn card(id: &str, name: &str, plan: Option<String>, right: Option<Str
         .flex()
         .flex_col()
         .rounded(px(12.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::surface2())
+        .bg(colors::ink(0.035))
         .overflow_hidden()
         .child(
             div()

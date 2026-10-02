@@ -1,22 +1,28 @@
-// The Settings screen. It takes the whole window: a nav column on the left, the open view on the
-// right under its title, both in one centered column so their edges line up. Views edit
+// The Settings screen, laid out like zeron's: it takes the whole window, with a plain list of
+// views on the left and the open view on the right in one centered column. Views edit
 // `Root::state` in place and save through `Root::save`, the same path the composer's picks take.
-// A new view is one more `Tab` and one row in `TABS`.
+// A new view is one more `Tab` and one row in `TABS`; the palette lists every row too.
 
+mod about;
+mod agents;
 mod appearance;
-mod defaults;
+mod controls;
 mod general;
+mod picker;
+mod shortcuts;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, FontWeight, IntoElement,
+    AnyElement, App, Bounds, ClickEvent, Context, FocusHandle, FontWeight, IntoElement,
     KeyDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px,
 };
 use hyprspace_proto::Agent;
 use hyprspace_proto::state::ComposerPrefs;
+
+pub(crate) use appearance::{set_terminal_font, terminal_font};
 
 use crate::assets::icon;
 use crate::root::Root;
@@ -26,26 +32,34 @@ use crate::{colors, widgets};
 pub(crate) enum Tab {
     General,
     Appearance,
-    Defaults,
+    Agents,
     Usage,
     Skills,
+    Shortcuts,
+    About,
 }
 
-/// A picker open over the Defaults view.
+/// A dropdown open over a view.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Picker {
+    Agent,
+    Permission,
+    Opener,
+    Font,
     Model(Agent),
     Effort(Agent),
 }
 
-/// What the screen remembers while the app runs: the open view and any open picker.
+/// What the screen remembers while the app runs: the open view and any open dropdown.
 pub struct Settings {
     tab: Tab,
     focus: FocusHandle,
     menu: Option<(Point<Pixels>, Picker)>,
-    /// Where each picker's field was last painted, so its menu drops from the field's edge
+    /// Where each dropdown's field was last painted, so its menu drops from the field's edge
     /// like a select instead of from wherever the click landed.
     fields: Rc<RefCell<HashMap<Picker, Bounds<Pixels>>>>,
+    /// The installed monospace families, read once when the Font menu first opens.
+    fonts: RefCell<Option<Vec<String>>>,
 }
 
 impl Settings {
@@ -68,13 +82,13 @@ impl Settings {
             focus: cx.focus_handle(),
             menu: None,
             fields: Rc::default(),
+            fonts: RefCell::default(),
         }
     }
 }
 
 pub(crate) struct Entry {
     pub(crate) tab: Tab,
-    group: &'static str,
     pub(crate) label: &'static str,
     pub(crate) desc: &'static str,
     pub(crate) icon: &'static str,
@@ -84,38 +98,45 @@ pub(crate) struct Entry {
 pub(crate) const TABS: &[Entry] = &[
     Entry {
         tab: Tab::General,
-        group: "App",
         label: "General",
-        desc: "The version, how sessions start, and where your data lives",
+        desc: "How new threads start and where folders open",
         icon: "sliders-horizontal",
     },
     Entry {
         tab: Tab::Appearance,
-        group: "App",
         label: "Appearance",
-        desc: "The theme, and whether it is light or dark",
+        desc: "The theme, light or dark, and the terminal font",
         icon: "palette",
     },
     Entry {
-        tab: Tab::Defaults,
-        group: "Agents",
-        label: "Defaults",
-        desc: "What each agent starts with: model, effort and permission",
+        tab: Tab::Agents,
+        label: "Agents",
+        desc: "The model and effort each agent starts with",
         icon: "bot",
     },
     Entry {
         tab: Tab::Usage,
-        group: "Agents",
         label: "Usage",
         desc: "What each agent has used",
         icon: "gauge",
     },
     Entry {
         tab: Tab::Skills,
-        group: "Agents",
         label: "Skills",
         desc: "Reusable instructions for Claude",
         icon: "zap",
+    },
+    Entry {
+        tab: Tab::Shortcuts,
+        label: "Shortcuts",
+        desc: "The keys and clicks the app answers to",
+        icon: "keyboard",
+    },
+    Entry {
+        tab: Tab::About,
+        label: "About",
+        desc: "The version, updates and where the code lives",
+        icon: "info",
     },
 ];
 
@@ -125,44 +146,15 @@ impl Root {
             .iter()
             .find(|e| e.tab == self.settings.tab)
             .unwrap_or(&TABS[0]);
-        let page = match self.settings.tab {
+        let body = match self.settings.tab {
             Tab::General => self.general(cx),
             Tab::Appearance => self.appearance(cx),
-            Tab::Defaults => self.defaults(cx),
+            Tab::Agents => self.agents_page(cx),
             Tab::Usage => self.usage_page(cx),
             Tab::Skills => self.skills_page(window, cx),
+            Tab::Shortcuts => shortcuts::page(),
+            Tab::About => self.about(cx),
         };
-        let header = div()
-            .relative()
-            .flex_none()
-            .pt(px(26.))
-            .pb(px(18.))
-            .border_b_1()
-            .border_color(colors::border1())
-            .child(div().absolute().top(px(22.)).right(px(GUTTER)).child(
-                widgets::icon_button("settings-close", "x", 30.).on_click(
-                    cx.listener(|r, _: &ClickEvent, window, cx| r.close_settings(window, cx)),
-                ),
-            ))
-            .child(column(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(3.))
-                    .child(
-                        div()
-                            .text_size(px(20.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(colors::text1())
-                            .child(entry.label),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(12.5))
-                            .text_color(colors::text3())
-                            .child(entry.desc),
-                    ),
-            ));
         let menu = self.picker(window, cx);
         div()
             .id("settings")
@@ -180,146 +172,117 @@ impl Root {
             .child(self.settings_nav(cx))
             .child(
                 div()
+                    .id("settings-page")
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .flex()
-                    .flex_col()
-                    .child(header)
-                    .child(
-                        div()
-                            .id("settings-page")
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .pt(px(22.))
-                            .pb(px(48.))
-                            .child(column(page)),
-                    ),
+                    .overflow_y_scroll()
+                    .child(controls::page(entry.label, entry.desc, body)),
             )
             .children(menu)
             .into_any_element()
     }
 
     fn settings_nav(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut col = div()
+        let items = TABS.iter().enumerate().map(|(i, e)| {
+            let on = e.tab == self.settings.tab;
+            let tab = e.tab;
+            div()
+                .id(("settings-tab", i))
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .h(px(32.))
+                .px(px(10.))
+                .rounded(px(7.))
+                .text_size(px(13.))
+                .cursor_pointer()
+                .when(on, |d| {
+                    d.bg(colors::ink(0.07))
+                        .text_color(colors::text1())
+                        .font_weight(FontWeight::MEDIUM)
+                })
+                .when(!on, |d| {
+                    d.text_color(colors::text2())
+                        .hover(|s| s.bg(colors::ink(0.04)).text_color(colors::text1()))
+                })
+                .child(icon(
+                    e.icon,
+                    15.,
+                    if on { colors::text1() } else { colors::text3() },
+                ))
+                .child(e.label)
+                .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
+                    r.settings.set_tab(tab);
+                    cx.notify();
+                }))
+        });
+        let back = div()
+            .id("settings-back")
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .h(px(32.))
+            .px(px(10.))
+            .rounded(px(7.))
+            .text_size(px(13.))
+            .text_color(colors::text2())
+            .cursor_pointer()
+            .hover(|s| s.bg(colors::ink(0.04)).text_color(colors::text1()))
+            .child(icon("arrow-left", 15., colors::text3()))
+            .child(div().flex_1().child("Back"))
+            .child(widgets::keycap("Esc"))
+            .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.close_settings(window, cx)));
+        div()
             .flex_none()
-            .w(px(224.))
+            .w(px(220.))
             .h_full()
             .flex()
             .flex_col()
-            .gap(px(1.))
+            .gap(px(2.))
             .p(px(10.))
             .border_r_1()
             .border_color(colors::border1())
             .bg(colors::surface1())
             .child(
                 div()
-                    .px(px(9.))
-                    .pt(px(6.))
-                    .pb(px(4.))
-                    .text_size(px(16.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(colors::text1())
+                    .px(px(10.))
+                    .pt(px(10.))
+                    .pb(px(6.))
+                    .text_size(px(12.))
+                    .text_color(colors::text3())
                     .child("Settings"),
-            );
-        let mut group = "";
-        for (i, e) in TABS.iter().enumerate() {
-            if e.group != group {
-                group = e.group;
-                col = col.child(label(group).px(px(9.)).pt(px(14.)).pb(px(5.)));
-            }
-            let on = e.tab == self.settings.tab;
-            let tab = e.tab;
-            col = col.child(
-                div()
-                    .id(("settings-tab", i))
-                    .relative()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .h(px(32.))
-                    .pl(px(9.))
-                    .pr(px(10.))
-                    .rounded(px(7.))
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .cursor_pointer()
-                    .when(on, |d| {
-                        // settings.css: a short accent bar on the nav's left edge
-                        d.bg(colors::accent().opacity(0.12))
-                            .text_color(colors::text1())
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left(px(-10.))
-                                    .top(px(8.))
-                                    .bottom(px(8.))
-                                    .w(px(3.))
-                                    .rounded_r(px(3.))
-                                    .bg(colors::accent()),
-                            )
-                    })
-                    .when(!on, |d| {
-                        d.text_color(colors::text2())
-                            .hover(|s| s.bg(colors::ink(0.05)).text_color(colors::text1()))
-                    })
-                    .child(icon(
-                        e.icon,
-                        16.,
-                        if on {
-                            colors::accent()
-                        } else {
-                            colors::text3()
-                        },
-                    ))
-                    .child(e.label)
-                    .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                        r.settings.tab = tab;
-                        r.settings.menu = None;
+            )
+            .children(items)
+            .child(div().flex_1())
+            .child(back)
+            .into_any_element()
+    }
+
+    /// A dropdown's face that opens `picker`. Its bounds are kept so the menu can open right
+    /// under it.
+    fn dropdown(
+        &self,
+        picker: Picker,
+        label: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let fields = self.settings.fields.clone();
+        let id = SharedString::from(format!("set-pick-{}", picker_key(picker)));
+        div()
+            .on_children_prepainted(move |b, _, _| {
+                if let Some(b) = b.first() {
+                    fields.borrow_mut().insert(picker, *b);
+                }
+            })
+            .child(
+                widgets::select(id, label)
+                    .min_w(px(168.))
+                    .max_w(px(240.))
+                    .on_click(cx.listener(move |r, e: &ClickEvent, _, cx| {
+                        r.settings.menu = Some((e.position(), picker));
                         cx.notify();
                     })),
-            );
-        }
-        col.child(div().flex_1())
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .pt(px(8.))
-                    .border_t_1()
-                    .border_color(colors::border0())
-                    .child(
-                        div()
-                            .id("settings-back")
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .h(px(30.))
-                            .pl(px(9.))
-                            .pr(px(8.))
-                            .rounded(px(7.))
-                            .text_size(px(12.5))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(colors::text2())
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors::ink(0.05)).text_color(colors::text1()))
-                            .child(icon("arrow-left", 15., colors::text3()))
-                            .child(div().flex_1().child("Back to app"))
-                            .child(widgets::keycap("Esc"))
-                            .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
-                                r.close_settings(window, cx)
-                            })),
-                    )
-                    .child(
-                        div()
-                            .px(px(9.))
-                            .py(px(5.))
-                            .text_size(px(11.5))
-                            .text_color(colors::text3())
-                            .child(format!("HyprSpace v{}", crate::update::VERSION)),
-                    ),
             )
             .into_any_element()
     }
@@ -335,85 +298,13 @@ impl Root {
     }
 }
 
-/// The side padding of the page and header (settings.css `--set-gut`).
-const GUTTER: f32 = 32.;
-
-/// The centered column the header and the page share: settings.css `--set-col` of 1000px,
-/// less its gutters.
-fn column(content: impl IntoElement) -> Div {
-    div()
-        .w_full()
-        .flex()
-        .justify_center()
-        .px(px(GUTTER))
-        .child(div().w_full().max_w(px(1000. - 2. * GUTTER)).child(content))
-}
-
-/// A quiet upper-case label over a group (settings.css `.set-label`).
-fn label(text: &str) -> Div {
-    div()
-        .text_size(px(10.5))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(colors::text3())
-        .child(text.to_uppercase())
-}
-
-/// A labeled section of a page.
-fn section(title: &str, body: impl IntoElement) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(label(title).px(px(2.)))
-        .child(body)
-}
-
-/// Rows in one framed group, with hairlines between them (settings.css `.set-group`).
-fn group(title: &str, rows: Vec<AnyElement>) -> Div {
-    let rows = rows.into_iter().enumerate().map(|(i, r)| {
-        div()
-            .when(i > 0, |d| d.border_t_1().border_color(colors::border1()))
-            .child(r)
-    });
-    section(
-        title,
-        div()
-            .px(px(16.))
-            .rounded(px(10.))
-            .border_1()
-            .border_color(colors::border1())
-            .bg(colors::surface2())
-            .children(rows),
-    )
-}
-
-/// One setting: its name and a line on what it does, with the control on the right.
-fn row(key: &str, desc: impl Into<SharedString>, control: impl IntoElement) -> AnyElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(24.))
-        .py(px(13.))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .text_size(px(13.))
-                        .text_color(colors::text1())
-                        .child(key.to_string()),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(colors::text3())
-                        .child(desc.into()),
-                ),
-        )
-        .child(div().flex_none().child(control))
-        .into_any_element()
+fn picker_key(p: Picker) -> String {
+    match p {
+        Picker::Agent => "agent".into(),
+        Picker::Permission => "permission".into(),
+        Picker::Opener => "opener".into(),
+        Picker::Font => "font".into(),
+        Picker::Model(a) => format!("model-{}", a.cli()),
+        Picker::Effort(a) => format!("effort-{}", a.cli()),
+    }
 }

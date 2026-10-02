@@ -200,12 +200,25 @@ drop(session)                    // kills the CLI
   while the installer that just ran still holds its file (ADR 0011).
 - **The UI** checks on launch, every 6 hours and on focus after 15 minutes, shows a corner card with
   "Restart and update", and shows What's new from the bundled `docs/CHANGELOG.md` on the first
-  launch of a new version.
+  launch of a new version. Settings, About shows the same state and can show What's new again.
 - **CI.** `release.yml` signs with the `TAURI_SIGNING_PRIVATE_KEY` secret through
   `npx @tauri-apps/cli signer sign` (the key format is Tauri's) and checks every signature with
   `cargo run -p hyprspace-update --example verify` before uploading. `upgrade-test.yml` builds the
   v0.21.1 Tauri app from its tag and watches its real updater install the GPUI app on both
   platforms.
+
+## Settings (`ui/src/settings/`)
+
+- **Views are tabs over `AppState`.** General, Appearance, Agents, Usage, Skills, Shortcuts and
+  About, listed once in `TABS`, which the command palette reads too. A control edits
+  `Root::state` and saves through `Root::save`; General's agent, start mode and permission and
+  Agents' model and effort are the composer's own picks (`ComposerPrefs`), so either place changes
+  both.
+- **The terminal font is read where it paints.** `Appearance.terminal_font` and
+  `terminal_font_size` are copied into a thread local whenever the theme applies, and
+  `ui/src/terminal/paint.rs` reads it every frame, so open terminals reflow on the next frame.
+- **Shortcuts is a read-only list.** It mirrors the real bindings in `palette/`, `panes/`,
+  `input/` and `terminal/`; a changed binding changes there and in `settings/shortcuts.rs`.
 
 ## Provider status (`engine/src/providers.rs`)
 

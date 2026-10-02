@@ -94,6 +94,7 @@ pub fn import(dir: &Path) -> Option<AppState> {
             Some("dark") => Scheme::Dark,
             _ => Scheme::System,
         },
+        ..Appearance::default()
     };
     let last = match s.last_provider.as_deref() {
         Some("claude") => Some(Agent::Claude),

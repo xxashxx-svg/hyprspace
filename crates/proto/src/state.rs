@@ -185,12 +185,16 @@ pub enum DockTab {
     Git,
 }
 
-/// The theme (an id from `hyprspace_theme::THEMES`) and which side of it to show.
+/// The theme (an id from `hyprspace_theme::THEMES`), which side of it to show, and the font
+/// terminal sessions draw with.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Appearance {
     pub theme: String,
     pub scheme: Scheme,
+    /// A font family by name. Empty means the bundled JetBrains Mono.
+    pub terminal_font: String,
+    pub terminal_font_size: f32,
 }
 
 impl Default for Appearance {
@@ -198,6 +202,8 @@ impl Default for Appearance {
         Self {
             theme: "t3".into(),
             scheme: Scheme::System,
+            terminal_font: String::new(),
+            terminal_font_size: 13.0,
         }
     }
 }
@@ -279,6 +285,7 @@ mod tests {
         assert_eq!(s.spaces[0].cwd, None);
         assert_eq!(s.sidebar_width, 272.0);
         assert_eq!(s.appearance.theme, "t3");
+        assert_eq!(s.appearance.terminal_font_size, 13.0);
     }
 
     #[test]

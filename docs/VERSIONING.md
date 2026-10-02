@@ -40,7 +40,7 @@ minor. Big shift / it's a new era → major.
   a version.
 - **One bump per release.** Don't hand-edit version fields — `deploy.ps1` updates the workspace
   (`Cargo.toml` and the workspace crates in `Cargo.lock`), tags `v<new>`, and
-  writes the manifest with the same number, so the in‑app version (Settings, General), git tag,
+  writes the manifest with the same number, so the in‑app version (Settings, About), git tag,
   and update feed can't drift. Release CI refuses a tag that doesn't match the workspace version.
 - **The GPUI app continues the Tauri app's numbers.** It started at 0.21.1, the last Tauri
   release, so the installed Tauri app's updater sees the first GPUI release as newer.

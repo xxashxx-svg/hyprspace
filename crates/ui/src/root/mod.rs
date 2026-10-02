@@ -357,10 +357,12 @@ impl Root {
         }
     }
 
-    /// Paints the window in the saved theme, on the side the scheme and the system ask for.
+    /// Paints the window in the saved theme, on the side the scheme and the system ask for, and
+    /// hands terminals the saved font.
     pub(crate) fn apply_theme(&self, window: &mut Window) {
         let a = &self.state.appearance;
         crate::colors::set(&a.theme, crate::colors::dark(a.scheme, window.appearance()));
+        crate::settings::set_terminal_font(a);
         window.refresh();
     }
 

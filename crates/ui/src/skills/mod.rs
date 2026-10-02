@@ -211,12 +211,12 @@ impl Skills {
 }
 
 /// A quiet upper-case label over a section (settings.css `.set-label`).
+/// A plain label over a group, in sentence case like the rest of Settings.
 fn label(text: &str) -> Div {
     div()
-        .text_size(px(10.5))
-        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(13.))
         .text_color(colors::text3())
-        .child(text.to_uppercase())
+        .child(text.to_string())
 }
 
 fn small_button(id: impl Into<gpui::ElementId>, glyph: &str, danger: bool) -> gpui::Stateful<Div> {
@@ -261,8 +261,8 @@ impl Skills {
             let del = it.clone();
             let confirming = self.confirm.as_deref() == Some(it.command.as_str());
             let scope = match it.scope {
-                SkillScope::User => "user",
-                SkillScope::Project => "project",
+                SkillScope::User => "User",
+                SkillScope::Project => "Project",
             };
             let delete: AnyElement = if confirming {
                 div()
@@ -289,12 +289,9 @@ impl Skills {
                 .flex()
                 .items_center()
                 .gap(px(11.))
-                .px(px(12.))
-                .py(px(10.))
-                .rounded(px(10.))
-                .border_1()
-                .border_color(colors::border1())
-                .bg(colors::surface1())
+                .mx(px(16.))
+                .py(px(11.))
+                .when(i > 0, |d| d.border_t_1().border_color(colors::border1()))
                 .child(
                     div()
                         .flex()
@@ -332,14 +329,13 @@ impl Skills {
                                 .child(it.command.clone())
                                 .child(
                                     div()
-                                        .px(px(5.))
-                                        .rounded(px(4.))
-                                        .border_1()
-                                        .border_color(colors::border1())
-                                        .text_size(px(10.))
+                                        .px(px(7.))
+                                        .rounded_full()
+                                        .bg(colors::ink(0.07))
+                                        .text_size(px(10.5))
                                         .font_weight(FontWeight::NORMAL)
                                         .text_color(colors::text3())
-                                        .child(scope.to_uppercase()),
+                                        .child(scope),
                                 ),
                         )
                         .child(
@@ -362,18 +358,10 @@ impl Skills {
                 )
                 .child(delete)
         });
-        let add = div()
-            .id("skill-add")
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(px(22.))
-            .rounded(px(6.))
-            .border_1()
-            .border_color(colors::border1())
-            .cursor_pointer()
-            .hover(|s| s.bg(colors::surface2()))
-            .child(icon("plus", 14., colors::text3()))
+        let add = widgets::button_frame("skill-add")
+            .gap(px(6.))
+            .child(icon("plus", 13., colors::text2()))
+            .child("New skill")
             .on_click(cx.listener(|s, _: &ClickEvent, window, cx| s.open(None, window, cx)));
         div()
             .flex()
@@ -383,31 +371,37 @@ impl Skills {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .mb(px(9.))
-                    .child(label("Claude skills"))
-                    .child(add),
-            )
-            .child(
-                div()
-                    .mt(px(-3.))
+                    .gap(px(16.))
                     .mb(px(10.))
-                    .text_size(px(11.5))
-                    .text_color(colors::text3())
-                    .child(context),
+                    .px(px(4.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(3.))
+                            .child(label("Claude skills"))
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(colors::text3())
+                                    .child(context),
+                            ),
+                    )
+                    .child(add),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .rounded(px(12.))
+                    .bg(colors::ink(0.035))
                     .when(self.items.is_empty(), |d| {
                         d.child(
                             div()
-                                .px(px(2.))
-                                .py(px(4.))
+                                .p(px(16.))
                                 .text_size(px(13.))
                                 .text_color(colors::text3())
-                                .child("None yet. Create one with the + above."),
+                                .child("None yet. Create one with New skill."),
                         )
                     })
                     .children(rows),

@@ -173,7 +173,8 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] File viewing (CodeMirror replacement, or open in the external editor at first)
 - [x] Usage meter with the live limits rules
 - [x] Command palette
-- [x] Settings: appearance (themes, light and dark), defaults, usage, skills, general
+- [x] Settings: general (how new threads start, where folders open), appearance (themes, light
+  and dark, terminal font), agents (model and effort), usage, skills, shortcuts, about
 - [x] Intro
 - [x] Open in editor or Explorer/Finder
 - [x] Installers, auto-update, CI release for Windows and macOS (release dry run 36972542053
