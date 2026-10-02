@@ -55,6 +55,8 @@ pub enum Action {
     ArchiveThread(u64, bool),
     RemoveSpace(u64),
     RemoveThread(u64),
+    /// Opens the thread as a new pane beside the ones on screen.
+    OpenBeside(u64),
 }
 
 /// A context menu's rows: what each says and does.

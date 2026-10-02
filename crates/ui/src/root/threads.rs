@@ -433,6 +433,10 @@ impl Root {
                 }
                 self.leave(window, cx);
             }
+            Action::OpenBeside(id) => {
+                self.place_thread(id, true);
+                self.open_thread(id, window, cx);
+            }
         }
         self.save();
         cx.notify();
