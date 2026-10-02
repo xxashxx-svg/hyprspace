@@ -5,7 +5,9 @@
 
 use std::path::PathBuf;
 
-use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use gpui::{
+    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
+};
 use hyprspace_engine::Engine;
 use hyprspace_ui::Root;
 
@@ -67,9 +69,11 @@ fn main() {
             let bounds = Bounds::centered(None, size(px(1400.), px(860.)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                // the UI draws its own title row (ui/src/root/titlebar.rs)
                 titlebar: Some(TitlebarOptions {
                     title: Some("HyprSpace".into()),
-                    ..Default::default()
+                    appears_transparent: true,
+                    traffic_light_position: Some(point(px(14.), px(13.))),
                 }),
                 ..Default::default()
             };

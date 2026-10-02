@@ -1,13 +1,14 @@
-// The sidebar: search and a New thread button, then every space as a quiet folder heading over
-// its threads, an Archived group under a divider, and Settings at the foot. Right-click a space
-// or a thread for its menu; drag the right edge to resize. The compact sections follow zeron's
-// sidebar; the drag handle follows zeron's shell (MIT, see THIRD_PARTY_NOTICES.md).
+// The sidebar, drawn like zeron's: every space as a folder heading over its threads as cards, an
+// Archived group under a divider, and Settings at the foot. Its toggle, search and New thread
+// sit above it in the title row. Right-click a space or a thread, or press a space's dots, for
+// its menu; drag the right edge to resize. The drag handle follows zeron's shell (MIT, see
+// THIRD_PARTY_NOTICES.md).
 
 mod row;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, ElementId, Focusable, FontWeight, IntoElement,
-    MouseButton, MouseDownEvent, SharedString, Stateful, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Div, ElementId, FontWeight, IntoElement, MouseButton,
+    MouseDownEvent, SharedString, Stateful, Window, div, prelude::*, px, relative,
 };
 use hyprspace_proto::{Space, Thread};
 
@@ -20,39 +21,27 @@ use crate::widgets;
 pub const MIN_WIDTH: f32 = 200.;
 pub const MAX_WIDTH: f32 = 480.;
 
-/// The threads of `space` the search keeps, or None to hide the space.
-fn visible<'a>(space: &'a Space, query: &str) -> Option<Vec<&'a Thread>> {
-    let live = space.threads.iter().filter(|t| !t.archived);
-    if query.is_empty() || space.name.to_lowercase().contains(query) {
-        return Some(live.collect());
-    }
-    let hits: Vec<&Thread> = live
-        .filter(|t| t.title.to_lowercase().contains(query))
-        .collect();
-    (!hits.is_empty()).then_some(hits)
-}
-
 /// The wash a sidebar row lifts to on hover.
 pub(crate) fn row_hover() -> gpui::Hsla {
     colors::surface3().opacity(0.55)
 }
 
-/// A quiet 28px heading over a group of rows: a space's folder, or Archived.
+/// A 30px heading over a group of rows: a space's folder, or Archived.
 fn heading(id: impl Into<ElementId>) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
         .items_center()
         .gap(px(2.))
-        .h(px(28.))
-        .pl(px(8.))
+        .h(px(30.))
+        .pl(px(10.))
         .pr(px(3.))
         .rounded(px(7.))
-        .text_size(px(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(colors::text3())
+        .text_size(px(12.5))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(colors::text2())
         .cursor_pointer()
-        .hover(|s| s.text_color(colors::text2()))
+        .hover(|s| s.text_color(colors::text1()))
 }
 
 /// A chevron that says whether a group is open.
@@ -69,27 +58,24 @@ fn chevron(open: bool) -> impl IntoElement {
 }
 
 impl Root {
-    pub(crate) fn sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let query = self.search.read(cx).text().trim().to_lowercase();
+    pub(crate) fn sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let now = now_ms();
         let mut list = div()
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(px(12.))
             .px(px(8.))
-            .pt(px(4.))
+            .pt(px(8.))
             .pb(px(8.));
         let mut shown = 0;
         for space in self.state.spaces.iter().filter(|s| !s.archived) {
-            let Some(threads) = visible(space, &query) else {
-                continue;
-            };
+            let threads: Vec<&Thread> = space.threads.iter().filter(|t| !t.archived).collect();
             shown += 1;
-            let open = !space.folded || !query.is_empty();
+            let open = !space.folded;
             let mut section = div()
                 .flex()
                 .flex_col()
-                .gap(px(1.))
+                .gap(px(2.))
                 .child(self.space_row(space, open, cx));
             if open {
                 for t in &threads {
@@ -115,16 +101,11 @@ impl Root {
                     .py(px(6.))
                     .text_size(px(12.))
                     .text_color(colors::text3())
-                    .child(if query.is_empty() {
-                        "No threads yet. Start one with the button above."
-                    } else {
-                        "Nothing matches."
-                    }),
+                    .child("No threads yet. Start one with the + above."),
             );
         }
         list = list.child(self.archived(now, cx));
         let width = self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
-        let searching = self.search.focus_handle(cx).is_focused(window);
         div()
             .relative()
             .flex_none()
@@ -135,7 +116,6 @@ impl Root {
             .bg(colors::bg())
             .border_r_1()
             .border_color(colors::border0())
-            .child(self.nav(searching, cx))
             .child(
                 div()
                     .id("sidebar-list")
@@ -160,75 +140,6 @@ impl Root {
             .into_any_element()
     }
 
-    /// The top row: the search field and the square New thread button beside it.
-    fn nav(&self, searching: bool, cx: &mut Context<Self>) -> AnyElement {
-        div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .px(px(8.))
-            .pt(px(10.))
-            .pb(px(6.))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .h(px(32.))
-                    .pl(px(10.))
-                    .pr(px(6.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(if searching {
-                        colors::border2()
-                    } else {
-                        colors::border1()
-                    })
-                    .bg(colors::ink(if searching { 0.06 } else { 0.04 }))
-                    .child(icon(
-                        "search",
-                        14.,
-                        if searching {
-                            colors::text2()
-                        } else {
-                            colors::text3()
-                        },
-                    ))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(px(13.))
-                            .text_color(colors::text1())
-                            .child(self.search.clone()),
-                    ),
-            )
-            .child(
-                div()
-                    .id("new-thread")
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .size(px(32.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(colors::border1())
-                    .bg(colors::ink(0.04))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(colors::ink(0.08)).border_color(colors::border2()))
-                    .child(icon("square-pen", 15., colors::text2()))
-                    .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
-                        r.menu = None;
-                        r.pick_thread_folder(window, cx);
-                    })),
-            )
-            .into_any_element()
-    }
-
     fn space_row(&self, space: &Space, open: bool, cx: &mut Context<Self>) -> AnyElement {
         let id = space.id;
         let name: AnyElement = match &self.rename {
@@ -246,8 +157,8 @@ impl Root {
                 .child(input.clone())
                 .into_any_element(),
             _ => div()
-                .flex_1()
-                .min_w_0()
+                .flex_none()
+                .max_w(relative(0.6))
                 .truncate()
                 .child(space.name.clone())
                 .into_any_element(),
@@ -271,12 +182,34 @@ impl Root {
             ("Remove from the sidebar".into(), Action::RemoveSpace(id)),
         ]);
         let group: SharedString = format!("space-{id}").into();
-        // the controls show on hover, except a folded section's chevron: it is the only sign
-        // the section holds threads
         let hidden = |d: Stateful<Div>| d.opacity(0.).group_hover(group.clone(), |s| s.opacity(1.));
+        // where the folder is, the way zeron names a space's device after an @
+        let path = space.cwd.as_deref().map(|p| {
+            div()
+                .flex_shrink(1.)
+                .min_w_0()
+                .ml(px(6.))
+                .truncate()
+                .text_size(px(11.5))
+                .font_weight(FontWeight::NORMAL)
+                .text_color(colors::text3())
+                .child(format!("@ {}", crate::panes::short(p)))
+        });
+        let dots = menu.clone();
         heading(("space", id))
             .group(group.clone())
+            .h(px(36.))
+            .text_size(px(14.))
+            .text_color(colors::text1())
+            .child(
+                div()
+                    .flex_none()
+                    .mr(px(8.))
+                    .child(icon("folder", 15., colors::text2())),
+            )
             .child(name)
+            .children(path)
+            .child(div().flex_1())
             .child(
                 widgets::icon_button(("space-new", id), "plus", 22.)
                     .map(hidden)
@@ -293,8 +226,15 @@ impl Root {
                     .items_center()
                     .justify_center()
                     .size(px(22.))
-                    .when(open, hidden)
                     .child(chevron(open)),
+            )
+            .child(
+                widgets::icon_button(("space-menu", id), "ellipsis", 22.)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |r, e: &ClickEvent, _, cx| {
+                        r.menu = Some((e.position(), dots.clone()));
+                        cx.notify();
+                    })),
             )
             .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| r.toggle_fold(id, cx)))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
@@ -412,10 +352,8 @@ impl Root {
             .flex()
             .items_center()
             .px(px(8.))
-            .pt(px(7.))
+            .pt(px(4.))
             .pb(px(8.))
-            .border_t_1()
-            .border_color(colors::border0())
             .child(
                 div()
                     .id("settings")
@@ -449,33 +387,5 @@ struct DragGhost;
 impl gpui::Render for DragGhost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn space(name: &str, titles: &[&str]) -> Space {
-        Space {
-            name: name.into(),
-            threads: titles
-                .iter()
-                .map(|t| Thread {
-                    title: t.to_string(),
-                    ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn search_keeps_matching_spaces_and_threads() {
-        let s = space("HyprSpace", &["Fix the build", "Add search"]);
-        assert_eq!(visible(&s, "").unwrap().len(), 2);
-        assert_eq!(visible(&s, "hypr").unwrap().len(), 2);
-        assert_eq!(visible(&s, "search").unwrap().len(), 1);
-        assert!(visible(&s, "nothing").is_none());
     }
 }

@@ -138,7 +138,7 @@ fn body(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyElement
             .when(a.prompt_open, |d| {
                 d.child(
                     div()
-                        .ml(px(18.))
+                        .ml(px(26.))
                         .px(px(10.))
                         .py(px(8.))
                         .rounded(px(8.))

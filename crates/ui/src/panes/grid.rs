@@ -74,7 +74,7 @@ impl Root {
         self.frame(space, panes.len(), grid, window, cx)
     }
 
-    /// The composer for a space, under the same bar and beside the same dock as its panes.
+    /// The composer for a space, beside the same dock as its panes.
     pub(crate) fn compose_screen(
         &mut self,
         space: Option<u64>,
@@ -91,7 +91,7 @@ impl Root {
         }
     }
 
-    /// The bar on top, `body` under it, the dock on the right.
+    /// `body` with the dock on its right. The bar above is drawn in the title row.
     fn frame(
         &mut self,
         space: u64,
@@ -100,14 +100,12 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let bar = self.bar(space, panes, cx);
         let dock = self.state.dock.open.then(|| self.dock_column());
         let popup = self.bar_popup(space, panes, window, cx);
         div()
             .id("workbench")
             .size_full()
             .flex()
-            .flex_col()
             .on_action(cx.listener(Self::toggle_dock))
             .on_drag_move(cx.listener(|r, e: &DragMoveEvent<DockDrag>, _, cx| {
                 let x: f32 = e.event.position.x.into();
@@ -117,15 +115,8 @@ impl Root {
             }))
             .on_drop(cx.listener(|r, _: &DockDrag, _, _| r.save()))
             .on_drop(cx.listener(|r, _: &GutterDrag, _, _| r.save()))
-            .child(bar)
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(div().flex_1().min_w_0().h_full().child(body))
-                    .children(dock),
-            )
+            .child(div().flex_1().min_w_0().h_full().child(body))
+            .children(dock)
             .children(popup)
             .into_any_element()
     }

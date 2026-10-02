@@ -154,6 +154,12 @@ drop(session)                    // kills the CLI
 - **Frames tell panes apart.** Tiled panes each get a header and the focused one an accent
   border. A pane alone has no accent border. A structured thread alone has no frame or header at
   all: it fills the main area, and the bar above shows its agent, title, folder and model.
+- **One title row.** The window has no system title bar (`appears_transparent`). The UI draws
+  one 40px row (`ui/src/root/titlebar.rs`): the sidebar's search over the sidebar, the space's
+  bar over the main area, and the caption buttons on Windows. Its empty stretch is a
+  `WindowControlArea::Drag`, which Windows hit-tests to move and snap the window; macOS gets
+  `start_window_move` and keeps its traffic lights. Anything clickable in the row must
+  `.occlude()`, or the press drags the window instead.
 - **One viewer pane per space** shows a file or one file's diff, read only, colored by
   `crates/syntax` (tree-sitter) with the theme's terminal palette. Reads are capped at 2 MB; past
   that, or for media, the file goes to the user's editor.

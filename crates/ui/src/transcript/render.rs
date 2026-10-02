@@ -173,6 +173,15 @@ fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<AnyElement
             .iter()
             .take_while(|i| matches!(i, Item::Tool { .. } | Item::Thinking { .. }))
             .count();
+        // a run that finished fine needs no line, the way zeron's transcript has none
+        if let Item::Finished {
+            status: RunStatus::Done,
+            ..
+        } = all[ix]
+        {
+            ix += 1;
+            continue;
+        }
         if quiet == 0 {
             out.push(item(v, ix, &all[ix], cx));
             ix += 1;
@@ -232,14 +241,12 @@ fn item(
             .child(
                 div()
                     .max_w(relative(0.8))
-                    .px(px(14.))
+                    .px(px(16.))
                     .py(px(10.))
-                    .rounded(px(14.))
-                    .bg(colors::surface2())
-                    .border_1()
-                    .border_color(colors::border1())
-                    .text_size(px(13.5))
-                    .line_height(relative(1.55))
+                    .rounded(px(16.))
+                    .bg(colors::surface3())
+                    .text_size(px(14.))
+                    .line_height(relative(1.6))
                     .text_color(colors::text1())
                     .flex()
                     .flex_col()
@@ -258,8 +265,8 @@ fn item(
             .into_any_element(),
         Item::Text { blocks, .. } => match blocks {
             Some(b) => div()
-                .text_size(px(13.5))
-                .line_height(relative(1.6))
+                .text_size(px(14.))
+                .line_height(relative(1.65))
                 .text_color(colors::text1())
                 .child(markdown::render(b, &format!("t{ix}")))
                 .into_any_element(),
@@ -286,7 +293,7 @@ fn item(
                 .when(*open, |d| {
                     d.child(
                         div()
-                            .pl(px(18.))
+                            .pl(px(26.))
                             .text_size(px(12.5))
                             .line_height(relative(1.55))
                             .italic()
@@ -354,6 +361,7 @@ fn item(
         Item::Finished { status, ms, error } => {
             let secs = *ms as f32 / 1000.0;
             let line = match status {
+                // skipped in `items`
                 RunStatus::Done => format!("Done in {secs:.1}s"),
                 RunStatus::Interrupted => format!("Stopped after {secs:.1}s"),
                 RunStatus::Failed => match error {
@@ -379,7 +387,8 @@ fn item(
     }
 }
 
-/// A muted clickable line with a fold chevron. `toggle` flips what it opens.
+/// A muted clickable line led by a fold chevron in a small square, like zeron's. `toggle` flips
+/// what it opens.
 pub(super) fn fold_head(
     id: impl Into<gpui::ElementId>,
     open: bool,
@@ -392,21 +401,31 @@ pub(super) fn fold_head(
         .id(id)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(px(8.))
         .min_w_0()
-        .text_size(px(12.5))
+        .text_size(px(13.))
         .text_color(colors::text3())
         .cursor_pointer()
         .hover(|s| s.text_color(colors::text2()))
-        .child(icon(
-            if open {
-                "chevron-down"
-            } else {
-                "chevron-right"
-            },
-            12.,
-            colors::text3(),
-        ))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(18.))
+                .rounded(px(5.))
+                .bg(colors::ink(0.06))
+                .child(icon(
+                    if open {
+                        "chevron-down"
+                    } else {
+                        "chevron-right"
+                    },
+                    11.,
+                    colors::text3(),
+                )),
+        )
         .child(div().min_w_0().truncate().child(label))
         .children(right)
         .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
@@ -477,7 +496,7 @@ fn tool_run(
         .gap(px(6.))
         .child(head)
         .when(open, |d| {
-            d.child(div().pl(px(18.)).flex().flex_col().gap(px(6.)).children(
+            d.child(div().pl(px(26.)).flex().flex_col().gap(px(6.)).children(
                 (start..end).filter_map(|ix| match &v.model.items[ix] {
                     Item::Tool {
                         tool, done, open, ..
@@ -561,7 +580,7 @@ pub(super) fn tool_card(
         .when(open, |d| {
             d.child(
                 div()
-                    .pl(px(18.))
+                    .pl(px(26.))
                     .flex()
                     .flex_col()
                     .gap(px(6.))
@@ -582,8 +601,8 @@ pub(super) fn tool_card(
         .into_any_element()
 }
 
-/// The reply box: a pill holding the prompt, with the agent and model on the left of its bottom
-/// bar and attach and send on the right. Under it, the folder and its branch.
+/// The reply box: one pill with attach on its left, the prompt, and the model and send on its
+/// right. Under it, the folder and its branch.
 fn composer(
     v: &TranscriptView,
     window: &mut Window,
@@ -642,19 +661,20 @@ fn composer(
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(cx)))
     };
+    // one row like zeron's: attach, the prompt growing in the middle, then the model and send,
+    // the buttons staying on the prompt's last line
     let pill = div()
         .w_full()
         .flex()
         .flex_col()
-        .rounded(px(16.))
+        .rounded(px(14.))
         .border_1()
         .border_color(if focused {
-            colors::ink(0.2)
+            colors::ink(0.16)
         } else {
-            colors::border2()
+            colors::border1()
         })
-        .bg(colors::surface2().opacity(0.85))
-        .shadow(colors::shadow())
+        .bg(colors::surface2().opacity(0.6))
         .when(!v.images.is_empty(), |d| {
             d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
                 "thread-img",
@@ -669,29 +689,33 @@ fn composer(
         })
         .child(
             div()
-                .min_h(px(34.))
-                .px(px(16.))
-                .pt(px(12.))
-                .pb(px(4.))
-                .text_size(px(14.))
-                .line_height(px(22.))
-                .child(v.input.clone()),
-        )
-        .child(
-            div()
                 .flex()
-                .items_center()
+                .items_end()
                 .gap(px(4.))
-                .pl(px(8.))
-                .pr(px(8.))
-                .pb(px(8.))
-                .child(chip)
-                .child(div().flex_1())
+                .px(px(8.))
+                .py(px(8.))
                 .child(
                     widgets::icon_button("thread-attach", "paperclip", 28.)
                         .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.pick_images(cx))),
                 )
-                .child(action),
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .py(px(3.))
+                        .text_size(px(14.))
+                        .line_height(px(22.))
+                        .child(v.input.clone()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(4.))
+                        .child(chip)
+                        .child(action),
+                ),
         );
     let foot = div()
         .flex()

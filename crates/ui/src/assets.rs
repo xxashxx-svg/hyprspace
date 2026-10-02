@@ -92,15 +92,27 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/keyboard.svg",
     "icons/info.svg",
     "icons/minus.svg",
+    "icons/ellipsis.svg",
+    // the title row's caption buttons on Windows
+    "caption/min.svg",
+    "caption/max.svg",
+    "caption/restore.svg",
+    "caption/close.svg",
 );
 
-/// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono
-/// Nerd Font, converted from woff2 since GPUI loads TrueType.
+/// Geist and Geist Mono as zeron ships them, and the Tauri app's JetBrains Mono Nerd Font for
+/// the terminal, converted from woff2 since GPUI loads TrueType.
 const FONTS: &[&[u8]] = &[
-    include_bytes!("../assets/fonts/DMSans-Regular.ttf"),
-    include_bytes!("../assets/fonts/DMSans-Medium.ttf"),
-    include_bytes!("../assets/fonts/DMSans-SemiBold.ttf"),
-    include_bytes!("../assets/fonts/DMSans-Bold.ttf"),
+    include_bytes!("../assets/fonts/Geist.ttf"),
+    include_bytes!("../assets/fonts/Geist-Medium.ttf"),
+    include_bytes!("../assets/fonts/Geist-SemiBold.ttf"),
+    include_bytes!("../assets/fonts/Geist-Bold.ttf"),
+    include_bytes!("../assets/fonts/Geist-Italic.ttf"),
+    include_bytes!("../assets/fonts/GeistMono.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-Medium.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-SemiBold.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-Bold.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-Italic.ttf"),
     include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Regular.ttf"),
     include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Bold.ttf"),
     // agents print italics (Claude's recaps); without the face they fall back to upright

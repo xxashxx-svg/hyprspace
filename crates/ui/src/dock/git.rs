@@ -414,6 +414,8 @@ impl Dock {
         let n = s.changes.len();
         let ticked = tick(&s.changes);
         let staged = s.changes.iter().filter(|c| c.staged()).count();
+        let added: u32 = s.changes.iter().map(|c| c.added).sum();
+        let removed: u32 = s.changes.iter().map(|c| c.removed).sum();
         let busy = self.git.busy.is_some();
         let summary = self.git.summary.read(cx).text().trim().to_string();
         let can_commit = !busy && !summary.is_empty() && staged > 0;
@@ -485,7 +487,29 @@ impl Dock {
                                 "{n} changed {}",
                                 if n == 1 { "file" } else { "files" }
                             )),
-                    ),
+                    )
+                    .child(div().flex_1())
+                    // the whole tree's lines, like zeron's "80 changed files +9341 -3630"
+                    .when(added > 0, |d| {
+                        d.child(
+                            div()
+                                .ml(px(6.))
+                                .font_family(MONO)
+                                .text_size(px(11.))
+                                .text_color(colors::diff_add())
+                                .child(format!("+{added}")),
+                        )
+                    })
+                    .when(removed > 0, |d| {
+                        d.child(
+                            div()
+                                .ml(px(6.))
+                                .font_family(MONO)
+                                .text_size(px(11.))
+                                .text_color(colors::diff_del())
+                                .child(format!("-{removed}")),
+                        )
+                    }),
             )
             .child(
                 div()

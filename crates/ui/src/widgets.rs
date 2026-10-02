@@ -59,7 +59,8 @@ pub fn primary_frame(id: impl Into<ElementId>) -> Stateful<Div> {
         .hover(|s| s.bg(colors::accent_hover()))
 }
 
-/// The round send button in a prompt box: the one accent on screen.
+/// The round send button in a prompt box, zeron's: the text color filled in, its arrow cut out
+/// in the background color.
 pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
     div()
         .id(id)
@@ -67,13 +68,12 @@ pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(30.))
+        .size(px(28.))
         .rounded_full()
-        .bg(colors::accent())
-        .text_color(colors::on_accent())
+        .bg(colors::text1())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::accent_hover()))
-        .child(icon(icon_name, 15., colors::on_accent()))
+        .hover(|s| s.bg(colors::text1().opacity(0.85)))
+        .child(icon(icon_name, 15., colors::bg()))
 }
 
 /// Send's neutral twin while a run is live: a round button with a filled square.

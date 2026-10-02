@@ -9,7 +9,7 @@ use gpui::{
     relative,
 };
 use hyprspace_proto::state::{Appearance, Scheme};
-use hyprspace_theme::{MONO, THEMES, ThemeInfo};
+use hyprspace_theme::{TERM, THEMES, ThemeInfo};
 
 use super::controls::{block, group, row, section, step};
 use super::{Picker, Root};
@@ -44,7 +44,7 @@ const KNOWN_MONO: &[&str] = &[
 thread_local! {
     /// The terminal's font family and size. Painting reads it every frame, and only the main
     /// thread paints, so it lives here like the theme's colors do.
-    static TERMINAL: RefCell<(SharedString, f32)> = RefCell::new((MONO.into(), 13.));
+    static TERMINAL: RefCell<(SharedString, f32)> = RefCell::new((TERM.into(), 13.));
 }
 
 /// The family and size terminal sessions draw with.
@@ -55,7 +55,7 @@ pub(crate) fn terminal_font() -> (SharedString, f32) {
 /// Takes the terminal font from the saved appearance. Root calls it wherever the theme applies.
 pub(crate) fn set_terminal_font(a: &Appearance) {
     let family = if a.terminal_font.trim().is_empty() {
-        MONO.into()
+        TERM.into()
     } else {
         SharedString::from(a.terminal_font.clone())
     };
@@ -67,7 +67,7 @@ pub(crate) fn set_terminal_font(a: &Appearance) {
 pub(super) fn mono_families(installed: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = installed
         .into_iter()
-        .filter(|n| n != MONO && !n.starts_with('.') && !n.starts_with('@'))
+        .filter(|n| n != TERM && !n.starts_with('.') && !n.starts_with('@'))
         .filter(|n| KNOWN_MONO.contains(&n.as_str()) || n.contains("Mono") || n.contains("Code"))
         .collect();
     out.sort();
@@ -329,7 +329,7 @@ mod tests {
             "Consolas",
             "Fira Code",
             "Noto Sans Mono",
-            MONO,
+            TERM,
             "Segoe UI",
         ]
         .map(String::from)
@@ -346,7 +346,7 @@ mod tests {
             terminal_font_size: 64.,
             ..Appearance::default()
         });
-        assert_eq!(terminal_font(), (SharedString::from(MONO), MAX_SIZE));
+        assert_eq!(terminal_font(), (SharedString::from(TERM), MAX_SIZE));
         set_terminal_font(&Appearance::default());
         assert_eq!(terminal_font().1, 13.);
     }

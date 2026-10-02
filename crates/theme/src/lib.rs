@@ -135,12 +135,15 @@ pub fn brand(agent: &str) -> (Color, Color) {
     }
 }
 
-/// The UI font, as `--font-ui` in tokens.css. The UI bundles it (crates/ui/assets/fonts).
-pub const SANS: &str = "DM Sans";
+/// The UI font, zeron's. The UI bundles it (crates/ui/assets/fonts).
+pub const SANS: &str = "Geist";
 
-/// The terminal and code font, as `--font-mono` in tokens.css: the Nerd Font build, so agent
-/// status lines draw their glyphs. Bundled with the UI like `SANS`.
-pub const MONO: &str = "JetBrainsMono Nerd Font Mono";
+/// Code, paths and numbers in the UI, zeron's. Bundled with the UI like `SANS`.
+pub const MONO: &str = "Geist Mono";
+
+/// The terminal font: the Nerd Font build, so agent status lines draw their glyphs. Bundled with
+/// the UI like `SANS`.
+pub const TERM: &str = "JetBrainsMono Nerd Font Mono";
 
 #[cfg(test)]
 mod tests {

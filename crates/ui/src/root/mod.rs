@@ -4,6 +4,7 @@
 
 mod render;
 mod threads;
+pub mod titlebar;
 
 pub(crate) use threads::folder_name;
 
@@ -16,7 +17,7 @@ use hyprspace_proto::agents::AgentInfo;
 use hyprspace_proto::{AppState, Client, Command, Event, Events, SessionId};
 
 use crate::composer::{Composer, ComposerEvent};
-use crate::input::{InputEvent, TextInput};
+use crate::input::TextInput;
 use crate::terminal::TerminalView;
 use crate::transcript::{Status, TranscriptView};
 
@@ -82,7 +83,6 @@ pub struct Root {
     pub(crate) unseen: HashSet<u64>,
     pub(crate) screen: Screen,
     pub(crate) composer: Entity<Composer>,
-    pub(crate) search: Entity<TextInput>,
     pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     pub(crate) archived_open: bool,
@@ -103,6 +103,8 @@ pub struct Root {
     pub(crate) intro: Option<crate::intro::Intro>,
     /// The app updating itself (`crate::update`).
     pub(crate) updater: Entity<crate::update::Updater>,
+    /// A press in the title row on macOS, until the pointer moves and the window drag starts.
+    pub(crate) moving: bool,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -118,16 +120,8 @@ impl Root {
         client.send(Command::LoadState);
         client.send(Command::LoadAgents);
         let composer = cx.new(|cx| Composer::new(client.clone(), cx));
-        let search = cx.new(|cx| TextInput::new("Search", false, cx));
         let subs = vec![
             cx.subscribe_in(&composer, window, Self::on_composer),
-            cx.subscribe(&search, |this, input, e: &InputEvent, cx| {
-                if let InputEvent::Cancel = e {
-                    input.update(cx, |i, cx| i.set_text("", cx));
-                }
-                this.menu = None;
-                cx.notify();
-            }),
             cx.observe_window_appearance(window, |root, window, cx| {
                 root.apply_theme(window);
                 cx.notify();
@@ -164,7 +158,6 @@ impl Root {
             unseen: HashSet::new(),
             screen: Screen::Compose(None),
             composer,
-            search,
             rename: None,
             menu: None,
             archived_open: false,
@@ -177,6 +170,7 @@ impl Root {
             palette: None,
             intro: None,
             updater,
+            moving: false,
             _pump: pump,
             _subs: subs,
         }

@@ -59,15 +59,14 @@ impl Render for Root {
                 Screen::Settings => self.settings(window, cx),
             }
         };
+        let titlebar = self.titlebar(window, cx);
         let menu = self.menu(window, cx);
         let palette = self.palette_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
         let update = crate::update::overlay(&self.updater, cx);
-        // Settings takes the whole window. A hidden sidebar comes back from the bar's button, so
-        // with no space open (no bar) it shows anyway
-        let hidden = self.state.sidebar_hidden && self.screen != Screen::Compose(None);
-        let sidebar =
-            (self.screen != Screen::Settings && !hidden).then(|| self.sidebar(window, cx));
+        // Settings takes the whole window. A hidden sidebar comes back from the title row's button
+        let sidebar = (self.screen != Screen::Settings && !self.state.sidebar_hidden)
+            .then(|| self.sidebar(cx));
         div()
             .id("root")
             .key_context("Root")
@@ -75,6 +74,7 @@ impl Render for Root {
             .on_action(cx.listener(Self::toggle_sidebar))
             .size_full()
             .flex()
+            .flex_col()
             .bg(colors::bg())
             .text_color(colors::text1())
             .font_family(hyprspace_theme::SANS)
@@ -84,8 +84,15 @@ impl Render for Root {
                 cx.notify();
             }))
             .on_drop(cx.listener(|r, _: &SidebarDrag, _, _| r.save()))
-            .children(sidebar)
-            .child(div().flex_1().min_w_0().h_full().child(main))
+            .child(titlebar)
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .children(sidebar)
+                    .child(div().flex_1().min_w_0().h_full().child(main)),
+            )
             .children(update)
             .children(menu)
             .children(palette)

@@ -1,6 +1,7 @@
-// One file's working tree diff, as the Tauri app's DiffViewer drew it: hunk headers in the
-// waiting blue, additions and deletions washed in the theme's diff colors. Each line also gets
-// its old and new line numbers, read from the hunk headers.
+// One file's working tree diff, drawn like zeron's: git's file lines dropped (the pane header
+// names the file and counts its lines), quiet hunk headers, and additions and deletions washed
+// in the theme's diff colors with a bar on the left edge and the sign in its own column. Each
+// line also gets its old and new line numbers, read from the hunk headers.
 
 use std::ops::Range;
 
@@ -76,8 +77,9 @@ impl Diff {
         let rows: Vec<Row> = text
             .trim_end_matches('\n')
             .split('\n')
+            .map(|l| l.strip_suffix('\r').unwrap_or(l))
+            .filter(|l| kind(l) != Kind::Meta)
             .map(|l| {
-                let l = l.strip_suffix('\r').unwrap_or(l);
                 let kind = kind(l);
                 let (o, n) = match kind {
                     Kind::Hunk => {
@@ -101,9 +103,14 @@ impl Diff {
                     }
                     Kind::Meta => (None, None),
                 };
+                // the sign moves to its own column
+                let body = match kind {
+                    Kind::Add | Kind::Del | Kind::Same => l.get(1..).unwrap_or_default(),
+                    _ => l,
+                };
                 Row {
                     kind,
-                    text: l.replace('\t', "    ").into(),
+                    text: body.replace('\t', "    ").into(),
                     old: o,
                     new: n,
                 }
@@ -133,13 +140,12 @@ impl Diff {
 
     fn row(&self, ix: usize) -> AnyElement {
         let r = &self.rows[ix];
-        let wash = |c: Hsla| c.opacity(0.12);
-        let (bg, fg) = match r.kind {
-            Kind::Meta => (None, colors::text3()),
-            Kind::Hunk => (Some(colors::waiting().opacity(0.08)), colors::waiting()),
-            Kind::Add => (Some(wash(colors::diff_add())), colors::text1()),
-            Kind::Del => (Some(wash(colors::diff_del())), colors::text1()),
-            Kind::Same => (None, colors::text2()),
+        // the line's color, its sign, and the color its text is drawn in
+        let (tint, sign, fg): (Option<Hsla>, &str, Hsla) = match r.kind {
+            Kind::Add => (Some(colors::diff_add()), "+", colors::text1()),
+            Kind::Del => (Some(colors::diff_del()), "-", colors::text1()),
+            Kind::Hunk => (None, "", colors::text3()),
+            Kind::Meta | Kind::Same => (None, "", colors::text2()),
         };
         let num = |n: Option<u32>| {
             div()
@@ -147,7 +153,7 @@ impl Diff {
                 .w(px(40.))
                 .pr(px(8.))
                 .text_right()
-                .text_color(colors::text3().opacity(0.7))
+                .text_color(tint.unwrap_or(colors::text3().opacity(0.7)))
                 .child(SharedString::from(
                     n.map(|n| n.to_string()).unwrap_or_default(),
                 ))
@@ -156,13 +162,29 @@ impl Diff {
             .flex()
             .min_w_full()
             .h(px(ROW))
-            .when_some(bg, |d, c| d.bg(c))
+            .when_some(tint, |d, c| d.bg(c.opacity(0.1)))
+            .when(r.kind == Kind::Hunk, |d| d.bg(colors::ink(0.04)))
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(2.))
+                    .h_full()
+                    .when_some(tint, |d, c| d.bg(c)),
+            )
             .child(num(r.old))
             .child(num(r.new))
             .child(
                 div()
                     .flex_none()
-                    .pl(px(6.))
+                    .w(px(14.))
+                    .text_center()
+                    .text_color(tint.unwrap_or(colors::text3()))
+                    .child(sign),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .pl(px(4.))
                     .pr(px(24.))
                     .whitespace_nowrap()
                     .text_color(fg)
@@ -206,15 +228,18 @@ mod tests {
     fn numbers_follow_the_hunks() {
         let d = Diff::new(DIFF);
         let got: Vec<_> = d.rows.iter().map(|r| (r.kind, r.old, r.new)).collect();
-        assert_eq!(got[4], (Kind::Hunk, None, None));
-        assert_eq!(got[5], (Kind::Same, Some(3), Some(3)));
-        assert_eq!(got[6], (Kind::Del, Some(4), None));
-        assert_eq!(got[7], (Kind::Add, None, Some(4)));
-        assert_eq!(got[8], (Kind::Add, None, Some(5)));
-        assert_eq!(got[9], (Kind::Same, Some(5), Some(6)));
+        // git's four file lines are dropped
+        assert_eq!(got[0], (Kind::Hunk, None, None));
+        assert_eq!(got[1], (Kind::Same, Some(3), Some(3)));
+        assert_eq!(got[2], (Kind::Del, Some(4), None));
+        assert_eq!(got[3], (Kind::Add, None, Some(4)));
+        assert_eq!(got[4], (Kind::Add, None, Some(5)));
+        assert_eq!(got[5], (Kind::Same, Some(5), Some(6)));
         assert_eq!(d.counts(), (2, 1));
         assert!(d.is(DIFF));
-        assert_eq!(d.rows[2].kind, Kind::Meta);
+        // the sign is drawn in its own column
+        assert_eq!(d.rows[2].text.as_ref(), "old");
+        assert_eq!(d.rows[1].text.as_ref(), "keep");
     }
 
     #[test]

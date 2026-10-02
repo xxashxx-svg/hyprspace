@@ -1,7 +1,7 @@
-// The row above a space's panes, carrying what the Tauri app's titlebar held for a space: a new
-// thread, the layout picker, the Open button (the folder in an editor, Explorer or Finder), and
-// the dock toggle. The space's name and folder sit on the left, or the thread's agent, title and
-// model when a structured thread is the only pane and has no header of its own.
+// The space's half of the title row (`crate::root::titlebar`): a new thread, the layout picker,
+// the Open button (the folder in an editor, Explorer or Finder), and the dock toggle. The space's
+// name and folder sit on the left, or the thread's agent, title and model when a structured
+// thread is the only pane and has no header of its own.
 
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, MouseButton, Window, div, prelude::*,
@@ -12,7 +12,7 @@ use hyprspace_theme::MONO;
 
 use super::header::{opener_logo, short};
 use super::layout::{self, Layout};
-use super::{Popup, ToggleDock, ToggleSidebar};
+use super::{Popup, ToggleDock};
 use crate::assets::{icon, mark};
 use crate::colors;
 use crate::root::{Action, Root};
@@ -115,23 +115,24 @@ impl Root {
             ),
             None => (None, s.name.clone(), folder.as_deref().map(short)),
         };
-        div()
+        // the bar is part of the title row: its empty stretch drags the window, so the controls
+        // occlude it to keep their clicks
+        let controls = div()
+            .id("bar-controls")
+            .occlude()
+            .flex()
             .flex_none()
+            .items_center()
+            .gap(px(6.));
+        div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
             .flex()
             .items_center()
             .gap(px(6.))
-            .h(px(52.))
-            .pl(px(10.))
-            .pr(px(10.))
-            .border_b_1()
-            .border_color(colors::border0())
-            .child(
-                bar_button("bar-sidebar", "panel-left", !self.state.sidebar_hidden)
-                    .mr(px(4.))
-                    .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
-                        r.toggle_sidebar(&ToggleSidebar, window, cx)
-                    })),
-            )
+            .pl(px(14.))
+            .pr(px(6.))
             .children(badge.map(|b| div().flex_none().mr(px(2.)).child(b)))
             .child(
                 div()
@@ -162,25 +163,31 @@ impl Root {
                     .text_color(colors::error())
                     .child(n)
             }))
-            .child(bar_button("bar-new", "plus", false).on_click(cx.listener(
-                move |r, _: &ClickEvent, window, cx| r.act(Action::NewThread(space), window, cx),
-            )))
-            .when(panes >= 2 && !layout::presets(panes).is_empty(), |d| {
-                d.child(
-                    bar_button("bar-layout", "layout-grid", popup == Some(Popup::Layout)).on_click(
-                        cx.listener(|r, e: &ClickEvent, _, cx| {
-                            r.toggle_popup(Popup::Layout, e, cx)
-                        }),
-                    ),
-                )
-            })
-            .children(open_button)
-            .child(div().w(px(1.)).h(px(16.)).mx(px(8.)).bg(colors::border2()))
-            .child(self.limits.clone())
             .child(
-                bar_button("bar-dock", "panel-right", self.state.dock.open).on_click(cx.listener(
-                    |r, _: &ClickEvent, window, cx| r.toggle_dock(&ToggleDock, window, cx),
-                )),
+                controls
+                    .child(bar_button("bar-new", "plus", false).on_click(cx.listener(
+                        move |r, _: &ClickEvent, window, cx| {
+                            r.act(Action::NewThread(space), window, cx)
+                        },
+                    )))
+                    .when(panes >= 2 && !layout::presets(panes).is_empty(), |d| {
+                        d.child(
+                            bar_button("bar-layout", "layout-grid", popup == Some(Popup::Layout))
+                                .on_click(cx.listener(|r, e: &ClickEvent, _, cx| {
+                                    r.toggle_popup(Popup::Layout, e, cx)
+                                })),
+                        )
+                    })
+                    .children(open_button)
+                    .child(div().w(px(1.)).h(px(16.)).mx(px(8.)).bg(colors::border2()))
+                    .child(self.limits.clone())
+                    .child(
+                        bar_button("bar-dock", "panel-right", self.state.dock.open).on_click(
+                            cx.listener(|r, _: &ClickEvent, window, cx| {
+                                r.toggle_dock(&ToggleDock, window, cx)
+                            }),
+                        ),
+                    ),
             )
             .into_any_element()
     }

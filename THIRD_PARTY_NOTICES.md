@@ -134,16 +134,16 @@ of their owners.
 
 ## Fonts
 
-`crates/ui/assets/fonts/` holds the two fonts the Tauri app bundles, converted from its woff2
-files to TrueType (GPUI loads TrueType):
+`crates/ui/assets/fonts/` holds:
 
-- DM Sans, Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts).
-  Cut into static Regular, Medium, SemiBold and Bold instances from the variable font in
-  `@fontsource-variable/dm-sans` (latin subset).
-- JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors
+- Geist and Geist Mono, Copyright 2024 The Geist Project Authors
+  (https://github.com/vercel/geist-font), the TrueType files zeron ships in
+  `crates/ui/assets/fonts/` at commit `64ad6f6`: Regular, Medium, SemiBold, Bold and Italic.
+- JetBrains Mono for the terminal, Copyright 2020 The JetBrains Mono Project Authors
   (https://github.com/JetBrains/JetBrainsMono), as patched by
-  [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) ("JetBrainsMono Nerd Font Mono"), from
-  `src/assets/fonts/`: Regular, Bold, Italic and Bold Italic.
+  [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) ("JetBrainsMono Nerd Font Mono"),
+  converted to TrueType from the Tauri app's woff2 files in `src/assets/fonts/`: Regular, Bold,
+  Italic and Bold Italic.
 
 Both are licensed under the SIL Open Font License, Version 1.1:
 

@@ -1,6 +1,7 @@
-// One thread in the sidebar, on one line like zeron's: a status slot, the agent's mark, the
-// title, and its age on the right (a running count while it works). Click to open it,
-// right-click for rename and archive.
+// One thread in the sidebar, as a two-line card like zeron's: the model in small grey type with
+// the age on the right (a running count while it works), and under it the status, the agent's
+// mark and the title.
+// Click to open it, right-click for rename and archive.
 
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, IntoElement, MouseButton,
     Transformation, div, percentage, prelude::*, px,
 };
-use hyprspace_proto::Thread;
+use hyprspace_proto::{Thread, ThreadKind};
 use hyprspace_theme::MONO;
 
 use super::row_hover;
@@ -71,6 +72,15 @@ impl Root {
             }
             None => icon("terminal", 12., colors::text3()).into_any_element(),
         };
+        let detail = match &t.kind {
+            ThreadKind::Structured { launch } => self.model_label(launch),
+            ThreadKind::Terminal {
+                run: Some(launch), ..
+            } => {
+                format!("{} in a terminal", self.model_label(launch))
+            }
+            ThreadKind::Terminal { run: None, .. } => "Terminal".into(),
+        };
         let title: AnyElement = match &self.rename {
             Some((Rename::Thread(r), input, _)) if *r == id => div()
                 .flex_1()
@@ -89,11 +99,7 @@ impl Root {
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_color(if selected {
-                    colors::text1()
-                } else {
-                    colors::text2()
-                })
+                .text_color(colors::text1())
                 .child(t.title.clone())
                 .into_any_element(),
         };
@@ -126,27 +132,34 @@ impl Root {
             .id(("thread", id))
             .flex()
             .flex_none()
-            .items_center()
-            .gap(px(6.))
-            .h(px(30.))
-            .px(px(8.))
-            .rounded(px(8.))
-            .text_size(px(13.))
+            .flex_col()
+            .gap(px(2.))
+            .px(px(10.))
+            .py(px(8.))
+            .rounded(px(10.))
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
             .child(
                 div()
                     .flex()
-                    .flex_none()
                     .items_center()
-                    .justify_center()
-                    .size(px(14.))
-                    .children(glyph(status, self.unseen.contains(&id), id)),
+                    .text_size(px(11.5))
+                    .text_color(colors::text3())
+                    .child(div().flex_1().min_w_0().truncate().child(detail))
+                    .child(div().flex_none().pl(px(8.)).child(right)),
             )
-            .child(badge)
-            .child(title)
-            .child(div().flex_none().pl(px(4.)).child(right))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(7.))
+                    .h(px(20.))
+                    .text_size(px(13.5))
+                    .children(glyph(status, self.unseen.contains(&id), id))
+                    .child(badge)
+                    .child(title),
+            )
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
                 r.open_thread(id, window, cx)

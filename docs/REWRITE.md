@@ -334,7 +334,8 @@ scratchpad (`p4/`), including side-by-side shots with the installed Tauri app.
   and agent marks), `widgets.rs`. The terminal view is reachable as a thread ("New terminal").
 - `hyprspace [folder]` opens a folder as a space.
 - Fonts as in tokens.css: DM Sans for the UI and JetBrains Mono Nerd Font for code and the
-  terminal, converted to TrueType and bundled in `crates/ui/assets/fonts/`.
+  terminal, converted to TrueType and bundled in `crates/ui/assets/fonts/`. (Later replaced by
+  zeron's Geist and Geist Mono for the UI and code; the terminal keeps the Nerd Font.)
 
 **Checked in the running app**, input posted to its own window only: for both Claude (Haiku 4.5)
 and Codex (GPT-6-Luna) a thread started from the composer, a mid-run steer joined the run (one

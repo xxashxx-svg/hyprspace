@@ -1,6 +1,6 @@
-// The composer's box and the resume list under it, after the Tauri app's composer.css: a framed
-// card whose line firms up a little while you type, the folder on top, the prompt, and a row of
-// chips with attach and the round send button at the bottom.
+// The composer's box and the resume list under it: a framed card like the thread's reply pill
+// whose line firms up a little while you type, the folder on top, the prompt, and a row of chips
+// with attach and the round send button at the bottom.
 
 use gpui::{
     AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton, Window, div,
@@ -80,15 +80,15 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             .when(forced, |d| d.cursor_default())
     });
     let frame = if focused {
-        colors::ink(0.2)
+        colors::ink(0.16)
     } else {
-        colors::border2()
+        colors::border1()
     };
     div()
         .w_full()
         .flex()
         .flex_col()
-        .rounded(px(16.))
+        .rounded(px(14.))
         .border_1()
         .border_color(frame)
         .bg(colors::surface2().opacity(0.85))
@@ -112,7 +112,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .px(px(14.))
                 .pt(px(4.))
                 .pb(px(10.))
-                .text_size(px(14.5))
+                .text_size(px(14.))
                 .line_height(px(22.))
                 .child(c.input.clone()),
         )
@@ -122,9 +122,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .items_center()
                 .gap_2()
                 .px(px(10.))
-                .py(px(8.))
-                .border_t_1()
-                .border_color(colors::border1())
+                .pb(px(8.))
                 .child(model_chip)
                 .child(permission_chip)
                 .children(terminal_chip)
