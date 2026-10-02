@@ -57,6 +57,24 @@ pub fn handle(cmd: UpdateCommand, tx: UnboundedSender<Event>) {
     }
 }
 
+/// Clears the installers earlier updates left in the temp folder. Runs at launch, which right
+/// after an update means the installer just started us and may still hold its own file for a
+/// moment, so whatever is busy gets a few more tries.
+pub fn sweep() {
+    if hyprspace_update::installed().is_none() {
+        return;
+    }
+    std::thread::spawn(|| {
+        let temp = std::env::temp_dir();
+        for _ in 0..15 {
+            if hyprspace_update::sweep(&temp) == 0 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    });
+}
+
 fn release(up: hyprspace_update::Update) -> Release {
     Release {
         version: up.version,

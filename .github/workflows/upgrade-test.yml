@@ -1,0 +1,192 @@
+name: upgrade-test
+
+# Proves the last Tauri version updates into the GPUI app (docs/REWRITE.md, "Upgrading from the
+# Tauri app"). Each job builds and signs the GPUI app the way release.yml does, with the real
+# updater key, and builds the Tauri app from src-tauri, which is v0.21.1's code, with three build
+# overrides: its feed is a server on the runner, its version is one below so the feed is newer,
+# and it presses "Restart & update" itself (VITE_UPDATE_AUTOINSTALL, inert in a normal build).
+# Its real updater then downloads, verifies with the real public key, installs and relaunches,
+# and scripts/check-upgrade-*.{ps1,sh} check what the user ends up with.
+#
+# Run: gh workflow run upgrade-test.yml --ref rewrite
+# A push to rewrite that changes this file or the check scripts also runs it: GitHub only offers
+# workflow_dispatch for a workflow it has seen run, and this one isn't on the default branch.
+#
+# It never creates, edits or uploads to a release: the token is read-only and nothing here calls
+# `gh release`. Results are workflow artifacts (upgrade-windows, upgrade-macos).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [rewrite]
+    paths:
+      - .github/workflows/upgrade-test.yml
+      - scripts/check-upgrade-*
+
+permissions:
+  contents: read
+
+env:
+  # the Tauri release users have now; the job checks src/ and src-tauri/ still match it
+  LAST_TAURI: v0.21.1
+  # what the test build of the Tauri app calls itself, so the GPUI version reads as newer
+  TAURI_AS: "0.21.0"
+  FEED_PORT: "8765"
+  TAURI_CLI: "@tauri-apps/cli@2.11.2"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the LAST_TAURI tag
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: upgrade-test
+          workspaces: |
+            . -> target
+            src-tauri -> target
+      - name: The Tauri app under test is the last release's code
+        shell: bash
+        run: |
+          changed=$(git diff --name-only "$LAST_TAURI" HEAD -- src src-tauri index.html vite.config.ts package.json package-lock.json public tsconfig.json tsconfig.node.json)
+          echo "changed since $LAST_TAURI: ${changed:-nothing}"
+          if [ "$changed" != "src/components/Updater.tsx" ]; then
+            echo "::error::The Tauri app differs from $LAST_TAURI beyond the test switch in Updater.tsx"
+            exit 1
+          fi
+          git diff "$LAST_TAURI" HEAD -- src/components/Updater.tsx
+      - name: NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis -y --no-progress
+          }
+      - name: Build the GPUI app and its installer (as release.yml does)
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+      - name: Sign it with the updater key (as release.yml does)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          setup="HyprSpace_${version}_x64-setup.exe"
+          mkdir -p feed
+          cp "target/package/$setup" feed/
+          npx --yes "$TAURI_CLI" signer sign "feed/$setup"
+          cargo run -q --locked -p hyprspace-update --example verify -- "feed/$setup"
+      - name: The feed, as release.yml writes it, served from this runner
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          node scripts/ci-build-latest.mjs "v$version" feed "$GITHUB_REPOSITORY"
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("feed/latest.json", "utf8"));
+            for (const a of Object.values(m.platforms)) a.url = "http://127.0.0.1:" + process.env.FEED_PORT + "/" + a.url.split("/").pop();
+            fs.writeFileSync("feed/latest.json", JSON.stringify(m, null, 2));
+          '
+          cat feed/latest.json
+      - name: Build the Tauri app with its feed on this runner
+        shell: bash
+        env:
+          VITE_UPDATE_AUTOINSTALL: "1"
+        run: |
+          npm ci
+          conf="{\"version\":\"$TAURI_AS\",\"bundle\":{\"createUpdaterArtifacts\":false},\"plugins\":{\"updater\":{\"endpoints\":[\"http://127.0.0.1:$FEED_PORT/latest.json\"],\"dangerousInsecureTransportProtocol\":true}}}"
+          node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis --config "$conf"
+      - name: Let the Tauri app update itself into the GPUI app
+        shell: pwsh
+        run: |
+          $old = (Get-Item "src-tauri/target/release/bundle/nsis/HyprSpace_${env:TAURI_AS}_x64-setup.exe").FullName
+          ./scripts/check-upgrade-windows.ps1 -Old $old -Feed feed -Out upgrade-logs -Port $env:FEED_PORT
+      - name: Keep the logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-windows
+          path: |
+            upgrade-logs/
+            feed/latest.json
+
+  macos:
+    runs-on: macos-14 # Apple silicon, like darwin-aarch64
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+      # GPUI compiles its Metal shaders at build time; Xcode 26 ships the Metal toolchain apart
+      - name: Metal toolchain
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: upgrade-test
+          workspaces: |
+            . -> target
+            src-tauri -> target
+      - name: The Tauri app under test is the last release's code
+        run: |
+          changed=$(git diff --name-only "$LAST_TAURI" HEAD -- src src-tauri index.html vite.config.ts package.json package-lock.json public tsconfig.json tsconfig.node.json)
+          echo "changed since $LAST_TAURI: ${changed:-nothing}"
+          if [ "$changed" != "src/components/Updater.tsx" ]; then
+            echo "::error::The Tauri app differs from $LAST_TAURI beyond the test switch in Updater.tsx"
+            exit 1
+          fi
+      # ad hoc signed, as release.yml does until the Apple secrets exist
+      - name: Build and bundle the GPUI app (as release.yml does)
+        run: bash scripts/package-macos.sh
+      - name: Sign it with the updater key (as release.yml does)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          mkdir -p feed
+          cp target/package/HyprSpace.app.tar.gz feed/
+          npx --yes "$TAURI_CLI" signer sign feed/HyprSpace.app.tar.gz
+          cargo run -q --locked -p hyprspace-update --example verify -- feed/HyprSpace.app.tar.gz
+      - name: The feed, as release.yml writes it, served from this runner
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          node scripts/ci-build-latest.mjs "v$version" feed "$GITHUB_REPOSITORY"
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("feed/latest.json", "utf8"));
+            for (const a of Object.values(m.platforms)) a.url = "http://127.0.0.1:" + process.env.FEED_PORT + "/" + a.url.split("/").pop();
+            fs.writeFileSync("feed/latest.json", JSON.stringify(m, null, 2));
+          '
+          cat feed/latest.json
+      - name: Build the Tauri app with its feed on this runner
+        env:
+          VITE_UPDATE_AUTOINSTALL: "1"
+        run: |
+          npm ci
+          conf="{\"version\":\"$TAURI_AS\",\"bundle\":{\"createUpdaterArtifacts\":false},\"plugins\":{\"updater\":{\"endpoints\":[\"http://127.0.0.1:$FEED_PORT/latest.json\"],\"dangerousInsecureTransportProtocol\":true}}}"
+          node node_modules/@tauri-apps/cli/tauri.js build --bundles app --config "$conf"
+      - name: Let the Tauri app update itself into the GPUI app
+        run: bash scripts/check-upgrade-macos.sh src-tauri/target/release/bundle/macos/HyprSpace.app feed upgrade-logs "$FEED_PORT"
+      - name: Keep the logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-macos
+          path: |
+            upgrade-logs/
+            feed/latest.json

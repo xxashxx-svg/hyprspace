@@ -57,6 +57,7 @@ impl Engine {
     /// Starts the engine with its state in `persist::state_dir()` and returns it with the UI's
     /// two ends of the channel.
     pub fn start() -> std::io::Result<(Engine, Client, Events)> {
+        update::sweep();
         Self::start_in(persist::state_dir())
     }
 

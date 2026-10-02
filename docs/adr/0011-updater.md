@@ -38,6 +38,12 @@ reads the changelog built into the app, after `WhatsNew.tsx`, and shows on the f
 version differs from `AppState.seen_version`. The Tauri app's `lastSeenVersion` comes over with
 its state (ADR 0012), so the first GPUI launch after the update says what changed.
 
+**Downloads don't pile up in the temp folder.** Both updaters stage the installer in a temp
+folder and quit before they could delete it (the installer runs from there). So an installed copy
+clears them at launch (`hyprspace_update::sweep` from `Engine::start`): our `hyprspace-update-*`
+folders and the Tauri updater's `HyprSpace-<version>-updater-*` ones. Right after an update the
+installer that started us may still hold its file, so a busy folder gets a few more tries.
+
 **A test feed and key are a build-time switch.** `HYPRSPACE_UPDATE_FEED` and
 `HYPRSPACE_UPDATE_PUBKEY` are read with `option_env!` while the crate compiles, never at run time,
 so a shipped build can't be pointed elsewhere. Release CI never sets them. The end-to-end check

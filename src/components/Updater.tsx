@@ -33,6 +33,13 @@ export function Updater() {
     };
   }, []);
 
+  // Test builds only (.github/workflows/upgrade-test.yml): press "Restart & update" as soon as it
+  // shows, so CI can watch this updater install the next release. Vite inlines the flag at build
+  // time; a normal build has no such path.
+  useEffect(() => {
+    if (import.meta.env.VITE_UPDATE_AUTOINSTALL === "1" && phase === "available") void install();
+  }, [phase, install]);
+
   // the toast only surfaces when there's actually something to act on
   if (phase !== "available" && phase !== "downloading" && phase !== "error") return null;
   const busy = phase === "downloading";

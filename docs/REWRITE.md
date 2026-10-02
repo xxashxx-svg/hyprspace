@@ -176,7 +176,8 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Installers, auto-update, CI release for Windows and macOS (release dry run 36972542053
   built and signed both platforms and installed over the real v0.21.1 on the Windows runner) (built in phase 6c; tick once
   the release.yml dry run passes on both runners)
-- [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above)
+- [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above; proved by
+  `.github/workflows/upgrade-test.yml`, tick once a run passes on both runners)
 
 ## Open questions for Ash
 
@@ -550,4 +551,38 @@ builds (`scripts/package-windows.ps1`) but was not run here.
 (no Apple secrets yet, so ad hoc); signing with the real `TAURI_SIGNING_PRIVATE_KEY`; the real
 installer over the real v0.21.1 Tauri install (the dry run does this on the runner). The Tauri
 app's own updater running the GPUI installer is the next row.
+
+## Phase 6d results
+
+Done on 2026-10-02 up to the CI run: the last parity row is proved by a workflow, ticked once it
+passes. Trigger: `gh workflow run upgrade-test.yml --ref rewrite` (a push to `rewrite` that
+changes the workflow or its scripts also runs it).
+
+**What exists.**
+
+- `.github/workflows/upgrade-test.yml`, one job per OS, read-only token, no `gh release` anywhere.
+  It builds and signs the GPUI app as release.yml does (real key), writes `latest.json` with
+  `scripts/ci-build-latest.mjs` and points its URLs at a server on the runner, and builds the
+  Tauri app from `src-tauri` with three `tauri build --config` overrides: the feed URL (plain
+  http, so `dangerousInsecureTransportProtocol`), version 0.21.0 so the feed is newer, and no
+  updater artifacts. A step fails the job if `src/`, `src-tauri/` or the npm files differ from
+  the `v0.21.1` tag beyond the switch below.
+- The switch: `src/components/Updater.tsx` presses "Restart & update" when the build had
+  `VITE_UPDATE_AUTOINSTALL=1`. Vite inlines it; a normal build compiles the effect to
+  `useEffect(()=>{},[...])` (checked in the minified bundle).
+- `scripts/check-upgrade-windows.ps1` and `check-upgrade-macos.sh` (refuse to run outside CI):
+  install the Tauri app the user's way, seed `~/.hyprspace/v2` with a project and the Iris theme,
+  serve the feed, start the app, wait, then assert. Windows: the Tauri binary gone and not
+  running, `hyprspace.exe` running 15s later with the feed's version, the installer fetched from
+  the feed, one Apps entry with that version, shortcuts on `hyprspace.exe`, `native/state.json`
+  holding the project and theme, no updater download left in TEMP. macOS: the bundle's
+  `CFBundleExecutable` and version are the GPUI app's, the GPUI binary runs from the same
+  `~/Applications/HyprSpace.app`, no Tauri binary or process, the tarball fetched, the project and
+  theme imported. Logs, state files and screenshots are the run's artifacts.
+- Temp cleanup: `hyprspace_update::sweep` (tested) removes both updaters' staged downloads at
+  launch, with retries while the installer that just ran still holds its file (adr/0011).
+
+**v0.21.1 needs no change** if the run passes: the test build is its code, lockfiles and plugin
+versions (tauri 2.11.2, which relaunches the binary the new Info.plist names; updater 2.10.1).
+Linux v0.21.1 users find no `linux-x86_64` entry, which their updater reads as up to date.
 

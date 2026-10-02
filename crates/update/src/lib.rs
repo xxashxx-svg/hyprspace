@@ -192,6 +192,29 @@ pub fn stage(update: &Update, bytes: &[u8]) -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
+/// A folder an updater left in the temp folder: ours from [`stage`], or the Tauri app's
+/// (`HyprSpace-<version>-updater-*`), which it never removes on Windows because it exits straight
+/// after starting the installer.
+fn leftover(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.starts_with("hyprspace-update-")
+        || (name.starts_with("hyprspace-") && name.contains("-updater-"))
+}
+
+/// Remove the installers earlier updates left in `temp`. Returns how many are still there, such
+/// as the installer that just ran and hasn't exited yet.
+pub fn sweep(temp: &Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(temp) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter(|e| e.file_name().to_str().is_some_and(leftover))
+        .filter(|e| std::fs::remove_dir_all(e.path()).is_err())
+        .count()
+}
+
 /// How this copy of the app was put on disk, when it can replace itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Install {
@@ -307,6 +330,49 @@ fn relaunch_after_exit(_: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sweep_takes_only_updater_leftovers() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = |name: &str| {
+            let d = temp.path().join(name);
+            std::fs::create_dir(&d).unwrap();
+            std::fs::write(d.join("setup.exe"), "x").unwrap();
+            d
+        };
+        let ours = dir("hyprspace-update-a1b2");
+        let tauri = dir("HyprSpace-0.21.1-updater-x9y8");
+        let other = dir("hyprspace-notes");
+        let tool = dir("SomeApp-1.0-updater-z");
+        std::fs::write(temp.path().join("hyprspace-update-file"), "x").unwrap();
+
+        assert_eq!(sweep(temp.path()), 0);
+        assert!(!ours.exists() && !tauri.exists());
+        assert!(other.exists() && tool.exists());
+        assert!(temp.path().join("hyprspace-update-file").exists());
+        assert_eq!(sweep(&temp.path().join("missing")), 0);
+    }
+
+    // A running installer can't be deleted on Windows; the sweep reports it so the caller retries.
+    #[cfg(windows)]
+    #[test]
+    fn sweep_counts_what_it_could_not_remove() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        let temp = tempfile::tempdir().unwrap();
+        let d = temp.path().join("hyprspace-update-busy");
+        std::fs::create_dir(&d).unwrap();
+        // no FILE_SHARE_DELETE, the way a running .exe is held
+        let held = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .share_mode(0)
+            .open(d.join("setup.exe"))
+            .unwrap();
+        assert_eq!(sweep(temp.path()), 1);
+        drop(held);
+        assert_eq!(sweep(temp.path()), 0);
+        assert!(!d.exists());
+    }
 
     #[test]
     fn only_an_installed_copy_replaces_itself() {
