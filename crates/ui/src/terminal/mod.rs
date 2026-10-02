@@ -152,6 +152,11 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// A line of this terminal's scrollback holding `query`, for the command palette.
+    pub fn snippet(&self, query: &str) -> Option<String> {
+        self.emu.snippet(query, 72)
+    }
+
     pub fn output(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
         let reply = self.emu.feed(bytes);
         if !reply.is_empty() {

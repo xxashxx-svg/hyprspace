@@ -227,7 +227,7 @@ fn reset_ms(v: &Value) -> Option<i64> {
 }
 
 /// Minimal RFC 3339 to unix ms. Returns None on anything unexpected rather than guessing.
-fn iso_ms(s: &str) -> Option<i64> {
+pub(super) fn iso_ms(s: &str) -> Option<i64> {
     let b = s.as_bytes();
     if b.len() < 19 {
         return None;
@@ -284,7 +284,41 @@ impl HttpErr {
     }
 }
 
+/// Set to a folder, the endpoints are never called: each answer is read from a file there
+/// (`claude-usage.json`, `claude-profile.json`, `codex-usage.json`), and a missing file means
+/// that CLI is signed out. `{"fixtureStatus": 429}` in a file answers with that status. This is
+/// how the meter is checked without spending the request bucket Claude Code shares.
+const FIXTURES: &str = "HYPRSPACE_USAGE_FIXTURES";
+
+fn fixture(name: &str) -> Option<std::path::PathBuf> {
+    let dir = std::env::var_os(FIXTURES).filter(|d| !d.is_empty())?;
+    Some(std::path::PathBuf::from(dir).join(name))
+}
+
+fn fixture_name(url: &str) -> &'static str {
+    match url {
+        CLAUDE_USAGE_URL => "claude-usage.json",
+        CLAUDE_PROFILE_URL => "claude-profile.json",
+        _ => "codex-usage.json",
+    }
+}
+
+fn read_fixture(path: &std::path::Path) -> Result<Value, HttpErr> {
+    let v = read_json(path).ok_or_else(|| HttpErr::other("no fixture"))?;
+    match v["fixtureStatus"].as_u64() {
+        Some(status) => Err(HttpErr {
+            status: status as u16,
+            retry_after_ms: 0,
+            message: format!("{status}"),
+        }),
+        None => Ok(v),
+    }
+}
+
 async fn get_json(url: &str, headers: &[(&str, &str)]) -> Result<Value, HttpErr> {
+    if let Some(path) = fixture(fixture_name(url)) {
+        return read_fixture(&path);
+    }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()
@@ -330,6 +364,9 @@ fn missing(msg: &str) -> LiveUsage {
 /// Claude Code refreshes this file in place, so re-reading each poll is cheaper and safer than
 /// running our own token refresh.
 fn claude_token() -> Option<String> {
+    if let Some(path) = fixture("claude-usage.json") {
+        return path.exists().then(|| "fixture".into());
+    }
     let v = read_json(&home_dir().join(".claude").join(".credentials.json"))?;
     v["claudeAiOauth"]["accessToken"].as_str().map(String::from)
 }
@@ -469,6 +506,9 @@ pub async fn claude() -> LiveUsage {
 // ---- Codex ----
 
 fn codex_auth() -> Option<(String, String)> {
+    if let Some(path) = fixture("codex-usage.json") {
+        return path.exists().then(|| ("fixture".into(), String::new()));
+    }
     let v = read_json(&home_dir().join(".codex").join("auth.json"))?;
     let t = v["tokens"]["access_token"].as_str()?.to_string();
     let acct = v["tokens"]["account_id"].as_str().unwrap_or("").to_string();
@@ -646,6 +686,20 @@ mod tests {
         let u = q.failed(err(0, 0), "", 0);
         assert_eq!(u.problem, Some(LiveProblem::Error));
         assert!(q.cooling(1).is_none());
+    }
+
+    #[test]
+    fn fixtures_stand_in_for_the_endpoints() {
+        let dir = tempfile::tempdir().unwrap();
+        let ok = dir.path().join("ok.json");
+        let limited = dir.path().join("limited.json");
+        std::fs::write(&ok, r#"{"limits":[]}"#).unwrap();
+        std::fs::write(&limited, r#"{"fixtureStatus":429}"#).unwrap();
+        assert!(matches!(read_fixture(&ok), Ok(v) if v["limits"].is_array()));
+        assert!(matches!(read_fixture(&limited), Err(e) if e.status == 429));
+        assert!(matches!(read_fixture(&dir.path().join("none")), Err(e) if e.status == 0));
+        assert_eq!(fixture_name(CLAUDE_PROFILE_URL), "claude-profile.json");
+        assert_eq!(fixture_name(CODEX_USAGE_URL), "codex-usage.json");
     }
 
     #[test]

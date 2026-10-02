@@ -4,7 +4,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use futures::channel::mpsc::UnboundedSender;
 use hyprspace_proto::agents::{SkillItem, SkillKind, SkillScope};
+use hyprspace_proto::{Event, SkillCommand, SkillEvent};
 
 use crate::util::home_dir;
 
@@ -189,6 +191,69 @@ fn delete_in(base: &Path, kind: SkillKind, name: &str) -> Result<(), String> {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
         _ => Ok(()),
     }
+}
+
+/// Answers a Skills request on the blocking pool. A write or delete that worked is followed by
+/// the folder's fresh list, so the view never shows a skill that is gone.
+pub fn handle(cmd: SkillCommand, tx: UnboundedSender<Event>) {
+    let send = move |e: SkillEvent| {
+        let _ = tx.unbounded_send(Event::Skills(e));
+    };
+    tokio::task::spawn_blocking(move || {
+        let (cwd, result) = match cmd {
+            SkillCommand::List { cwd } => {
+                let items = list(&cwd);
+                return send(SkillEvent::List { cwd, items });
+            }
+            SkillCommand::Read {
+                cwd,
+                scope,
+                kind,
+                name,
+            } => {
+                let content = read(scope, &cwd, kind, &name);
+                return send(SkillEvent::Read {
+                    scope,
+                    name,
+                    content,
+                });
+            }
+            SkillCommand::Write {
+                cwd,
+                scope,
+                kind,
+                name,
+                content,
+                replaces,
+            } => {
+                let result =
+                    write(scope, &cwd, kind, &name, &content).and_then(|()| match replaces {
+                        Some((old_scope, old)) if old_scope != scope || old != name => {
+                            delete(old_scope, &cwd, kind, &old)
+                        }
+                        _ => Ok(()),
+                    });
+                (cwd, result)
+            }
+            SkillCommand::Delete {
+                cwd,
+                scope,
+                kind,
+                name,
+            } => {
+                let result = delete(scope, &cwd, kind, &name);
+                (cwd, result)
+            }
+        };
+        let ok = result.is_ok();
+        send(SkillEvent::Done {
+            error: result.err(),
+        });
+        if ok {
+            let items = list(&cwd);
+            send(SkillEvent::List { cwd, items });
+        }
+    });
 }
 
 #[cfg(test)]

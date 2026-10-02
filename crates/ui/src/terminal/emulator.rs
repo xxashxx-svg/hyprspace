@@ -368,6 +368,34 @@ impl Emulator {
             .collect()
     }
 
+    /// The latest line holding `query` (case-insensitive), cut to about `width` chars around
+    /// the match, for the command palette's search of every terminal.
+    pub fn snippet(&self, query: &str, width: usize) -> Option<String> {
+        let m = self.find(&query.to_lowercase(), false).pop()?;
+        let line = m.start().line;
+        let row = &self.term.grid()[line];
+        let text: String = (0..self.term.columns())
+            .map(|c| &row[Column(c)])
+            .filter(|c| {
+                !c.flags
+                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+            })
+            .map(|c| c.c)
+            .collect();
+        let chars: Vec<char> = text.trim_end().chars().collect();
+        let at = m.start().column.0.min(chars.len());
+        let from = at.saturating_sub(width / 3);
+        let to = (from + width).min(chars.len());
+        let cut: String = chars[from..to].iter().collect();
+        let cut = cut.trim();
+        Some(match (from > 0, to < chars.len()) {
+            (true, true) => format!("...{cut}..."),
+            (true, false) => format!("...{cut}"),
+            (false, true) => format!("{cut}..."),
+            (false, false) => cut.to_string(),
+        })
+    }
+
     /// Scrolls `m` into view.
     pub fn reveal_match(&mut self, m: &Match) {
         self.reveal(m.start().line);
@@ -638,6 +666,18 @@ mod tests {
         assert_eq!(e.selection_text(), None);
         e.clear_selection();
         assert_eq!(e.selection_text(), None);
+    }
+
+    #[test]
+    fn snippets_show_the_latest_line_with_a_match() {
+        let mut e = emu(40, 4);
+        e.feed(b"cargo build\r\nerror: Missing semicolon here\r\nok\r\n");
+        assert_eq!(
+            e.snippet("missing", 72).as_deref(),
+            Some("error: Missing semicolon here")
+        );
+        assert_eq!(e.snippet("SEMI", 10).as_deref(), Some("...ng semicol..."));
+        assert_eq!(e.snippet("absent", 72), None);
     }
 
     #[test]

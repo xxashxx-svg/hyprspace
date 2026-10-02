@@ -5,6 +5,8 @@
 mod render;
 mod threads;
 
+pub(crate) use threads::folder_name;
+
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -87,6 +89,14 @@ pub struct Root {
     pub(crate) open_arg: Option<PathBuf>,
     /// Panes, the dock and the viewers (`crate::panes`).
     pub(crate) work: crate::panes::Work,
+    /// Plan limits for the ring and Settings' Usage (`crate::usage`).
+    pub(crate) limits: Entity<crate::usage::Limits>,
+    /// Settings' Skills view (`crate::skills`).
+    pub(crate) skills: Entity<crate::skills::Skills>,
+    /// The command palette while it is open (`crate::palette`).
+    pub(crate) palette: Option<Entity<crate::palette::Palette>>,
+    /// The intro while it is showing (`crate::intro`).
+    pub(crate) intro: Option<crate::intro::Intro>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -128,6 +138,8 @@ impl Root {
             }
         });
         let work = crate::panes::Work::new(client.clone(), window, cx);
+        let limits = cx.new(|cx| crate::usage::Limits::new(client.clone(), cx));
+        let skills = cx.new(|_| crate::skills::Skills::new(client.clone()));
         Self {
             client,
             state: AppState::default(),
@@ -148,6 +160,10 @@ impl Root {
             settings: crate::settings::Settings::new(cx),
             open_arg: open,
             work,
+            limits,
+            skills,
+            palette: None,
+            intro: None,
             _pump: pump,
             _subs: subs,
         }
@@ -213,6 +229,8 @@ impl Root {
                 }
             }
             Event::Folder(e) => self.folder_event(e, cx),
+            Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
+            Event::Skills(e) => self.skills.update(cx, |s, cx| s.event(e, window, cx)),
             Event::AgentState { id, state } => {
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.set_status(thread, Status::from(state));
@@ -234,6 +252,7 @@ impl Root {
         self.apply_theme(window);
         let prefs = self.state.composer.clone();
         self.composer.update(cx, |c, cx| c.set_prefs(prefs, cx));
+        self.first_run(window, cx);
         if let Some(path) = self.open_arg.take() {
             let space = self.add_project(path, cx);
             self.compose(Some(space), window, cx);

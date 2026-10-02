@@ -66,6 +66,21 @@ const FILES: &[(&str, &[u8])] = files!(
     "brand/cursor.svg",
     "brand/finder.svg",
     "brand/explorer.png",
+    // the usage meter, the command palette, Settings' Usage and Skills, and the intro
+    "icons/gauge.svg",
+    "icons/zap.svg",
+    "icons/maximize-2.svg",
+    "icons/square-terminal.svg",
+    "icons/text-search.svg",
+    "icons/rotate-cw.svg",
+    "icons/triangle-alert.svg",
+    "icons/square-slash.svg",
+    "icons/arrow-right.svg",
+    "icons/folder-plus.svg",
+    "icons/copy.svg",
+    "icons/mouse-pointer-click.svg",
+    "brand/opencode.svg",
+    "brand/grok.svg",
 );
 
 /// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono
@@ -117,6 +132,26 @@ pub fn icon(name: &str, size: f32, color: Hsla) -> Svg {
         .text_color(color)
 }
 
+/// A provider's mark by its CLI name, for the agents the app can't start yet (OpenCode, Grok)
+/// as well as the ones it can.
+pub fn provider_mark(id: &str, size: f32, color: Hsla) -> Option<Svg> {
+    let file = match id {
+        "claude" => "brand/claude.svg",
+        "codex" => "brand/openai.svg",
+        "gemini" => "brand/gemini.svg",
+        "opencode" => "brand/opencode.svg",
+        "grok" => "brand/grok.svg",
+        _ => return None,
+    };
+    Some(
+        svg()
+            .path(file)
+            .size(px(size))
+            .flex_none()
+            .text_color(color),
+    )
+}
+
 /// An agent's mark in `color`, usually its brand color.
 pub fn mark(agent: Agent, size: f32, color: Hsla) -> Svg {
     let file = match agent {
@@ -145,7 +180,7 @@ mod tests {
             assert!(Assets.load(path).unwrap().is_some());
         }
         assert!(Assets.load("icons/nope.svg").unwrap().is_none());
-        assert_eq!(Assets.list("brand/").unwrap().len(), 7);
+        assert_eq!(Assets.list("brand/").unwrap().len(), 9);
     }
 
     #[test]

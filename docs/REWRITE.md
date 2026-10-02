@@ -168,10 +168,10 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Panes or tabs for several sessions at once
 - [x] Dock: files tree, git stage, commit, push, diff view
 - [x] File viewing (CodeMirror replacement, or open in the external editor at first)
-- [ ] Usage meter with the live limits rules
-- [ ] Command palette
+- [x] Usage meter with the live limits rules
+- [x] Command palette
 - [ ] Settings: appearance (themes, light and dark), defaults, usage, skills, general
-- [ ] Intro
+- [x] Intro
 - [x] Open in editor or Explorer/Finder
 - [ ] Installers, auto-update, CI release for Windows and macOS
 - [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above)
@@ -433,4 +433,40 @@ viewer has no text selection or find yet. The Tauri app's file tree context menu
 rename, delete, copy path), its file filter and discard in the git tab were not carried over.
 The sidebar has no "Open beside" or "Open in" entries (they belong to the sidebar's code).
 Drags can't leave the grid to move a pane into another space.
+
+## Phase 6b results
+
+Done on 2026-10-02. The Usage meter, Command palette and Intro rows are ticked. Settings is not:
+its Usage and Skills views work, but no text box inside Settings can keep focus (see below).
+Shapes and reasons: [adr/0009](./adr/0009-usage-palette-intro.md). Screenshots are in the phase
+6b agent's scratchpad (`p6b/`), with `70-side-by-side-ring.png` against the installed Tauri app.
+
+**What exists.**
+
+- `proto`: `UsageCommand` / `UsageEvent` (live limits, local usage, Claude status-line reports)
+  and `skills.rs` (`SkillCommand` / `SkillEvent`), behind `Command::Usage`, `Command::Skills` and
+  their events. `AppState.intro_seen`.
+- `engine`: `usage::handle` and `usage/status.rs` (rate limits from Claude's status line, teed
+  by the hook listener in `terminal.rs`); `skills::handle`; `HYPRSPACE_USAGE_FIXTURES` makes the
+  live endpoints read files instead of the network.
+- `ui/src/usage/`: `Limits` (one entity for every reading; asks Claude every 180s and Codex every
+  60s, reads Codex's session files only while its live reading is empty), `model.rs` (sources
+  folded best first, pace-based tone, the ring's worst window), `meter.rs` (ring and popover in
+  the bar above the panes), `page.rs` / `limits.rs` / `activity.rs` (Settings, Usage).
+- `ui/src/skills/`: Settings, Skills (list, editor, two-click delete). `ui/src/palette/`: the
+  palette (Ctrl+K outside a terminal, Ctrl+Shift+P anywhere): start, threads, panes, layouts,
+  view, themes, open in, settings, replay the intro, and terminal scrollback hits.
+  `ui/src/intro/`: the six-step intro with drawn sketches instead of the Tauri app's live demos.
+
+**Checked in the running app**, input posted to its own window, endpoints from fixtures except one
+real reading: ring and popover with Claude and Codex tabs, light and dark; Limits with extra usage
+and the signed-out callouts; Activity loading card by card; palette filtering, arrows, Enter, Esc,
+a terminal hit, Ctrl+K kept by a terminal; intro first run, every step and topic, a folder picked
+on the last step closing it, the flag saved; a project skill created, renamed and deleted (with
+the Settings focus fix applied locally, then reverted).
+
+**Not done.** Settings re-focuses its own container on every render, so its text boxes (the
+skill editor) and a palette opened over Settings lose focus; the fix belongs to the settings code
+(adr/0009). The palette can't open Settings at a given tab yet. No status-line reading was taken
+from a real Claude terminal session (the path is unit tested). Snippets were not carried over.
 

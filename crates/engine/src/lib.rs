@@ -256,6 +256,8 @@ async fn serve(
                 });
             }
             Command::Folder(cmd) => folders.handle(cmd, tx.clone()),
+            Command::Usage(cmd) => usage::handle(cmd, tx.clone()),
+            Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
         }
     }
 }
@@ -412,6 +414,79 @@ mod tests {
             Event::Folder(FolderEvent::Dir { entries, .. }) => {
                 let names: Vec<_> = entries.unwrap().into_iter().map(|e| e.name).collect();
                 assert_eq!(names, ["state", "a.txt"]);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        engine.shutdown();
+    }
+
+    #[test]
+    fn skills_and_usage_answer_through_the_channel() {
+        use hyprspace_proto::agents::{SkillKind, SkillScope};
+        use hyprspace_proto::{SkillCommand, SkillEvent, UsageCommand, UsageEvent};
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().join("proj");
+        let (engine, client, events) = Engine::start_in(dir.path().join("state")).unwrap();
+        let events = forward(events);
+        let wait = Duration::from_secs(10);
+        let project = |items: Vec<hyprspace_proto::agents::SkillItem>| -> Vec<String> {
+            items
+                .into_iter()
+                .filter(|s| s.scope == SkillScope::Project)
+                .map(|s| s.command)
+                .collect()
+        };
+        let write = |name: &str, replaces: Option<(SkillScope, String)>| SkillCommand::Write {
+            cwd: cwd.clone(),
+            scope: SkillScope::Project,
+            kind: SkillKind::Skill,
+            name: name.into(),
+            content: "---
+description: Fixes
+---
+Fix it.
+"
+            .into(),
+            replaces,
+        };
+        client.send(Command::Skills(write("fix", None)));
+        match events.recv_timeout(wait).unwrap() {
+            Event::Skills(SkillEvent::Done { error }) => assert_eq!(error, None),
+            other => panic!("unexpected {other:?}"),
+        }
+        match events.recv_timeout(wait).unwrap() {
+            Event::Skills(SkillEvent::List { items, .. }) => assert_eq!(project(items), ["/fix"]),
+            other => panic!("unexpected {other:?}"),
+        }
+        // a rename writes the new one and removes the old
+        client.send(Command::Skills(write(
+            "mend",
+            Some((SkillScope::Project, "fix".into())),
+        )));
+        let _ = events.recv_timeout(wait).unwrap();
+        match events.recv_timeout(wait).unwrap() {
+            Event::Skills(SkillEvent::List { items, .. }) => assert_eq!(project(items), ["/mend"]),
+            other => panic!("unexpected {other:?}"),
+        }
+        client.send(Command::Skills(SkillCommand::Read {
+            cwd: cwd.clone(),
+            scope: SkillScope::Project,
+            kind: SkillKind::Skill,
+            name: "mend".into(),
+        }));
+        match events.recv_timeout(wait).unwrap() {
+            Event::Skills(SkillEvent::Read { content, .. }) => {
+                assert!(content.unwrap().contains("Fix it."))
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        client.send(Command::Usage(UsageCommand::Local {
+            provider: "nobody".into(),
+        }));
+        match events.recv_timeout(wait).unwrap() {
+            Event::Usage(UsageEvent::Local { provider, usage }) => {
+                assert_eq!(provider, "nobody");
+                assert_eq!(usage, None);
             }
             other => panic!("unexpected {other:?}"),
         }

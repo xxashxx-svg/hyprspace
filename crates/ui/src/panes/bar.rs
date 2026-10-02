@@ -145,6 +145,7 @@ impl Root {
             })
             .children(open_button)
             .child(div().w(px(1.)).h(px(16.)).mx(px(8.)).bg(colors::border2()))
+            .child(self.limits.clone())
             .child(
                 bar_button("bar-dock", "panel-right", self.state.dock.open).on_click(cx.listener(
                     |r, _: &ClickEvent, window, cx| r.toggle_dock(&ToggleDock, window, cx),

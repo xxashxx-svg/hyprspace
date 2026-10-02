@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::agents::{Agent, AgentInfo, AgentSession, AgentState};
 use crate::folder::{FolderCommand, FolderEvent};
 use crate::run::{Answer, Launch, Prompt, RunEvent};
+use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Entry};
+use crate::usage::{UsageCommand, UsageEvent};
 
 /// Picked by whoever opens the session (the UI today), unique for the life of the engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -104,6 +106,10 @@ pub enum Command {
     },
     /// The file tree, the git tab, the viewer and the open-in actions (`folder.rs`).
     Folder(FolderCommand),
+    /// Live limits and local usage for the meter and Settings (`usage.rs`).
+    Usage(UsageCommand),
+    /// Settings' Skills view (`skills.rs`).
+    Skills(SkillCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -161,6 +167,8 @@ pub enum Event {
         result: Result<PathBuf, String>,
     },
     Folder(FolderEvent),
+    Usage(UsageEvent),
+    Skills(SkillEvent),
 }
 
 #[cfg(test)]
@@ -247,6 +255,23 @@ mod tests {
                 stage: true,
             }),
             Command::Folder(FolderCommand::Openers),
+            Command::Usage(UsageCommand::Live {
+                agent: Agent::Claude,
+            }),
+            Command::Usage(UsageCommand::Local {
+                provider: "codex".into(),
+            }),
+            Command::Skills(SkillCommand::Write {
+                cwd: PathBuf::from("/w"),
+                scope: crate::agents::SkillScope::Project,
+                kind: crate::agents::SkillKind::Skill,
+                name: "fix".into(),
+                content: "---
+---
+"
+                .into(),
+                replaces: Some((crate::agents::SkillScope::User, "old".into())),
+            }),
         ];
         for cmd in &cmds {
             assert_eq!(&round_trip(cmd), cmd);
@@ -315,6 +340,23 @@ mod tests {
             Event::Folder(FolderEvent::Git {
                 cwd: PathBuf::from("/w"),
                 status: Default::default(),
+            }),
+            Event::Usage(UsageEvent::StatusLine {
+                id: SessionId(2),
+                report: crate::usage::StatusReport {
+                    model: Some("Opus 5.5".into()),
+                    model_id: None,
+                    windows: vec![crate::usage::LiveBar {
+                        id: "five_hour".into(),
+                        percent: 12.0,
+                        ..Default::default()
+                    }],
+                },
+            }),
+            Event::Skills(SkillEvent::Read {
+                scope: crate::agents::SkillScope::User,
+                name: "fix".into(),
+                content: Err("gone".into()),
             }),
         ];
         for event in &events {

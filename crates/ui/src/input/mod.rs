@@ -149,6 +149,12 @@ impl TextInput {
         cx.notify();
     }
 
+    /// Types `text` over the selection, the way a keystroke would. An editor whose Enter means a
+    /// new line answers `InputEvent::Submit` with this.
+    pub fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.replace(self.selected.clone(), text, cx);
+    }
+
     pub fn set_placeholder(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         let text = text.into();
         if text != self.placeholder {

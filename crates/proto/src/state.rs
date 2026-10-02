@@ -26,6 +26,8 @@ pub struct AppState {
     pub dock: DockPrefs,
     /// What the Open button opens a space's folder in.
     pub open_with: Opener,
+    /// The intro was shown, or skipped because this was never a first run.
+    pub intro_seen: bool,
 }
 
 impl Default for AppState {
@@ -39,6 +41,7 @@ impl Default for AppState {
             appearance: Appearance::default(),
             dock: DockPrefs::default(),
             open_with: Opener::default(),
+            intro_seen: false,
         }
     }
 }

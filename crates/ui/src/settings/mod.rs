@@ -23,6 +23,8 @@ enum Tab {
     General,
     Appearance,
     Defaults,
+    Usage,
+    Skills,
 }
 
 /// A picker open over the Defaults view.
@@ -79,6 +81,20 @@ const TABS: &[Entry] = &[
         desc: "What each agent starts with: model, effort and permission",
         icon: "bot",
     },
+    Entry {
+        tab: Tab::Usage,
+        group: "Agents",
+        label: "Usage",
+        desc: "What each agent has used",
+        icon: "gauge",
+    },
+    Entry {
+        tab: Tab::Skills,
+        group: "Agents",
+        label: "Skills",
+        desc: "Reusable instructions for Claude",
+        icon: "zap",
+    },
 ];
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -97,6 +113,8 @@ impl Root {
             Tab::General => self.general(cx),
             Tab::Appearance => self.appearance(cx),
             Tab::Defaults => self.defaults(cx),
+            Tab::Usage => self.usage_page(cx),
+            Tab::Skills => self.skills_page(window, cx),
         };
         let header = div()
             .flex_none()

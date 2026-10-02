@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use futures::channel::mpsc::UnboundedSender;
-use hyprspace_proto::{Agent, AgentState, Event, Launch, Permission, SessionId};
+use hyprspace_proto::{Agent, AgentState, Event, Launch, Permission, SessionId, UsageEvent};
 use serde_json::Value;
 
 use crate::hooks::{self, Hook};
@@ -324,6 +324,12 @@ impl Terminals {
         if let Some(state) = changed {
             let _ = self.tx.unbounded_send(Event::AgentState { id, state });
         }
+        if let Hook::StatusLine(v) = &hook {
+            let report = crate::usage::status::report(&v["statusLine"]);
+            let _ = self
+                .tx
+                .unbounded_send(Event::Usage(UsageEvent::StatusLine { id, report }));
+        }
         if let Some(prompt) = prompt {
             let ptys = self.ptys.clone();
             thread::spawn(move || type_prompt(&ptys, id, &prompt));
@@ -472,8 +478,19 @@ mod tests {
         );
         // the prompt waits for the status line, the sign the TUI reads input
         assert!(lock(&terms.tracked)[&token(id)].prompt.is_some());
-        terms.on_hook(Hook::StatusLine(json!({ "session": token(id) })));
+        terms.on_hook(Hook::StatusLine(json!({
+            "session": token(id),
+            "statusLine": { "rate_limits": { "five_hour": { "used_percentage": 30 } } }
+        })));
         assert!(lock(&terms.tracked)[&token(id)].prompt.is_none());
+        // and its limits go to the meter
+        match rx.try_recv().ok() {
+            Some(Event::Usage(UsageEvent::StatusLine { id: got, report })) => {
+                assert_eq!(got, id);
+                assert_eq!(report.windows[0].percent, 30.0);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
         // a hook for someone else's session changes nothing
         terms.on_hook(Hook::StatusLine(json!({ "session": "other" })));
         assert!(rx.try_recv().is_err());

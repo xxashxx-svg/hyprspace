@@ -3,6 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::agents::Agent;
+use crate::wire::SessionId;
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
@@ -116,4 +119,47 @@ pub struct LiveUsage {
     pub problem: Option<LiveProblem>,
     /// A short line for the panel: why the numbers are old, or how to fix sign-in.
     pub note: Option<String>,
+}
+
+/// What Claude's status line reported in one terminal session: the account's windows (keyed by
+/// Claude's own names, `five_hour`, `seven_day`...) and the model in use. Claude pushes it every
+/// turn, so it is the fallback when the usage endpoint can't answer.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusReport {
+    /// The label people read, "Opus 5.5".
+    pub model: Option<String>,
+    pub model_id: Option<String>,
+    pub windows: Vec<LiveBar>,
+}
+
+/// Usage requests (docs/CONTEXT.md, Usage). How often the live endpoints may really be asked is
+/// the engine's rule, not the caller's: a request inside the floor answers from the last reading.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum UsageCommand {
+    /// The account's live limits. Answered with `UsageEvent::Live`.
+    Live { agent: Agent },
+    /// What `provider`'s files on this machine say. Answered with `UsageEvent::Local`.
+    Local { provider: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum UsageEvent {
+    // boxed: these are big next to every other event
+    Live {
+        agent: Agent,
+        usage: Box<LiveUsage>,
+    },
+    /// None when the provider is unknown.
+    Local {
+        provider: String,
+        usage: Option<Box<ProviderUsage>>,
+    },
+    /// A terminal session's Claude drew its status line.
+    StatusLine {
+        id: SessionId,
+        report: StatusReport,
+    },
 }

@@ -16,3 +16,4 @@ pulldown-cmark.workspace = true
 unicode-segmentation.workspace = true
 image.workspace = true
 uuid.workspace = true
+chrono.workspace = true

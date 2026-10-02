@@ -56,10 +56,14 @@ impl Render for Root {
             }
         };
         let menu = self.menu(window, cx);
+        let palette = self.palette_overlay(window, cx);
+        let intro = self.intro_overlay(window, cx);
         // Settings takes the whole window
         let sidebar = (self.screen != Screen::Settings).then(|| self.sidebar(window, cx));
         div()
             .id("root")
+            .key_context("Root")
+            .on_action(cx.listener(Self::toggle_palette))
             .size_full()
             .flex()
             .bg(colors::bg())
@@ -74,5 +78,7 @@ impl Render for Root {
             .children(sidebar)
             .child(div().flex_1().min_w_0().h_full().child(main))
             .children(menu)
+            .children(palette)
+            .children(intro)
     }
 }

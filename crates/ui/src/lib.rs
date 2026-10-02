@@ -7,14 +7,18 @@ mod colors;
 mod composer;
 mod dock;
 mod input;
+mod intro;
 mod markdown;
+mod palette;
 mod panes;
 mod root;
 mod settings;
 mod sidebar;
+mod skills;
 mod terminal;
 mod time;
 mod transcript;
+mod usage;
 mod viewer;
 mod widgets;
 
@@ -26,4 +30,5 @@ pub fn init(cx: &mut gpui::App) {
     assets::load_fonts(cx);
     input::bind_keys(cx);
     panes::bind_keys(cx);
+    palette::bind_keys(cx);
 }
