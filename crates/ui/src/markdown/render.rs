@@ -8,6 +8,7 @@ use gpui::{
 };
 use hyprspace_theme::MONO;
 
+use super::code::CodeBlock;
 use super::{Block, Inline};
 use crate::colors;
 
@@ -42,7 +43,7 @@ fn block(b: &Block, key: &str) -> AnyElement {
                 .child(inline(i, key))
                 .into_any_element()
         }
-        Block::Code { lang, text } => code(lang, text),
+        Block::Code { lang, text } => CodeBlock::new(key, lang, text).into_any_element(),
         Block::List { start, items } => div()
             .flex()
             .flex_col()
@@ -84,36 +85,6 @@ fn block(b: &Block, key: &str) -> AnyElement {
             .into_any_element(),
         Block::Table { head, rows } => table(head, rows, key),
     }
-}
-
-fn code(lang: &str, text: &str) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .rounded(px(8.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::surface2())
-        .when(!lang.is_empty(), |d| {
-            d.child(
-                div()
-                    .px(px(12.))
-                    .pt(px(8.))
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(lang.to_string()),
-            )
-        })
-        .child(
-            div()
-                .px(px(12.))
-                .py(px(10.))
-                .font_family(MONO)
-                .text_size(px(12.))
-                .line_height(px(19.))
-                .child(text.trim_end().to_string()),
-        )
-        .into_any_element()
 }
 
 fn table(head: &[Inline], rows: &[Vec<Inline>], key: &str) -> AnyElement {

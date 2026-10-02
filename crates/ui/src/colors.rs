@@ -4,9 +4,12 @@
 
 use std::cell::Cell;
 
-use gpui::{BoxShadow, Hsla, WindowAppearance, point, px, rgba};
+use gpui::{
+    BoxShadow, FontStyle, FontWeight, HighlightStyle, Hsla, WindowAppearance, point, px, rgba,
+};
 use hyprspace_proto::Agent;
 use hyprspace_proto::state::Scheme;
+use hyprspace_syntax::Kind;
 use hyprspace_theme::{Color, Theme, build};
 
 thread_local! {
@@ -85,6 +88,42 @@ pub fn ink(a: f32) -> Hsla {
 pub fn brand(agent: Agent) -> (Hsla, Hsla) {
     let (a, b) = hyprspace_theme::brand(agent.cli());
     (hsla(a), hsla(b))
+}
+
+/// How code of `kind` is drawn: the theme's code colors, comments in italics. Code blocks in the
+/// transcript use it; the file viewer can move over to it from its ANSI-based colors.
+pub fn syntax(kind: Kind) -> HighlightStyle {
+    let s = theme().syntax;
+    let color = |c: Color| HighlightStyle {
+        color: Some(hsla(c)),
+        ..Default::default()
+    };
+    match kind {
+        Kind::Comment => HighlightStyle {
+            font_style: Some(FontStyle::Italic),
+            ..color(s.comment)
+        },
+        Kind::Keyword => color(s.keyword),
+        Kind::String | Kind::Code => color(s.string),
+        Kind::Number => color(s.number),
+        Kind::Constant | Kind::Escape | Kind::Attribute => color(s.constant),
+        Kind::Type | Kind::Tag => color(s.ty),
+        Kind::Function | Kind::Macro => color(s.function),
+        Kind::Operator | Kind::Punctuation => color(s.punctuation),
+        Kind::Property | Kind::Variable => color(s.plain),
+        Kind::Link => HighlightStyle {
+            color: Some(link()),
+            ..Default::default()
+        },
+        Kind::Heading => HighlightStyle {
+            font_weight: Some(FontWeight::BOLD),
+            ..color(s.keyword)
+        },
+        Kind::Emphasis => HighlightStyle {
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+    }
 }
 
 /// tokens.css's `--shadow-2`: under the composer and popups.

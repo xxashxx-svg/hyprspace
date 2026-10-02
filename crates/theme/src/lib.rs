@@ -7,9 +7,11 @@
 //! the light side), as CLAUDE.md rule 3 asks.
 
 mod oklch;
+mod syntax;
 mod themes;
 
 pub use oklch::{oklch, oklch_a};
+pub use syntax::Syntax;
 pub use themes::{THEMES, ThemeInfo, build};
 
 /// 0xRRGGBBAA
@@ -84,6 +86,8 @@ pub struct Theme {
     pub selection: Color,
     /// The 16 ANSI colors.
     pub ansi: [Color; 16],
+    /// Code colors, for highlighted code blocks and files.
+    pub syntax: Syntax,
 }
 
 impl Theme {
