@@ -1,5 +1,6 @@
 // Draws parsed markdown blocks as GPUI elements: styled text for paragraphs, with links that
-// open in the browser and inline code in the mono font.
+// open in the browser and inline code in the mono font. Text size and line height come from the
+// caller, so a reply and a quoted snippet can differ.
 
 use gpui::{
     AnyElement, FontStyle, FontWeight, HighlightStyle, InteractiveText, IntoElement, SharedString,
@@ -15,7 +16,7 @@ pub fn render(blocks: &[Block], key: &str) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap_2()
+        .gap(px(10.))
         .children(
             blocks
                 .iter()
@@ -32,7 +33,7 @@ fn block(b: &Block, key: &str) -> AnyElement {
             let size = match level {
                 1 => px(18.),
                 2 => px(16.),
-                _ => px(14.),
+                _ => px(14.5),
             };
             div()
                 .pt_1()
@@ -89,27 +90,28 @@ fn code(lang: &str, text: &str) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .rounded_md()
+        .rounded(px(8.))
         .border_1()
         .border_color(colors::border1())
         .bg(colors::surface2())
         .when(!lang.is_empty(), |d| {
             d.child(
                 div()
-                    .px_3()
-                    .pt_1()
-                    .text_xs()
+                    .px(px(12.))
+                    .pt(px(8.))
+                    .text_size(px(11.))
                     .text_color(colors::text3())
                     .child(lang.to_string()),
             )
         })
         .child(
             div()
-                .px_3()
-                .py_2()
+                .px(px(12.))
+                .py(px(10.))
                 .font_family(MONO)
-                .text_xs()
-                .child(text.to_string()),
+                .text_size(px(12.))
+                .line_height(px(19.))
+                .child(text.trim_end().to_string()),
         )
         .into_any_element()
 }
@@ -158,7 +160,8 @@ pub fn inline(i: &Inline, key: &str) -> AnyElement {
                     color: link.then(colors::link),
                     font_weight: s.bold.then_some(FontWeight::SEMIBOLD),
                     font_style: s.italic.then_some(FontStyle::Italic),
-                    background_color: s.code.then(colors::accent_dim),
+                    // GPUI can't round a highlight's corners, so the wash stays faint
+                    background_color: s.code.then(|| colors::ink(0.08)),
                     underline: link.then(|| UnderlineStyle {
                         thickness: px(1.),
                         ..Default::default()

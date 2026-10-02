@@ -149,6 +149,14 @@ impl TextInput {
         cx.notify();
     }
 
+    pub fn set_placeholder(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
+        let text = text.into();
+        if text != self.placeholder {
+            self.placeholder = text;
+            cx.notify();
+        }
+    }
+
     pub fn select_all_text(&mut self, cx: &mut Context<Self>) {
         self.selected = 0..self.content.len();
         self.reversed = false;

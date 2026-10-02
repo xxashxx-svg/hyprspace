@@ -3,16 +3,18 @@
 // as runs or steers, answers approvals, and tells the root when its status changes.
 
 mod approval;
+mod branch;
 mod model;
 mod render;
 mod tool;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use gpui::{
-    AppContext, Context, Entity, EventEmitter, ExternalPaths, Focusable, IntoElement, Pixels,
-    Point, Render, ScrollHandle, Subscription, Task, Window, px,
+    AppContext, Context, Entity, EventEmitter, ExternalPaths, Focusable, IntoElement,
+    PathPromptOptions, Pixels, Point, Render, ScrollHandle, Subscription, Task, Window, px,
 };
 use hyprspace_proto::agents::AgentCatalog;
 use hyprspace_proto::{Answer, Client, Command, Entry, Launch, Prompt, RunEvent, SessionId};
@@ -50,6 +52,11 @@ pub struct TranscriptView {
     catalog: Option<AgentCatalog>,
     /// The model picker, open at this point.
     menu: Option<Point<Pixels>>,
+    /// Runs of tool calls opened to their single calls, by the index of their first call.
+    open_runs: HashSet<usize>,
+    /// The reply box is empty, so a live run shows Stop instead of Send.
+    empty: bool,
+    branch: Option<String>,
     status: Status,
     ticker: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -68,7 +75,7 @@ impl TranscriptView {
         client: Client,
         cx: &mut Context<Self>,
     ) -> Self {
-        let input = cx.new(|cx| TextInput::new("Reply, or steer the run while it works", true, cx));
+        let input = cx.new(|cx| TextInput::new(IDLE_HINT, true, cx));
         let sub = cx.subscribe(&input, |this, _, event: &InputEvent, cx| match event {
             InputEvent::Submit => this.submit(cx),
             InputEvent::Cancel => this.interrupt(cx),
@@ -77,8 +84,15 @@ impl TranscriptView {
                     .extend(images.iter().filter_map(|i| attach::save(i).ok()));
                 cx.notify();
             }
-            InputEvent::Changed => {}
+            InputEvent::Changed => {
+                let empty = this.input.read(cx).text().is_empty();
+                if empty != this.empty {
+                    this.empty = empty;
+                    cx.notify();
+                }
+            }
         });
+        let branch = branch::of(&launch.cwd);
         let mut view = Self {
             id,
             client,
@@ -93,6 +107,9 @@ impl TranscriptView {
             scroll: ScrollHandle::new(),
             catalog: None,
             menu: None,
+            open_runs: HashSet::new(),
+            empty: true,
+            branch,
             status: Status::Idle,
             ticker: None,
             _subs: vec![sub],
@@ -213,18 +230,33 @@ impl TranscriptView {
         cx.notify();
     }
 
-    /// What the model chip says: the picked model's label, or the CLI's own name for it.
+    /// What the model chip says: the picked model, or the one the CLI says it runs, by its
+    /// name in the catalog.
     fn model_label(&self) -> String {
-        let id = self.launch.model.clone().unwrap_or_default();
-        let from_catalog = self
-            .catalog
-            .as_ref()
-            .and_then(|c| c.models.iter().find(|m| m.id == id))
-            .filter(|m| !m.id.is_empty())
-            .map(|m| m.label.clone());
-        from_catalog
-            .or_else(|| self.model.model.clone())
-            .unwrap_or_else(|| format!("{} default", self.launch.agent.name()))
+        let picked = self.launch.model.as_deref().filter(|m| !m.is_empty());
+        match picked.or(self.model.model.as_deref()) {
+            Some(id) => model_name(self.catalog.as_ref(), id),
+            None => "Default".into(),
+        }
+    }
+
+    /// The effort the thread runs at, when it set one or its model has a default.
+    fn effort_label(&self) -> Option<String> {
+        let model = self.launch.model.as_deref().unwrap_or_default();
+        self.launch
+            .effort
+            .clone()
+            .or_else(|| {
+                self.catalog
+                    .as_ref()?
+                    .models
+                    .iter()
+                    .find(|m| m.id == model)?
+                    .default_effort
+                    .clone()
+            })
+            .filter(|e| !e.is_empty())
+            .map(|e| crate::composer::effort_label(&e))
     }
 
     pub fn apply(&mut self, event: RunEvent, cx: &mut Context<Self>) {
@@ -235,6 +267,10 @@ impl TranscriptView {
                 thread: thread.clone(),
                 cwd: cwd.clone(),
             });
+        }
+        // the agent may have switched branches during the run
+        if matches!(event, RunEvent::Started { .. } | RunEvent::Finished { .. }) {
+            self.branch = branch::of(&self.launch.cwd);
         }
         if matches!(event, RunEvent::Failed { .. }) {
             self.open = false;
@@ -275,6 +311,26 @@ impl TranscriptView {
         self.changed(cx);
     }
 
+    fn pick_images(&mut self, cx: &mut Context<Self>) {
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Attach".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
+            let _ = this.update(cx, |v, cx| {
+                v.images
+                    .extend(paths.into_iter().filter(|p| attach::is_image(p)));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn at_bottom(&self) -> bool {
         let max = self.scroll.max_offset().y;
         -self.scroll.offset().y >= max - px(48.)
@@ -283,6 +339,12 @@ impl TranscriptView {
     /// After anything that can move the status: tell the root, and keep a one-second tick
     /// going while a run is live so its timer counts.
     fn changed(&mut self, cx: &mut Context<Self>) {
+        let hint = if self.model.running() {
+            RUNNING_HINT
+        } else {
+            IDLE_HINT
+        };
+        self.input.update(cx, |i, cx| i.set_placeholder(hint, cx));
         let status = self.model.status();
         if status != self.status {
             self.status = status;
@@ -321,6 +383,48 @@ impl TranscriptView {
     }
 }
 
+const IDLE_HINT: &str = "Ask for anything";
+const RUNNING_HINT: &str = "Reply, or steer while it works";
+
+/// A model's name from the catalog. The CLI reports ids the catalog may not list exactly
+/// (`claude-opus-5-5[1m]`, a dated Haiku), so both sides drop those suffixes before comparing,
+/// and an unlisted Claude id is still turned into a name rather than shown raw.
+fn model_name(catalog: Option<&AgentCatalog>, id: &str) -> String {
+    let key = bare(id);
+    if let Some(m) = catalog
+        .into_iter()
+        .flat_map(|c| &c.models)
+        .find(|m| !m.id.is_empty() && bare(&m.id) == key)
+    {
+        return m.label.clone();
+    }
+    let Some(rest) = key.strip_prefix("claude-") else {
+        return id.to_string();
+    };
+    let mut parts = rest.split('-');
+    let family = parts.next().unwrap_or_default();
+    let mut name: String = family
+        .chars()
+        .take(1)
+        .flat_map(char::to_uppercase)
+        .chain(family.chars().skip(1))
+        .collect();
+    let version: Vec<&str> = parts.collect();
+    if !version.is_empty() {
+        name = format!("{name} {}", version.join("."));
+    }
+    name
+}
+
+/// An id without a context tag like `[1m]` or a trailing `-20251001` date.
+fn bare(id: &str) -> &str {
+    let id = id.split('[').next().unwrap_or(id);
+    match id.rsplit_once('-') {
+        Some((head, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => head,
+        _ => id,
+    }
+}
+
 impl Focusable for TranscriptView {
     fn focus_handle(&self, cx: &gpui::App) -> gpui::FocusHandle {
         self.input.focus_handle(cx)
@@ -331,5 +435,43 @@ impl Render for TranscriptView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.model.parse();
         render::view(self, window, cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyprspace_proto::Agent;
+    use hyprspace_proto::agents::ModelInfo;
+
+    fn catalog() -> AgentCatalog {
+        let m = |id: &str, label: &str| ModelInfo {
+            id: id.into(),
+            label: label.into(),
+            note: None,
+            efforts: Vec::new(),
+            default_effort: None,
+        };
+        AgentCatalog {
+            agent: Agent::Claude,
+            models: vec![
+                m("", "Default"),
+                m("claude-opus-5", "Opus 5"),
+                m("claude-opus-5-5", "Opus 5.5"),
+                m("claude-haiku-4-5-20251001", "Haiku 4.5"),
+            ],
+            efforts: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn models_show_by_name_never_by_id() {
+        let c = catalog();
+        assert_eq!(model_name(Some(&c), "claude-opus-5-5"), "Opus 5.5");
+        assert_eq!(model_name(Some(&c), "claude-opus-5-5[1m]"), "Opus 5.5");
+        assert_eq!(model_name(Some(&c), "claude-opus-5"), "Opus 5");
+        assert_eq!(model_name(Some(&c), "claude-haiku-4-5"), "Haiku 4.5");
+        assert_eq!(model_name(None, "claude-sonnet-4-6-20260101"), "Sonnet 4.6");
+        assert_eq!(model_name(None, "gpt-5.5"), "gpt-5.5");
     }
 }

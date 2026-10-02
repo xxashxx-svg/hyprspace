@@ -51,7 +51,7 @@ pub fn primary(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stat
         .child(label.into())
 }
 
-/// The square send button under a prompt box.
+/// The round send button in a prompt box: the one accent on screen.
 pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
     div()
         .id(id)
@@ -59,13 +59,31 @@ pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(32.))
-        .rounded(px(9.))
+        .size(px(30.))
+        .rounded_full()
         .bg(colors::accent())
         .text_color(colors::on_accent())
         .cursor_pointer()
         .hover(|s| s.bg(colors::accent_hover()))
         .child(icon(icon_name, 15., colors::on_accent()))
+}
+
+/// Send's neutral twin while a run is live: a round button with a filled square.
+pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(30.))
+        .rounded_full()
+        .border_1()
+        .border_color(colors::border2())
+        .bg(colors::surface3())
+        .cursor_pointer()
+        .hover(|s| s.bg(colors::ink(0.14)))
+        .child(div().size(px(10.)).rounded(px(2.)).bg(colors::text1()))
 }
 
 /// A square icon button with no frame until hovered.

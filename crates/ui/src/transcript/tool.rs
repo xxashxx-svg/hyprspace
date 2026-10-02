@@ -1,5 +1,6 @@
 // Tool calls in the transcript: a one-line summary that opens to show the call's input, its
-// output and, for file edits, the diff. Approval prompts reuse the same summary.
+// output and, for file edits, the diff. A run of calls in a row folds into one line that counts
+// them, after zeron's "Ran 4 commands · read 1 file". Approval prompts reuse the same summary.
 
 use gpui::{AnyElement, FontWeight, IntoElement, SharedString, div, prelude::*, px};
 use hyprspace_proto::Tool;
@@ -33,6 +34,59 @@ pub fn label(tool: &Tool) -> String {
         Tool::Web { target } => format!("Look up {target}"),
         Tool::Mcp { server, tool, .. } => format!("{server}: {tool}"),
         Tool::Other { name, .. } => name.clone(),
+    }
+}
+
+/// One line counting a run of calls by kind: "Ran 4 commands · read 1 file · called 1 tool".
+pub fn summary<'a>(tools: impl IntoIterator<Item = &'a Tool>) -> String {
+    // commands, files read, files edited, searches, lookups, other tools
+    let mut n = [0usize; 6];
+    for t in tools {
+        match t {
+            Tool::Command { .. } => n[0] += 1,
+            Tool::Read { .. } => n[1] += 1,
+            Tool::Edit { changes } => n[2] += changes.len().max(1),
+            Tool::Search { .. } => n[3] += 1,
+            Tool::Web { .. } => n[4] += 1,
+            Tool::Mcp { .. } | Tool::Other { .. } => n[5] += 1,
+        }
+    }
+    let plural = |n: usize, one: &str, many: &str| if n == 1 { one } else { many }.to_string();
+    let parts: Vec<String> = [
+        (
+            n[0],
+            format!("ran {} {}", n[0], plural(n[0], "command", "commands")),
+        ),
+        (
+            n[1],
+            format!("read {} {}", n[1], plural(n[1], "file", "files")),
+        ),
+        (
+            n[2],
+            format!("edited {} {}", n[2], plural(n[2], "file", "files")),
+        ),
+        (
+            n[3],
+            format!("searched {} {}", n[3], plural(n[3], "time", "times")),
+        ),
+        (
+            n[4],
+            format!("looked up {} {}", n[4], plural(n[4], "page", "pages")),
+        ),
+        (
+            n[5],
+            format!("called {} {}", n[5], plural(n[5], "tool", "tools")),
+        ),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(_, s)| s)
+    .collect();
+    let line = parts.join(" · ");
+    let mut chars = line.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => line,
     }
 }
 
@@ -92,12 +146,13 @@ pub fn input(tool: &Tool) -> Option<String> {
 /// A block of mono text, for inputs and outputs.
 pub fn mono(text: &str) -> AnyElement {
     div()
-        .px_2()
-        .py_1()
-        .rounded_sm()
+        .px(px(10.))
+        .py(px(6.))
+        .rounded(px(8.))
         .bg(colors::surface2())
         .font_family(MONO)
-        .text_xs()
+        .text_size(px(11.5))
+        .line_height(px(17.))
         .text_color(colors::text2())
         .child(text.trim_end().to_string())
         .into_any_element()
@@ -198,6 +253,30 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn a_run_of_calls_counts_by_kind() {
+        let cmd = Tool::Command {
+            command: "ls".into(),
+        };
+        let read = Tool::Read { path: "a".into() };
+        let other = Tool::Other {
+            name: "X".into(),
+            input: String::new(),
+        };
+        let run = [cmd.clone(), cmd.clone(), cmd.clone(), cmd, read, other];
+        assert_eq!(
+            summary(&run),
+            "Ran 4 commands · read 1 file · called 1 tool"
+        );
+        let edit = Tool::Edit {
+            changes: vec![
+                edit(ChangeKind::Update, "a", ""),
+                edit(ChangeKind::Add, "b", ""),
+            ],
+        };
+        assert_eq!(summary([&edit]), "Edited 2 files");
     }
 
     #[test]

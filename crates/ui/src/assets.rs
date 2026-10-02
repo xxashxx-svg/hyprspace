@@ -14,6 +14,8 @@ macro_rules! files {
 
 const FILES: &[(&str, &[u8])] = files!(
     "icons/search.svg",
+    "icons/paperclip.svg",
+    "icons/arrow-down.svg",
     "icons/square-pen.svg",
     "icons/plus.svg",
     "icons/chevron-right.svg",

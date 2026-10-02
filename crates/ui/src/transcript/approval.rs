@@ -1,7 +1,7 @@
 // An approval prompt in the transcript: what the agent wants to run, why, the diff or command,
 // and the buttons. Once answered or expired it stays as a record of what happened.
 
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, IntoElement, div, prelude::*};
+use gpui::{AnyElement, ClickEvent, Context, FontWeight, IntoElement, div, prelude::*, px};
 use hyprspace_proto::{Answer, Tool};
 
 use super::{TranscriptView, tool};
@@ -65,9 +65,9 @@ pub fn card(
         .flex()
         .flex_col()
         .gap_2()
-        .px_3()
-        .py_2()
-        .rounded_lg()
+        .px(px(14.))
+        .py(px(12.))
+        .rounded(px(12.))
         .border_1()
         .border_color(if pending {
             colors::waiting().opacity(0.6)

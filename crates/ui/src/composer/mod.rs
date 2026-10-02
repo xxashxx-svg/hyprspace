@@ -22,6 +22,7 @@ use hyprspace_proto::{Agent, Client, Command, Launch, Prompt};
 use crate::input::{InputEvent, TextInput};
 use crate::{attach, colors};
 use clone::CloneCard;
+pub use pickers::effort_label;
 
 /// Where a new thread goes: a space, its name, and its folder (None for an open space).
 #[derive(Clone, Debug, PartialEq)]

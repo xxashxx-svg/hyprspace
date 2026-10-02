@@ -1,6 +1,6 @@
 // The composer's box and the resume list under it, after the Tauri app's composer.css: a framed
-// card that lights up in the agent's color while you type, the folder on top, the prompt, and a
-// row of chips with the send button at the bottom.
+// card whose line firms up a little while you type, the folder on top, the prompt, and a row of
+// chips with attach and the round send button at the bottom.
 
 use gpui::{
     AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton, Window, div,
@@ -28,7 +28,6 @@ pub fn model_label(c: &Composer, pick: &Pick) -> String {
 pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> AnyElement {
     let pick = c.pick();
     let focused = c.input.focus_handle(cx).is_focused(window);
-    let brand = pick.as_ref().map(|p| colors::brand(p.agent).0);
     let top = top_row(c, cx);
     let model_chip: AnyElement = match &pick {
         Some(p) => widgets::chip("composer-model")
@@ -84,15 +83,16 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             })
             .when(forced, |d| d.cursor_default())
     });
-    let frame = match (focused, brand) {
-        (true, Some(b)) => b.opacity(0.45),
-        _ => colors::border2(),
+    let frame = if focused {
+        colors::ink(0.2)
+    } else {
+        colors::border2()
     };
     div()
         .w_full()
         .flex()
         .flex_col()
-        .rounded(px(14.))
+        .rounded(px(16.))
         .border_1()
         .border_color(frame)
         .bg(colors::surface2().opacity(0.85))
@@ -135,7 +135,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .children(terminal_chip)
                 .child(div().flex_1())
                 .child(
-                    widgets::icon_button("composer-attach", "image-plus", 28.)
+                    widgets::icon_button("composer-attach", "paperclip", 28.)
                         .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.pick_images(cx))),
                 )
                 .child(
