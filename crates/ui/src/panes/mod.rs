@@ -25,10 +25,13 @@ use crate::dock::{Dock, DockEvent};
 use crate::root::{Root, Screen, View};
 use crate::viewer::{Viewer, ViewerEvent};
 
-actions!(hyprspace, [ToggleDock]);
+actions!(hyprspace, [ToggleDock, ToggleSidebar]);
 
 pub fn bind_keys(cx: &mut gpui::App) {
-    cx.bind_keys([KeyBinding::new("secondary-shift-g", ToggleDock, None)]);
+    cx.bind_keys([
+        KeyBinding::new("secondary-shift-g", ToggleDock, None),
+        KeyBinding::new("secondary-shift-b", ToggleSidebar, None),
+    ]);
 }
 
 /// Which menu hangs off the bar.
@@ -322,6 +325,17 @@ impl Root {
             return;
         }
         self.show_viewer(Pane::File { path, line, col }, window, cx);
+    }
+
+    pub(crate) fn toggle_sidebar(
+        &mut self,
+        _: &ToggleSidebar,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.sidebar_hidden = !self.state.sidebar_hidden;
+        self.save();
+        cx.notify();
     }
 
     pub(crate) fn toggle_dock(&mut self, _: &ToggleDock, _: &mut Window, cx: &mut Context<Self>) {

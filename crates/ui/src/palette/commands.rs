@@ -25,6 +25,7 @@ pub enum Cmd {
     MaxPane,
     Layout(&'static str),
     ToggleDock,
+    ToggleSidebar,
     GitPanel,
     Scheme(Scheme),
     Theme(&'static str),
@@ -131,6 +132,15 @@ impl Root {
             }
         }
         let dark = crate::colors::dark(self.state.appearance.scheme, window.appearance());
+        out.push(
+            Item::new(
+                "View",
+                "Show or hide the sidebar",
+                Glyph::Icon("panel-left"),
+                Cmd::ToggleSidebar,
+            )
+            .hint("Ctrl+Shift+B"),
+        );
         out.push(
             Item::new(
                 "View",
@@ -325,6 +335,7 @@ impl Root {
                 }
             }
             Cmd::ToggleDock => self.toggle_dock(&crate::panes::ToggleDock, window, cx),
+            Cmd::ToggleSidebar => self.toggle_sidebar(&crate::panes::ToggleSidebar, window, cx),
             Cmd::GitPanel => {
                 self.state.dock.open = true;
                 self.state.dock.tab = DockTab::Git;

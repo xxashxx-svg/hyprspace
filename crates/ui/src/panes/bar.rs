@@ -12,7 +12,7 @@ use hyprspace_theme::MONO;
 
 use super::header::{opener_logo, short};
 use super::layout::{self, Layout};
-use super::{Popup, ToggleDock};
+use super::{Popup, ToggleDock, ToggleSidebar};
 use crate::assets::{icon, mark};
 use crate::colors;
 use crate::root::{Action, Root};
@@ -121,10 +121,17 @@ impl Root {
             .items_center()
             .gap(px(6.))
             .h(px(52.))
-            .pl(px(14.))
+            .pl(px(10.))
             .pr(px(10.))
             .border_b_1()
             .border_color(colors::border0())
+            .child(
+                bar_button("bar-sidebar", "panel-left", !self.state.sidebar_hidden)
+                    .mr(px(4.))
+                    .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
+                        r.toggle_sidebar(&ToggleSidebar, window, cx)
+                    })),
+            )
             .children(badge.map(|b| div().flex_none().mr(px(2.)).child(b)))
             .child(
                 div()

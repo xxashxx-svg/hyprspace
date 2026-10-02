@@ -61,6 +61,11 @@ pub(super) fn page() -> AnyElement {
                     &[chord(&[MOD, "Shift", "P"])],
                 ),
                 line(
+                    "Sidebar",
+                    "Shows or hides the list of folders and threads.",
+                    &[chord(&[MOD, "Shift", "B"])],
+                ),
+                line(
                     "Files and git",
                     "Shows or hides the dock on the right.",
                     &[chord(&[MOD, "Shift", "G"])],

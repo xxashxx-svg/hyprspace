@@ -21,6 +21,8 @@ pub struct AppState {
     /// The thread on screen when the app closed.
     pub active: Option<u64>,
     pub sidebar_width: f32,
+    /// The sidebar folded away, so the threads get the whole window.
+    pub sidebar_hidden: bool,
     pub composer: ComposerPrefs,
     pub appearance: Appearance,
     pub dock: DockPrefs,
@@ -40,6 +42,7 @@ impl Default for AppState {
             next_id: 1,
             active: None,
             sidebar_width: 272.0,
+            sidebar_hidden: false,
             composer: ComposerPrefs::default(),
             appearance: Appearance::default(),
             dock: DockPrefs::default(),

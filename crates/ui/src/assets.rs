@@ -55,6 +55,7 @@ const FILES: &[(&str, &[u8])] = files!(
     // panes, the dock, the viewer and the Open button
     "icons/grip-vertical.svg",
     "icons/layout-grid.svg",
+    "icons/panel-left.svg",
     "icons/panel-right.svg",
     "icons/folder-tree.svg",
     "icons/refresh-cw.svg",

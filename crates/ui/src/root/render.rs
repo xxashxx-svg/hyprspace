@@ -63,12 +63,16 @@ impl Render for Root {
         let palette = self.palette_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
         let update = crate::update::overlay(&self.updater, cx);
-        // Settings takes the whole window
-        let sidebar = (self.screen != Screen::Settings).then(|| self.sidebar(window, cx));
+        // Settings takes the whole window. A hidden sidebar comes back from the bar's button, so
+        // with no space open (no bar) it shows anyway
+        let hidden = self.state.sidebar_hidden && self.screen != Screen::Compose(None);
+        let sidebar =
+            (self.screen != Screen::Settings && !hidden).then(|| self.sidebar(window, cx));
         div()
             .id("root")
             .key_context("Root")
             .on_action(cx.listener(Self::toggle_palette))
+            .on_action(cx.listener(Self::toggle_sidebar))
             .size_full()
             .flex()
             .bg(colors::bg())
