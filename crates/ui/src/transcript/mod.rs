@@ -236,7 +236,7 @@ impl TranscriptView {
     fn model_label(&self) -> String {
         let picked = self.launch.model.as_deref().filter(|m| !m.is_empty());
         match picked.or(self.model.model.as_deref()) {
-            Some(id) => model_name(self.catalog.as_ref(), id),
+            Some(id) => crate::models::name(self.catalog.as_ref(), id),
             None => "Default".into(),
         }
     }
@@ -387,45 +387,6 @@ impl TranscriptView {
 const IDLE_HINT: &str = "Ask for anything";
 const RUNNING_HINT: &str = "Reply, or steer while it works";
 
-/// A model's name from the catalog. The CLI reports ids the catalog may not list exactly
-/// (`claude-opus-5-5[1m]`, a dated Haiku), so both sides drop those suffixes before comparing,
-/// and an unlisted Claude id is still turned into a name rather than shown raw.
-fn model_name(catalog: Option<&AgentCatalog>, id: &str) -> String {
-    let key = bare(id);
-    if let Some(m) = catalog
-        .into_iter()
-        .flat_map(|c| &c.models)
-        .find(|m| !m.id.is_empty() && bare(&m.id) == key)
-    {
-        return m.label.clone();
-    }
-    let Some(rest) = key.strip_prefix("claude-") else {
-        return id.to_string();
-    };
-    let mut parts = rest.split('-');
-    let family = parts.next().unwrap_or_default();
-    let mut name: String = family
-        .chars()
-        .take(1)
-        .flat_map(char::to_uppercase)
-        .chain(family.chars().skip(1))
-        .collect();
-    let version: Vec<&str> = parts.collect();
-    if !version.is_empty() {
-        name = format!("{name} {}", version.join("."));
-    }
-    name
-}
-
-/// An id without a context tag like `[1m]` or a trailing `-20251001` date.
-fn bare(id: &str) -> &str {
-    let id = id.split('[').next().unwrap_or(id);
-    match id.rsplit_once('-') {
-        Some((head, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => head,
-        _ => id,
-    }
-}
-
 impl Focusable for TranscriptView {
     fn focus_handle(&self, cx: &gpui::App) -> gpui::FocusHandle {
         self.input.focus_handle(cx)
@@ -436,43 +397,5 @@ impl Render for TranscriptView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.model.parse();
         render::view(self, window, cx)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use hyprspace_proto::Agent;
-    use hyprspace_proto::agents::ModelInfo;
-
-    fn catalog() -> AgentCatalog {
-        let m = |id: &str, label: &str| ModelInfo {
-            id: id.into(),
-            label: label.into(),
-            note: None,
-            efforts: Vec::new(),
-            default_effort: None,
-        };
-        AgentCatalog {
-            agent: Agent::Claude,
-            models: vec![
-                m("", "Default"),
-                m("claude-opus-5", "Opus 5"),
-                m("claude-opus-5-5", "Opus 5.5"),
-                m("claude-haiku-4-5-20251001", "Haiku 4.5"),
-            ],
-            efforts: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn models_show_by_name_never_by_id() {
-        let c = catalog();
-        assert_eq!(model_name(Some(&c), "claude-opus-5-5"), "Opus 5.5");
-        assert_eq!(model_name(Some(&c), "claude-opus-5-5[1m]"), "Opus 5.5");
-        assert_eq!(model_name(Some(&c), "claude-opus-5"), "Opus 5");
-        assert_eq!(model_name(Some(&c), "claude-haiku-4-5"), "Haiku 4.5");
-        assert_eq!(model_name(None, "claude-sonnet-4-6-20260101"), "Sonnet 4.6");
-        assert_eq!(model_name(None, "gpt-5.5"), "gpt-5.5");
     }
 }

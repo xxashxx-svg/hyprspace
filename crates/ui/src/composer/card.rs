@@ -15,14 +15,12 @@ use crate::{attach, colors, time, widgets};
 
 /// The picked model's label, or "Default".
 pub fn model_label(c: &Composer, pick: &Pick) -> String {
-    if pick.model.is_empty() {
-        return "Default".into();
-    }
-    c.agents
+    let catalog = c
+        .agents
         .iter()
         .find(|a| a.agent == pick.agent)
-        .and_then(|a| a.catalog.models.iter().find(|m| m.id == pick.model))
-        .map_or_else(|| pick.model.clone(), |m| m.label.clone())
+        .map(|a| &a.catalog);
+    crate::models::name(catalog, &pick.model)
 }
 
 pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> AnyElement {

@@ -8,6 +8,7 @@ mod composer;
 mod dock;
 mod input;
 mod markdown;
+mod models;
 mod panes;
 mod root;
 mod settings;

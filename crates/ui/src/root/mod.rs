@@ -328,11 +328,12 @@ impl Root {
         let Some(id) = launch.model.as_deref() else {
             return launch.agent.name().to_string();
         };
-        self.agents
+        let catalog = self
+            .agents
             .iter()
             .find(|a| a.agent == launch.agent)
-            .and_then(|a| a.catalog.models.iter().find(|m| m.id == id))
-            .map_or_else(|| id.to_string(), |m| m.label.clone())
+            .map(|a| &a.catalog);
+        crate::models::name(catalog, id)
     }
 
     pub(crate) fn save(&self) {
