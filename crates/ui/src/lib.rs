@@ -8,6 +8,7 @@ mod composer;
 mod input;
 mod markdown;
 mod root;
+mod settings;
 mod sidebar;
 mod terminal;
 mod time;

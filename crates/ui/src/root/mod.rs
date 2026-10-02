@@ -1,11 +1,11 @@
 // The window's root: the sidebar of spaces and threads on the left, the open thread (or the
-// composer) on the right. It owns the saved state, keeps one view per opened thread so runs go
-// on while another thread is on screen, and routes the engine's events to them.
+// composer, or settings) on the right. It owns the saved state, keeps one view per opened thread
+// so runs go on while another thread is on screen, and routes the engine's events to them.
 
 mod render;
 mod threads;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use futures::StreamExt;
@@ -23,6 +23,7 @@ pub enum Screen {
     Thread(u64),
     /// The composer for a space, or for no space at all on a first run.
     Compose(Option<u64>),
+    Settings,
 }
 
 pub enum View {
@@ -54,8 +55,6 @@ pub enum Action {
     ArchiveThread(u64, bool),
     RemoveSpace(u64),
     RemoveThread(u64),
-    AddProject,
-    NewOpenSpace,
 }
 
 /// A context menu's rows: what each says and does.
@@ -73,14 +72,16 @@ pub struct Root {
     pub(crate) sessions: HashMap<SessionId, u64>,
     pub(crate) next_session: u64,
     pub(crate) status: HashMap<u64, Status>,
+    /// Threads that finished while off screen, until they are opened.
+    pub(crate) unseen: HashSet<u64>,
     pub(crate) screen: Screen,
     pub(crate) composer: Entity<Composer>,
     pub(crate) search: Entity<TextInput>,
     pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     pub(crate) archived_open: bool,
-    /// The Appearance menu, open at this point.
-    pub(crate) appearance_at: Option<Point<Pixels>>,
+    /// Where Settings' Back button returns to.
+    pub(crate) back: Screen,
     /// A folder named on the command line, opened once the state has loaded.
     pub(crate) open_arg: Option<PathBuf>,
     pub(crate) _pump: Task<()>,
@@ -132,13 +133,14 @@ impl Root {
             sessions: HashMap::new(),
             next_session: 1,
             status: HashMap::new(),
+            unseen: HashSet::new(),
             screen: Screen::Compose(None),
             composer,
             search,
             rename: None,
             menu: None,
             archived_open: false,
-            appearance_at: None,
+            back: Screen::Compose(None),
             open_arg: open,
             _pump: pump,
             _subs: subs,
@@ -206,7 +208,7 @@ impl Root {
             }
             Event::AgentState { id, state } => {
                 if let Some(&thread) = self.sessions.get(&id) {
-                    self.status.insert(thread, Status::from(state));
+                    self.set_status(thread, Status::from(state));
                     cx.notify();
                 }
             }
@@ -303,16 +305,11 @@ impl Root {
         }
     }
 
-    /// A model's label from the agent's catalog, or the agent's name for its default.
-    pub(crate) fn model_label(&self, launch: &hyprspace_proto::Launch) -> String {
-        let Some(id) = launch.model.as_deref() else {
-            return launch.agent.name().to_string();
-        };
-        self.agents
-            .iter()
-            .find(|a| a.agent == launch.agent)
-            .and_then(|a| a.catalog.models.iter().find(|m| m.id == id))
-            .map_or_else(|| id.to_string(), |m| m.label.clone())
+    /// Paints the window in the saved theme, on the side the scheme and the system ask for.
+    pub(crate) fn apply_theme(&self, window: &mut Window) {
+        let a = &self.state.appearance;
+        crate::colors::set(&a.theme, crate::colors::dark(a.scheme, window.appearance()));
+        window.refresh();
     }
 
     pub(crate) fn save(&self) {

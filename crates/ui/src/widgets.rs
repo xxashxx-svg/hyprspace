@@ -289,10 +289,6 @@ pub fn menu_heading(label: impl Into<SharedString>) -> Div {
         .child(label.to_uppercase())
 }
 
-pub fn menu_rule() -> Div {
-    div().h(px(1.)).mx(px(2.)).my(px(4.)).bg(colors::border1())
-}
-
 pub fn status_dot(status: Status) -> Div {
     let d = div().flex_none().size(px(7.)).rounded_full();
     match status {

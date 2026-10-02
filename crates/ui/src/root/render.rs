@@ -1,61 +1,28 @@
-// The window's layout: sidebar, then the thread on screen under a one-line header, or the
-// composer. Context menus open from here so they float over everything.
+// The window's layout: sidebar, then the thread on screen under a one-line header, the composer,
+// or settings. Context menus open from here so they float over everything.
 
 use gpui::{
     AnyElement, ClickEvent, Context, DragMoveEvent, FontWeight, IntoElement, Render, Window, div,
     prelude::*, px,
 };
-use hyprspace_proto::ThreadKind;
-use hyprspace_theme::MONO;
 
+use super::threads::folder_name;
 use super::{Action, Root, Screen, SidebarDrag, View};
 use crate::assets::{icon, mark};
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
-use crate::transcript::Status;
 use crate::{colors, widgets};
 
-/// The last two parts of a folder, which is what tells them apart in practice.
-fn short(path: &std::path::Path) -> String {
-    let parts: Vec<String> = path
-        .components()
-        .filter_map(|c| match c {
-            std::path::Component::Normal(s) => Some(s.to_string_lossy().to_string()),
-            _ => None,
-        })
-        .collect();
-    match parts.len() {
-        0 => path.display().to_string(),
-        1 => parts[0].clone(),
-        n => format!("{}/{}", parts[n - 2], parts[n - 1]),
-    }
-}
-
 impl Root {
+    /// The agent's mark and the thread's title, then the folder it runs in, like zeron's.
     fn header(&self, id: u64) -> AnyElement {
-        let Some((space, t)) = self.state.thread(id) else {
+        let Some((_, t)) = self.state.thread(id) else {
             return div().into_any_element();
         };
-        let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
-        let (badge, detail) = match &t.kind {
-            ThreadKind::Structured { launch } => (
-                mark(launch.agent, 14., colors::brand(launch.agent).0).into_any_element(),
-                format!("{} · {}", self.model_label(launch), short(&launch.cwd)),
-            ),
-            ThreadKind::Terminal {
-                cwd,
-                run: Some(launch),
-            } => (
-                mark(launch.agent, 14., colors::brand(launch.agent).0).into_any_element(),
-                format!(
-                    "{} in a terminal · {}",
-                    self.model_label(launch),
-                    short(cwd)
-                ),
-            ),
-            ThreadKind::Terminal { cwd, run: None } => (
-                icon("terminal", 13., colors::text3()).into_any_element(),
-                format!("Terminal · {}", short(cwd)),
-            ),
+        let badge = match t.agent() {
+            Some(launch) => {
+                mark(launch.agent, 14., colors::brand(launch.agent).0).into_any_element()
+            }
+            None => icon("terminal", 13., colors::text3()).into_any_element(),
         };
         div()
             .flex_none()
@@ -63,7 +30,7 @@ impl Root {
             .items_center()
             .gap_2()
             .px_4()
-            .h(px(40.))
+            .h(px(44.))
             .border_b_1()
             .border_color(colors::border0())
             .child(badge)
@@ -73,17 +40,15 @@ impl Root {
                     .truncate()
                     .text_size(px(13.))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors::text1())
                     .child(t.title.clone()),
             )
-            .child(widgets::status_dot(status))
-            .child(div().flex_1())
             .child(
                 div()
                     .flex_none()
-                    .font_family(MONO)
-                    .text_size(px(11.))
+                    .text_size(px(12.))
                     .text_color(colors::text3())
-                    .child(format!("{} · {detail}", space.name)),
+                    .child(folder_name(t.cwd())),
             )
             .into_any_element()
     }
@@ -102,8 +67,6 @@ impl Root {
                     (Some("archive-restore"), false)
                 }
                 Action::RemoveSpace(_) | Action::RemoveThread(_) => (Some("trash-2"), true),
-                Action::AddProject => (Some("folder-open"), false),
-                Action::NewOpenSpace => (Some("plus"), false),
             };
             widgets::menu_row(("menu", i), glyph, label, danger).on_click(
                 cx.listener(move |r, _: &ClickEvent, window, cx| r.act(action, window, cx)),
@@ -144,12 +107,10 @@ impl Render for Root {
                         .into_any_element()
                 }
                 Screen::Compose(_) => self.composer.clone().into_any_element(),
+                Screen::Settings => self.settings(cx),
             }
         };
         let menu = self.menu(window, cx);
-        let appearance = self
-            .appearance_at
-            .map(|at| self.appearance_menu(at, window, cx));
         div()
             .id("root")
             .size_full()
@@ -166,17 +127,5 @@ impl Render for Root {
             .child(self.sidebar(window, cx))
             .child(div().flex_1().min_w_0().h_full().child(main))
             .children(menu)
-            .children(appearance)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn short_paths_keep_the_last_two_parts() {
-        assert_eq!(short(std::path::Path::new("/a/b/c")), "b/c");
-        assert_eq!(short(std::path::Path::new("/c")), "c");
     }
 }
