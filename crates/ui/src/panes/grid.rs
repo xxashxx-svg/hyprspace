@@ -13,6 +13,7 @@ use super::header::PaneDrag;
 use super::layout::{self, Axis, Layout};
 use crate::colors;
 use crate::root::{Root, View};
+use crate::slide::slide;
 
 /// Space around the panes and between them.
 const GAP: f32 = 8.;
@@ -100,7 +101,13 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let dock = self.state.dock.open.then(|| self.dock_column());
+        // once it has slid away the dock's column stays, zero wide
+        let open = self.state.dock.open;
+        let flips = self.work.dock_flips.see(open);
+        let dock = (open || flips > 0).then(|| {
+            let width = self.state.dock.width;
+            slide("dock", flips, open, (0., width), true, self.dock_column())
+        });
         let popup = self.bar_popup(space, panes, window, cx);
         div()
             .id("workbench")

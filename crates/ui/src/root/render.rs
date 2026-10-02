@@ -9,6 +9,7 @@ use hyprspace_proto::Opener;
 
 use super::{Action, Root, Screen, SidebarDrag};
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
+use crate::slide::slide;
 use crate::{colors, widgets};
 
 impl Root {
@@ -59,14 +60,22 @@ impl Render for Root {
                 Screen::Settings => self.settings(window, cx),
             }
         };
+        // before the title row, which slides its sidebar part in step with the column
+        if self.loaded {
+            self.sidebar_flips.see(!self.state.sidebar_hidden);
+        }
         let titlebar = self.titlebar(window, cx);
         let menu = self.menu(window, cx);
         let palette = self.palette_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
         let update = crate::update::overlay(&self.updater, cx);
-        // Settings takes the whole window. A hidden sidebar comes back from the title row's button
-        let sidebar = (self.screen != Screen::Settings && !self.state.sidebar_hidden)
-            .then(|| self.sidebar(cx));
+        // Settings takes the whole window. A hidden sidebar comes back from the title row's
+        // button; once it has slid away its column stays, zero wide
+        let open = !self.state.sidebar_hidden;
+        let flips = self.sidebar_flips.count();
+        let width = self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
+        let sidebar = (self.screen != Screen::Settings && (open || flips > 0))
+            .then(|| slide("sidebar", flips, open, (0., width), false, self.sidebar(cx)));
         div()
             .id("root")
             .key_context("Root")

@@ -57,6 +57,8 @@ pub struct Work {
     pub(crate) pending: Option<(PathBuf, Option<u32>, Option<u32>)>,
     /// What the dock was last told, so it is only told again when that changes.
     dock_sync: Option<(Option<PathBuf>, bool, Option<PathBuf>)>,
+    /// The dock's slide (`crate::slide`).
+    pub(crate) dock_flips: crate::slide::Flips,
 }
 
 impl Work {
@@ -80,6 +82,7 @@ impl Work {
             notice_task: None,
             pending: None,
             dock_sync: None,
+            dock_flips: Default::default(),
         }
     }
 }

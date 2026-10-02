@@ -13,9 +13,14 @@ use super::{Root, Screen};
 use crate::palette::TogglePalette;
 use crate::panes::ToggleSidebar;
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
+use crate::slide::slide;
 use crate::{colors, widgets};
 
 pub const HEIGHT: f32 = 40.;
+
+/// The sidebar buttons' width with their padding: three 28px buttons, the gaps between, and
+/// 8px before and 4px after.
+const NAV: f32 = 8. + 3. * 28. + 2. * 2. + 4.;
 
 /// Room the traffic lights take at the row's left end on macOS.
 const LIGHTS: f32 = if cfg!(target_os = "macos") { 78. } else { 0. };
@@ -27,19 +32,25 @@ impl Root {
         let sidebar = self.screen != Screen::Settings;
         let open = sidebar && !self.state.sidebar_hidden;
         let left = sidebar.then(|| {
-            div()
+            let width = self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
+            let body = div()
                 .flex_none()
-                .when(open, |d| {
-                    d.w(px(self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH)))
-                        .border_r_1()
-                        .border_color(colors::border0())
-                })
+                .w(px(width))
                 .h_full()
                 .flex()
                 .items_center()
                 .pl(px(LIGHTS + 8.))
-                .pr(px(4.))
-                .child(self.nav(cx))
+                .when(open, |d| d.border_r_1().border_color(colors::border0()))
+                .child(self.nav(cx));
+            // shut, the row keeps just the buttons
+            slide(
+                "titlebar-sidebar",
+                self.sidebar_flips.count(),
+                open,
+                (LIGHTS + NAV, width),
+                false,
+                body,
+            )
         });
         let space = match self.screen {
             Screen::Thread(id) => self.state.thread(id).map(|(s, _)| s.id),

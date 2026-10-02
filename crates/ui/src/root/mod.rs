@@ -105,6 +105,8 @@ pub struct Root {
     pub(crate) updater: Entity<crate::update::Updater>,
     /// A press in the title row on macOS, until the pointer moves and the window drag starts.
     pub(crate) moving: bool,
+    /// The sidebar's slide (`crate::slide`), shared by its column and its part of the title row.
+    pub(crate) sidebar_flips: crate::slide::Flips,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -171,6 +173,7 @@ impl Root {
             intro: None,
             updater,
             moving: false,
+            sidebar_flips: Default::default(),
             _pump: pump,
             _subs: subs,
         }
