@@ -1,0 +1,19 @@
+{
+  "version": "0.21.1",
+  "notes": "## What's changed\n\n- Cloning a repository lets you pick the folder, clone straight into an empty one, and open it in this thread or a new one\n- The clone card shows real download progress, and a private repo fails with git's message instead of hanging\n- Hovering an image in a prompt you haven't sent yet shows the image\n- The sidebar's right-click menu stays on screen near the bottom of the window\n\n## Contributors\n\n@xxashxx-svg\n\n**Full changelog**: https://github.com/xxashxx-svg/hyprspace/compare/v0.21.0...v0.21.1",
+  "pub_date": "2026-09-28T01:43:41.867Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUVI5WnNFWmxGc1RMb3Z2TVp6N3lpR084bzhVMzd5RlMvL2k1bnlVaGtVU25sdzc3V0gxQSs1QTBpNDlaSG10aTFvS1R6b1ZIbUJWajJidGV5eUdJd3cxYlBQTzRWWWdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTU4NzYzCWZpbGU6SHlwclNwYWNlXzAuMjEuMV94NjQtc2V0dXAuZXhlCmpNSTE4USt4a050eWl1T01YQnEwSUJ0Mm0zTDJwMmlMYW9NR29ySXYyTEtLV1ZtUEdKc0pUYXpRaFQva1hWUGtZZHVuTDV3MUV1UStVbWZtSUxZZkFnPT0K",
+      "url": "https://github.com/xxashxx-svg/hyprspace/releases/download/v0.21.1/HyprSpace_0.21.1_x64-setup.exe"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUVI5WnNFWmxGc2Q0czloeVE3TE1wZmNaZU5WRFAxTFcwUWk2QS9sY3hHc2s2bmJnV25BNmlmOG9EVHpyKzV4UERJNmRscjFKMS9paXpFZnlsVUtMeFJVbUZGNGs3VlFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTU5MzQyCWZpbGU6SHlwclNwYWNlLmFwcC50YXIuZ3oKWDZCTXhtS1hDQmthMC9JSTJyWUhqc3g4QTEreUVpUW5uNnVways3UlFYbHM2RTIxVUxYTDE3aVV1K2F1WE9WVUlxem1aU0tNeERqYklNTXh0MEQ5QkE9PQo=",
+      "url": "https://github.com/xxashxx-svg/hyprspace/releases/download/v0.21.1/HyprSpace.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUVI5WnNFWmxGc2JRYTFpcElMaDUxVzdzSmltWUdKb3ZqZFUzVUQ1SU1laENGM0w4MHZoMEpTWWVkK3VqdVUvbm1kMHl5VFNESmhhK2JoZGtXcTJrK2gzZEs4bVhHZEFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTU5ODIwCWZpbGU6SHlwclNwYWNlXzAuMjEuMV9hbWQ2NC5BcHBJbWFnZQp5eWc4QUlHeHFwUHhoa05aRE01MXE3OUhwWm5ZR3JnYXc2MEtzdGl4N0wvdGJlWlh6YlFnWm14ZExVb3JXbGo3MFBKc2xnNTZidlRzZEtTMnhOUFNCZz09Cg==",
+      "url": "https://github.com/xxashxx-svg/hyprspace/releases/download/v0.21.1/HyprSpace_0.21.1_amd64.AppImage"
+    }
+  }
+}
