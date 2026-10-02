@@ -151,6 +151,9 @@ drop(session)                    // kills the CLI
   pane; ctrl+click adds a pane. Closing a pane leaves the thread running and in the sidebar. A
   removed or archived thread drops out of the grid when it is drawn, so saved grids never need
   tidying (ADR 0007).
+- **Frames tell panes apart.** Tiled panes each get a header and the focused one an accent
+  border. A pane alone has no accent border. A structured thread alone has no frame or header at
+  all: it fills the main area, and the bar above shows its agent, title, folder and model.
 - **One viewer pane per space** shows a file or one file's diff, read only, colored by
   `crates/syntax` (tree-sitter) with the theme's terminal palette. Reads are capped at 2 MB; past
   that, or for media, the file goes to the user's editor.

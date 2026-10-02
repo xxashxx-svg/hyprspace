@@ -1,18 +1,19 @@
 // The row above a space's panes, carrying what the Tauri app's titlebar held for a space: a new
 // thread, the layout picker, the Open button (the folder in an editor, Explorer or Finder), and
-// the dock toggle. The space's name and folder sit on the left.
+// the dock toggle. The space's name and folder sit on the left, or the thread's agent, title and
+// model when a structured thread is the only pane and has no header of its own.
 
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, MouseButton, Window, div, prelude::*,
     px,
 };
-use hyprspace_proto::Opener;
+use hyprspace_proto::{Opener, ThreadKind};
 use hyprspace_theme::MONO;
 
 use super::header::{opener_logo, short};
 use super::layout::{self, Layout};
 use super::{Popup, ToggleDock};
-use crate::assets::icon;
+use crate::assets::{icon, mark};
 use crate::colors;
 use crate::root::{Action, Root};
 use crate::widgets;
@@ -94,6 +95,26 @@ impl Root {
                         })),
                 )
         });
+        let thread = (panes == 1)
+            .then(|| self.lone_structured(space))
+            .flatten()
+            .and_then(|id| self.state.thread(id))
+            .and_then(|(_, t)| match &t.kind {
+                ThreadKind::Structured { launch } => Some((t.title.clone(), launch.clone())),
+                _ => None,
+            });
+        let (badge, name, detail) = match thread {
+            Some((title, launch)) => (
+                Some(mark(launch.agent, 14., colors::brand(launch.agent).0)),
+                title,
+                Some(format!(
+                    "{} · {}",
+                    short(&launch.cwd),
+                    self.model_label(&launch)
+                )),
+            ),
+            None => (None, s.name.clone(), folder.as_deref().map(short)),
+        };
         div()
             .flex_none()
             .flex()
@@ -104,22 +125,25 @@ impl Root {
             .pr(px(10.))
             .border_b_1()
             .border_color(colors::border0())
+            .children(badge.map(|b| div().flex_none().mr(px(2.)).child(b)))
             .child(
                 div()
-                    .flex_none()
+                    .min_w_0()
+                    .flex_shrink(1.)
+                    .truncate()
                     .text_size(px(13.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors::text1())
-                    .child(s.name.clone()),
+                    .child(name),
             )
-            .children(folder.as_deref().map(|f| {
+            .children(detail.map(|d| {
                 div()
                     .min_w_0()
                     .truncate()
                     .font_family(MONO)
                     .text_size(px(11.))
                     .text_color(colors::text3())
-                    .child(short(f))
+                    .child(d)
             }))
             .child(div().flex_1())
             .children(self.work.notice.clone().map(|n| {

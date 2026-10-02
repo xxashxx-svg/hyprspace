@@ -19,7 +19,7 @@ use gpui::{
     AppContext, Context, Entity, Focusable, KeyBinding, Pixels, Point, SharedString, Task, Window,
     actions,
 };
-use hyprspace_proto::{Command, FolderCommand, FolderEvent, Opener, Pane};
+use hyprspace_proto::{Command, FolderCommand, FolderEvent, Opener, Pane, ThreadKind};
 
 use crate::dock::{Dock, DockEvent};
 use crate::root::{Root, Screen, View};
@@ -106,6 +106,17 @@ impl Root {
             })
             .cloned()
             .collect()
+    }
+
+    /// The structured thread that is `space`'s only pane. It fills the main area with no frame
+    /// or header, and the bar above carries its name instead.
+    pub(crate) fn lone_structured(&self, space: u64) -> Option<u64> {
+        let panes = self.live_panes(space);
+        let [Pane::Thread { id }] = panes.as_slice() else {
+            return None;
+        };
+        let (_, t) = self.state.thread(*id)?;
+        matches!(t.kind, ThreadKind::Structured { .. }).then_some(*id)
     }
 
     /// Another thread pane to show when `gone` was removed or archived from the screen.

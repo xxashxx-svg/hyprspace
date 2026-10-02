@@ -162,6 +162,12 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        // a structured thread alone fills the main area edge to edge, with no frame or header
+        if let Some(id) = self.lone_structured(space)
+            && let Some(View::Structured(v)) = self.views.get(&id)
+        {
+            return v.clone().into_any_element();
+        }
         let Some(grid) = self.state.space(space).map(|s| s.grid.clone()) else {
             return div().into_any_element();
         };
@@ -195,7 +201,18 @@ impl Root {
                 }
             };
             let focused = focus.as_ref() == Some(pane);
-            cells.push(self.cell(space, i, pane, rect, focused, maxed.is_some(), window, cx));
+            // the focus ring only tells panes apart, so a pane alone goes without it
+            let ring = focused && n > 1;
+            cells.push(self.cell(
+                space,
+                i,
+                pane,
+                rect,
+                (focused, ring),
+                maxed.is_some(),
+                window,
+                cx,
+            ));
         }
         let gutters = if maxed.is_some() || n < 2 {
             vec![]
@@ -273,7 +290,7 @@ impl Root {
         ix: usize,
         pane: &Pane,
         (x0, y0, x1, y1): (f32, f32, f32, f32),
-        focused: bool,
+        (focused, ring): (bool, bool),
         maxed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -323,7 +340,7 @@ impl Root {
                         .flex_1()
                         .min_h_0()
                         .border_1()
-                        .border_color(if focused && !maxed {
+                        .border_color(if ring && !maxed {
                             colors::accent()
                         } else if maxed {
                             colors::border1().opacity(0.)
