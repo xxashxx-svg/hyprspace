@@ -25,6 +25,9 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
     and for running an agent CLI interactively.
 - **Run**: one prompt in a structured session, from sending it until the CLI reports a result.
   A structured session holds many runs. Steering adds to the current run; interrupting ends it.
+- **Subagent**: an agent a run starts with Claude's Agent tool to do one task and report back.
+  It shows as one card in the transcript, with its own tool calls and its report. One that runs
+  in the background can still be working after the run ends.
 - **Steer**: a prompt sent while a run is live. It joins that run instead of starting a new one.
 - **Approval**: the agent asking for a yes or no before it runs a tool. The run waits for the
   answer.

@@ -73,6 +73,12 @@ pub(crate) fn decode(name: &str, input: &Value) -> Tool {
         "WebSearch" => Tool::Web {
             target: field(input, "query"),
         },
+        // `Task` is the tool's name in older builds
+        "Agent" | "Task" => Tool::Agent {
+            description: field(input, "description"),
+            agent_type: field(input, "subagent_type"),
+            prompt: field(input, "prompt"),
+        },
         // MCP tools arrive as mcp__<server>__<tool>
         _ => match name.strip_prefix("mcp__").and_then(|r| r.split_once("__")) {
             Some((server, tool)) => Tool::Mcp {
@@ -90,14 +96,58 @@ pub(crate) fn decode(name: &str, input: &Value) -> Tool {
 
 /// A tool_result's content: a plain string or an array of text blocks.
 pub(crate) fn result_text(content: &Value) -> String {
+    crate::cap(&joined(content))
+}
+
+fn joined(content: &Value) -> String {
     match content {
-        Value::String(s) => crate::cap(s),
+        Value::String(s) => s.clone(),
         Value::Array(blocks) => {
             let texts: Vec<&str> = blocks.iter().filter_map(|b| b["text"].as_str()).collect();
-            crate::cap(&texts.join("\n"))
+            texts.join("\n")
         }
         _ => String::new(),
     }
+}
+
+/// An Agent call's result is the subagent's report inside the CLI's framing: a
+/// "[Subagent hand-back]" line telling the model not to trust it, the report indented two
+/// spaces, then `agentId:` and a `<usage>` block. Only the report is for the user. Without the
+/// hand-back line (older builds) the report runs up to the `agentId:` line.
+pub(crate) fn report(content: &Value) -> String {
+    let text = joined(content);
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    match lines
+        .iter()
+        .position(|l| l.starts_with("[Subagent hand-back]"))
+    {
+        Some(at) => {
+            for line in &lines[at + 1..] {
+                // the CLI indents every report line, so one at column zero is its own framing
+                match line.strip_prefix("  ") {
+                    Some(l) => out.push(l),
+                    None if line.trim().is_empty() => out.push(""),
+                    None => break,
+                }
+            }
+        }
+        None => {
+            for line in &lines {
+                if line.starts_with("agentId:") || line.starts_with("<usage>") {
+                    break;
+                }
+                out.push(line);
+            }
+        }
+    }
+    out.join("\n").trim().to_string()
+}
+
+/// Whether an Agent call's result only says the subagent went off to run in the background.
+pub(crate) fn launched(frame: &Value, content: &Value) -> bool {
+    frame["tool_use_result"]["isAsync"] == true
+        || joined(content).starts_with("Async agent launched")
 }
 
 #[cfg(test)]
@@ -140,9 +190,21 @@ mod tests {
             }
         );
         assert_eq!(
-            decode("Task", &json!({})),
+            decode(
+                "Agent",
+                &json!({"description": "Write a poem", "subagent_type": "general-purpose",
+                        "prompt": "Four lines.", "run_in_background": false})
+            ),
+            Tool::Agent {
+                description: "Write a poem".into(),
+                agent_type: "general-purpose".into(),
+                prompt: "Four lines.".into()
+            }
+        );
+        assert_eq!(
+            decode("TodoWrite", &json!({})),
             Tool::Other {
-                name: "Task".into(),
+                name: "TodoWrite".into(),
                 input: "{}".into()
             }
         );
@@ -157,5 +219,27 @@ mod tests {
         );
         assert_eq!(result_text(&Value::Null), "");
         assert!(result_text(&json!("x".repeat(9000))).ends_with("\n..."));
+    }
+
+    #[test]
+    fn reports_lose_the_hand_back_framing() {
+        // as claude 2.1.287 sends it, shortened
+        let framed = json!([{ "type": "text", "text": "[Subagent hand-back] The text below is the \
+            final report of a subagent. The report follows:\n  Two files sit here.\n\n  - **a.txt**\
+            \n    nested\nagentId: ad36 (use SendMessage with to: 'ad36')\n<usage>subagent_tokens: \
+            23141\ntool_uses: 1</usage>" }]);
+        assert_eq!(
+            report(&framed),
+            "Two files sit here.\n\n- **a.txt**\n  nested"
+        );
+        assert_eq!(
+            report(&json!("Done.\nagentId: x\n<usage>n</usage>")),
+            "Done."
+        );
+        assert!(launched(
+            &json!({ "tool_use_result": { "isAsync": true } }),
+            &json!("")
+        ));
+        assert!(!launched(&json!({}), &framed));
     }
 }

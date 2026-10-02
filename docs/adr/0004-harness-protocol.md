@@ -83,14 +83,22 @@ starting a new one, because the user asked for that conversation.
 **Transcript events live in `proto::run`.** `RunEvent` carries `Started` (with the `thread` id
 resume takes), `Text`, `Thinking`, `Tool` / `ToolDone`, `Approval`, `Steered`, `Usage`, `Error`,
 `Finished { status, ms, text, error }` and `Failed`. `Tool` has a variant per thing the
-transcript draws (command, read, edit with diffs, search, web, MCP) and `Other` with compact JSON
-for the rest. Edits carry unified-diff text: Codex sends real diffs; Claude's `Edit`, `MultiEdit`
+transcript draws (command, read, edit with diffs, search, web, MCP, a subagent) and `Other` with
+compact JSON for the rest. Edits carry unified-diff text: Codex sends real diffs; Claude's `Edit`, `MultiEdit`
 and `Write` inputs become hunks with a bare `@@` because the CLI sends no line numbers. Tool
 output is capped at 8 KB for display.
 
-**Left out on purpose.** Subagent traffic (Claude frames with a `parent_tool_use_id`, Codex
-notifications for another thread) is dropped rather than folded into the main reply, which is
-the bug zeron documents. Model discovery over the wire, skills, titles and the CLI install flow
+**Subagents report under their call.** Claude frames with a `parent_tool_use_id` belong to the
+subagent that Agent call started. They come out as `SubagentTool`, `SubagentToolDone` and
+`SubagentText` keyed by that call's id, never folded into the main reply (the bug zeron
+documents), and the call's own `ToolDone` carries the subagent's report without the CLI's
+hand-back framing. A background subagent answers its call at once with a launch note, so the
+harness holds that call open until the subagent's `task_notification`, which can come after the
+run's `Finished`. The CLI then takes a turn of its own to read the result; the harness reports it
+as `Woke` followed by a normal run. Codex runs subagents as separate threads with their own
+spawn, wait and close calls, so its notifications for another thread are still dropped.
+
+**Left out on purpose.** Model discovery over the wire, skills, titles and the CLI install flow
 stay out; the catalog is static plus Codex's own `models_cache.json`.
 
 ## Why not

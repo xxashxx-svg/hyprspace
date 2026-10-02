@@ -76,6 +76,10 @@ pub fn run(args: &[String]) {
             done(&reply);
         } else if text.contains("hello") {
             hello();
+        } else if text.contains("background") {
+            background();
+        } else if text.contains("subagent") {
+            subagent();
         } else if text.contains("approve") {
             approve();
         } else if text.contains("absorb") {
@@ -220,4 +224,117 @@ fn steer_after_tool() {
     let reply = format!("steered({priority}): {}", prompt_text(&steer));
     say(&reply);
     done(&reply);
+}
+
+fn assistant(parent: Value, content: Value) {
+    emit(json!({
+        "type": "assistant", "parent_tool_use_id": parent, "message": { "content": content },
+    }));
+}
+
+fn tool_result(parent: Value, id: &str, content: Value, extra: Value) {
+    let mut frame = json!({
+        "type": "user", "parent_tool_use_id": parent,
+        "message": { "content": [
+            { "type": "tool_result", "tool_use_id": id, "content": content, "is_error": false },
+        ] },
+    });
+    if let (Some(f), Some(e)) = (frame.as_object_mut(), extra.as_object()) {
+        f.extend(e.clone());
+    }
+    emit(frame);
+}
+
+fn notification(id: &str, status: &str, summary: &str) {
+    emit(json!({
+        "type": "system", "subtype": "task_notification", "task_id": "task-1",
+        "tool_use_id": id, "status": status, "summary": summary,
+    }));
+}
+
+fn spawn(id: &str, parent: Value, description: &str, background: bool) {
+    assistant(
+        parent,
+        json!([{ "type": "tool_use", "id": id, "name": "Agent", "input": {
+            "description": description, "subagent_type": "general-purpose",
+            "prompt": "Four lines.", "run_in_background": background } }]),
+    );
+}
+
+// A subagent that runs in the foreground: its own traffic tagged with the Agent call's id, a
+// subagent of its own, then the framed report as the call's result.
+fn subagent() {
+    let agent = json!("toolu_agent");
+    spawn("toolu_agent", Value::Null, "Write a short poem", false);
+    emit(json!({
+        "type": "system", "subtype": "task_started", "task_id": "task-1",
+        "tool_use_id": "toolu_agent", "subagent_type": "general-purpose",
+    }));
+    // the subagent's opening prompt, echoed on its own feed
+    emit(json!({
+        "type": "user", "parent_tool_use_id": agent,
+        "message": { "content": [{ "type": "text", "text": "Four lines." }] },
+    }));
+    assistant(
+        agent.clone(),
+        json!([
+            { "type": "text", "text": "Let me look." },
+            { "type": "tool_use", "id": "s1", "name": "Bash", "input": { "command": "ls" } },
+        ]),
+    );
+    tool_result(agent.clone(), "s1", json!("a.txt"), json!({}));
+    spawn("s2", agent.clone(), "Read it", false);
+    assistant(
+        json!("s2"),
+        json!([{ "type": "tool_use", "id": "s3", "name": "Read",
+                 "input": { "file_path": "/a.txt" } }]),
+    );
+    tool_result(json!("s2"), "s3", json!("hello"), json!({}));
+    tool_result(agent.clone(), "s2", json!("read"), json!({}));
+    assistant(
+        agent,
+        json!([{ "type": "text", "text": "Roses are red.\nDone." }]),
+    );
+    tool_result(
+        Value::Null,
+        "toolu_agent",
+        json!([{ "type": "text", "text": "[Subagent hand-back] The text below is the final \
+            report of a subagent. The report follows:\n  Roses are red.\n  Done.\nagentId: a1 \
+            (use SendMessage with to: 'a1')\n<usage>subagent_tokens: 5\ntool_uses: 2</usage>" }]),
+        json!({}),
+    );
+    // said again after the result; the call already ended
+    notification("toolu_agent", "completed", "again");
+    say("Wrote it.");
+    done("Wrote it.");
+}
+
+// A background subagent: its call returns a launch note, the run ends, the subagent works on,
+// and its notification makes the CLI take a turn of its own.
+fn background() {
+    spawn("toolu_bg", Value::Null, "List files", true);
+    tool_result(
+        Value::Null,
+        "toolu_bg",
+        json!([{ "type": "text", "text": "Async agent launched successfully.\nagentId: b1" }]),
+        json!({ "tool_use_result": { "isAsync": true, "status": "async_launched" } }),
+    );
+    say("Started it.");
+    done("Started it.");
+    let agent = json!("toolu_bg");
+    assistant(
+        agent.clone(),
+        json!([{ "type": "tool_use", "id": "b1", "name": "Bash", "input": { "command": "ls" } }]),
+    );
+    tool_result(agent.clone(), "b1", json!("a.txt"), json!({}));
+    assistant(agent, json!([{ "type": "text", "text": "Found a.txt." }]));
+    // a background shell command ends the same way and is not a subagent
+    notification("toolu_shell", "completed", "exit 0");
+    notification("toolu_bg", "completed", "Found a.txt.");
+    emit(json!({
+        "type": "system", "subtype": "init", "model": "claude-fake",
+        "session_id": "fake-session", "tools": ["Bash"],
+    }));
+    say("It found a.txt.");
+    done("It found a.txt.");
 }
