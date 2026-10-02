@@ -13,6 +13,7 @@ use crate::folder::{FolderCommand, FolderEvent};
 use crate::run::{Answer, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Entry};
+use crate::update::{UpdateCommand, UpdateEvent};
 use crate::usage::{UsageCommand, UsageEvent};
 
 /// Picked by whoever opens the session (the UI today), unique for the life of the engine.
@@ -110,6 +111,8 @@ pub enum Command {
     Usage(UsageCommand),
     /// Settings' Skills view (`skills.rs`).
     Skills(SkillCommand),
+    /// The app updating itself (`update.rs`).
+    Update(UpdateCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -169,6 +172,7 @@ pub enum Event {
     Folder(FolderEvent),
     Usage(UsageEvent),
     Skills(SkillEvent),
+    Update(UpdateEvent),
 }
 
 #[cfg(test)]
@@ -272,6 +276,7 @@ mod tests {
                 .into(),
                 replaces: Some((crate::agents::SkillScope::User, "old".into())),
             }),
+            Command::Update(UpdateCommand::Install),
         ];
         for cmd in &cmds {
             assert_eq!(&round_trip(cmd), cmd);
@@ -357,6 +362,15 @@ mod tests {
                 scope: crate::agents::SkillScope::User,
                 name: "fix".into(),
                 content: Err("gone".into()),
+            }),
+            Event::Update(UpdateEvent::Checked {
+                release: Some(crate::update::Release {
+                    version: "0.22.0".into(),
+                    notes: "- New".into(),
+                }),
+            }),
+            Event::Update(UpdateEvent::Step {
+                step: crate::update::Step::Downloading { percent: Some(40) },
             }),
         ];
         for event in &events {

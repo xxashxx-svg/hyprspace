@@ -173,7 +173,8 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Settings: appearance (themes, light and dark), defaults, usage, skills, general
 - [x] Intro
 - [x] Open in editor or Explorer/Finder
-- [ ] Installers, auto-update, CI release for Windows and macOS
+- [ ] Installers, auto-update, CI release for Windows and macOS (built in phase 6c; tick once
+  the release.yml dry run passes on both runners)
 - [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above)
 
 ## Open questions for Ash
@@ -503,3 +504,49 @@ afterwards; General's Terminal switch lighting the composer's Terminal chip; Sho
 font, diff colors, animations and terminal font family, size and line height, General's update
 card (phase 6c), launch ping, pane naming and hidden confirmations, and the Mobile tab. Esc inside
 a skill editor box stays in the box instead of closing Settings.
+
+## Phase 6c results
+
+Done on 2026-10-02: packaging. Shapes and reasons: [adr/0010](./adr/0010-installers.md)
+(installers), [adr/0011](./adr/0011-updater.md) (updater), [adr/0012](./adr/0012-carrying-over-tauri-state.md)
+(state brought over). Screenshots are in the phase 6c agent's scratchpad (`p6c/`).
+
+**What exists.**
+
+- Version: `[workspace.package] version = "0.21.1"` in the root `Cargo.toml`, inherited by every
+  crate; Settings shows it. `deploy.ps1` bumps it and the workspace entries in `Cargo.lock`, plus
+  the Tauri files while they exist; release CI refuses a tag that doesn't match.
+- Windows: `apps/hyprspace/package/windows/installer.nsi` (+ `utils.nsh`), built by
+  `scripts/package-windows.ps1` into `target/package/HyprSpace_<v>_x64-setup.exe`. Same keys,
+  folder and shortcut as the Tauri installer; takes Tauri's `/P /R /UPDATE /ARGS`; replaces
+  `hyprspace-tauri.exe` and retargets its shortcuts. `-Test` builds a "HyprSpace Test" identity.
+  `scripts/check-windows-install.ps1` installs, upgrades over an old install, and uninstalls.
+- macOS: `apps/hyprspace/package/macos/Info.plist` and `scripts/package-macos.sh` (bundle,
+  Developer ID or ad hoc signing, notarizing when the Apple secrets exist, `.app.tar.gz`, dmg).
+- Updater: `crates/update` (feed and key overridable only at build time, `installed()`, Tauri's
+  installer arguments, mac relaunch), `proto/src/update.rs`, `engine/src/update.rs`,
+  `ui/src/update/` (checks on launch, every 6h and on focus; corner card; What's new from the
+  bundled changelog), the General card in `ui/src/settings/general.rs`.
+- State: `engine/src/legacy.rs` brings `~/.hyprspace/v2` over on a first run, read only.
+- CI: `.github/workflows/release.yml` builds both platforms with `scripts/package-*`, signs with
+  `npx @tauri-apps/cli signer sign`, checks each signature against the app's key
+  (`crates/update/examples/verify.rs`), and keeps the draft-then-publish flow. `dry_run` touches
+  no release: it also installs over the real v0.21.1 Tauri installer on the runner, then keeps
+  everything as artifacts. Trigger: `gh workflow run release.yml --ref rewrite -f dry_run=true`.
+
+**Checked on this machine**, never over the installed app (its registry, files and shortcuts
+were hashed before and after, and its process kept running): the test-identity installer
+installed, checked and uninstalled cleanly, fresh and over a Tauri-template install made under
+the test identity (old binary gone, one Apps entry, shortcuts retargeted, nothing left after).
+End to end against a local feed and a throwaway key: version A (0.21.1) installed, imported a
+copy of the real v2 state (all spaces, theme, Opus 5.5 at High, Full access), showed "Update
+0.21.2 available"; Restart and update downloaded, verified the tauri-CLI signature, started the
+installer and quit; the installer waited, installed and started B, which showed What's new in
+v0.21.2. A passive install while B ran closed it through WM_CLOSE. The real-identity installer
+builds (`scripts/package-windows.ps1`) but was not run here.
+
+**Only CI can prove.** The macOS bundle, tarball and dmg; Developer ID signing and notarization
+(no Apple secrets yet, so ad hoc); signing with the real `TAURI_SIGNING_PRIVATE_KEY`; the real
+installer over the real v0.21.1 Tauri install (the dry run does this on the runner). The Tauri
+app's own updater running the GPUI installer is the next row.
+

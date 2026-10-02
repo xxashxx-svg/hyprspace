@@ -101,6 +101,8 @@ pub struct Root {
     pub(crate) palette: Option<Entity<crate::palette::Palette>>,
     /// The intro while it is showing (`crate::intro`).
     pub(crate) intro: Option<crate::intro::Intro>,
+    /// The app updating itself (`crate::update`).
+    pub(crate) updater: Entity<crate::update::Updater>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -130,6 +132,11 @@ impl Root {
                 root.apply_theme(window);
                 cx.notify();
             }),
+            cx.observe_window_activation(window, |root, window, cx| {
+                if window.is_window_active() {
+                    root.updater.update(cx, |u, cx| u.focused(cx));
+                }
+            }),
         ];
         let pump = cx.spawn_in(window, async move |this, cx| {
             while let Some(event) = events.next().await {
@@ -144,6 +151,7 @@ impl Root {
         let work = crate::panes::Work::new(client.clone(), window, cx);
         let limits = cx.new(|cx| crate::usage::Limits::new(client.clone(), cx));
         let skills = cx.new(|_| crate::skills::Skills::new(client.clone()));
+        let updater = cx.new(|cx| crate::update::Updater::new(client.clone(), cx));
         Self {
             client,
             state: AppState::default(),
@@ -168,6 +176,7 @@ impl Root {
             skills,
             palette: None,
             intro: None,
+            updater,
             _pump: pump,
             _subs: subs,
         }
@@ -235,6 +244,14 @@ impl Root {
             Event::Folder(e) => self.folder_event(e, cx),
             Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
             Event::Skills(e) => self.skills.update(cx, |s, cx| s.event(e, window, cx)),
+            Event::Update(e) => {
+                let quit = e == hyprspace_proto::UpdateEvent::Quit;
+                self.updater.update(cx, |u, cx| u.event(e, cx));
+                // the installer waits for this process to exit; quitting also ends every session
+                if quit {
+                    cx.quit();
+                }
+            }
             Event::AgentState { id, state } => {
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.set_status(thread, Status::from(state));
@@ -256,6 +273,11 @@ impl Root {
         self.apply_theme(window);
         let prefs = self.state.composer.clone();
         self.composer.update(cx, |c, cx| c.set_prefs(prefs, cx));
+        let seen = self.state.seen_version.clone();
+        if self.updater.update(cx, |u, cx| u.launched_after(&seen, cx)) {
+            self.state.seen_version = crate::update::VERSION.into();
+            self.save();
+        }
         self.first_run(window, cx);
         if let Some(path) = self.open_arg.take() {
             let space = self.add_project(path, cx);

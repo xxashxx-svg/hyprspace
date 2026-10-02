@@ -10,6 +10,7 @@ mod folder;
 pub mod git;
 pub mod hooks;
 pub mod journal;
+mod legacy;
 mod open;
 pub mod persist;
 pub mod providers;
@@ -18,6 +19,7 @@ mod requests;
 pub mod sessions;
 pub mod skills;
 pub mod terminal;
+mod update;
 pub mod usage;
 mod util;
 
@@ -258,6 +260,7 @@ async fn serve(
             Command::Folder(cmd) => folders.handle(cmd, tx.clone()),
             Command::Usage(cmd) => usage::handle(cmd, tx.clone()),
             Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
+            Command::Update(cmd) => update::handle(cmd, tx.clone()),
         }
     }
 }

@@ -81,6 +81,12 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/mouse-pointer-click.svg",
     "brand/opencode.svg",
     "brand/grok.svg",
+    // updates, and the logo's three faces (Logo.tsx), each tinted on its own
+    "icons/download.svg",
+    "icons/circle-play.svg",
+    "logo/top.svg",
+    "logo/left.svg",
+    "logo/right.svg",
 );
 
 /// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono
@@ -130,6 +136,25 @@ pub fn icon(name: &str, size: f32, color: Hsla) -> Svg {
         .size(px(size))
         .flex_none()
         .text_color(color)
+}
+
+/// The HyprSpace cube, `size` pixels square: the accent on top, the text colors on its sides,
+/// like the Tauri app's Logo.tsx.
+pub fn logo(size: f32) -> gpui::Div {
+    let face = |name: &str, color: Hsla| {
+        svg()
+            .path(SharedString::from(format!("logo/{name}.svg")))
+            .absolute()
+            .size(px(size))
+            .text_color(color)
+    };
+    gpui::div()
+        .relative()
+        .flex_none()
+        .size(px(size))
+        .child(face("top", crate::colors::accent()))
+        .child(face("left", crate::colors::text1()))
+        .child(face("right", crate::colors::text3()))
 }
 
 /// A provider's mark by its CLI name, for the agents the app can't start yet (OpenCode, Grok)

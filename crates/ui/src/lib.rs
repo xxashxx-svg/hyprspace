@@ -19,6 +19,7 @@ mod skills;
 mod terminal;
 mod time;
 mod transcript;
+mod update;
 mod usage;
 mod viewer;
 mod widgets;

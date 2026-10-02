@@ -52,7 +52,16 @@ impl Requests {
             },
             Ok(None) => {
                 self.can_save.store(true, Ordering::Relaxed);
-                AppState::default()
+                // a first run, maybe right after the Tauri app updated into this one: bring its
+                // spaces and settings over, and save them so it happens only once
+                let legacy = self.store.dir().parent().map(|p| p.join("v2"));
+                match legacy.and_then(|dir| crate::legacy::import(&dir)) {
+                    Some(state) => {
+                        self.save_state(&state);
+                        state
+                    }
+                    None => AppState::default(),
+                }
             }
             Err(_) => AppState::default(),
         };
@@ -113,5 +122,42 @@ impl Requests {
             });
             Self::send(&tx, Event::Cloned { request, result });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt as _;
+
+    #[test]
+    fn a_first_run_brings_over_the_tauri_apps_state_once() {
+        let home = tempfile::tempdir().unwrap();
+        let v2 = home.path().join("v2");
+        std::fs::create_dir(&v2).unwrap();
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tauri-v2");
+        for f in std::fs::read_dir(fixture).unwrap() {
+            let f = f.unwrap().path();
+            std::fs::copy(&f, v2.join(f.file_name().unwrap())).unwrap();
+        }
+        let store = Store::open(home.path().join("native")).unwrap();
+        let (tx, mut rx) = futures::channel::mpsc::unbounded();
+        let requests = Requests::new(store.clone(), tx);
+
+        requests.load_state();
+        let Some(Event::State { state }) = futures::executor::block_on(rx.next()) else {
+            panic!("no state")
+        };
+        assert_eq!(state.spaces.len(), 4);
+        assert!(store.load(STATE).unwrap().is_some(), "saved right away");
+
+        // the Tauri app goes on changing its own store; ours no longer follows it
+        std::fs::write(v2.join("workspaces.json"), r#"{"workspaces":[]}"#).unwrap();
+        requests.load_state();
+        let Some(Event::State { state: again }) = futures::executor::block_on(rx.next()) else {
+            panic!("no state")
+        };
+        assert_eq!(again, state);
     }
 }

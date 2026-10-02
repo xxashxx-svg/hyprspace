@@ -1,8 +1,10 @@
 # Versioning
 
 HyprSpace uses **adapted Semantic Versioning**: `MAJOR.MINOR.PATCH` (e.g. `0.2.5`). Every release
-bumps the version through the maintainer's release tooling — the three version files
-(`tauri.conf.json`, `package.json`, `Cargo.toml`) always move together.
+bumps the version through the maintainer's release tooling. The source of truth is the Cargo
+workspace's `version` in the root `Cargo.toml`, which every crate of the GPUI app inherits; the
+Tauri app's three files (`tauri.conf.json`, `package.json`, `src-tauri/Cargo.toml`) move with it
+until that app is deleted.
 
 ```
    0   .   2   .   5
@@ -37,9 +39,12 @@ minor. Big shift / it's a new era → major.
 
 - **Always increase.** The Tauri updater compares versions; a flat or lower number means "no
   update." Never reuse or roll back a version.
-- **One bump per release.** Don't hand-edit version fields — `deploy.ps1` updates all three
-  (`tauri.conf.json`, `package.json`, `Cargo.toml`), tags `v<new>`, and writes the manifest with
-  the same number, so the in‑app version, git tag, and update feed can't drift.
+- **One bump per release.** Don't hand-edit version fields — `deploy.ps1` updates the workspace
+  (`Cargo.toml` and the workspace crates in `Cargo.lock`) and the Tauri files, tags `v<new>`, and
+  writes the manifest with the same number, so the in‑app version (Settings, General), git tag,
+  and update feed can't drift. Release CI refuses a tag that doesn't match the workspace version.
+- **The GPUI app continues the Tauri app's numbers.** It started at 0.21.1, the last Tauri
+  release, so the installed Tauri app's updater sees the first GPUI release as newer.
 
 ## The Android app ([`mobile/`](../mobile/README.md))
 

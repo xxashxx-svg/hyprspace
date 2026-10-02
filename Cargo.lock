@@ -2607,7 +2607,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace"
-version = "0.0.0"
+version = "0.21.1"
 dependencies = [
  "gpui",
  "gpui_platform",
@@ -2618,15 +2618,17 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-engine"
-version = "0.0.0"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "futures",
  "hyprspace-harness",
  "hyprspace-proto",
+ "hyprspace-update",
  "portable-pty",
  "reqwest",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2635,7 +2637,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-harness"
-version = "0.0.0"
+version = "0.21.1"
 dependencies = [
  "base64 0.22.1",
  "hyprspace-proto",
@@ -2647,7 +2649,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-proto"
-version = "0.0.0"
+version = "0.21.1"
 dependencies = [
  "futures",
  "serde",
@@ -2656,7 +2658,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-syntax"
-version = "0.0.0"
+version = "0.21.1"
 dependencies = [
  "tree-sitter",
  "tree-sitter-bash",
@@ -2681,11 +2683,11 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-theme"
-version = "0.0.0"
+version = "0.21.1"
 
 [[package]]
 name = "hyprspace-ui"
-version = "0.0.0"
+version = "0.21.1"
 dependencies = [
  "alacritty_terminal",
  "chrono",
@@ -2702,7 +2704,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-update"
-version = "0.1.0"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

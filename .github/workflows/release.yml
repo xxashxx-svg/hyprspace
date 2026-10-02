@@ -1,27 +1,39 @@
 name: release
 
-# CI builds Windows and macOS, signed with the updater key held in this repo's secrets, so no
-# machine has to keep that key. deploy.ps1 bumps the version, tags, opens the release as a DRAFT
-# with the notes, and runs this workflow. Each job MERGES its own entry into the release's
-# latest.json (windows-x86_64, then darwin-aarch64), and the last job (macos) publishes the draft,
-# so the updater endpoint (releases/latest) only sees the release once it is complete.
-# Linux was dropped on 2026-10-02 because nobody used it.
+# CI builds the GPUI app for Windows and macOS and signs what the updaters install with the
+# updater key held in this repo's secrets, so no machine has to keep that key. deploy.ps1 bumps
+# the version, tags, opens the release as a DRAFT with the notes, and runs this workflow. Each
+# job MERGES its own entry into the release's latest.json (windows-x86_64, then darwin-aarch64),
+# and the last job (macos) publishes the draft, so the updater endpoint (releases/latest) only
+# sees the release once it is complete. The installed Tauri app reads that same latest.json and
+# key, so the first GPUI release installs through it (docs/REWRITE.md, "Upgrading from the Tauri
+# app"; docs/adr/0010 and 0011).
 #
 # The jobs chain with `needs` on purpose: they all read-modify-write the same latest.json asset,
 # so they must not run concurrently or one would clobber another's platform entry.
 #
-# Manual run: gh workflow run release.yml -f tag=v0.2.4   (the release should already
-# exist from deploy.ps1; if not, the first job creates a draft).
+# Manual run:  gh workflow run release.yml -f tag=v0.22.0   (the release should already exist
+#              from deploy.ps1; if not, the first job creates a draft).
+# Dry run:     gh workflow run release.yml --ref rewrite -f dry_run=true
+#              Builds and signs both platforms, installs the Windows installer over the last
+#              Tauri release on the runner and uninstalls it, and keeps the installers, the
+#              updater bundles, their .sig files and the would-be latest.json as workflow
+#              artifacts. It never creates, edits or uploads to a release.
 #
-# Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD, RELEASES_TOKEN.
-# Optional Apple signing/notarization secrets are read if present.
+# Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Optional Apple signing
+# and notarization secrets are used when present (scripts/package-macos.sh).
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, e.g. v0.2.4"
-        required: true
+        description: "Release tag, e.g. v0.22.0. A dry run may leave it empty."
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run: build, sign and check, keep artifacts, touch no release"
+        type: boolean
+        default: false
       android:
         description: "Also build + attach the Android app (mobile/)"
         type: boolean
@@ -29,38 +41,97 @@ on:
 
 env:
   RELEASES_REPO: xxashxx-svg/hyprspace
+  # signs the updater bundles the way tauri-action did, with the same key format
+  TAURI_CLI: "@tauri-apps/cli@2.11.2"
+  CARGO_TERM_COLOR: always
 
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 90
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.which.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install dependencies
-        run: npm install
-      - name: Build + sign Windows installer
-        uses: tauri-apps/tauri-action@v0
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - name: Which release
+        id: which
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          tag="${{ inputs.tag }}"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            tag="${tag:-v$version}"
+          elif [ "$tag" != "v$version" ]; then
+            echo "::error::The tag ($tag) must be v$version, the workspace version. deploy.ps1 bumps Cargo.toml before it tags."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis -y --no-progress
+          }
+      - name: Build the app and its installer
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+      - name: Sign the installer for the updaters
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          setup="HyprSpace_${{ steps.which.outputs.version }}_x64-setup.exe"
+          mkdir -p dist
+          cp "target/package/$setup" dist/
+          npx --yes "$TAURI_CLI" signer sign "dist/$setup"
+          # the app's own key must accept it, or no installed copy ever would
+          cargo run -q --locked -p hyprspace-update --example verify -- "dist/$setup"
+          # stable-named copy so the website's Download link always resolves to the newest build
+          cp "dist/$setup" dist/HyprSpace-windows-x64-setup.exe
+          echo "built:"; ls -la dist
+      - name: Install over the last Tauri release, then a fresh install (dry run)
+        if: inputs.dry_run
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = "dist/HyprSpace_${{ steps.which.outputs.version }}_x64-setup.exe"
+          gh release download v0.21.1 --repo $env:RELEASES_REPO --pattern "HyprSpace_0.21.1_x64-setup.exe" --dir old
+          ./scripts/check-windows-install.ps1 -Setup $setup -Old old/HyprSpace_0.21.1_x64-setup.exe -Dir "$env:RUNNER_TEMP\upgrade"
+          ./scripts/check-windows-install.ps1 -Setup $setup -Dir "$env:RUNNER_TEMP\fresh"
+      - name: Would-be manifest (dry run)
+        if: inputs.dry_run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-build-latest.mjs "${{ steps.which.outputs.tag }}" dist "$RELEASES_REPO"
+      - name: Keep the build (dry run)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
         with:
-          args: --bundles nsis
+          name: windows
+          path: dist/
       - name: Merge windows into the release manifest + upload
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          tag="${{ inputs.tag }}"
-          mkdir -p dist existing
-          find src-tauri/target -type f \( -name "*-setup.exe" -o -name "*-setup.exe.sig" \) -exec cp {} dist/ \;
-          # stable-named copy so the website's Download link always resolves to the newest build
-          cp dist/HyprSpace_*_x64-setup.exe dist/HyprSpace-windows-x64-setup.exe
-          echo "built:"; ls -la dist
+          tag="${{ steps.which.outputs.tag }}"
+          mkdir -p existing
           gh release download "$tag" --repo "$RELEASES_REPO" --pattern latest.json --dir existing 2>/dev/null || true
           node scripts/ci-build-latest.mjs "$tag" dist "$RELEASES_REPO" existing/latest.json
           echo "merged manifest:"; cat dist/latest.json
@@ -75,6 +146,7 @@ jobs:
   macos:
     needs: windows
     runs-on: macos-14 # Apple Silicon → aarch64
+    timeout-minutes: 90
     # releases live in this same repo, so the built-in token is the right credential — a PAT has to
     # be re-scoped whenever it expires, which is what broke the 0.12.0 darwin publish.
     permissions:
@@ -84,40 +156,69 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
-          targets: aarch64-apple-darwin
-      - name: Install dependencies
-        run: npm install
-      - name: Build + sign macOS app
-        uses: tauri-apps/tauri-action@v0
+          toolchain: 1.98.1
+      # GPUI compiles its Metal shaders at build time; Xcode 26 ships the Metal toolchain apart
+      - name: Metal toolchain
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - name: Build, sign and bundle the app
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/package-macos.sh
+      - name: Sign the update for the updaters
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # For notarized Mac builds later: add the Apple secrets, then UNCOMMENT these.
-          # (Passing them while empty makes tauri-action attempt codesign and fail, so they
-          # stay commented until real certs exist.)
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          mkdir -p dist
+          cp target/package/HyprSpace.app.tar.gz target/package/HyprSpace_*_aarch64.dmg dist/
+          npx --yes "$TAURI_CLI" signer sign dist/HyprSpace.app.tar.gz
+          cargo run -q --locked -p hyprspace-update --example verify -- dist/HyprSpace.app.tar.gz
+          # stable-named copy so the website's Download link always resolves to the newest build
+          cp dist/HyprSpace_*_aarch64.dmg dist/HyprSpace-macos-aarch64.dmg
+          echo "built:"; ls -la dist
+      - name: Fetch the Windows half (dry run)
+        if: inputs.dry_run
+        uses: actions/download-artifact@v4
         with:
-          # the config's bundle target is nsis (Windows); override for the Mac app + updater tarball
-          args: --target aarch64-apple-darwin --bundles app,dmg
-      - name: Merge darwin into the release manifest + publish
+          name: windows
+          path: existing
+      - name: Would-be manifest (dry run)
+        if: inputs.dry_run
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          tag="${{ inputs.tag }}"
-          mkdir -p dist existing
-          find src-tauri/target -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.app.tar.gz.sig" \) -exec cp {} dist/ \;
-          # stable-named copy so the website's Download link always resolves to the newest build
-          cp dist/HyprSpace_*.dmg dist/HyprSpace-macos-aarch64.dmg
-          echo "built:"; ls -la dist
-          # pull the existing manifest (deploy.ps1 publishes the Windows half first); ok if absent
+          node scripts/ci-build-latest.mjs "${{ needs.windows.outputs.tag }}" dist "$RELEASES_REPO" existing/latest.json
+          cp dist/latest.json latest.json
+      - name: Keep the build (dry run)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/
+      - name: Keep the would-be latest.json (dry run)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest.json
+          path: latest.json
+      - name: Merge darwin into the release manifest + publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ needs.windows.outputs.tag }}"
+          mkdir -p existing
+          # pull the existing manifest (the windows job uploaded its half first); ok if absent
           gh release download "$tag" --repo "$RELEASES_REPO" --pattern latest.json --dir existing 2>/dev/null || true
           node scripts/ci-build-latest.mjs "$tag" dist "$RELEASES_REPO" existing/latest.json
           echo "merged manifest:"; cat dist/latest.json
@@ -139,7 +240,7 @@ jobs:
   # WITHOUT them the build still succeeds but is debug-signed, which CANNOT update an
   # existing install — so a real release must have them set.
   android:
-    if: inputs.android
+    if: inputs.android && !inputs.dry_run
     runs-on: ubuntu-latest
     permissions:
       contents: write

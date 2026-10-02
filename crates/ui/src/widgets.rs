@@ -15,6 +15,11 @@ use crate::transcript::Status;
 
 /// A quiet button: text on a hairline border that lifts on hover.
 pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stateful<Div> {
+    button_frame(id).child(label.into())
+}
+
+/// [`button`] without its label, for content of the caller's own (an icon before the text).
+pub fn button_frame(id: impl Into<ElementId>) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
@@ -29,11 +34,15 @@ pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> State
         .text_color(colors::text1())
         .cursor_pointer()
         .hover(|s| s.bg(colors::surface3()).border_color(colors::border2()))
-        .child(label.into())
 }
 
 /// The one button that moves things forward, in the theme's accent.
 pub fn primary(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stateful<Div> {
+    primary_frame(id).child(label.into())
+}
+
+/// [`primary`] without its label, like [`button_frame`].
+pub fn primary_frame(id: impl Into<ElementId>) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
@@ -48,7 +57,6 @@ pub fn primary(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stat
         .text_color(colors::on_accent())
         .cursor_pointer()
         .hover(|s| s.bg(colors::accent_hover()))
-        .child(label.into())
 }
 
 /// The round send button in a prompt box: the one accent on screen.

@@ -1,9 +1,10 @@
 ﻿<#
 .SYNOPSIS
   Cut a HyprSpace release: bump the version, write the changelog entry, commit and tag, open a
-  draft GitHub release with the notes, then run the release workflow. CI builds and signs Windows and
-  macOS with the updater key it holds as a secret, fills in latest.json, and publishes
-  the draft once every platform is in. No machine needs the signing key.
+  draft GitHub release with the notes, then run the release workflow. CI builds the GPUI app for
+  Windows and macOS, signs what the updaters install with the updater key it holds as a secret,
+  fills in latest.json, and publishes the draft once every platform is in. No machine needs the
+  signing key.
 
 .USAGE
   .\deploy.ps1 patch "One bullet per line`nAnother bullet"
@@ -44,9 +45,10 @@ if ($LASTEXITCODE -ne 0) { throw "gh is not logged in. Run: gh auth login" }
 $bullets = @($Notes -split "(?:`r?`n)|\s\|\s" | ForEach-Object { $_.Trim().TrimStart("-", "*", " ") } | Where-Object { $_ -ne "" -and $_ -notmatch "^\s*$" })
 if ($bullets.Count -eq 0) { throw "No release notes given." }
 
-# ---- version
-$conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-$cur = $conf.version
+# ---- version: the Cargo workspace's is the app's (docs/VERSIONING.md)
+$cargo = Get-Content Cargo.toml -Raw -Encoding UTF8
+$cur = [regex]::Match($cargo, '(?m)^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
+if (-not $cur) { throw "No version in Cargo.toml's [workspace.package]." }
 $parts = $cur.Split(".") | ForEach-Object { [int]$_ }
 switch ($Bump) {
   "major" { $parts = @(($parts[0] + 1), 0, 0) }
@@ -61,16 +63,24 @@ function Set-Text($path, $text) {
   $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path) # works for new files too
   [IO.File]::WriteAllText($full, $text, (New-Object Text.UTF8Encoding($false)))
 }
-# one bump, three files, formatting untouched: replace the first version field in each
-$pkg = Get-Content package.json -Raw -Encoding UTF8
-Set-Text package.json ([regex]::new('"version":\s*"' + [regex]::Escape($cur) + '"').Replace($pkg, "`"version`": `"$new`"", 1))
-$tc = Get-Content src-tauri/tauri.conf.json -Raw -Encoding UTF8
-Set-Text src-tauri/tauri.conf.json ([regex]::new('"version":\s*"' + [regex]::Escape($cur) + '"').Replace($tc, "`"version`": `"$new`"", 1))
-$cargo = Get-Content src-tauri/Cargo.toml -Raw -Encoding UTF8
-Set-Text src-tauri/Cargo.toml ([regex]::new('(?m)^version\s*=\s*"' + [regex]::Escape($cur) + '"').Replace($cargo, "version = `"$new`"", 1))
-# the lock file carries the crate's own version too; keep it in step so CI builds from a clean lock
-$lock = Get-Content src-tauri/Cargo.lock -Raw -Encoding UTF8
-Set-Text src-tauri/Cargo.lock ([regex]::new('(name = "hyprspace-tauri"\r?\nversion = ")' + [regex]::Escape($cur) + '(")').Replace($lock, '${1}' + $new + '${2}', 1))
+# one bump, formatting untouched: the workspace's version, which every crate inherits
+Set-Text Cargo.toml ([regex]::new('(?m)^version\s*=\s*"' + [regex]::Escape($cur) + '"').Replace($cargo, "version = `"$new`"", 1))
+# the lock file records each workspace crate's version; keep it in step so CI's --locked build passes
+$lock = Get-Content Cargo.lock -Raw -Encoding UTF8
+Set-Text Cargo.lock ([regex]::new('(name = "hyprspace(?:-[a-z]+)?"\r?\nversion = ")' + [regex]::Escape($cur) + '(")').Replace($lock, '${1}' + $new + '${2}'))
+$files = @("Cargo.toml", "Cargo.lock")
+# the Tauri app's three version files move along until it is deleted (docs/REWRITE.md)
+if (Test-Path src-tauri/tauri.conf.json) {
+  $pkg = Get-Content package.json -Raw -Encoding UTF8
+  Set-Text package.json ([regex]::new('"version":\s*"' + [regex]::Escape($cur) + '"').Replace($pkg, "`"version`": `"$new`"", 1))
+  $tc = Get-Content src-tauri/tauri.conf.json -Raw -Encoding UTF8
+  Set-Text src-tauri/tauri.conf.json ([regex]::new('"version":\s*"' + [regex]::Escape($cur) + '"').Replace($tc, "`"version`": `"$new`"", 1))
+  $tcargo = Get-Content src-tauri/Cargo.toml -Raw -Encoding UTF8
+  Set-Text src-tauri/Cargo.toml ([regex]::new('(?m)^version\s*=\s*"' + [regex]::Escape($cur) + '"').Replace($tcargo, "version = `"$new`"", 1))
+  $tlock = Get-Content src-tauri/Cargo.lock -Raw -Encoding UTF8
+  Set-Text src-tauri/Cargo.lock ([regex]::new('(name = "hyprspace-tauri"\r?\nversion = ")' + [regex]::Escape($cur) + '(")').Replace($tlock, '${1}' + $new + '${2}', 1))
+  $files += @("package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock")
+}
 
 # ---- changelog: a new section above the previous one, before the build so the bundle carries it
 $date = Get-Date -Format "yyyy-MM-dd"
@@ -82,7 +92,7 @@ if ($at -lt 0) { $log = $log.TrimEnd() + "`n`n" + $entry } else { $log = $log.Su
 Set-Text docs/CHANGELOG.md $log
 
 # ---- commit, tag, push
-Run "git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock docs/CHANGELOG.md"
+Run "git add $($files -join ' ') docs/CHANGELOG.md"
 Run "git commit -q -m `"release: $tag`""
 Run "git tag $tag"
 Run "git push origin main"

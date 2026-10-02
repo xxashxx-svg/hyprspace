@@ -119,8 +119,6 @@ pub(crate) const TABS: &[Entry] = &[
     },
 ];
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
 impl Root {
     pub(crate) fn settings(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let entry = TABS
@@ -320,7 +318,7 @@ impl Root {
                             .py(px(5.))
                             .text_size(px(11.5))
                             .text_color(colors::text3())
-                            .child(format!("HyprSpace v{VERSION}")),
+                            .child(format!("HyprSpace v{}", crate::update::VERSION)),
                     ),
             )
             .into_any_element()

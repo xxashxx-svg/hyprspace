@@ -7,6 +7,10 @@
 //
 // Platform-agnostic on purpose: the windows and mac jobs run the same command, and adding a target
 // (say darwin-x86_64) is a row in PLATFORMS rather than a new script.
+//
+// The GPUI app's packaging (scripts/package-windows.ps1, package-macos.sh) names its bundles the
+// way every Tauri release did, so this manifest keeps the shape and keys the installed Tauri app
+// reads, and the GPUI app's own updater (crates/update) reads the same file.
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";

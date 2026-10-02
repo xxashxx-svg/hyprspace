@@ -53,6 +53,9 @@ fn main() {
     gpui_platform::application()
         .with_assets(hyprspace_ui::Assets)
         .run(move |cx: &mut App| {
+            // the bundle id the Tauri app shipped under: the installer stamps it on the Start
+            // menu shortcut, so the window groups with a pinned HyprSpace on the taskbar
+            cx.set_app_identity("com.hyprspace.app", "HyprSpace");
             hyprspace_ui::init(cx);
             cx.on_app_quit(move |_| {
                 engine.shutdown();

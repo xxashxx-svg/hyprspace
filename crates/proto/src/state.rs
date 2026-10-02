@@ -28,6 +28,9 @@ pub struct AppState {
     pub open_with: Opener,
     /// The intro was shown, or skipped because this was never a first run.
     pub intro_seen: bool,
+    /// The version that last ran. A different one on launch means the app was updated, so it
+    /// shows what's new in this one. Empty on a first run, which stays quiet.
+    pub seen_version: String,
 }
 
 impl Default for AppState {
@@ -42,6 +45,7 @@ impl Default for AppState {
             dock: DockPrefs::default(),
             open_with: Opener::default(),
             intro_seen: false,
+            seen_version: String::new(),
         }
     }
 }

@@ -62,6 +62,7 @@ impl Render for Root {
         let menu = self.menu(window, cx);
         let palette = self.palette_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
+        let update = crate::update::overlay(&self.updater, cx);
         // Settings takes the whole window
         let sidebar = (self.screen != Screen::Settings).then(|| self.sidebar(window, cx));
         div()
@@ -81,6 +82,7 @@ impl Render for Root {
             .on_drop(cx.listener(|r, _: &SidebarDrag, _, _| r.save()))
             .children(sidebar)
             .child(div().flex_1().min_w_0().h_full().child(main))
+            .children(update)
             .children(menu)
             .children(palette)
             .children(intro)

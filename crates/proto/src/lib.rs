@@ -13,6 +13,7 @@ pub mod grid;
 pub mod run;
 pub mod skills;
 pub mod state;
+pub mod update;
 pub mod usage;
 pub mod wire;
 
@@ -23,5 +24,6 @@ pub use grid::{Grid, Pane};
 pub use run::{Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 pub use skills::{SkillCommand, SkillEvent};
 pub use state::{AppState, Entry, Space, Thread, ThreadKind};
+pub use update::{UpdateCommand, UpdateEvent};
 pub use usage::{UsageCommand, UsageEvent};
 pub use wire::{Command, Event, SessionId};

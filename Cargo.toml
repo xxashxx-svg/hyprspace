@@ -14,6 +14,10 @@ members = [
 exclude = ["src-tauri", "mobile"]
 
 [workspace.package]
+# The app's version, for every crate. deploy.ps1 bumps it with each release (docs/VERSIONING.md);
+# never edit it by hand. It matches the Tauri app's numbering so its updater sees the GPUI
+# release as newer.
+version = "0.21.1"
 edition = "2024"
 license = "MIT"
 publish = false

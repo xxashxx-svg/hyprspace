@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- HyprSpace.app/Contents/Info.plist. scripts/package-macos.sh fills in __VERSION__. The bundle
+     id is the Tauri app's, so an update from it replaces the same app (docs/adr/0010-installers.md).
+     The Tauri updater relaunches whatever CFBundleExecutable names, so the new binary name is fine. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>HyprSpace</string>
+  <key>CFBundleExecutable</key>
+  <string>hyprspace</string>
+  <key>CFBundleIconFile</key>
+  <string>hyprspace.icns</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.hyprspace.app</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>HyprSpace</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>__VERSION__</string>
+  <key>CFBundleVersion</key>
+  <string>__VERSION__</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
+  <!-- Apple silicon only (darwin-aarch64), and every Apple silicon Mac shipped with 11 or later -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <!-- GPUI draws with Metal -->
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+</dict>
+</plist>

@@ -35,6 +35,9 @@ Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron)
 - `crates/syntax/src/lib.rs` (the grammar set and versions, the capture table, the Rust and
   Markdown query fixes, and the precedence between overlapping captures) follows
   `crates/syntax/src/lib.rs`
+- `scripts/package-macos.sh` (bundle layout, signing, notarizing and stapling before the
+  updater tarball is made) follows `scripts/package-macos.sh`, and `relaunch_after_exit` in
+  `crates/update/src/lib.rs` follows the function of that name in `crates/update/src/lib.rs`
 
 ```
 MIT License
@@ -68,10 +71,44 @@ commit `20d29fc6bc2fc2b58d1fff8d8e0503b9ba7f41d8`, licensed under the Apache Lic
 (https://www.apache.org/licenses/LICENSE-2.0). Changes: wrapping and several lines, vertical and
 word moves, and events for submit, cancel and pasted images.
 
+## Tauri (NSIS template)
+
+The shortcut macros in `apps/hyprspace/package/windows/utils.nsh` (`SetLnkAppUserModelId`,
+`UnpinShortcut`, `SetShortcutTarget`, `IsShortcutTarget`) and the registry layout and flags of
+`installer.nsi` are adapted from the NSIS template of
+[tauri-bundler](https://github.com/tauri-apps/tauri) 2.x (`bundle/windows/nsis/`), copyright
+the Tauri Programme within The Commons Conservancy, licensed under MIT or Apache-2.0 at your
+option. The MIT terms:
+
+```
+MIT License
+
+Copyright (c) 2017 - Present Tauri Apps Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Lucide
 
 The icons in `crates/ui/assets/icons/` are from [Lucide](https://lucide.dev) (lucide-react
-1.21.0), drawn from the same set the Tauri app uses.
+1.21.0), drawn from the same set the Tauri app uses. (`crates/ui/assets/logo/` is HyprSpace's
+own cube from the Tauri app's `Logo.tsx`, one face per file.)
 
 ```
 ISC License
