@@ -8,7 +8,7 @@ use futures::StreamExt;
 use gpui::{
     AnyView, Context, Entity, Focusable, IntoElement, Render, Task, Window, div, prelude::*,
 };
-use hyprspace_proto::{Client, Event, Events, SessionId};
+use hyprspace_proto::{Agent, Client, Event, Events, SessionId};
 
 use crate::colors;
 use crate::terminal::TerminalView;
@@ -17,6 +17,8 @@ use crate::transcript::TranscriptView;
 /// What the window opens with.
 pub struct Layout {
     pub structured: usize,
+    /// The agent each structured session runs.
+    pub agent: Agent,
     pub terms: usize,
     /// The first prompt for each structured session.
     pub prompt: String,
@@ -53,8 +55,15 @@ impl Root {
         };
         for _ in 0..layout.structured {
             let id = id();
-            let view =
-                cx.new(|_| TranscriptView::new(id, &layout.prompt, layout.cwd.clone(), &client));
+            let view = cx.new(|_| {
+                TranscriptView::new(
+                    id,
+                    layout.agent,
+                    &layout.prompt,
+                    layout.cwd.clone(),
+                    &client,
+                )
+            });
             panes.push(AnyView::from(view.clone()));
             views.insert(id, View::Structured(view));
         }

@@ -2596,6 +2596,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "hyprspace-engine",
+ "hyprspace-proto",
  "hyprspace-ui",
 ]
 
@@ -2620,10 +2621,12 @@ dependencies = [
 name = "hyprspace-harness"
 version = "0.0.0"
 dependencies = [
- "anyhow",
+ "base64 0.22.1",
  "hyprspace-proto",
  "serde_json",
+ "tempfile",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

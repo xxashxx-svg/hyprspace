@@ -1,5 +1,6 @@
 // The HyprSpace binary: starts the engine, opens the window, and wires the two together.
-// `hyprspace [--structured N] [--terms N] [--prompt TEXT] [--launch CMD]`, default one of each.
+// `hyprspace [--structured N] [--agent claude|codex] [--terms N] [--prompt TEXT] [--launch CMD]`,
+// default one of each with Claude.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
@@ -7,11 +8,13 @@ use std::path::PathBuf;
 
 use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use hyprspace_engine::Engine;
+use hyprspace_proto::Agent;
 use hyprspace_ui::{Layout, Root};
 
 fn layout(args: impl Iterator<Item = String>, cwd: PathBuf) -> Layout {
     let mut out = Layout {
         structured: 1,
+        agent: Agent::Claude,
         terms: 1,
         prompt: "In two short sentences, say hello and name the model you are.".into(),
         launch: "claude".into(),
@@ -22,6 +25,8 @@ fn layout(args: impl Iterator<Item = String>, cwd: PathBuf) -> Layout {
         let value = it.next().unwrap_or_default();
         match flag.as_str() {
             "--structured" => out.structured = value.parse().unwrap_or(1),
+            "--agent" if value == "codex" => out.agent = Agent::Codex,
+            "--agent" => out.agent = Agent::Claude,
             "--terms" => out.terms = value.parse().unwrap_or(1),
             "--prompt" => out.prompt = value,
             "--launch" => out.launch = value,
@@ -77,6 +82,7 @@ mod tests {
         let l = parse(&[]);
         assert_eq!((l.structured, l.terms), (1, 1));
         assert_eq!(l.launch, "claude");
+        assert_eq!(l.agent, Agent::Claude);
         assert_eq!(l.cwd, PathBuf::from("/w"));
     }
 
@@ -95,5 +101,6 @@ mod tests {
         assert_eq!((l.structured, l.terms), (0, 4));
         assert_eq!(l.launch, "");
         assert_eq!(parse(&["--terms", "many"]).terms, 1);
+        assert_eq!(parse(&["--agent", "codex"]).agent, Agent::Codex);
     }
 }

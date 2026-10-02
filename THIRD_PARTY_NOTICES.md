@@ -11,8 +11,16 @@ Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron)
 - `crates/ui/src/terminal/emulator.rs` from `crates/ui/src/terminal/emulator.rs`
 - `crates/ui/src/terminal/keys.rs` and `crates/ui/src/terminal/paint.rs` from
   `crates/ui/src/terminal/view.rs`
-- the headless `claude` invocation in `crates/harness/src/claude.rs` follows
-  `crates/harness/src/claude/mod.rs` and `wire.rs`
+- `crates/harness/src/claude/` (the headless `claude` invocation, stdin line shapes, steer
+  priorities and the held turn end, tool decoding, inline images) follows
+  `crates/harness/src/claude/mod.rs`, `wire.rs` and `normalize.rs`
+- `crates/harness/src/codex/` (the app-server handshake, thread and turn requests, steering with
+  its late-steer fallback, approvals, item mapping) and `codex/rpc.rs` follow
+  `crates/harness/src/codex/mod.rs`, `normalize.rs` and `crates/harness/src/jsonrpc.rs`
+- the stderr tail in `crates/harness/src/spawn.rs` follows `StderrTail` in
+  `crates/harness/src/lib.rs`
+- the fake CLI in `crates/harness/fixtures/fake_cli/` follows the scenarios in
+  `crates/harness/tests/fixtures/fake-claude.sh` and `fake-codex.sh`
 - the crate split (`proto`, `harness`, `engine`, `ui`, `theme`) and `docs/CONTEXT.md` follow
   zeron's layout and its `CONTEXT.md`
 

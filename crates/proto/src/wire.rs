@@ -6,6 +6,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::run::{Launch, Prompt, RunEvent};
+
 /// Picked by whoever opens the session (the UI today), unique for the life of the engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SessionId(pub u64);
@@ -13,11 +15,26 @@ pub struct SessionId(pub u64);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Command {
-    /// Start a structured Claude session in `cwd` and send `prompt` as its first run.
+    /// Start a structured session, and send `prompt` as its first run when there is one.
     OpenStructured {
         id: SessionId,
-        cwd: PathBuf,
-        prompt: String,
+        launch: Launch,
+        prompt: Option<Prompt>,
+    },
+    /// Start a run, or steer the live one: a prompt sent mid-run joins it.
+    Send {
+        id: SessionId,
+        prompt: Prompt,
+    },
+    /// Stop the live run. The session stays open for the next prompt.
+    Interrupt {
+        id: SessionId,
+    },
+    /// Answer a `RunEvent::Approval`.
+    Approve {
+        id: SessionId,
+        request: String,
+        allow: bool,
     },
     /// Spawn the default shell in a PTY sized `cols` x `rows`.
     OpenTerminal {
@@ -65,35 +82,11 @@ pub enum Event {
     },
 }
 
-/// What one run of a structured session reports, in order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum RunEvent {
-    Started {
-        model: String,
-    },
-    /// A piece of the main thread's reply text.
-    Text {
-        text: String,
-    },
-    /// A tool asked for approval and was denied, because approvals have no UI yet.
-    Denied {
-        tool: String,
-    },
-    Finished {
-        ok: bool,
-        ms: u64,
-        /// The full reply, for a CLI that sent no partial text.
-        text: String,
-    },
-    Failed {
-        message: String,
-    },
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::Agent;
+    use crate::run::RunStatus;
 
     fn round_trip<T>(value: &T) -> T
     where
@@ -107,8 +100,21 @@ mod tests {
         let cmds = [
             Command::OpenStructured {
                 id: SessionId(1),
-                cwd: PathBuf::from("/tmp/x"),
-                prompt: "hi".into(),
+                launch: Launch::new(Agent::Claude, "/tmp/x"),
+                prompt: Some(Prompt::text("hi")),
+            },
+            Command::Send {
+                id: SessionId(1),
+                prompt: Prompt {
+                    text: "look".into(),
+                    images: vec![PathBuf::from("/tmp/a.png")],
+                },
+            },
+            Command::Interrupt { id: SessionId(1) },
+            Command::Approve {
+                id: SessionId(1),
+                request: "r1".into(),
+                allow: true,
             },
             Command::OpenTerminal {
                 id: SessionId(2),
@@ -142,9 +148,10 @@ mod tests {
             Event::Run {
                 id: SessionId(1),
                 event: RunEvent::Finished {
-                    ok: true,
+                    status: RunStatus::Done,
                     ms: 2000,
                     text: "hi".into(),
+                    error: None,
                 },
             },
             Event::TerminalOutput {

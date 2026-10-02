@@ -25,6 +25,11 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
     and for running an agent CLI interactively.
 - **Run**: one prompt in a structured session, from sending it until the CLI reports a result.
   A structured session holds many runs. Steering adds to the current run; interrupting ends it.
+- **Steer**: a prompt sent while a run is live. It joins that run instead of starting a new one.
+- **Approval**: the agent asking for a yes or no before it runs a tool. The run waits for the
+  answer.
+- **Thread id**: the id a CLI gives its conversation (Claude calls it a session id, Codex a
+  thread id). Resuming a thread takes it.
 - **Transcript**: the rendered record of a structured session: prompts, replies, tool calls,
   approvals and diffs.
 - **Pane**: one cell of the window's grid, showing one session.

@@ -9,4 +9,16 @@ publish.workspace = true
 hyprspace-proto.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
-anyhow.workspace = true
+base64.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# A scripted stand-in for `claude` and `codex app-server` that the adapter tests spawn. Rust, not
+# a shell script, so the same fixture runs on the Windows and macOS CI runners.
+[[bin]]
+name = "fake-cli"
+path = "fixtures/fake_cli/main.rs"
+test = false
+doc = false

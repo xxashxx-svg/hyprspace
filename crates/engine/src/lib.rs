@@ -22,9 +22,10 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use hyprspace_harness::{Emit, Session};
 use hyprspace_proto::{Client, Command, Event, Events, SessionId};
 use tokio::runtime::Runtime;
-use tokio::task::{AbortHandle, block_in_place};
+use tokio::task::block_in_place;
 
 use pty::{PtyManager, Spawn};
 
@@ -57,7 +58,7 @@ impl Engine {
     }
 
     /// Kill every session. Call on app quit: ConPTY hosts orphan otherwise, and dropping the
-    /// runtime drops each structured run, whose child is killed on drop.
+    /// runtime drops each structured session, whose CLI is killed on drop.
     pub fn shutdown(&self) {
         self.ptys.kill_all();
         let runtime = self
@@ -72,22 +73,52 @@ impl Engine {
 }
 
 // One command at a time, in order. PTY calls block briefly (a write into a full pipe, a resize),
-// so they run under `block_in_place`: keystrokes keep their order and structured runs keep moving
-// on the other worker.
+// so they run under `block_in_place`: keystrokes keep their order and structured sessions keep
+// moving on the other worker. A structured session is a harness task; its commands only queue.
 async fn serve(mut rx: UnboundedReceiver<Command>, tx: UnboundedSender<Event>, ptys: PtyManager) {
-    let mut runs: HashMap<SessionId, AbortHandle> = HashMap::new();
+    let mut structured: HashMap<SessionId, Session> = HashMap::new();
     while let Some(cmd) = rx.next().await {
         match cmd {
-            Command::OpenStructured { id, cwd, prompt } => {
-                let tx = tx.clone();
-                let task = tokio::spawn(async move {
-                    hyprspace_harness::claude::run(prompt, &cwd, |event| {
-                        let _ = tx.unbounded_send(Event::Run { id, event });
-                    })
-                    .await;
+            Command::OpenStructured { id, launch, prompt } => {
+                let agent = launch.agent;
+                let events = tx.clone();
+                let emit: Emit = Box::new(move |event| {
+                    let _ = events.unbounded_send(Event::Run { id, event });
                 });
-                runs.retain(|_, h| !h.is_finished());
-                runs.insert(id, task.abort_handle());
+                match hyprspace_harness::for_agent(agent).start(launch, emit) {
+                    Ok(session) => {
+                        if let Some(prompt) = prompt {
+                            session.send(prompt);
+                        }
+                        structured.retain(|_, s| !s.is_closed());
+                        structured.insert(id, session);
+                    }
+                    Err(e) => {
+                        let _ = tx.unbounded_send(Event::Failed {
+                            id,
+                            message: format!("Could not start {}: {e}", agent.name()),
+                        });
+                    }
+                }
+            }
+            Command::Send { id, prompt } => match structured.get(&id) {
+                Some(session) => session.send(prompt),
+                None => {
+                    let _ = tx.unbounded_send(Event::Failed {
+                        id,
+                        message: "This session has ended. Start a new one.".into(),
+                    });
+                }
+            },
+            Command::Interrupt { id } => {
+                if let Some(session) = structured.get(&id) {
+                    session.interrupt();
+                }
+            }
+            Command::Approve { id, request, allow } => {
+                if let Some(session) = structured.get(&id) {
+                    session.answer(request, allow);
+                }
             }
             Command::OpenTerminal {
                 id,
@@ -116,9 +147,8 @@ async fn serve(mut rx: UnboundedReceiver<Command>, tx: UnboundedSender<Event>, p
                 let _ = block_in_place(|| ptys.resize(id, cols, rows));
             }
             Command::Close { id } => {
-                if let Some(run) = runs.remove(&id) {
-                    run.abort();
-                }
+                // dropping the session kills its CLI
+                structured.remove(&id);
                 ptys.kill(id);
             }
         }
@@ -183,6 +213,26 @@ mod tests {
             }
         }
         assert!(engine.ptys.is_empty());
+        engine.shutdown();
+    }
+
+    #[test]
+    fn a_prompt_for_a_closed_session_says_so() {
+        let (engine, client, events) = Engine::start().unwrap();
+        let events = forward(events);
+        client.send(Command::Send {
+            id: SessionId(9),
+            prompt: hyprspace_proto::Prompt::text("hi"),
+        });
+        // commands for a session that is gone are not errors
+        client.send(Command::Interrupt { id: SessionId(9) });
+        match events.recv_timeout(Duration::from_secs(10)).unwrap() {
+            Event::Failed { id, message } => {
+                assert_eq!(id, SessionId(9));
+                assert!(message.contains("ended"), "{message}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
         engine.shutdown();
     }
 }

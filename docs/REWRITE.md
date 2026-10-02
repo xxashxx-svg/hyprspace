@@ -253,3 +253,42 @@ reached claude's prompt, and closing it left no child processes.
 skills, providers, resume list, hooks and persistence are tested library calls with no command;
 each gets one when the UI first needs it.
 
+
+## Phase 3 results
+
+Done on 2026-10-02 against claude 2.1.287 and codex-cli 0.159.3. No parity row is fully ticked
+yet: the harness side of "Structured transcript" exists, the UI side is phase 4.
+
+**What exists.** Shape and reasons: [adr/0004](./adr/0004-harness-protocol.md).
+
+- `crates/proto/src/run.rs`: `Launch` (agent, cwd, model, effort, `Permission`, resume),
+  `Prompt` (text and image paths), and the transcript events `RunEvent` and `Tool`. New commands
+  `Send` (starts a run or steers the live one), `Interrupt` and `Approve`. `agents.rs` has
+  `Agent` and the catalog types.
+- `crates/harness`: the `Harness` trait and `Session` handle (`lib.rs`), `claude/` (stream-json,
+  resume pinned to the conversation's own folder), `codex/` (app-server JSON-RPC), `spawn.rs`,
+  and `catalog.rs` (the models.ts catalog, plus Codex's own `models_cache.json`).
+- `crates/harness/fixtures/fake_cli`: a Rust fake of both CLIs, built as the `fake-cli` bin so
+  it runs on both CI runners. `tests/claude.rs` (13) and `tests/codex.rs` (12) drive every
+  capability through it: streaming, tools, approvals, steering (including late and absorbed
+  steers), interrupts (including ignored ones), resume, images, model and effort, crashes.
+- `crates/harness/examples/live.rs`: one real session through an adapter.
+- The engine keeps one `Session` per structured session id; the spike UI renders text,
+  thinking and one line per tool call, and denies approvals through the channel.
+
+**Real sessions** (`cargo run -p hyprspace-harness --example live -- ...`):
+
+- `claude "Reply with just the word: hi"` streamed `hi`, `Finished` done in 3.0s.
+- `claude "...last time?..." --resume <that id>` run from a different folder started in the
+  original folder and answered `hi`.
+- `codex "Reply with just the word: hi" --model gpt-6-luna --effort low` streamed `hi`, done in
+  4.1s. Without `--model`, Ash's `~/.codex/config.toml` default `gpt-5.6-sol` is refused for a
+  ChatGPT account, and `gpt-5.5` returns 404; both came back as a readable run error.
+
+The app (`hyprspace --launch ""`) streamed a structured Claude reply through the new harness and
+closed with no child processes left.
+
+**Not done yet.** Approval and question UI, Claude's `AskUserQuestion` answers, subagent
+transcripts, history for resumed threads, the catalog on the channel (the composer needs it in
+phase 4), and an engine-level test of structured sessions (the fake CLI is only reachable from
+the harness crate's own tests).

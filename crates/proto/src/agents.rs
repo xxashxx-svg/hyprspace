@@ -53,3 +53,54 @@ pub struct SkillItem {
     pub scope: SkillScope,
     pub kind: SkillKind,
 }
+
+/// An agent CLI that runs as a structured session. The others (Gemini, OpenCode, Grok) run as
+/// terminal sessions only for now (docs/REWRITE.md, open questions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Agent {
+    Claude,
+    Codex,
+}
+
+impl Agent {
+    pub fn name(self) -> &'static str {
+        match self {
+            Agent::Claude => "Claude",
+            Agent::Codex => "Codex",
+        }
+    }
+}
+
+/// One model the composer offers for an agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    /// What the CLI takes. Empty means "let the CLI pick".
+    pub id: String,
+    pub label: String,
+    pub note: Option<String>,
+    /// Effort levels this model takes, lowest first. Empty means the agent's own list.
+    pub efforts: Vec<String>,
+    pub default_effort: Option<String>,
+}
+
+/// The models and effort levels one agent can start with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCatalog {
+    pub agent: Agent,
+    pub models: Vec<ModelInfo>,
+    /// The levels the CLI takes when a model does not list its own.
+    pub efforts: Vec<String>,
+}
+
+impl AgentCatalog {
+    /// The effort levels a start can pick for `model`: its own list, else the agent's.
+    pub fn efforts_for(&self, model: &str) -> &[String] {
+        match self.models.iter().find(|m| m.id == model) {
+            Some(m) if !m.efforts.is_empty() => &m.efforts,
+            _ => &self.efforts,
+        }
+    }
+}

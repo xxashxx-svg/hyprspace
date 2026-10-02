@@ -39,6 +39,8 @@ base64 = "0.22"
 # usage endpoints (engine/src/usage/live.rs); rustls so no OpenSSL is needed on any build host
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tempfile = "3"
+# ids for steer messages claude echoes back (harness/src/claude)
+uuid = { version = "1", features = ["v4"] }
 
 [profile.dev]
 opt-level = 0
