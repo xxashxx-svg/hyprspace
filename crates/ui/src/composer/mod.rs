@@ -5,7 +5,7 @@
 
 mod card;
 mod clone;
-mod effort;
+pub(crate) mod model_menu;
 mod pickers;
 mod repo;
 
@@ -22,6 +22,7 @@ use hyprspace_proto::{Agent, Client, Command, Launch, Prompt};
 use crate::input::{InputEvent, TextInput};
 use crate::{attach, colors};
 use clone::CloneCard;
+use model_menu::{Anchor, Choice, Host as _, ModelMenu, Spec};
 pub use pickers::effort_label;
 
 /// Where a new thread goes: a space, its name, and its folder (None for an open space).
@@ -55,13 +56,6 @@ pub enum ComposerEvent {
     AddProject(PathBuf),
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum Menu {
-    Model,
-    Effort,
-    Permission,
-}
-
 #[derive(Clone, Copy)]
 pub enum PickFor {
     /// The folder a thread in an open space runs in.
@@ -80,9 +74,11 @@ pub struct Composer {
     agents: Vec<AgentInfo>,
     prefs: ComposerPrefs,
     images: Vec<PathBuf>,
-    menu: Option<(Menu, Point<Pixels>)>,
-    /// The agent whose models the model picker shows.
-    tab: Option<Agent>,
+    /// The permission menu, open where it was clicked.
+    menu: Option<Point<Pixels>>,
+    models: Option<ModelMenu>,
+    /// Where the model chip sits, for the model menu to open from.
+    anchor: Anchor,
     resumable: Vec<AgentSession>,
     /// The (agent, folder) the resume list is for.
     asked: Option<(Agent, PathBuf)>,
@@ -134,7 +130,8 @@ impl Composer {
             prefs: ComposerPrefs::default(),
             images: Vec::new(),
             menu: None,
-            tab: None,
+            models: None,
+            anchor: Anchor::default(),
             resumable: Vec::new(),
             asked: None,
             clone: CloneCard {
@@ -335,6 +332,7 @@ impl Composer {
 
     fn submit(&mut self, cx: &mut Context<Self>) {
         self.menu = None;
+        self.models = None;
         let text = self.input.read(cx).text().trim().to_string();
         if repo::split(&text).is_some() {
             self.start_clone(cx);
@@ -462,10 +460,17 @@ impl Composer {
         .detach();
     }
 
-    fn open_menu(&mut self, menu: Menu, e: &ClickEvent, cx: &mut Context<Self>) {
-        self.tab = self.agent().map(|a| a.agent);
-        self.menu = Some((menu, e.position()));
+    fn open_permission(&mut self, e: &ClickEvent, cx: &mut Context<Self>) {
+        self.menu = Some(e.position());
         cx.notify();
+    }
+
+    fn open_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(spec) = self.model_spec() {
+            self.menu = None;
+            self.models = Some(ModelMenu::open(&spec, window, cx));
+            cx.notify();
+        }
     }
 
     fn drop_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
@@ -536,10 +541,14 @@ impl Render for Composer {
             )),
             None => card::resume_list(self, cx),
         };
-        let menu = self.menu.map(|(m, at)| match m {
-            Menu::Effort => effort::menu(self, at, window, cx),
-            _ => pickers::menu(self, m, at, window, cx),
-        });
+        let menu = self
+            .menu
+            .map(|at| pickers::permission_menu(self, at, window, cx));
+        let models = self
+            .models
+            .as_ref()
+            .zip(self.model_spec())
+            .and_then(|(m, spec)| model_menu::render(m, &spec, &self.anchor, window, cx));
         div()
             .id("composer")
             .size_full()
@@ -579,6 +588,71 @@ impl Render for Composer {
                     .children(below),
             )
             .children(menu)
+            .children(models)
+    }
+}
+
+impl model_menu::Host for Composer {
+    /// Every installed agent's models, grouped by agent.
+    fn model_spec(&self) -> Option<Spec> {
+        let pick = self.pick()?;
+        let models = self
+            .installed()
+            .flat_map(|a| {
+                a.catalog.models.iter().map(|m| model_menu::Model {
+                    agent: a.agent,
+                    id: m.id.clone(),
+                    label: m.label.clone(),
+                    note: m.note.clone(),
+                })
+            })
+            .collect();
+        let catalog = &self.agent()?.catalog;
+        Some(Spec {
+            models,
+            efforts: catalog.efforts_for(&pick.model).to_vec(),
+            default_effort: catalog
+                .models
+                .iter()
+                .find(|m| m.id == pick.model)
+                .and_then(|m| m.default_effort.clone()),
+            agent: pick.agent,
+            model: pick.model,
+            effort: pick.effort,
+            foot: None,
+        })
+    }
+
+    fn model_menu(&mut self) -> &mut Option<ModelMenu> {
+        &mut self.models
+    }
+
+    fn choose(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        match choice {
+            Choice::Model(agent, model) => {
+                let old = self.prefs.pick(agent);
+                // keep the effort when the new model takes it
+                let takes = self
+                    .agents
+                    .iter()
+                    .find(|a| a.agent == agent)
+                    .is_some_and(|a| a.catalog.efforts_for(&model).contains(&old.effort));
+                let effort = if takes { old.effort } else { String::new() };
+                self.set_pick(
+                    Pick {
+                        agent,
+                        model,
+                        effort,
+                    },
+                    cx,
+                );
+            }
+            Choice::Effort(effort) => {
+                if let Some(pick) = self.pick() {
+                    self.set_pick(Pick { effort, ..pick }, cx);
+                }
+            }
+        }
     }
 }
 

@@ -11,6 +11,7 @@ use hyprspace_proto::{RunStatus, Tool};
 use super::model::Item;
 use super::{TranscriptView, tool};
 use crate::assets::{icon, mark};
+use crate::composer::model_menu::{self, Host as _, ModelMenu};
 use crate::{attach, colors, markdown, spinner, widgets};
 
 /// The transcript and the composer share one column, so their edges line up.
@@ -85,7 +86,7 @@ pub fn view(
                 .children(jump),
         )
         .child(composer(v, window, cx))
-        .children(v.menu.map(|at| model_menu(v, at, window, cx)))
+        .children(model_menu(v, window, cx))
         .into_any_element()
 }
 
@@ -618,13 +619,18 @@ fn composer(
     let chip = if running {
         chip.into_any_element()
     } else {
-        chip.cursor_pointer()
-            .hover(|s| s.bg(colors::ink(0.06)))
-            .on_click(cx.listener(|v, e: &ClickEvent, _, cx| {
-                v.menu = Some(e.position());
-                cx.notify();
-            }))
-            .into_any_element()
+        model_menu::anchored_chip(
+            &v.anchor,
+            chip.cursor_pointer()
+                .hover(|s| s.bg(colors::ink(0.06)))
+                .on_click(cx.listener(|v, _: &ClickEvent, window, cx| {
+                    if let Some(spec) = v.model_spec() {
+                        v.menu = Some(ModelMenu::open(&spec, window, cx));
+                        cx.notify();
+                    }
+                })),
+        )
+        .into_any_element()
     };
     // a live run with nothing typed can only be stopped; typed text steers it
     let action = if running && v.empty && v.images.is_empty() {
@@ -719,59 +725,9 @@ fn composer(
 
 fn model_menu(
     v: &TranscriptView,
-    at: gpui::Point<gpui::Pixels>,
     window: &mut Window,
     cx: &mut Context<TranscriptView>,
-) -> AnyElement {
-    let current = v.launch.model.clone().unwrap_or_default();
-    let rows: Vec<AnyElement> = match &v.catalog {
-        Some(cat) => cat
-            .models
-            .iter()
-            .enumerate()
-            .map(|(i, m)| {
-                let id = m.id.clone();
-                widgets::menu_item(
-                    ("thread-model-row", i),
-                    m.label.clone(),
-                    m.note.clone().map(Into::into),
-                    m.id == current,
-                )
-                .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.pick_model(id.clone(), cx)))
-                .into_any_element()
-            })
-            .collect(),
-        None => vec![
-            div()
-                .p_2()
-                .text_xs()
-                .text_color(colors::text3())
-                .child("Loading models...")
-                .into_any_element(),
-        ],
-    };
-    let close = cx.listener(|v, _: &(), _, cx| {
-        v.menu = None;
-        cx.notify();
-    });
-    widgets::popup(
-        at,
-        widgets::Open::Up,
-        window,
-        move |w, cx| close(&(), w, cx),
-        div()
-            .flex()
-            .flex_col()
-            .child(widgets::menu_heading("Model for this thread"))
-            .children(rows)
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .text_xs()
-                    .italic()
-                    .text_color(colors::text3())
-                    .child("Changing it resumes the conversation on the new model."),
-            ),
-    )
+) -> Option<AnyElement> {
+    let spec = v.model_spec()?;
+    model_menu::render(v.menu.as_ref()?, &spec, &v.anchor, window, cx)
 }

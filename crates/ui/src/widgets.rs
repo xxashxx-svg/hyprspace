@@ -157,6 +157,32 @@ pub fn layer(
     close: impl Fn(&mut Window, &mut App) + 'static,
     content: impl IntoElement,
 ) -> AnyElement {
+    let (corner, at) = match open {
+        Open::Down => (Anchor::TopLeft, at),
+        Open::Up => (Anchor::BottomLeft, point(at.x - px(12.), at.y - px(16.))),
+    };
+    float(corner, at, window, close, content)
+}
+
+/// Like [`layer`], but sitting just above `chip` with its left edge on the chip's, so a picker
+/// opens from its chip wherever on the chip the click landed.
+pub fn above(
+    chip: Bounds<Pixels>,
+    window: &Window,
+    close: impl Fn(&mut Window, &mut App) + 'static,
+    content: impl IntoElement,
+) -> AnyElement {
+    let at = point(chip.origin.x, chip.origin.y - px(6.));
+    float(Anchor::BottomLeft, at, window, close, content)
+}
+
+fn float(
+    corner: Anchor,
+    at: Point<Pixels>,
+    window: &Window,
+    close: impl Fn(&mut Window, &mut App) + 'static,
+    content: impl IntoElement,
+) -> AnyElement {
     let close = Rc::new(close);
     let (a, b) = (close.clone(), close);
     let size = window.viewport_size();
@@ -171,14 +197,8 @@ pub fn layer(
                 .on_mouse_down(MouseButton::Right, move |_, w, cx| b(w, cx))
                 .child(
                     anchored()
-                        .anchor(match open {
-                            Open::Down => Anchor::TopLeft,
-                            Open::Up => Anchor::BottomLeft,
-                        })
-                        .position(match open {
-                            Open::Down => at,
-                            Open::Up => point(at.x - px(12.), at.y - px(16.)),
-                        })
+                        .anchor(corner)
+                        .position(at)
                         .snap_to_window_with_margin(px(8.))
                         .child(
                             div()
@@ -315,6 +335,57 @@ pub fn menu_item(
                 }),
         )
         .when(checked, |d| d.child(icon("check", 13., colors::text1())))
+}
+
+/// One line of a compact picker: a mark or icon, the name, a short muted note pushed right, and
+/// a slot at the end for a check or a chevron. `hi` is the row the mouse or the arrows are on;
+/// it gets a quiet wash, never the accent.
+pub fn pick_row(
+    id: impl Into<ElementId>,
+    lead: Option<AnyElement>,
+    label: impl Into<SharedString>,
+    note: Option<SharedString>,
+    trail: Option<AnyElement>,
+    hi: bool,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(8.))
+        .h(px(30.))
+        .px(px(8.))
+        .rounded(px(7.))
+        .cursor_pointer()
+        .when(hi, |d| d.bg(colors::ink(0.07)))
+        .children(lead)
+        .child(
+            div()
+                .flex_shrink_0()
+                .max_w(px(180.))
+                .truncate()
+                .text_color(colors::text1())
+                .child(label.into()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .justify_end()
+                .text_size(px(11.5))
+                .text_color(colors::text3())
+                .children(note.map(|n| div().truncate().child(n))),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .justify_center()
+                .w(px(14.))
+                .children(trail),
+        )
 }
 
 /// What a menu is about: small, dim and upper case.

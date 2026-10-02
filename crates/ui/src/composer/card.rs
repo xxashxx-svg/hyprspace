@@ -9,7 +9,7 @@ use gpui::{
 use hyprspace_proto::state::Pick;
 use hyprspace_theme::MONO;
 
-use super::{Composer, Menu, PickFor, pickers};
+use super::{Composer, PickFor, model_menu, pickers};
 use crate::assets::{icon, mark};
 use crate::{attach, colors, time, widgets};
 
@@ -28,12 +28,21 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     let focused = c.input.focus_handle(cx).is_focused(window);
     let top = top_row(c, cx);
     let model_chip: AnyElement = match &pick {
-        Some(p) => widgets::chip("composer-model")
-            .child(mark(p.agent, 13., colors::brand(p.agent).0))
-            .child(div().truncate().child(model_label(c, p)))
-            .child(widgets::caret())
-            .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_menu(Menu::Model, e, cx)))
-            .into_any_element(),
+        Some(p) => model_menu::anchored_chip(
+            &c.anchor,
+            widgets::chip("composer-model")
+                .child(mark(p.agent, 13., colors::brand(p.agent).0))
+                .child(div().truncate().child(model_label(c, p)))
+                .children((!p.effort.is_empty()).then(|| {
+                    div()
+                        .flex_none()
+                        .text_color(colors::text3())
+                        .child(pickers::effort_label(&p.effort))
+                }))
+                .child(widgets::caret())
+                .on_click(cx.listener(|c, _: &ClickEvent, window, cx| c.open_models(window, cx))),
+        )
+        .into_any_element(),
         None if c.agents.is_empty() => div()
             .text_size(px(12.))
             .text_color(colors::text3())
@@ -45,21 +54,10 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             .child("No agent installed")
             .into_any_element(),
     };
-    let effort_chip = (!pickers::efforts(c).is_empty()).then(|| {
-        let label = pick
-            .as_ref()
-            .map(|p| p.effort.clone())
-            .filter(|e| !e.is_empty())
-            .map_or("Effort".to_string(), |e| pickers::effort_label(&e));
-        widgets::chip("composer-effort")
-            .child(label)
-            .child(widgets::caret())
-            .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_menu(Menu::Effort, e, cx)))
-    });
     let permission_chip = widgets::chip("composer-permission")
         .child(pickers::permission_label(c.prefs.permission))
         .child(widgets::caret())
-        .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_menu(Menu::Permission, e, cx)));
+        .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_permission(e, cx)));
     // on: the agent runs interactively in a terminal session, on the plan's terminal limits
     let forced = c.agent().is_some_and(|a| !a.agent.structured());
     let on = c.terminal();
@@ -128,7 +126,6 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .border_t_1()
                 .border_color(colors::border1())
                 .child(model_chip)
-                .children(effort_chip)
                 .child(permission_chip)
                 .children(terminal_chip)
                 .child(div().flex_1())

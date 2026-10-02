@@ -15,12 +15,13 @@ use std::time::Duration;
 
 use gpui::{
     AppContext, Context, Entity, EventEmitter, ExternalPaths, Focusable, IntoElement,
-    PathPromptOptions, Pixels, Point, Render, ScrollHandle, Subscription, Task, Window, px,
+    PathPromptOptions, Render, ScrollHandle, Subscription, Task, Window, px,
 };
 use hyprspace_proto::agents::AgentCatalog;
 use hyprspace_proto::{Answer, Client, Command, Entry, Launch, Prompt, RunEvent, SessionId};
 
 use crate::attach;
+use crate::composer::model_menu::{self, Anchor, Choice, ModelMenu, Spec};
 use crate::input::{InputEvent, TextInput};
 pub use model::Status;
 use model::Transcript;
@@ -51,13 +52,17 @@ pub struct TranscriptView {
     images: Vec<PathBuf>,
     scroll: ScrollHandle,
     catalog: Option<AgentCatalog>,
-    /// The model picker, open at this point.
-    menu: Option<Point<Pixels>>,
+    menu: Option<ModelMenu>,
+    /// Where the model chip sits, for its menu to open from.
+    anchor: Anchor,
     /// Runs of tool calls opened to their single calls, by the index of their first call.
     open_runs: HashSet<usize>,
     /// The reply box is empty, so a live run shows Stop instead of Send.
     empty: bool,
     branch: Option<String>,
+    /// The model was picked again since the CLI last said which one it runs, so that report no
+    /// longer tells what the next run uses.
+    repicked: bool,
     status: Status,
     ticker: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -108,9 +113,11 @@ impl TranscriptView {
             scroll: ScrollHandle::new(),
             catalog: None,
             menu: None,
+            anchor: Anchor::default(),
             open_runs: HashSet::new(),
             empty: true,
             branch,
+            repicked: false,
             status: Status::Idle,
             ticker: None,
             _subs: vec![sub],
@@ -204,13 +211,12 @@ impl TranscriptView {
     }
 
     fn pick_model(&mut self, model: String, cx: &mut Context<Self>) {
-        self.menu = None;
         let model = Some(model).filter(|m| !m.is_empty());
         if model == self.launch.model {
-            cx.notify();
             return;
         }
         self.launch.model = model;
+        self.repicked = true;
         // an effort the new model does not take would be refused at start
         if let (Some(cat), Some(effort)) = (&self.catalog, &self.launch.effort) {
             let id = self.launch.model.clone().unwrap_or_default();
@@ -218,15 +224,29 @@ impl TranscriptView {
                 self.launch.effort = None;
             }
         }
-        // the next prompt starts a session on the new model, resuming this conversation
+        let name = self.model_label();
+        self.relaunch(format!("Model set to {name}."), cx);
+    }
+
+    fn pick_effort(&mut self, effort: String, cx: &mut Context<Self>) {
+        let effort = Some(effort).filter(|e| !e.is_empty());
+        if effort == self.launch.effort {
+            return;
+        }
+        self.launch.effort = effort;
+        let name = crate::composer::effort_label(self.launch.effort.as_deref().unwrap_or_default());
+        self.relaunch(format!("Effort set to {name}."), cx);
+    }
+
+    /// After a model or effort change: the next prompt starts a session with it, resuming this
+    /// conversation.
+    fn relaunch(&mut self, what: String, cx: &mut Context<Self>) {
         if self.open && !self.model.running() {
             self.client.send(Command::Close { id: self.id });
             self.open = false;
         }
-        let name = self.model_label();
-        self.model.note(format!(
-            "Model set to {name}. It applies from your next message."
-        ));
+        self.model
+            .note(format!("{what} It applies from your next message."));
         cx.emit(TranscriptEvent::Launch(self.launch.clone()));
         cx.notify();
     }
@@ -235,7 +255,8 @@ impl TranscriptView {
     /// name in the catalog.
     fn model_label(&self) -> String {
         let picked = self.launch.model.as_deref().filter(|m| !m.is_empty());
-        match picked.or(self.model.model.as_deref()) {
+        let reported = self.model.model.as_deref().filter(|_| !self.repicked);
+        match picked.or(reported) {
             Some(id) => crate::models::name(self.catalog.as_ref(), id),
             None => "Default".into(),
         }
@@ -262,6 +283,7 @@ impl TranscriptView {
 
     pub fn apply(&mut self, event: RunEvent, cx: &mut Context<Self>) {
         if let RunEvent::Started { thread, cwd, .. } = &event {
+            self.repicked = false;
             self.launch.resume = Some(thread.clone());
             self.launch.cwd = cwd.clone();
             cx.emit(TranscriptEvent::Started {
@@ -381,6 +403,65 @@ impl TranscriptView {
                 .cloned(),
         );
         cx.notify();
+    }
+}
+
+impl model_menu::Host for TranscriptView {
+    fn model_spec(&self) -> Option<Spec> {
+        let catalog = self.catalog.as_ref()?;
+        let agent = self.launch.agent;
+        let model = self.launch.model.clone().unwrap_or_default();
+        // on Default, the CLI's own choice is the model it reported running
+        let resolved = self
+            .model
+            .model
+            .as_deref()
+            .filter(|_| model.is_empty() && !self.repicked)
+            .map(|id| crate::models::name(Some(catalog), id));
+        let models = catalog
+            .models
+            .iter()
+            .map(|m| {
+                let (label, note) = match &resolved {
+                    Some(r) if m.id.is_empty() => (format!("{} · {r}", m.label), None),
+                    _ => (m.label.clone(), m.note.clone()),
+                };
+                model_menu::Model {
+                    agent,
+                    id: m.id.clone(),
+                    label,
+                    note,
+                }
+            })
+            .collect();
+        Some(Spec {
+            models,
+            efforts: catalog.efforts_for(&model).to_vec(),
+            default_effort: catalog
+                .models
+                .iter()
+                .find(|m| m.id == model)
+                .and_then(|m| m.default_effort.clone()),
+            agent,
+            model,
+            effort: self.launch.effort.clone().unwrap_or_default(),
+            foot: self
+                .launch
+                .resume
+                .is_some()
+                .then_some("Switching keeps this conversation."),
+        })
+    }
+
+    fn model_menu(&mut self) -> &mut Option<ModelMenu> {
+        &mut self.menu
+    }
+
+    fn choose(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        match choice {
+            Choice::Model(_, model) => self.pick_model(model, cx),
+            Choice::Effort(effort) => self.pick_effort(effort, cx),
+        }
     }
 }
 
