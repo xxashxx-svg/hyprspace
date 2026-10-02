@@ -1,0 +1,406 @@
+// What the root does to spaces and threads: create, open, rename, archive, remove. Every change
+// to the saved state ends in `save`.
+
+use std::path::{Path, PathBuf};
+
+use gpui::{AppContext, Context, Entity, Focusable, Window};
+use hyprspace_proto::{Command, Launch, Prompt, SessionId, Space, Thread, ThreadKind};
+
+use super::{Action, Rename, Root, Screen, View};
+use crate::composer::Target;
+use crate::input::{InputEvent, TextInput};
+use crate::terminal::TerminalView;
+use crate::time::now_ms;
+use crate::transcript::{TranscriptEvent, TranscriptView};
+
+/// Two paths name the same folder. Windows paths are case-blind.
+fn same_folder(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        let s = p
+            .to_string_lossy()
+            .trim_end_matches(['/', '\\'])
+            .to_string();
+        if cfg!(windows) {
+            s.to_lowercase().replace('/', "\\")
+        } else {
+            s
+        }
+    };
+    norm(a) == norm(b)
+}
+
+fn folder_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+impl Root {
+    /// The space for `path`, made if the sidebar has none yet.
+    pub(crate) fn add_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> u64 {
+        if let Some(s) = self
+            .state
+            .spaces
+            .iter_mut()
+            .find(|s| s.cwd.as_deref().is_some_and(|c| same_folder(c, &path)))
+        {
+            s.archived = false;
+            return s.id;
+        }
+        let id = self.state.take_id();
+        self.state.spaces.push(Space {
+            id,
+            name: folder_name(&path),
+            cwd: Some(path),
+            ..Default::default()
+        });
+        self.save();
+        cx.notify();
+        id
+    }
+
+    fn new_open_space(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.state.take_id();
+        let n = self.state.spaces.iter().filter(|s| s.cwd.is_none()).count() + 1;
+        self.state.spaces.push(Space {
+            id,
+            name: format!("Open space {n}"),
+            ..Default::default()
+        });
+        self.save();
+        self.compose(Some(id), window, cx);
+    }
+
+    pub(crate) fn compose(
+        &mut self,
+        space: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.screen = Screen::Compose(space);
+        let target = space.and_then(|id| self.state.space(id)).map(|s| Target {
+            space: s.id,
+            name: s.name.clone(),
+            cwd: s.cwd.clone(),
+        });
+        self.composer.update(cx, |c, cx| c.set_target(target, cx));
+        let focus = self.composer.focus_handle(cx);
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    fn session_id(&mut self, thread: u64) -> SessionId {
+        let id = SessionId(self.next_session);
+        self.next_session += 1;
+        self.sessions.insert(id, thread);
+        id
+    }
+
+    /// Makes the view for a thread. `first` goes out as the first prompt; `history` reads the
+    /// thread's journal first, for a thread from an earlier run of the app.
+    fn make_view(
+        &mut self,
+        thread: &Thread,
+        first: Option<Prompt>,
+        history: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let id = thread.id;
+        let session = self.session_id(id);
+        let client = self.client.clone();
+        let view = match &thread.kind {
+            ThreadKind::Structured { launch } => {
+                let launch = launch.clone();
+                let journal = thread.journal();
+                let catalog = self
+                    .agents
+                    .iter()
+                    .find(|a| a.agent == launch.agent)
+                    .map(|a| a.catalog.clone());
+                let v = cx.new(|cx| {
+                    let mut v =
+                        TranscriptView::new(session, launch, journal, history, first, client, cx);
+                    if let Some(c) = catalog {
+                        v.set_catalog(c, cx);
+                    }
+                    v
+                });
+                let sub = cx.subscribe(&v, move |root, _, e: &TranscriptEvent, cx| {
+                    root.on_transcript(id, e, cx)
+                });
+                self._subs.push(sub);
+                if let Some(status) = Some(v.read(cx).status()) {
+                    self.status.insert(id, status);
+                }
+                View::Structured(v)
+            }
+            ThreadKind::Terminal { cwd } => {
+                let cwd = cwd.clone();
+                View::Terminal(cx.new(|cx| TerminalView::new(session, client, cwd, "", cx)))
+            }
+        };
+        self.views.insert(id, view);
+    }
+
+    fn on_transcript(&mut self, thread: u64, e: &TranscriptEvent, cx: &mut Context<Self>) {
+        match e {
+            TranscriptEvent::Status(s) => {
+                self.status.insert(thread, *s);
+            }
+            TranscriptEvent::Started { thread: t, cwd } => {
+                if let Some(Thread {
+                    kind: ThreadKind::Structured { launch },
+                    ..
+                }) = self.state.thread_mut(thread)
+                {
+                    launch.resume = Some(t.clone());
+                    launch.cwd = cwd.clone();
+                }
+                self.save();
+            }
+            TranscriptEvent::Launch(l) => {
+                if let Some(Thread {
+                    kind: ThreadKind::Structured { launch },
+                    ..
+                }) = self.state.thread_mut(thread)
+                {
+                    launch.model = l.model.clone();
+                    launch.effort = l.effort.clone();
+                }
+                self.save();
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn start_thread(
+        &mut self,
+        space: u64,
+        launch: Launch,
+        prompt: Option<Prompt>,
+        title: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let resumed = launch.resume.is_some();
+        let thread = Thread {
+            id: self.state.take_id(),
+            title,
+            kind: ThreadKind::Structured { launch },
+            archived: false,
+            created: now_ms(),
+        };
+        let Some(s) = self.state.space_mut(space) else {
+            return;
+        };
+        s.folded = false;
+        s.threads.insert(0, thread.clone());
+        self.make_view(&thread, prompt, false, cx);
+        if resumed && let Some(View::Structured(v)) = self.views.get(&thread.id) {
+            v.update(cx, |v, cx| {
+                v.note(
+                    "Resumed an earlier conversation. Its messages before this point stay in the agent's own history.",
+                    cx,
+                )
+            });
+        }
+        self.open_thread(thread.id, window, cx);
+    }
+
+    fn new_terminal(&mut self, space: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let cwd = self
+            .state
+            .space(space)
+            .and_then(|s| s.cwd.clone())
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let thread = Thread {
+            id: self.state.take_id(),
+            title: "Terminal".into(),
+            kind: ThreadKind::Terminal { cwd },
+            archived: false,
+            created: now_ms(),
+        };
+        let Some(s) = self.state.space_mut(space) else {
+            return;
+        };
+        s.folded = false;
+        s.threads.insert(0, thread.clone());
+        self.make_view(&thread, None, false, cx);
+        self.open_thread(thread.id, window, cx);
+    }
+
+    pub(crate) fn open_thread(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((_, thread)) = self.state.thread(id) else {
+            return;
+        };
+        let thread = thread.clone();
+        if !self.views.contains_key(&id) {
+            self.make_view(&thread, None, true, cx);
+        }
+        self.screen = Screen::Thread(id);
+        self.state.active = Some(id);
+        self.save();
+        let focus = match &self.views[&id] {
+            View::Structured(v) => v.focus_handle(cx),
+            View::Terminal(v) => v.focus_handle(cx),
+        };
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    /// Kills a thread's session and forgets its view.
+    fn drop_view(&mut self, thread: u64) {
+        if self.views.remove(&thread).is_some() {
+            let ids: Vec<SessionId> = self
+                .sessions
+                .iter()
+                .filter(|(_, t)| **t == thread)
+                .map(|(s, _)| *s)
+                .collect();
+            for id in ids {
+                self.sessions.remove(&id);
+                self.client.send(Command::Close { id });
+            }
+        }
+        self.status.remove(&thread);
+    }
+
+    /// After the thread or space on screen went away.
+    fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let still_there = match self.screen {
+            Screen::Thread(id) => self
+                .state
+                .thread(id)
+                .is_some_and(|(s, t)| !t.archived && !s.archived),
+            Screen::Compose(Some(id)) => self.state.space(id).is_some_and(|s| !s.archived),
+            Screen::Compose(None) => true,
+        };
+        if !still_there {
+            let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
+            self.compose(first, window, cx);
+        }
+    }
+
+    pub(crate) fn act(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu = None;
+        match action {
+            Action::NewThread(space) => self.compose(Some(space), window, cx),
+            Action::NewTerminal(space) => self.new_terminal(space, window, cx),
+            Action::Rename(target) => self.start_rename(target, window, cx),
+            Action::ArchiveSpace(id, on) => {
+                if let Some(s) = self.state.space_mut(id) {
+                    s.archived = on;
+                }
+                self.leave(window, cx);
+            }
+            Action::ArchiveThread(id, on) => {
+                if let Some(t) = self.state.thread_mut(id) {
+                    t.archived = on;
+                }
+                self.leave(window, cx);
+            }
+            Action::RemoveSpace(id) => {
+                let threads: Vec<u64> = self
+                    .state
+                    .space(id)
+                    .map(|s| s.threads.iter().map(|t| t.id).collect())
+                    .unwrap_or_default();
+                for t in threads {
+                    self.drop_view(t);
+                }
+                self.state.spaces.retain(|s| s.id != id);
+                self.leave(window, cx);
+            }
+            Action::RemoveThread(id) => {
+                self.drop_view(id);
+                for s in &mut self.state.spaces {
+                    s.threads.retain(|t| t.id != id);
+                }
+                self.leave(window, cx);
+            }
+            Action::AddProject => {
+                self.composer.update(cx, |c, cx| {
+                    c.pick_folder(crate::composer::PickFor::Project, cx)
+                });
+            }
+            Action::NewOpenSpace => self.new_open_space(window, cx),
+        }
+        self.save();
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_fold(&mut self, space: u64, cx: &mut Context<Self>) {
+        if let Some(s) = self.state.space_mut(space) {
+            s.folded = !s.folded;
+        }
+        self.save();
+        cx.notify();
+    }
+
+    fn start_rename(&mut self, target: Rename, window: &mut Window, cx: &mut Context<Self>) {
+        let current = match target {
+            Rename::Space(id) => self.state.space(id).map(|s| s.name.clone()),
+            Rename::Thread(id) => self.state.thread(id).map(|(_, t)| t.title.clone()),
+        }
+        .unwrap_or_default();
+        let input: Entity<TextInput> = cx.new(|cx| {
+            let mut i = TextInput::new("Name", false, cx);
+            i.set_text(current, cx);
+            i.select_all_text(cx);
+            i
+        });
+        let sub = cx.subscribe_in(
+            &input,
+            window,
+            move |root, input, e: &InputEvent, window, cx| {
+                match e {
+                    InputEvent::Submit => {
+                        let name = input.read(cx).text().trim().to_string();
+                        if !name.is_empty() {
+                            match target {
+                                Rename::Space(id) => {
+                                    if let Some(s) = root.state.space_mut(id) {
+                                        s.name = name;
+                                    }
+                                    if root.screen == Screen::Compose(Some(id)) {
+                                        root.compose(Some(id), window, cx);
+                                    }
+                                }
+                                Rename::Thread(id) => {
+                                    if let Some(t) = root.state.thread_mut(id) {
+                                        t.title = name;
+                                    }
+                                }
+                            }
+                            root.save();
+                        }
+                        root.rename = None;
+                    }
+                    InputEvent::Cancel => root.rename = None,
+                    _ => {}
+                }
+                cx.notify();
+            },
+        );
+        let focus = input.focus_handle(cx);
+        window.focus(&focus, cx);
+        self.rename = Some((target, input, sub));
+        cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn folders_match_the_way_the_os_does() {
+        assert!(same_folder(Path::new("/w/app/"), Path::new("/w/app")));
+        assert!(!same_folder(Path::new("/w/app"), Path::new("/w/apps")));
+        if cfg!(windows) {
+            assert!(same_folder(Path::new(r"C:\Main\X"), Path::new("c:/main/x")));
+        }
+        assert_eq!(folder_name(Path::new("/w/app")), "app");
+    }
+}

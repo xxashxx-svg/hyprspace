@@ -12,7 +12,7 @@ use gpui::{
 };
 use hyprspace_proto::{Client, Command, SessionId};
 
-use crate::colors::{self, THEME, hsla};
+use crate::colors::{self, hsla, theme};
 use emulator::{CellColor, Emulator};
 
 pub struct TerminalView {
@@ -105,12 +105,12 @@ impl TerminalView {
 /// A cell color through the theme's terminal palette.
 fn cell_color(color: CellColor) -> Hsla {
     match color {
-        CellColor::Foreground => hsla(THEME.term_fg),
-        CellColor::Background => hsla(THEME.term_bg),
+        CellColor::Foreground => hsla(theme().term_fg),
+        CellColor::Background => hsla(theme().term_bg),
         CellColor::Rgb(r, g, b) => hsla(hyprspace_theme::Color::rgb(u32::from_be_bytes([
             0, r, g, b,
         ]))),
-        CellColor::Indexed(ix) => hsla(THEME.indexed(ix)),
+        CellColor::Indexed(ix) => hsla(theme().indexed(ix)),
     }
 }
 
@@ -130,7 +130,7 @@ impl Render for TerminalView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(hsla(THEME.term_bg))
+            .bg(hsla(theme().term_bg))
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 focused.focus(window, cx)
             })
@@ -151,7 +151,7 @@ impl Render for TerminalView {
             .children(
                 self.status
                     .clone()
-                    .map(|s| div().px_2().text_xs().text_color(colors::muted()).child(s)),
+                    .map(|s| div().px_2().text_xs().text_color(colors::text2()).child(s)),
             )
     }
 }
@@ -162,8 +162,8 @@ mod tests {
 
     #[test]
     fn cells_use_the_theme_palette() {
-        assert_eq!(cell_color(CellColor::Indexed(1)), hsla(THEME.ansi[1]));
-        assert_eq!(cell_color(CellColor::Background), hsla(THEME.term_bg));
+        assert_eq!(cell_color(CellColor::Indexed(1)), hsla(theme().ansi[1]));
+        assert_eq!(cell_color(CellColor::Background), hsla(theme().term_bg));
         assert_eq!(
             cell_color(CellColor::Rgb(0x12, 0x34, 0x56)),
             hsla(hyprspace_theme::Color::rgb(0x123456))

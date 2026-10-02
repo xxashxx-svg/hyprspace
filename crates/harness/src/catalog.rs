@@ -71,14 +71,38 @@ pub fn fallback(agent: Agent) -> AgentCatalog {
 }
 
 /// The catalog to offer: Codex's own cache under `home` when it has models, else the fallback.
+/// Codex's "Default" names the model its config picks, since that one can be refused for the
+/// account (a ChatGPT plan refuses some API-only models) and the user needs to see which.
 pub fn catalog(agent: Agent, home: &Path) -> AgentCatalog {
     let mut out = fallback(agent);
-    if agent == Agent::Codex
-        && let Some(models) = codex_cache(home)
-    {
-        out.models = std::iter::once(default_model()).chain(models).collect();
+    if agent == Agent::Codex {
+        if let Some(models) = codex_cache(home) {
+            out.models = std::iter::once(default_model()).chain(models).collect();
+        }
+        if let Some(model) = codex_config_model(home) {
+            out.models[0].note = Some(format!("{model}, from your Codex config"));
+        }
     }
     out
+}
+
+// The top-level `model = "..."` in ~/.codex/config.toml. Only that one key is read, so a line
+// scan is enough and no TOML parser is needed; anything under a [table] is someone else's.
+fn codex_config_model(home: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(home.join(".codex").join("config.toml")).ok()?;
+    for line in raw.lines().map(str::trim) {
+        if line.starts_with('[') {
+            return None;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() == "model" {
+            let value = value.split('#').next()?.trim().trim_matches('"');
+            return (!value.is_empty()).then(|| value.to_string());
+        }
+    }
+    None
 }
 
 // The CLI writes this file itself, so it is display-only data we never fetch. Only listed
@@ -150,6 +174,32 @@ mod tests {
         assert_eq!(ids, ["", "gpt-6-luna", "gpt-5.5"]);
         assert_eq!(c.models[1].default_effort.as_deref(), Some("medium"));
         assert_eq!(c.efforts_for("gpt-5.5"), ["low", "high"]);
+        // the config's model shows on "Default"; a model under a table is not the default
+        assert_eq!(
+            c.models[0].note.as_deref(),
+            Some("Whatever the CLI is set to")
+        );
+        std::fs::write(
+            dir.join("config.toml"),
+            "model = \"gpt-5.6-sol\" # mine
+[profiles.x]
+model = \"other\"
+",
+        )
+        .unwrap();
+        let c = catalog(Agent::Codex, home.path());
+        assert_eq!(
+            c.models[0].note.as_deref(),
+            Some("gpt-5.6-sol, from your Codex config")
+        );
+        std::fs::write(
+            dir.join("config.toml"),
+            "[profiles.x]
+model = \"other\"
+",
+        )
+        .unwrap();
+        assert_eq!(codex_config_model(home.path()), None);
         // a missing or broken cache falls back
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(catalog(Agent::Codex, empty.path()), fallback(Agent::Codex));

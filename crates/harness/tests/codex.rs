@@ -9,7 +9,7 @@ use std::time::Duration;
 use common::{count, events, fake, finished, text};
 use hyprspace_harness::{Codex, Harness, Session};
 use hyprspace_proto::run::{ChangeKind, FileChange};
-use hyprspace_proto::{Agent, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
+use hyprspace_proto::{Agent, Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 use serde_json::Value;
 
 fn codex() -> Codex {
@@ -158,10 +158,11 @@ async fn approvals_wait_for_the_user() {
             tool: Tool::Command {
                 command: "rm x".into()
             },
-            reason: Some("needs write access".into())
+            reason: Some("needs write access".into()),
+            always: true,
         })
     );
-    session.answer("100".into(), true);
+    session.answer("100".into(), Answer::AllowAlways);
     let second = events
         .until(|e| matches!(e, RunEvent::Approval { .. }))
         .await;
@@ -171,7 +172,7 @@ async fn approvals_wait_for_the_user() {
     assert_eq!(request, "req-101");
     // the request names only the item; its edits come from item/started
     assert!(matches!(tool, Tool::Edit { changes } if changes[0].path == "/b.rs"));
-    session.answer("req-101".into(), false);
+    session.answer("req-101".into(), Answer::Deny);
     assert_eq!(text(&events.run().await), "approvals ok");
 }
 

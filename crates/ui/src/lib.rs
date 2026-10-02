@@ -1,9 +1,23 @@
 //! The GPUI app. It talks to the engine only through `hyprspace_proto::Client` and the event
 //! stream, never by calling engine code (docs/adr/0002-channel-boundary.md).
 
+mod assets;
+mod attach;
 mod colors;
+mod composer;
+mod input;
+mod markdown;
 mod root;
+mod sidebar;
 mod terminal;
+mod time;
 mod transcript;
+mod widgets;
 
-pub use root::{Layout, Root};
+pub use assets::Assets;
+pub use root::Root;
+
+/// Binds the app's keys. Call once before opening the window.
+pub fn init(cx: &mut gpui::App) {
+    input::bind_keys(cx);
+}

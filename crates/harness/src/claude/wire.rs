@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
-use hyprspace_proto::Prompt;
+use hyprspace_proto::{Answer, Prompt};
 use serde_json::{Value, json};
 
 /// The API takes inline images up to 5 MB; a bigger or unknown file is named in the text instead,
@@ -109,12 +109,16 @@ fn control_response(request_id: &str, response: Value) -> String {
     .to_string()
 }
 
-/// The answer to a `can_use_tool` request. Allowing hands the tool's input back unchanged.
-pub(crate) fn answer_line(request_id: &str, input: Value, allow: bool) -> String {
-    let response = if allow {
-        json!({ "behavior": "allow", "updatedInput": input })
-    } else {
-        json!({ "behavior": "deny", "message": "The user denied this." })
+/// The answer to a `can_use_tool` request. Allowing hands the tool's input back unchanged;
+/// always allowing also hands back the permission rules the CLI suggested, which it keeps for
+/// the rest of the session.
+pub(crate) fn answer_line(request_id: &str, input: Value, rules: Value, answer: Answer) -> String {
+    let response = match answer {
+        Answer::Allow => json!({ "behavior": "allow", "updatedInput": input }),
+        Answer::AllowAlways => {
+            json!({ "behavior": "allow", "updatedInput": input, "updatedPermissions": rules })
+        }
+        Answer::Deny => json!({ "behavior": "deny", "message": "The user denied this." }),
     };
     control_response(request_id, response)
 }
@@ -167,11 +171,29 @@ mod tests {
             (v["priority"].as_str(), v["uuid"].as_str()),
             (Some("next"), Some("u1"))
         );
-        let v = parse(&answer_line("r1", json!({"command": "ls"}), true));
+        let rules = json!([{ "type": "addRules" }]);
+        let v = parse(&answer_line(
+            "r1",
+            json!({"command": "ls"}),
+            rules.clone(),
+            Answer::Allow,
+        ));
         assert_eq!(v["response"]["request_id"], "r1");
         assert_eq!(v["response"]["response"]["behavior"], "allow");
         assert_eq!(v["response"]["response"]["updatedInput"]["command"], "ls");
-        let v = parse(&answer_line("r2", Value::Null, false));
+        assert!(
+            v["response"]["response"]
+                .get("updatedPermissions")
+                .is_none()
+        );
+        let v = parse(&answer_line(
+            "r1",
+            Value::Null,
+            rules.clone(),
+            Answer::AllowAlways,
+        ));
+        assert_eq!(v["response"]["response"]["updatedPermissions"], rules);
+        let v = parse(&answer_line("r2", Value::Null, Value::Null, Answer::Deny));
         assert_eq!(v["response"]["response"]["behavior"], "deny");
         let v = parse(&interrupt_line("i1"));
         assert_eq!(v["request"]["subtype"], "interrupt");

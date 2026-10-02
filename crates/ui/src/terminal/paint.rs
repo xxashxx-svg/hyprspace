@@ -8,7 +8,7 @@ use gpui::{
 
 use super::cell_color;
 use super::emulator::{Cell, CellColor};
-use crate::colors::{THEME, hsla};
+use crate::colors::{hsla, theme};
 
 const FONT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 1.3;
@@ -98,7 +98,7 @@ pub fn prepare(
         );
         fill(
             Bounds::new(at, size(grid.cell_w, grid.line_h)),
-            hsla(THEME.cursor),
+            hsla(theme().cursor),
         )
     });
     Frame {

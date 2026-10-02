@@ -67,7 +67,17 @@ tidied, only replaced. Every phase holds the new code to this bar:
 - **Tests at the edges:** each harness adapter runs against a fake CLI fixture; engine logic gets
   unit tests; UI is checked by running it.
 - **Style:** CLAUDE.md's code style and copy rules apply: comment the why, plain English strings.
+- **Look:** match the Tauri app or beat it. Take values from `src/styles/` and port the hue
+  function in `src/themes.ts` so all six themes come along. Accent only on the one primary action,
+  no glow, no grids of explainer cards. Check each UI phase side by side with the old app.
 - **Dead code leaves with the commit that orphans it.** Clippy's warnings-as-errors catches the rest.
+- **Design bar:** the GPUI app looks like the current HyprSpace or better, with the Tauri app as
+  the visual reference. `crates/theme` ports the tokens from `src/styles/tokens.css` and the themes
+  from `src/themes.ts`: light and dark derived from one hue, lines and fills as `rgba(ink, a)`
+  washes, no hard-coded colors anywhere in `ui`. Buttons and highlights use the accent tokens, never
+  a stock bright blue. The composer, sidebar rows, effort slider and settings screens match the
+  polished originals. Every UI phase is checked against the old app side by side (screenshots of
+  both) before it is called done.
 
 ## Billing and compliance
 
@@ -151,9 +161,9 @@ the last Tauri version forever:
 
 Tick each row in the GPUI app before deleting the Tauri app.
 
-- [ ] Sidebar: folders and threads, live status, archive, rename, search, right-click menu
-- [ ] Composer: agent, model, effort, permission mode, resume past sessions, clone with choices
-- [ ] Structured transcript: streaming markdown, tool calls, approvals, diffs, images in prompts
+- [x] Sidebar: folders and threads, live status, archive, rename, search, right-click menu
+- [x] Composer: agent, model, effort, permission mode, resume past sessions, clone with choices
+- [x] Structured transcript: streaming markdown, tool calls, approvals, diffs, images in prompts
 - [ ] Terminal sessions: selection, scrollback, search, links, ctrl+click paths, paste images
 - [ ] Panes or tabs for several sessions at once
 - [ ] Dock: files tree, git stage, commit, push, diff view
@@ -292,3 +302,45 @@ closed with no child processes left.
 transcripts, history for resumed threads, the catalog on the channel (the composer needs it in
 phase 4), and an engine-level test of structured sessions (the fake CLI is only reachable from
 the harness crate's own tests).
+
+## Phase 4 results
+
+Done on 2026-10-02 against claude 2.1.287 and codex-cli 0.159.3. The Sidebar, Composer and
+Structured transcript rows are ticked. Screenshots of every step are in the phase 4 agent's
+scratchpad (`p4/`), including side-by-side shots with the installed Tauri app.
+
+**What exists.** Channel additions and the journal: [adr/0005](./adr/0005-app-requests-and-journals.md).
+
+- `crates/proto/src/state.rs`: `AppState` (spaces, threads with their `Launch`, composer picks,
+  appearance) and journal `Entry`. `run.rs` gains `Answer` (allow, always allow, deny).
+- `crates/engine`: `requests.rs` (state, agents and catalogs, resume list, clone with progress),
+  `journal.rs` (one jsonl per thread, streamed text joined). `Engine::start_in(dir)` for tests.
+- `crates/harness`: "always allow" (Claude `updatedPermissions`, Codex `acceptForSession`);
+  Codex's "Default" names the model its `config.toml` picks.
+- `crates/theme`: tokens.css and all six themes.ts themes, both sides, derived in oklch.
+- `crates/ui`: `root/` (layout, event routing, thread and space actions), `sidebar/` (spaces,
+  thread rows after SessionRow, Archived group, context menus, resize, Appearance menu),
+  `composer/` (box, model picker with agent tabs, effort slider, permission, resume list, clone
+  card), `transcript/` (model, markdown, tools and diffs, approvals, steering, model switch per
+  thread), `markdown/` (pulldown-cmark), `input/` (text box with IME), `assets.rs` (Lucide icons
+  and agent marks), `widgets.rs`. The terminal view is reachable as a thread ("New terminal").
+- `hyprspace [folder]` opens a folder as a space.
+
+**Checked in the running app**, input posted to its own window only: for both Claude (Haiku 4.5)
+and Codex (GPT-6-Luna) a thread started from the composer, a mid-run steer joined the run (one
+`Done` line, the steered ending present), a file write asked for approval and ran after Allow
+(Codex with Always allow), and after closing and reopening the app the thread's transcript came
+back and a follow-up question was answered from the earlier conversation. Also: Codex's config
+default `gpt-5.6-sol` fails with "not supported when using Codex with a ChatGPT account" plus a
+hint, and switching the thread's model to GPT-6-Luna resumed it; an image attached through the
+app's file dialog showed in the prompt and Codex named its color; a resume-list pick reopened a
+Codex conversation; a GitHub clone with progress; rename, archive, search, resize, the Iris theme
+and the light side. Closing the app left no CLI, shell or ConPTY children.
+
+**Not done or not checked.** Paste and drag-and-drop of images are wired but were not driven
+(posted messages can't hold Ctrl or start an OLE drop). The UI font is Segoe UI, not the Tauri
+app's DM Sans (woff2 only in the repo). Journals are never trimmed. A conversation picked from the
+resume list shows no earlier messages. No question UI for Claude's `AskUserQuestion` beyond
+allow or deny. The full settings screen is phase 6; Appearance at the sidebar's foot covers
+theme and mode for now.
+

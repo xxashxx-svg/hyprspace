@@ -7,7 +7,6 @@ publish.workspace = true
 
 [dependencies]
 hyprspace-engine.workspace = true
-hyprspace-proto.workspace = true
 hyprspace-ui.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true

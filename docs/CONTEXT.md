@@ -32,6 +32,8 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
   thread id). Resuming a thread takes it.
 - **Transcript**: the rendered record of a structured session: prompts, replies, tool calls,
   approvals and diffs.
+- **Journal**: the engine's file of a thread's prompts, answers and run events
+  (`journals/thread-<id>.jsonl`), replayed to rebuild its transcript after a restart.
 - **Pane**: one cell of the window's grid, showing one session.
 - **Agent**: a coding CLI the user has installed and signed in to (`claude`, `codex`, `gemini`,
   `opencode`, `grok`). Also called a **provider** where the subject is the account behind it

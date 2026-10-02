@@ -104,3 +104,12 @@ impl AgentCatalog {
         }
     }
 }
+
+/// What the composer needs to know about one agent: whether it can start, and with what.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    pub agent: Agent,
+    pub status: ProviderStatus,
+    pub catalog: AgentCatalog,
+}

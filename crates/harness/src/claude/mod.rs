@@ -152,8 +152,9 @@ struct Actor {
     patience: Duration,
     started: bool,
     run: Option<Run>,
-    /// Approval requests waiting on the user, with the tool input to hand back on allow.
-    approvals: HashMap<String, Value>,
+    /// Approval requests waiting on the user, with the tool input to hand back on allow and
+    /// the permission rules the CLI suggested for "always allow".
+    approvals: HashMap<String, (Value, Value)>,
     /// Tool calls of the main thread that have no result yet.
     open_tools: HashSet<String>,
 }
@@ -223,9 +224,10 @@ impl Actor {
                 run.kill_at = Some(Instant::now() + self.patience);
                 self.write(wire::interrupt_line("hs-interrupt")).await;
             }
-            Input::Answer { request, allow } => {
-                if let Some(input) = self.approvals.remove(&request) {
-                    self.write(wire::answer_line(&request, input, allow)).await;
+            Input::Answer { request, answer } => {
+                if let Some((input, rules)) = self.approvals.remove(&request) {
+                    self.write(wire::answer_line(&request, input, rules, answer))
+                        .await;
                 }
             }
         }
@@ -352,12 +354,16 @@ impl Actor {
                     body["tool_name"].as_str().unwrap_or_default(),
                     &body["input"],
                 );
+                // the CLI offers "always allow" by sending the rules it would save for it
+                let rules = body["permission_suggestions"].clone();
+                let always = rules.as_array().is_some_and(|r| !r.is_empty());
                 self.approvals
-                    .insert(request.clone(), body["input"].clone());
+                    .insert(request.clone(), (body["input"].clone(), rules));
                 (self.emit)(RunEvent::Approval {
                     request,
                     tool,
                     reason: body["decision_reason"].as_str().map(str::to_string),
+                    always,
                 });
             }
             "control_cancel_request" => {

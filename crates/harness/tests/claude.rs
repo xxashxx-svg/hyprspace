@@ -9,7 +9,7 @@ use std::time::Duration;
 use common::{count, events, fake, finished, text};
 use hyprspace_harness::{Claude, Harness, Session};
 use hyprspace_proto::run::{ChangeKind, FileChange};
-use hyprspace_proto::{Agent, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
+use hyprspace_proto::{Agent, Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 
 fn claude() -> Claude {
     Claude::default().with_program(fake())
@@ -163,21 +163,30 @@ async fn approvals_wait_for_the_user() {
             tool: Tool::Command {
                 command: "ls".into()
             },
-            reason: None
+            reason: None,
+            always: true,
         })
     );
     // an answer to a request nobody asked is ignored
-    session.answer("nope".into(), true);
-    session.answer("r1".into(), true);
+    session.answer("nope".into(), Answer::Allow);
+    session.answer("r1".into(), Answer::AllowAlways);
     let second = events
         .until(|e| matches!(e, RunEvent::Approval { .. }))
         .await;
-    let Some(RunEvent::Approval { request, tool, .. }) = second.last() else {
+    let Some(RunEvent::Approval {
+        request,
+        tool,
+        always,
+        ..
+    }) = second.last()
+    else {
         panic!()
     };
     assert_eq!(request, "r2");
+    // no suggested rules, so nothing to remember
+    assert!(!always);
     assert!(matches!(tool, Tool::Edit { changes } if changes[0].kind == ChangeKind::Add));
-    session.answer("r2".into(), false);
+    session.answer("r2".into(), Answer::Deny);
     let run = events.run().await;
     assert_eq!(text(&run), "approvals ok");
 }

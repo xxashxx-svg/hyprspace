@@ -12,7 +12,7 @@ mod spawn;
 
 use std::io;
 
-use hyprspace_proto::{Agent, Launch, Prompt, RunEvent};
+use hyprspace_proto::{Agent, Answer, Launch, Prompt, RunEvent};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -48,7 +48,7 @@ pub struct Session {
 pub(crate) enum Input {
     Send(Prompt),
     Interrupt,
-    Answer { request: String, allow: bool },
+    Answer { request: String, answer: Answer },
 }
 
 impl Session {
@@ -68,8 +68,8 @@ impl Session {
     }
 
     /// Answers the `RunEvent::Approval` named `request`. An unknown request is ignored.
-    pub fn answer(&self, request: String, allow: bool) {
-        let _ = self.tx.send(Input::Answer { request, allow });
+    pub fn answer(&self, request: String, answer: Answer) {
+        let _ = self.tx.send(Input::Answer { request, answer });
     }
 
     /// True once the CLI is gone and the last event was sent.

@@ -41,6 +41,10 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 tempfile = "3"
 # ids for steer messages claude echoes back (harness/src/claude)
 uuid = { version = "1", features = ["v4"] }
+# transcript markdown (ui/src/markdown); MIT, and what zeron uses instead of Zed's GPL markdown
+pulldown-cmark = { version = "0.13", default-features = false }
+# cursor moves by grapheme in text boxes (ui/src/input)
+unicode-segmentation = "1"
 
 [profile.dev]
 opt-level = 0

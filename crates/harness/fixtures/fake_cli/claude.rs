@@ -43,10 +43,11 @@ fn prompt_text(msg: &Value) -> String {
     }
 }
 
-fn control(id: &str, tool: &str, input: Value) -> Value {
+fn control(id: &str, tool: &str, input: Value, rules: Value) -> Value {
     emit(json!({
         "type": "control_request", "request_id": id,
-        "request": { "subtype": "can_use_tool", "tool_name": tool, "input": input },
+        "request": { "subtype": "can_use_tool", "tool_name": tool, "input": input,
+                     "permission_suggestions": rules },
     }));
     read().unwrap_or_default()
 }
@@ -157,15 +158,22 @@ fn hello() {
 
 fn approve() {
     let mut notes = Vec::new();
-    let r1 = control("r1", "Bash", json!({ "command": "ls" }));
+    let rules = json!([{ "type": "addRules", "rules": [{ "toolName": "Bash" }] }]);
+    let r1 = control("r1", "Bash", json!({ "command": "ls" }), rules.clone());
     let ok = &r1["response"];
     if ok["request_id"] != "r1"
         || ok["response"]["behavior"] != "allow"
         || ok["response"]["updatedInput"]["command"] != "ls"
+        || ok["response"]["updatedPermissions"] != rules
     {
-        notes.push(format!("bad allow: {r1}"));
+        notes.push(format!("bad always allow: {r1}"));
     }
-    let r2 = control("r2", "Write", json!({ "file_path": "/x", "content": "y" }));
+    let r2 = control(
+        "r2",
+        "Write",
+        json!({ "file_path": "/x", "content": "y" }),
+        Value::Null,
+    );
     if r2["response"]["response"]["behavior"] != "deny" {
         notes.push(format!("bad deny: {r2}"));
     }

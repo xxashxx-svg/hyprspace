@@ -8,26 +8,32 @@
 pub mod env;
 pub mod git;
 pub mod hooks;
+pub mod journal;
 pub mod persist;
 pub mod providers;
 pub mod pty;
+mod requests;
 pub mod sessions;
 pub mod skills;
 pub mod usage;
 mod util;
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use hyprspace_harness::{Emit, Session};
-use hyprspace_proto::{Client, Command, Event, Events, SessionId};
+use hyprspace_proto::{Client, Command, Entry, Event, Events, SessionId};
 use tokio::runtime::Runtime;
 use tokio::task::block_in_place;
 
+use journal::Journal;
+use persist::Store;
 use pty::{PtyManager, Spawn};
+use requests::Requests;
 
 pub use util::home_dir;
 
@@ -39,17 +45,24 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Starts the engine and returns it with the UI's two ends of the channel.
+    /// Starts the engine with its state in `persist::state_dir()` and returns it with the UI's
+    /// two ends of the channel.
     pub fn start() -> std::io::Result<(Engine, Client, Events)> {
+        Self::start_in(persist::state_dir())
+    }
+
+    /// Starts the engine with its saved state and journals under `dir`.
+    pub fn start_in(dir: PathBuf) -> std::io::Result<(Engine, Client, Events)> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("engine")
             .enable_all()
             .build()?;
+        let store = Store::open(dir)?;
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
         let (event_tx, events) = mpsc::unbounded();
         let ptys = PtyManager::default();
-        runtime.spawn(serve(cmd_rx, event_tx, ptys.clone()));
+        runtime.spawn(serve(cmd_rx, event_tx, ptys.clone(), store));
         let engine = Engine {
             ptys,
             runtime: Mutex::new(Some(runtime)),
@@ -72,26 +85,66 @@ impl Engine {
     }
 }
 
+/// A live structured session and the journal it writes to, if any.
+struct Live {
+    session: Session,
+    journal: Option<Arc<Journal>>,
+}
+
+impl Live {
+    fn record(&self, entry: Entry) {
+        if let Some(j) = &self.journal {
+            j.record(entry);
+        }
+    }
+}
+
 // One command at a time, in order. PTY calls block briefly (a write into a full pipe, a resize),
 // so they run under `block_in_place`: keystrokes keep their order and structured sessions keep
 // moving on the other worker. A structured session is a harness task; its commands only queue.
-async fn serve(mut rx: UnboundedReceiver<Command>, tx: UnboundedSender<Event>, ptys: PtyManager) {
-    let mut structured: HashMap<SessionId, Session> = HashMap::new();
+async fn serve(
+    mut rx: UnboundedReceiver<Command>,
+    tx: UnboundedSender<Event>,
+    ptys: PtyManager,
+    store: Store,
+) {
+    let journals = store.dir().join("journals");
+    let requests = Requests::new(store, tx.clone());
+    let mut structured: HashMap<SessionId, Live> = HashMap::new();
     while let Some(cmd) = rx.next().await {
         match cmd {
-            Command::OpenStructured { id, launch, prompt } => {
+            Command::OpenStructured {
+                id,
+                launch,
+                prompt,
+                journal,
+            } => {
+                // the old session's CLI dies with it, before the new one starts
+                structured.remove(&id);
                 let agent = launch.agent;
+                let journal =
+                    journal.map(|name| Arc::new(Journal::open(&journal::path(&journals, &name))));
                 let events = tx.clone();
+                let record = journal.clone();
                 let emit: Emit = Box::new(move |event| {
+                    if let Some(j) = &record {
+                        j.record(Entry::Run {
+                            event: event.clone(),
+                        });
+                    }
                     let _ = events.unbounded_send(Event::Run { id, event });
                 });
                 match hyprspace_harness::for_agent(agent).start(launch, emit) {
                     Ok(session) => {
+                        let live = Live { session, journal };
                         if let Some(prompt) = prompt {
-                            session.send(prompt);
+                            live.record(Entry::Prompt {
+                                prompt: prompt.clone(),
+                            });
+                            live.session.send(prompt);
                         }
-                        structured.retain(|_, s| !s.is_closed());
-                        structured.insert(id, session);
+                        structured.retain(|_, s| !s.session.is_closed());
+                        structured.insert(id, live);
                     }
                     Err(e) => {
                         let _ = tx.unbounded_send(Event::Failed {
@@ -102,7 +155,12 @@ async fn serve(mut rx: UnboundedReceiver<Command>, tx: UnboundedSender<Event>, p
                 }
             }
             Command::Send { id, prompt } => match structured.get(&id) {
-                Some(session) => session.send(prompt),
+                Some(live) => {
+                    live.record(Entry::Prompt {
+                        prompt: prompt.clone(),
+                    });
+                    live.session.send(prompt);
+                }
                 None => {
                     let _ = tx.unbounded_send(Event::Failed {
                         id,
@@ -111,15 +169,42 @@ async fn serve(mut rx: UnboundedReceiver<Command>, tx: UnboundedSender<Event>, p
                 }
             },
             Command::Interrupt { id } => {
-                if let Some(session) = structured.get(&id) {
-                    session.interrupt();
+                if let Some(live) = structured.get(&id) {
+                    live.session.interrupt();
                 }
             }
-            Command::Approve { id, request, allow } => {
-                if let Some(session) = structured.get(&id) {
-                    session.answer(request, allow);
+            Command::Approve {
+                id,
+                request,
+                answer,
+            } => {
+                if let Some(live) = structured.get(&id) {
+                    live.record(Entry::Answer {
+                        request: request.clone(),
+                        answer,
+                    });
+                    live.session.answer(request, answer);
                 }
             }
+            Command::LoadJournal { id, journal } => {
+                let file = journal::path(&journals, &journal);
+                let events = tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let entries = journal::load(&file);
+                    let _ = events.unbounded_send(Event::Journal { id, entries });
+                });
+            }
+            Command::LoadState => requests.load_state(),
+            Command::SaveState { state } => block_in_place(|| requests.save_state(&state)),
+            Command::LoadAgents => requests.load_agents(),
+            Command::ListResumable { agent, cwd } => requests.list_resumable(agent, cwd),
+            Command::Clone {
+                request,
+                url,
+                parent,
+                name,
+                here,
+            } => requests.clone_repo(request, url, parent, name, here),
             Command::OpenTerminal {
                 id,
                 cwd,
@@ -174,7 +259,8 @@ mod tests {
 
     #[test]
     fn a_terminal_opens_streams_and_closes_through_the_channel() {
-        let (engine, client, events) = Engine::start().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (engine, client, events) = Engine::start_in(dir.path().into()).unwrap();
         let events = forward(events);
         let id = SessionId(1);
         let wait = Duration::from_secs(30);
@@ -218,7 +304,8 @@ mod tests {
 
     #[test]
     fn a_prompt_for_a_closed_session_says_so() {
-        let (engine, client, events) = Engine::start().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (engine, client, events) = Engine::start_in(dir.path().into()).unwrap();
         let events = forward(events);
         client.send(Command::Send {
             id: SessionId(9),
@@ -234,5 +321,71 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         engine.shutdown();
+    }
+
+    #[test]
+    fn state_and_journals_come_back_through_the_channel() {
+        use hyprspace_proto::{AppState, Prompt};
+        let dir = tempfile::tempdir().unwrap();
+        let wait = Duration::from_secs(10);
+        let mut state = AppState::default();
+        state.take_id();
+        {
+            let (engine, client, events) = Engine::start_in(dir.path().into()).unwrap();
+            let events = forward(events);
+            client.send(Command::LoadState);
+            match events.recv_timeout(wait).unwrap() {
+                Event::State { state: s } => assert_eq!(s, AppState::default()),
+                other => panic!("unexpected {other:?}"),
+            }
+            client.send(Command::SaveState {
+                state: state.clone(),
+            });
+            let j = journal::Journal::open(&journal::path(&dir.path().join("journals"), "t-1"));
+            j.record(Entry::Prompt {
+                prompt: Prompt::text("hi"),
+            });
+            drop(j);
+            client.send(Command::LoadJournal {
+                id: SessionId(4),
+                journal: "t-1".into(),
+            });
+            match events.recv_timeout(wait).unwrap() {
+                Event::Journal { id, entries } => {
+                    assert_eq!(id, SessionId(4));
+                    assert_eq!(entries.len(), 1);
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+            engine.shutdown();
+        }
+        let (engine, client, events) = Engine::start_in(dir.path().into()).unwrap();
+        let events = forward(events);
+        client.send(Command::LoadState);
+        match events.recv_timeout(wait).unwrap() {
+            Event::State { state: s } => assert_eq!(s, state),
+            other => panic!("unexpected {other:?}"),
+        }
+        engine.shutdown();
+    }
+
+    #[test]
+    fn a_broken_state_file_is_kept_and_replaced_by_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("state.json"), "{nope").unwrap();
+        let (engine, client, events) = Engine::start_in(dir.path().into()).unwrap();
+        let events = forward(events);
+        client.send(Command::LoadState);
+        match events.recv_timeout(Duration::from_secs(10)).unwrap() {
+            Event::State { state } => assert_eq!(state, hyprspace_proto::AppState::default()),
+            other => panic!("unexpected {other:?}"),
+        }
+        engine.shutdown();
+        let kept = std::fs::read_dir(dir.path()).unwrap().flatten().any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("state.corrupt-")
+        });
+        assert!(kept);
     }
 }

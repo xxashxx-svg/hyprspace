@@ -13,7 +13,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use hyprspace_proto::{Agent, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
+use hyprspace_proto::{Agent, Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 use serde_json::{Value, json};
 use tokio::process::Child;
 use tokio::sync::mpsc;
@@ -273,9 +273,13 @@ impl Actor {
                     drop(self.rpc.request("turn/interrupt", params));
                 }
             }
-            Input::Answer { request, allow } => {
+            Input::Answer { request, answer } => {
                 if let Some(id) = self.approvals.remove(&request) {
-                    let decision = if allow { "accept" } else { "decline" };
+                    let decision = match answer {
+                        Answer::Allow => "accept",
+                        Answer::AllowAlways => "acceptForSession",
+                        Answer::Deny => "decline",
+                    };
                     self.rpc.respond(&id, json!({ "decision": decision }));
                 }
             }
@@ -345,6 +349,8 @@ impl Actor {
             request,
             tool,
             reason: params["reason"].as_str().map(str::to_string),
+            // both request kinds take "acceptForSession"
+            always: true,
         });
     }
 

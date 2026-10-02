@@ -11,3 +11,5 @@ hyprspace-theme.workspace = true
 gpui.workspace = true
 alacritty_terminal.workspace = true
 futures.workspace = true
+pulldown-cmark.workspace = true
+unicode-segmentation.workspace = true

@@ -212,8 +212,8 @@ fn approve(fake: &Fake, turn: &str) {
         "command": "rm x", "reason": "needs write access" } }),
     );
     let a1 = read().unwrap_or_default();
-    if a1["id"] != 100 || a1["result"]["decision"] != "accept" {
-        notes.push(format!("bad accept: {a1}"));
+    if a1["id"] != 100 || a1["result"]["decision"] != "acceptForSession" {
+        notes.push(format!("bad accept for session: {a1}"));
     }
     fake.item(
         "item/started",

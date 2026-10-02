@@ -1,6 +1,5 @@
 // The HyprSpace binary: starts the engine, opens the window, and wires the two together.
-// `hyprspace [--structured N] [--agent claude|codex] [--terms N] [--prompt TEXT] [--launch CMD]`,
-// default one of each with Claude.
+// `hyprspace [folder]` opens with that folder as a space, the way `code .` does.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
@@ -8,32 +7,17 @@ use std::path::PathBuf;
 
 use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use hyprspace_engine::Engine;
-use hyprspace_proto::Agent;
-use hyprspace_ui::{Layout, Root};
+use hyprspace_ui::Root;
 
-fn layout(args: impl Iterator<Item = String>, cwd: PathBuf) -> Layout {
-    let mut out = Layout {
-        structured: 1,
-        agent: Agent::Claude,
-        terms: 1,
-        prompt: "In two short sentences, say hello and name the model you are.".into(),
-        launch: "claude".into(),
-        cwd,
-    };
-    let mut it = args;
-    while let Some(flag) = it.next() {
-        let value = it.next().unwrap_or_default();
-        match flag.as_str() {
-            "--structured" => out.structured = value.parse().unwrap_or(1),
-            "--agent" if value == "codex" => out.agent = Agent::Codex,
-            "--agent" => out.agent = Agent::Claude,
-            "--terms" => out.terms = value.parse().unwrap_or(1),
-            "--prompt" => out.prompt = value,
-            "--launch" => out.launch = value,
-            _ => {}
-        }
-    }
-    out
+/// The folder to open: the first argument that is not a flag, made absolute.
+fn folder(args: impl Iterator<Item = String>, cwd: PathBuf) -> Option<PathBuf> {
+    let arg = args.into_iter().find(|a| !a.starts_with('-'))?;
+    let path = PathBuf::from(arg);
+    Some(if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    })
 }
 
 fn main() {
@@ -41,66 +25,65 @@ fn main() {
     unsafe { hyprspace_engine::env::prepare() };
 
     let cwd = std::env::current_dir().unwrap_or_default();
-    let layout = layout(std::env::args().skip(1), cwd);
+    let open = folder(std::env::args().skip(1), cwd).map(|p| dunce(&p));
     let (engine, client, events) = Engine::start().expect("start the engine");
 
-    gpui_platform::application().run(move |cx: &mut App| {
-        cx.on_app_quit(move |_| {
-            engine.shutdown();
-            async {}
-        })
-        .detach();
-        cx.on_window_closed(|cx, _| cx.quit()).detach();
+    gpui_platform::application()
+        .with_assets(hyprspace_ui::Assets)
+        .run(move |cx: &mut App| {
+            hyprspace_ui::init(cx);
+            cx.on_app_quit(move |_| {
+                engine.shutdown();
+                async {}
+            })
+            .detach();
+            cx.on_window_closed(|cx, _| cx.quit()).detach();
 
-        let bounds = Bounds::centered(None, size(px(1400.), px(860.)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("HyprSpace".into()),
+            let bounds = Bounds::centered(None, size(px(1400.), px(860.)), cx);
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("HyprSpace".into()),
+                    ..Default::default()
+                }),
                 ..Default::default()
-            }),
-            ..Default::default()
-        };
-        cx.open_window(options, |window, cx| {
-            cx.new(|cx| Root::new(layout, client, events, window, cx))
-        })
-        .expect("open the window");
-        cx.activate(true);
-    });
+            };
+            cx.open_window(options, |window, cx| {
+                cx.new(|cx| Root::new(client, events, open, window, cx))
+            })
+            .expect("open the window");
+            cx.activate(true);
+        });
+}
+
+/// `.` and `..` resolved, without the `\\?\` prefix `canonicalize` adds on Windows, which the
+/// CLIs would carry into their saved paths.
+fn dunce(path: &std::path::Path) -> PathBuf {
+    let full = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let s = full.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => full,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn parse(args: &[&str]) -> Layout {
-        layout(args.iter().map(|s| s.to_string()), PathBuf::from("/w"))
+    fn parse(args: &[&str]) -> Option<PathBuf> {
+        folder(args.iter().map(|s| s.to_string()), PathBuf::from("/w"))
     }
 
     #[test]
-    fn defaults_to_one_of_each() {
-        let l = parse(&[]);
-        assert_eq!((l.structured, l.terms), (1, 1));
-        assert_eq!(l.launch, "claude");
-        assert_eq!(l.agent, Agent::Claude);
-        assert_eq!(l.cwd, PathBuf::from("/w"));
-    }
-
-    #[test]
-    fn reads_flags_and_ignores_unknown_ones() {
-        let l = parse(&[
-            "--terms",
-            "4",
-            "--structured",
-            "0",
-            "--launch",
-            "",
-            "--what",
-            "x",
-        ]);
-        assert_eq!((l.structured, l.terms), (0, 4));
-        assert_eq!(l.launch, "");
-        assert_eq!(parse(&["--terms", "many"]).terms, 1);
-        assert_eq!(parse(&["--agent", "codex"]).agent, Agent::Codex);
+    fn takes_the_first_folder_and_skips_flags() {
+        assert_eq!(parse(&[]), None);
+        assert_eq!(
+            parse(&["--x", "app"]),
+            Some(PathBuf::from("/w").join("app"))
+        );
+        let abs = std::env::temp_dir();
+        assert_eq!(parse(&[abs.to_str().unwrap()]), Some(abs));
+        assert!(dunce(std::path::Path::new(".")).is_absolute());
     }
 }

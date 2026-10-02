@@ -95,10 +95,12 @@ pub enum RunEvent {
         output: String,
     },
     /// The agent waits for a yes or no before running `tool`. Answer with `Command::Approve`.
+    /// `always` says whether the CLI can remember a yes for the rest of the session.
     Approval {
         request: String,
         tool: Tool,
         reason: Option<String>,
+        always: bool,
     },
     /// A prompt sent while the run was live joined it.
     Steered,
@@ -115,6 +117,17 @@ pub enum RunEvent {
     },
     /// The session is over: the CLI exited or could not start. `message` is user-facing.
     Failed { message: String },
+}
+
+/// The user's answer to a `RunEvent::Approval`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Answer {
+    Allow,
+    /// Allow, and stop asking about this kind of call for the rest of the session. Only for an
+    /// approval that came with `always`.
+    AllowAlways,
+    Deny,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,6 +226,7 @@ mod tests {
                     command: "ls".into(),
                 },
                 reason: None,
+                always: true,
             },
             RunEvent::Finished {
                 status: RunStatus::Interrupted,
