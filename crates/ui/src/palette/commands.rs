@@ -332,7 +332,7 @@ impl Root {
                     self.open_in(opener, &folder, cx);
                 }
             }
-            Cmd::Settings => self.open_settings(cx),
+            Cmd::Settings => self.open_settings(window, cx),
             Cmd::Intro => self.show_intro(window, cx),
         }
         cx.notify();

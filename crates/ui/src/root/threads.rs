@@ -102,12 +102,26 @@ impl Root {
         .detach();
     }
 
-    pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab = self.settings.tab();
+        self.open_settings_at(tab, window, cx);
+    }
+
+    /// Settings open at `tab`. Focus moves to the screen once, here, so Esc closes it; taking
+    /// focus on every render instead stole it from the inputs inside Settings and the palette.
+    pub(crate) fn open_settings_at(
+        &mut self,
+        tab: crate::settings::Tab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.screen != Screen::Settings {
             self.back = self.screen;
             self.screen = Screen::Settings;
         }
+        self.settings.set_tab(tab);
         self.menu = None;
+        window.focus(&self.settings.focus_handle(), cx);
         cx.notify();
     }
 

@@ -435,7 +435,9 @@ impl Root {
                     })
                     .child(icon("settings", 14., colors::text3()))
                     .child("Settings")
-                    .on_click(cx.listener(|r, _: &ClickEvent, _, cx| r.open_settings(cx))),
+                    .on_click(
+                        cx.listener(|r, _: &ClickEvent, window, cx| r.open_settings(window, cx)),
+                    ),
             )
             .into_any_element()
     }
