@@ -6,6 +6,7 @@ mod approval;
 mod branch;
 mod model;
 mod render;
+mod subagent;
 mod tool;
 
 use std::collections::HashSet;
@@ -337,7 +338,7 @@ impl TranscriptView {
     }
 
     /// After anything that can move the status: tell the root, and keep a one-second tick
-    /// going while a run is live so its timer counts.
+    /// going while a run or a subagent is live so their timers count.
     fn changed(&mut self, cx: &mut Context<Self>) {
         let hint = if self.model.running() {
             RUNNING_HINT
@@ -350,14 +351,14 @@ impl TranscriptView {
             self.status = status;
             cx.emit(TranscriptEvent::Status(status));
         }
-        if self.model.running() && self.ticker.is_none() {
+        if self.model.ticking() && self.ticker.is_none() {
             self.ticker = Some(cx.spawn(async move |this, cx| {
                 loop {
                     cx.background_executor().timer(Duration::from_secs(1)).await;
                     let live = this
                         .update(cx, |v, cx| {
                             cx.notify();
-                            v.model.running()
+                            v.model.ticking()
                         })
                         .unwrap_or(false);
                     if !live {
@@ -365,7 +366,7 @@ impl TranscriptView {
                     }
                 }
             }));
-        } else if !self.model.running() {
+        } else if !self.model.ticking() {
             self.ticker = None;
         }
         cx.notify();

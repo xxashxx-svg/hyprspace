@@ -32,6 +32,7 @@ pub enum Item {
         done: Option<(bool, String)>,
         open: bool,
     },
+    Agent(Subagent),
     Approval {
         request: String,
         tool: Tool,
@@ -48,6 +49,72 @@ pub enum Item {
         error: Option<String>,
     },
     Note(String),
+}
+
+/// An Agent call: the subagent's own tool calls as they happen, then its report.
+pub struct Subagent {
+    pub id: String,
+    pub description: String,
+    pub agent_type: String,
+    pub prompt: String,
+    pub calls: Vec<Call>,
+    /// What it wrote along the way, shown until the report comes.
+    pub said: String,
+    pub state: AgentState,
+    pub report: String,
+    /// The report (or what it said) parsed, lazily like reply text.
+    pub blocks: Option<Vec<Block>>,
+    pub since: Instant,
+    pub open: bool,
+    pub prompt_open: bool,
+}
+
+pub struct Call {
+    pub id: String,
+    pub tool: Tool,
+    pub done: Option<(bool, String)>,
+    pub open: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentState {
+    Working,
+    Done,
+    Failed,
+    /// The session ended before it reported.
+    Stopped,
+}
+
+impl Subagent {
+    fn new(id: String, description: String, agent_type: String, prompt: String) -> Self {
+        Self {
+            id,
+            description,
+            agent_type,
+            prompt,
+            calls: Vec::new(),
+            said: String::new(),
+            state: AgentState::Working,
+            report: String::new(),
+            blocks: None,
+            since: Instant::now(),
+            open: false,
+            prompt_open: false,
+        }
+    }
+
+    /// The final answer once there is one, or else what it said so far.
+    pub fn answer(&self) -> &str {
+        if self.report.trim().is_empty() {
+            &self.said
+        } else {
+            &self.report
+        }
+    }
+
+    fn call(&mut self, id: &str) -> Option<&mut Call> {
+        self.calls.iter_mut().rev().find(|c| c.id == id)
+    }
 }
 
 /// Where a thread stands, for the sidebar.
@@ -93,6 +160,15 @@ pub struct Transcript {
 impl Transcript {
     pub fn running(&self) -> bool {
         self.run.is_some()
+    }
+
+    /// A run or a subagent is live, so timers on screen count.
+    pub fn ticking(&self) -> bool {
+        self.running()
+            || self
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Agent(a) if a.state == AgentState::Working))
     }
 
     /// Seconds the live run has taken so far.
@@ -193,6 +269,27 @@ impl Transcript {
                 Some(Item::Thinking { text: t, .. }) => t.push_str(&text),
                 _ => self.items.push(Item::Thinking { text, open: false }),
             },
+            RunEvent::Tool {
+                id,
+                tool:
+                    Tool::Agent {
+                        description,
+                        agent_type,
+                        prompt,
+                    },
+            } => match self.agent(&id) {
+                Some(a) => {
+                    a.description = description;
+                    a.agent_type = agent_type;
+                    a.prompt = prompt;
+                }
+                None => self.items.push(Item::Agent(Subagent::new(
+                    id,
+                    description,
+                    agent_type,
+                    prompt,
+                ))),
+            },
             RunEvent::Tool { id, tool } => match self.tool(&id) {
                 Some(Item::Tool { tool: t, .. }) => *t = tool,
                 _ => self.items.push(Item::Tool {
@@ -203,8 +300,56 @@ impl Transcript {
                 }),
             },
             RunEvent::ToolDone { id, ok, output } => {
-                if let Some(Item::Tool { done, .. }) = self.tool(&id) {
+                if let Some(a) = self.agent(&id) {
+                    a.state = if ok {
+                        AgentState::Done
+                    } else {
+                        AgentState::Failed
+                    };
+                    a.report = output;
+                    a.blocks = None;
+                } else if let Some(Item::Tool { done, .. }) = self.tool(&id) {
                     *done = Some((ok, output));
+                }
+            }
+            RunEvent::SubagentTool { parent, id, tool } => {
+                if let Some(a) = self.agent(&parent) {
+                    match a.call(&id) {
+                        Some(c) => c.tool = tool,
+                        None => a.calls.push(Call {
+                            id,
+                            tool,
+                            done: None,
+                            open: false,
+                        }),
+                    }
+                }
+            }
+            RunEvent::SubagentToolDone {
+                parent,
+                id,
+                ok,
+                output,
+            } => {
+                if let Some(c) = self.agent(&parent).and_then(|a| a.call(&id)) {
+                    c.done = Some((ok, output));
+                }
+            }
+            RunEvent::SubagentText { parent, text } => {
+                if let Some(a) = self.agent(&parent) {
+                    if !a.said.is_empty() {
+                        a.said.push_str("\n\n");
+                    }
+                    a.said.push_str(text.trim());
+                    a.blocks = None;
+                }
+            }
+            RunEvent::Woke => {
+                if self.run.is_none() {
+                    self.run = Some(Run {
+                        since: Instant::now(),
+                        said: false,
+                    });
                 }
             }
             RunEvent::Approval {
@@ -261,12 +406,32 @@ impl Transcript {
             self.note("The app closed before this run finished.");
         }
         self.expire();
+        self.stop_agents();
     }
 
     fn end_session(&mut self) {
         self.run = None;
         self.failed = true;
         self.expire();
+        self.stop_agents();
+    }
+
+    // a subagent outlives its run, not its session
+    fn stop_agents(&mut self) {
+        for item in &mut self.items {
+            if let Item::Agent(a) = item
+                && a.state == AgentState::Working
+            {
+                a.state = AgentState::Stopped;
+            }
+        }
+    }
+
+    fn agent(&mut self, id: &str) -> Option<&mut Subagent> {
+        self.items.iter_mut().rev().find_map(|i| match i {
+            Item::Agent(a) if a.id == id => Some(a),
+            _ => None,
+        })
     }
 
     // an approval left open when its run or session ended can't be answered any more
@@ -293,10 +458,14 @@ impl Transcript {
     /// Parses any reply text that changed since the last paint.
     pub fn parse(&mut self) {
         for item in &mut self.items {
-            if let Item::Text { source, blocks } = item
-                && blocks.is_none()
-            {
-                *blocks = Some(markdown::parse(source));
+            match item {
+                Item::Text { source, blocks } if blocks.is_none() => {
+                    *blocks = Some(markdown::parse(source));
+                }
+                Item::Agent(a) if a.blocks.is_none() => {
+                    a.blocks = Some(markdown::parse(a.answer()));
+                }
+                _ => {}
             }
         }
     }
@@ -439,6 +608,101 @@ mod tests {
             t.items.last(),
             Some(Item::Finished { error: None, .. })
         ));
+    }
+
+    fn spawn(id: &str) -> RunEvent {
+        RunEvent::Tool {
+            id: id.into(),
+            tool: Tool::Agent {
+                description: "Write a poem".into(),
+                agent_type: "general-purpose".into(),
+                prompt: "Four lines.".into(),
+            },
+        }
+    }
+
+    fn agent(t: &Transcript, id: &str) -> AgentState {
+        t.items
+            .iter()
+            .find_map(|i| match i {
+                Item::Agent(a) if a.id == id => Some(a.state),
+                _ => None,
+            })
+            .expect("a subagent card")
+    }
+
+    #[test]
+    fn a_subagent_gathers_its_calls_and_outlives_the_run() {
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("go"));
+        t.apply(spawn("a1"));
+        t.apply(spawn("a2"));
+        t.apply(RunEvent::SubagentTool {
+            parent: "a1".into(),
+            id: "s1".into(),
+            tool: Tool::Command {
+                command: "ls".into(),
+            },
+        });
+        t.apply(RunEvent::SubagentToolDone {
+            parent: "a1".into(),
+            id: "s1".into(),
+            ok: true,
+            output: "a.txt".into(),
+        });
+        t.apply(RunEvent::SubagentText {
+            parent: "a1".into(),
+            text: "Found it.".into(),
+        });
+        t.apply(RunEvent::ToolDone {
+            id: "a1".into(),
+            ok: true,
+            output: "Report.".into(),
+        });
+        t.apply(finished(RunStatus::Done, "ok"));
+        // two cards, no tool rows, and the main reply holds none of the subagent's text
+        assert_eq!(
+            t.items
+                .iter()
+                .filter(|i| matches!(i, Item::Agent(_)))
+                .count(),
+            2
+        );
+        assert!(!t.items.iter().any(|i| matches!(i, Item::Tool { .. })));
+        let Some(Item::Agent(a)) = t.items.iter().find(|i| matches!(i, Item::Agent(_))) else {
+            panic!()
+        };
+        assert_eq!((a.calls.len(), a.answer()), (1, "Report."));
+        assert!(matches!(a.calls[0].done, Some((true, _))));
+        assert_eq!(agent(&t, "a1"), AgentState::Done);
+        // the background one still works after the run ended, and the timer keeps counting
+        assert_eq!(agent(&t, "a2"), AgentState::Working);
+        assert!(!t.running() && t.ticking());
+        // the CLI picks up its result in a run of its own
+        t.apply(RunEvent::ToolDone {
+            id: "a2".into(),
+            ok: false,
+            output: String::new(),
+        });
+        assert_eq!(agent(&t, "a2"), AgentState::Failed);
+        t.apply(RunEvent::Woke);
+        assert_eq!(t.status(), Status::Working);
+        t.apply(finished(RunStatus::Done, "both done"));
+        assert!(
+            matches!(&t.items[t.items.len() - 2], Item::Text { source, .. } if source == "both done")
+        );
+        t.parse();
+    }
+
+    #[test]
+    fn a_subagent_left_working_stops_with_the_session() {
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("go"));
+        t.apply(spawn("a1"));
+        t.apply(finished(RunStatus::Done, "ok"));
+        t.settle();
+        assert_eq!(agent(&t, "a1"), AgentState::Stopped);
+        assert!(!t.ticking());
     }
 
     #[test]
