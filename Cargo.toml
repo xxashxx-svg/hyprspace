@@ -6,6 +6,7 @@ members = [
     "crates/engine",
     "crates/theme",
     "crates/ui",
+    "crates/update",
     "apps/hyprspace",
 ]
 # The Tauri app builds on its own until the GPUI app reaches parity (docs/REWRITE.md).
@@ -22,6 +23,7 @@ hyprspace-harness = { path = "crates/harness" }
 hyprspace-engine = { path = "crates/engine" }
 hyprspace-theme = { path = "crates/theme" }
 hyprspace-ui = { path = "crates/ui" }
+hyprspace-update = { path = "crates/update" }
 
 # GPUI from one upstream Zed commit, all three crates at the same rev.
 # Why upstream and not a fork: docs/adr/0001-gpui-source.md.
