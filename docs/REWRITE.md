@@ -170,7 +170,7 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] File viewing (CodeMirror replacement, or open in the external editor at first)
 - [x] Usage meter with the live limits rules
 - [x] Command palette
-- [ ] Settings: appearance (themes, light and dark), defaults, usage, skills, general
+- [x] Settings: appearance (themes, light and dark), defaults, usage, skills, general
 - [x] Intro
 - [x] Open in editor or Explorer/Finder
 - [ ] Installers, auto-update, CI release for Windows and macOS
@@ -470,3 +470,36 @@ skill editor) and a palette opened over Settings lose focus; the fix belongs to 
 (adr/0009). The palette can't open Settings at a given tab yet. No status-line reading was taken
 from a real Claude terminal session (the path is unit tested). Snippets were not carried over.
 
+## Phase 6 Settings results
+
+Done on 2026-10-02. The Settings row is ticked. Screenshots are in the Settings agent's scratchpad
+(`p6s/`). Settings was not open in the installed Tauri app, so the look was checked against
+`src/styles/settings.css`, `controls.css`, `appearance.css` and `skills.css` instead of a
+side-by-side capture.
+
+**What changed.**
+
+- `ui/src/palette/commands.rs`: one palette entry per tab (General, Appearance, Defaults, Usage,
+  Skills) beside Settings, each through `Root::open_settings_at`. The list comes from
+  `settings::TABS`, so a new tab shows up in the palette too.
+- `ui/src/settings/mod.rs`: the open tab's accent bar on the nav's left edge, a close button at
+  the header's far edge, and the 1000px column of the Tauri app (was 760px).
+- `ui/src/settings/defaults.rs` and `widgets::dropdown`: the model and effort menus drop from
+  under their field at its width, like a select, instead of opening where the click landed.
+- `ui/src/settings/general.rs`: a Show the intro row. `appearance.rs`: the picked theme card has
+  the accent edge. `skills/mod.rs`: the name and SKILL.md boxes light up while focused, and a
+  click anywhere in a box focuses it.
+
+**Checked in the running app**, input posted to its own window: each tab opened from the palette
+(also with the palette over Settings, typing kept), Esc closing Settings; Ocean, Orchid and Iris,
+dark, light and match the system; Claude's default set to Haiku 4.5 at High with Plan only, and
+the composer then showed Haiku 4.5, High and Plan only; Codex's effort set to Medium; Usage from
+fixtures; a project skill and a user skill created, edited, renamed and deleted with typing
+staying in the editor, and the user's `~/.claude/skills` and `commands` identical to a backup
+afterwards; General's Terminal switch lighting the composer's Terminal chip; Show the intro.
+
+**Not carried over** (not in the parity row, Ash to decide): the Tauri app's Terminal tab
+(color palettes, cursor shape and blink, copy on select, GPU rendering), Appearance's interface
+font, diff colors, animations and terminal font family, size and line height, General's update
+card (phase 6c), launch ping, pane naming and hidden confirmations, and the Mobile tab. Esc inside
+a skill editor box stays in the box instead of closing Settings.

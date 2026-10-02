@@ -13,6 +13,7 @@ use hyprspace_theme::THEMES;
 use super::{Glyph, IN_TERMINALS, Item, Palette, PaletteEvent, TogglePalette};
 use crate::panes::layout;
 use crate::root::{Action, Root, Screen, View};
+use crate::settings::{TABS, Tab};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cmd {
@@ -29,6 +30,7 @@ pub enum Cmd {
     Theme(&'static str),
     OpenIn(Opener),
     Settings,
+    SettingsTab(Tab),
     Intro,
 }
 
@@ -192,6 +194,17 @@ impl Root {
             Glyph::Icon("settings"),
             Cmd::Settings,
         ));
+        for t in TABS {
+            out.push(
+                Item::new(
+                    "Settings",
+                    t.label,
+                    Glyph::Icon(t.icon),
+                    Cmd::SettingsTab(t.tab),
+                )
+                .sub(t.desc),
+            );
+        }
         out.push(
             Item::new(
                 "Settings",
@@ -333,6 +346,7 @@ impl Root {
                 }
             }
             Cmd::Settings => self.open_settings(window, cx),
+            Cmd::SettingsTab(tab) => self.open_settings_at(tab, window, cx),
             Cmd::Intro => self.show_intro(window, cx),
         }
         cx.notify();

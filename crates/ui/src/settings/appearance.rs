@@ -132,7 +132,8 @@ fn theme_card(i: usize, t: &ThemeInfo, on: bool) -> gpui::Stateful<Div> {
         .border_1()
         .bg(colors::surface2())
         .cursor_pointer()
-        .when(on, |d| d.border_color(colors::text3()))
+        // appearance.css `.theme-card.active`: the picked card takes the accent edge
+        .when(on, |d| d.border_color(colors::accent()))
         .when(!on, |d| {
             d.border_color(colors::border1())
                 .hover(|s| s.border_color(colors::border2()))

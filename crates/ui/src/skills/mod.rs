@@ -416,9 +416,27 @@ impl Skills {
             .into_any_element()
     }
 
-    fn editor(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn editor(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(d) = &self.draft else {
             return div().into_any_element();
+        };
+        // a box lights up while its input has focus, and a click anywhere in it focuses the input
+        // (skills.css `.skm-editor:focus`)
+        let frame = |id: &'static str, input: &Entity<TextInput>, cx: &mut Context<Self>| {
+            let focus = input.read(cx).focus_handle(cx);
+            let on = focus.is_focused(window);
+            div()
+                .id(id)
+                .rounded(px(7.))
+                .border_1()
+                .border_color(if on {
+                    colors::accent()
+                } else {
+                    colors::border1()
+                })
+                .bg(colors::bg())
+                .cursor_text()
+                .on_click(move |_, window, cx| window.focus(&focus, cx))
         };
         let name = d.name.read(cx).text().to_string();
         let has_project = self
@@ -471,16 +489,12 @@ impl Skills {
                 )
                 .child(div().flex_none().child(control))
         };
-        let name_box = div()
+        let name_box = frame("skill-name", &d.name, cx)
             .w(px(240.))
             .h(px(32.))
             .flex()
             .items_center()
             .px(px(10.))
-            .rounded(px(7.))
-            .border_1()
-            .border_color(colors::border1())
-            .bg(colors::bg())
             .text_size(px(13.))
             .child(d.name.clone())
             .into_any_element();
@@ -550,15 +564,10 @@ impl Skills {
                     .gap(px(8.))
                     .child(label("SKILL.md"))
                     .child(
-                        div()
-                            .id("skill-body")
+                        frame("skill-body", &d.body, cx)
                             .min_h(px(360.))
                             .px(px(14.))
                             .py(px(12.))
-                            .rounded(px(7.))
-                            .border_1()
-                            .border_color(colors::border1())
-                            .bg(colors::bg())
                             .font_family(MONO)
                             .text_size(px(13.))
                             .line_height(px(20.))
@@ -600,9 +609,9 @@ fn error(text: String) -> AnyElement {
 }
 
 impl Render for Skills {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.draft.is_some() {
-            self.editor(cx)
+            self.editor(window, cx)
         } else {
             self.list(cx)
         }

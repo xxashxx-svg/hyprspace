@@ -1,5 +1,5 @@
-// Settings, General: which build this is, how new sessions start, and where the app keeps its
-// data.
+// Settings, General: which build this is and the intro, how new sessions start, and where the
+// app keeps its data.
 
 use std::path::PathBuf;
 
@@ -60,11 +60,20 @@ impl Root {
             .gap(px(26.))
             .child(group(
                 "App",
-                vec![row(
-                    "Version",
-                    "The build of HyprSpace you are running.",
-                    mono(format!("v{VERSION}")),
-                )],
+                vec![
+                    row(
+                        "Version",
+                        "The build of HyprSpace you are running.",
+                        mono(format!("v{VERSION}")),
+                    ),
+                    row(
+                        "Intro",
+                        "What HyprSpace is and how it fits together.",
+                        widgets::button("show-intro", "Show the intro").on_click(
+                            cx.listener(|r, _: &ClickEvent, window, cx| r.show_intro(window, cx)),
+                        ),
+                    ),
+                ],
             ))
             .child(group(
                 "Sessions",

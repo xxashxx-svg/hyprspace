@@ -5,8 +5,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    Anchor, AnyElement, App, Div, ElementId, FontWeight, IntoElement, MouseButton, Pixels, Point,
-    SharedString, Stateful, Window, anchored, deferred, div, point, prelude::*, px,
+    Anchor, AnyElement, App, Bounds, Div, ElementId, FontWeight, IntoElement, MouseButton, Pixels,
+    Point, SharedString, Stateful, Window, anchored, deferred, div, point, prelude::*, px,
 };
 
 use crate::assets::icon;
@@ -188,7 +188,28 @@ pub fn layer(
     .into_any_element()
 }
 
-/// A menu in the context-menu frame (menus.css), floated by `layer`.
+/// The context-menu frame (menus.css).
+fn menu_frame() -> Stateful<Div> {
+    div()
+        .id("menu")
+        .min_w(px(176.))
+        .max_w(px(400.))
+        .max_h(px(520.))
+        .overflow_y_scroll()
+        .p(px(4.))
+        .flex()
+        .flex_col()
+        .gap(px(1.))
+        .rounded(px(9.))
+        .border_1()
+        .border_color(colors::border2())
+        .bg(colors::surface2())
+        .shadow(colors::shadow())
+        .text_size(px(12.))
+        .text_color(colors::text2())
+}
+
+/// A menu in the context-menu frame, floated by `layer`.
 pub fn popup(
     at: Point<Pixels>,
     open: Open,
@@ -196,29 +217,23 @@ pub fn popup(
     close: impl Fn(&mut Window, &mut App) + 'static,
     content: impl IntoElement,
 ) -> AnyElement {
+    layer(at, open, window, close, menu_frame().child(content))
+}
+
+/// A `select`'s menu: dropped just under the field and exactly as wide, like a native select.
+pub fn dropdown(
+    field: Bounds<Pixels>,
+    window: &Window,
+    close: impl Fn(&mut Window, &mut App) + 'static,
+    content: impl IntoElement,
+) -> AnyElement {
+    let w = field.size.width;
     layer(
-        at,
-        open,
+        field.bottom_left() + point(px(0.), px(4.)),
+        Open::Down,
         window,
         close,
-        div()
-            .id("menu")
-            .min_w(px(176.))
-            .max_w(px(400.))
-            .max_h(px(520.))
-            .overflow_y_scroll()
-            .p(px(4.))
-            .flex()
-            .flex_col()
-            .gap(px(1.))
-            .rounded(px(9.))
-            .border_1()
-            .border_color(colors::border2())
-            .bg(colors::surface2())
-            .shadow(colors::shadow())
-            .text_size(px(12.))
-            .text_color(colors::text2())
-            .child(content),
+        menu_frame().w(w).max_w(w).child(content),
     )
 }
 

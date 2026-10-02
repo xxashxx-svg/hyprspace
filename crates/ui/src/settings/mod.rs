@@ -7,9 +7,13 @@ mod appearance;
 mod defaults;
 mod general;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, FocusHandle, FontWeight, IntoElement, KeyDownEvent,
-    Pixels, Point, SharedString, Window, div, prelude::*, px,
+    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, FontWeight, IntoElement,
+    KeyDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px,
 };
 use hyprspace_proto::Agent;
 use hyprspace_proto::state::ComposerPrefs;
@@ -18,7 +22,7 @@ use crate::assets::icon;
 use crate::root::Root;
 use crate::{colors, widgets};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Tab {
     General,
     Appearance,
@@ -28,7 +32,7 @@ pub(crate) enum Tab {
 }
 
 /// A picker open over the Defaults view.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Picker {
     Model(Agent),
     Effort(Agent),
@@ -39,6 +43,9 @@ pub struct Settings {
     tab: Tab,
     focus: FocusHandle,
     menu: Option<(Point<Pixels>, Picker)>,
+    /// Where each picker's field was last painted, so its menu drops from the field's edge
+    /// like a select instead of from wherever the click landed.
+    fields: Rc<RefCell<HashMap<Picker, Bounds<Pixels>>>>,
 }
 
 impl Settings {
@@ -60,19 +67,21 @@ impl Settings {
             tab: Tab::General,
             focus: cx.focus_handle(),
             menu: None,
+            fields: Rc::default(),
         }
     }
 }
 
-struct Entry {
-    tab: Tab,
+pub(crate) struct Entry {
+    pub(crate) tab: Tab,
     group: &'static str,
-    label: &'static str,
-    desc: &'static str,
-    icon: &'static str,
+    pub(crate) label: &'static str,
+    pub(crate) desc: &'static str,
+    pub(crate) icon: &'static str,
 }
 
-const TABS: &[Entry] = &[
+/// Every view in nav order. The palette lists them too.
+pub(crate) const TABS: &[Entry] = &[
     Entry {
         tab: Tab::General,
         group: "App",
@@ -126,11 +135,17 @@ impl Root {
             Tab::Skills => self.skills_page(window, cx),
         };
         let header = div()
+            .relative()
             .flex_none()
             .pt(px(26.))
             .pb(px(18.))
             .border_b_1()
             .border_color(colors::border1())
+            .child(div().absolute().top(px(22.)).right(px(GUTTER)).child(
+                widgets::icon_button("settings-close", "x", 30.).on_click(
+                    cx.listener(|r, _: &ClickEvent, window, cx| r.close_settings(window, cx)),
+                ),
+            ))
             .child(column(
                 div()
                     .flex()
@@ -221,6 +236,7 @@ impl Root {
             col = col.child(
                 div()
                     .id(("settings-tab", i))
+                    .relative()
                     .flex()
                     .items_center()
                     .gap(px(10.))
@@ -232,8 +248,19 @@ impl Root {
                     .font_weight(FontWeight::MEDIUM)
                     .cursor_pointer()
                     .when(on, |d| {
+                        // settings.css: a short accent bar on the nav's left edge
                         d.bg(colors::accent().opacity(0.12))
                             .text_color(colors::text1())
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left(px(-10.))
+                                    .top(px(8.))
+                                    .bottom(px(8.))
+                                    .w(px(3.))
+                                    .rounded_r(px(3.))
+                                    .bg(colors::accent()),
+                            )
                     })
                     .when(!on, |d| {
                         d.text_color(colors::text2())
@@ -310,14 +337,18 @@ impl Root {
     }
 }
 
-/// The centered column the header and the page share.
+/// The side padding of the page and header (settings.css `--set-gut`).
+const GUTTER: f32 = 32.;
+
+/// The centered column the header and the page share: settings.css `--set-col` of 1000px,
+/// less its gutters.
 fn column(content: impl IntoElement) -> Div {
     div()
         .w_full()
         .flex()
         .justify_center()
-        .px(px(32.))
-        .child(div().w_full().max_w(px(760.)).child(content))
+        .px(px(GUTTER))
+        .child(div().w_full().max_w(px(1000. - 2. * GUTTER)).child(content))
 }
 
 /// A quiet upper-case label over a group (settings.css `.set-label`).

@@ -212,28 +212,23 @@ impl Root {
             .flex()
             .gap(px(14.))
             .p(px(16.))
-            .child(field(
+            .child(self.field(
                 "Model",
+                Picker::Model(agent),
                 widgets::select(
                     ("set-model", agent as usize),
                     model_label(&info.catalog, &pick.model),
-                )
-                .on_click(cx.listener(move |r, e: &ClickEvent, _, cx| {
-                    r.settings.menu = Some((e.position(), Picker::Model(agent)));
-                    cx.notify();
-                })),
+                ),
+                cx,
             ))
             .child(if efforts.is_empty() {
                 div().flex_1().into_any_element()
             } else {
-                field(
+                self.field(
                     "Effort",
-                    widgets::select(("set-effort", agent as usize), effort).on_click(cx.listener(
-                        move |r, e: &ClickEvent, _, cx| {
-                            r.settings.menu = Some((e.position(), Picker::Effort(agent)));
-                            cx.notify();
-                        },
-                    )),
+                    Picker::Effort(agent),
+                    widgets::select(("set-effort", agent as usize), effort),
+                    cx,
                 )
             });
         div()
@@ -247,9 +242,50 @@ impl Root {
             .into_any_element()
     }
 
-    /// The open model or effort picker, floated over the page.
+    /// A named select in an agent card that opens `picker`. Two share a row. Its bounds are
+    /// kept so the menu can open right under it.
+    fn field(
+        &self,
+        name: &str,
+        picker: Picker,
+        select: gpui::Stateful<gpui::Div>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let fields = self.settings.fields.clone();
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors::text2())
+                    .child(name.to_string()),
+            )
+            .child(
+                div()
+                    .on_children_prepainted(move |b, _, _| {
+                        if let Some(b) = b.first() {
+                            fields.borrow_mut().insert(picker, *b);
+                        }
+                    })
+                    .child(
+                        select.on_click(cx.listener(move |r, e: &ClickEvent, _, cx| {
+                            r.settings.menu = Some((e.position(), picker));
+                            cx.notify();
+                        })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// The open model or effort picker, dropped under its field.
     pub(super) fn picker(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (at, picker) = self.settings.menu?;
+        let (click, picker) = self.settings.menu?;
+        let field = self.settings.fields.borrow().get(&picker).copied();
         let agent = match picker {
             Picker::Model(a) | Picker::Effort(a) => a,
         };
@@ -257,7 +293,6 @@ impl Root {
         let pick = self.state.composer.pick(agent);
         let body = match picker {
             Picker::Model(_) => div()
-                .w(px(280.))
                 .flex()
                 .flex_col()
                 .child(widgets::menu_heading(format!("{} model", agent.name())))
@@ -291,7 +326,6 @@ impl Root {
                 let levels = std::iter::once(String::new())
                     .chain(info.catalog.efforts_for(&pick.model).iter().cloned());
                 div()
-                    .w(px(220.))
                     .flex()
                     .flex_col()
                     .child(widgets::menu_heading("Effort"))
@@ -317,33 +351,12 @@ impl Root {
             r.settings.menu = None;
             cx.notify();
         });
-        Some(widgets::popup(
-            at,
-            widgets::Open::Down,
-            window,
-            move |w, cx| close(&(), w, cx),
-            body,
-        ))
+        let close = move |w: &mut Window, cx: &mut gpui::App| close(&(), w, cx);
+        Some(match field {
+            Some(b) => widgets::dropdown(b, window, close, body),
+            None => widgets::popup(click, widgets::Open::Down, window, close, body),
+        })
     }
-}
-
-/// A named control in an agent card. Two share a row.
-fn field(name: &str, control: impl IntoElement) -> AnyElement {
-    div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .child(
-            div()
-                .text_size(px(12.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(colors::text2())
-                .child(name.to_string()),
-        )
-        .child(control)
-        .into_any_element()
 }
 
 /// The agents whose CLI is missing, on one line, with a way to look again after installing.
