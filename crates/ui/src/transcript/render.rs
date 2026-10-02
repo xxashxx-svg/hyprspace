@@ -231,8 +231,12 @@ fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<(bool, Any
     out
 }
 
-/// The prompt being read: the last one above a line a third of the way down the view.
+/// The prompt being read: the last one above a line a third of the way down the view, or the last
+/// one at all once the view is at the bottom, where the latest prompt can sit below the line.
 fn lit(scroll: &ScrollHandle, prompts: &[usize]) -> usize {
+    if -scroll.offset().y >= scroll.max_offset().y - px(4.) {
+        return prompts.len().saturating_sub(1);
+    }
     let view = scroll.bounds();
     // a row's bounds are where it sits unscrolled, so the line moves down by the scroll instead
     let line = view.top() + view.size.height / 3. - scroll.offset().y;
