@@ -3,11 +3,10 @@
 #
 #   curl -fsSL https://hyprspace.dev/install.sh | sh
 #
-# Linux : drops the self-updating AppImage in ~/.local/bin and adds a menu entry.
-# macOS : mounts the dmg and copies HyprSpace.app into /Applications.
+# macOS: mounts the dmg and copies HyprSpace.app into /Applications. HyprSpace ships for Windows
+# and macOS only; Linux builds stopped in October 2026.
 #
-# Nothing here needs root, and nothing else about your machine changes. Set HYPRSPACE_BIN to put the
-# Linux binary somewhere other than ~/.local/bin.
+# Nothing here needs root, and nothing else about your machine changes.
 set -eu
 
 BASE="https://github.com/xxashxx-svg/hyprspace/releases/latest/download"
@@ -26,58 +25,6 @@ fetch() { # url dest
     wget -q --show-progress -O "$2" "$1"
   else
     die "need curl or wget to download anything"
-  fi
-}
-
-install_linux() {
-  [ "$(uname -m)" = "x86_64" ] || die "Linux builds are x86_64 only right now (yours: $(uname -m))"
-
-  bin="${HYPRSPACE_BIN:-$HOME/.local/bin}"
-  tmp=$(mktemp -d)
-  # shellcheck disable=SC2064  # expand tmp now, not at trap time
-  trap "rm -rf '$tmp'" EXIT
-
-  say "Downloading HyprSpace…"
-  fetch "$BASE/HyprSpace-linux-x86_64.AppImage" "$tmp/hyprspace"
-  chmod +x "$tmp/hyprspace"
-  mkdir -p "$bin"
-  mv -f "$tmp/hyprspace" "$bin/hyprspace"
-
-  # best-effort icon, so the menu entry isn't a blank tile. Silently skipped if the AppImage's
-  # internals ever move — a missing icon is not worth failing an install over.
-  icon=hyprspace
-  if (cd "$tmp" && "$bin/hyprspace" --appimage-extract '*.png' >/dev/null 2>&1); then
-    src=$(find "$tmp/squashfs-root" -name '*.png' 2>/dev/null | head -1)
-    if [ -n "$src" ]; then
-      icons="$HOME/.local/share/icons/hicolor/256x256/apps"
-      mkdir -p "$icons"
-      cp -f "$src" "$icons/hyprspace.png"
-    fi
-  fi
-
-  apps="$HOME/.local/share/applications"
-  mkdir -p "$apps"
-  cat >"$apps/hyprspace.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=HyprSpace
-Comment=Multi-terminal AI workspace
-Exec=$bin/hyprspace %U
-Icon=$icon
-Terminal=false
-Categories=Development;IDE;
-StartupWMClass=HyprSpace
-EOF
-  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" 2>/dev/null || true
-
-  say "Installed to $bin/hyprspace"
-  case ":$PATH:" in
-  *":$bin:"*) note "Run 'hyprspace', or find it in your app menu." ;;
-  *) note "$bin isn't on your PATH — add it, or launch from your app menu." ;;
-  esac
-  # the single most common reason an AppImage refuses to start on a fresh distro
-  if command -v ldconfig >/dev/null 2>&1 && ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
-    note "Heads up: AppImages need FUSE 2 (apt install libfuse2 / dnf install fuse-libs)."
   fi
 }
 
@@ -109,7 +56,7 @@ install_mac() {
 }
 
 case "$(uname -s)" in
-Linux) install_linux ;;
+Linux) die "HyprSpace ships for Windows and macOS only. Linux builds stopped in October 2026." ;;
 Darwin) install_mac ;;
 *) die "unsupported OS: $(uname -s). Windows: irm https://hyprspace.dev/install.ps1 | iex" ;;
 esac

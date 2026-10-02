@@ -1,10 +1,11 @@
 name: release
 
-# CI builds every platform, signed with the updater key held in this repo's secrets, so no
+# CI builds Windows and macOS, signed with the updater key held in this repo's secrets, so no
 # machine has to keep that key. deploy.ps1 bumps the version, tags, opens the release as a DRAFT
 # with the notes, and runs this workflow. Each job MERGES its own entry into the release's
-# latest.json (windows-x86_64, then darwin-aarch64, then linux-x86_64), and the last job publishes
-# the draft, so the updater endpoint (releases/latest) only sees the release once it is complete.
+# latest.json (windows-x86_64, then darwin-aarch64), and the last job (macos) publishes the draft,
+# so the updater endpoint (releases/latest) only sees the release once it is complete.
+# Linux was dropped on 2026-10-02 because nobody used it.
 #
 # The jobs chain with `needs` on purpose: they all read-modify-write the same latest.json asset,
 # so they must not run concurrently or one would clobber another's platform entry.
@@ -126,65 +127,6 @@ jobs:
             gh release create "$tag" --repo "$RELEASES_REPO" --draft \
               --title "HyprSpace ${tag#v}" --notes "Automated release." \
               dist/*.dmg dist/*.app.tar.gz dist/latest.json
-          fi
-
-  # Linux: AppImage (the only Linux format Tauri's updater can self-update) + a .deb for people who
-  # prefer their package manager. Runs after macos so the latest.json merges serialize.
-  linux:
-    needs: macos
-    runs-on: ubuntu-22.04 # oldest supported runner → widest glibc compatibility for the AppImage
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          # webkit2gtk is the webview (there is no WebView2 here); patchelf + librsvg are what the
-          # AppImage bundler needs; libxdo/appindicator are Tauri's standard desktop-integration deps
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev \
-            build-essential curl wget file
-      - name: Install dependencies
-        run: npm install
-      - name: Build + sign Linux bundles
-        uses: tauri-apps/tauri-action@v0
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          # the config's bundle target is nsis (Windows); override for the Linux bundles
-          args: --bundles appimage,deb
-      - name: Merge linux into the release manifest + publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          tag="${{ inputs.tag }}"
-          mkdir -p dist existing
-          find src-tauri/target -type f \
-            \( -name "*.AppImage" -o -name "*.AppImage.sig" \
-               -o -name "*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz.sig" \
-               -o -name "*.deb" \) -exec cp {} dist/ \;
-          # stable-named copy so the website's Download link always resolves to the newest build
-          cp dist/*_amd64.AppImage dist/HyprSpace-linux-x86_64.AppImage
-          echo "built:"; ls -la dist
-          # pull the manifest the earlier jobs published; ok if absent
-          gh release download "$tag" --repo "$RELEASES_REPO" --pattern latest.json --dir existing 2>/dev/null || true
-          node scripts/ci-build-latest.mjs "$tag" dist "$RELEASES_REPO" existing/latest.json
-          echo "merged manifest:"; cat dist/latest.json
-          if gh release view "$tag" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
-            gh release upload "$tag" --repo "$RELEASES_REPO" --clobber \
-              dist/*.AppImage dist/*.deb dist/latest.json
-          else
-            gh release create "$tag" --repo "$RELEASES_REPO" --draft \
-              --title "HyprSpace ${tag#v}" --notes "Automated release." \
-              dist/*.AppImage dist/*.deb dist/latest.json
           fi
           # every platform is in: publish, which is when releases/latest starts pointing here
           gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false
