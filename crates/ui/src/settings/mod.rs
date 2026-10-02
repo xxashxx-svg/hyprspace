@@ -19,7 +19,7 @@ use crate::root::Root;
 use crate::{colors, widgets};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
+pub(crate) enum Tab {
     General,
     Appearance,
     Defaults,
@@ -42,6 +42,19 @@ pub struct Settings {
 }
 
 impl Settings {
+    pub(crate) fn tab(&self) -> Tab {
+        self.tab
+    }
+
+    pub(crate) fn set_tab(&mut self, tab: Tab) {
+        self.tab = tab;
+        self.menu = None;
+    }
+
+    pub(crate) fn focus_handle(&self) -> FocusHandle {
+        self.focus.clone()
+    }
+
     pub fn new(cx: &mut App) -> Self {
         Self {
             tab: Tab::General,
@@ -101,10 +114,6 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl Root {
     pub(crate) fn settings(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        // Esc closes the screen, so it holds focus whenever it is up
-        if !self.settings.focus.is_focused(window) {
-            window.focus(&self.settings.focus, cx);
-        }
         let entry = TABS
             .iter()
             .find(|e| e.tab == self.settings.tab)
