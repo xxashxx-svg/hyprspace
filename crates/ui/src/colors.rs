@@ -34,6 +34,11 @@ pub fn theme() -> Theme {
     CURRENT.with(Cell::get)
 }
 
+/// Theme `id` on the side now showing, for drawing a preview of it beside the current one.
+pub fn other(id: &str) -> Theme {
+    build(id, theme().dark)
+}
+
 pub fn hsla(c: Color) -> Hsla {
     rgba(c.0).into()
 }

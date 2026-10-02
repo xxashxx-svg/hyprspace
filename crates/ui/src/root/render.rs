@@ -107,10 +107,12 @@ impl Render for Root {
                         .into_any_element()
                 }
                 Screen::Compose(_) => self.composer.clone().into_any_element(),
-                Screen::Settings => self.settings(cx),
+                Screen::Settings => self.settings(window, cx),
             }
         };
         let menu = self.menu(window, cx);
+        // Settings takes the whole window
+        let sidebar = (self.screen != Screen::Settings).then(|| self.sidebar(window, cx));
         div()
             .id("root")
             .size_full()
@@ -124,7 +126,7 @@ impl Render for Root {
                 cx.notify();
             }))
             .on_drop(cx.listener(|r, _: &SidebarDrag, _, _| r.save()))
-            .child(self.sidebar(window, cx))
+            .children(sidebar)
             .child(div().flex_1().min_w_0().h_full().child(main))
             .children(menu)
     }

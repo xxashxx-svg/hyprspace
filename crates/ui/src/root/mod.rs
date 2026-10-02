@@ -82,6 +82,7 @@ pub struct Root {
     pub(crate) archived_open: bool,
     /// Where Settings' Back button returns to.
     pub(crate) back: Screen,
+    pub(crate) settings: crate::settings::Settings,
     /// A folder named on the command line, opened once the state has loaded.
     pub(crate) open_arg: Option<PathBuf>,
     pub(crate) _pump: Task<()>,
@@ -141,6 +142,7 @@ impl Root {
             menu: None,
             archived_open: false,
             back: Screen::Compose(None),
+            settings: crate::settings::Settings::new(cx),
             open_arg: open,
             _pump: pump,
             _subs: subs,
