@@ -44,7 +44,8 @@ fresh session can pick up exactly where the last one stopped.
    *Done when* a thread can be started, steered, approved and resumed from the UI for both CLIs.
 5. **Terminal session type.** *Done when* it matches every terminal row of the parity checklist.
 6. **Everything else on the parity checklist,** then packaging: installers, auto-update, CI for
-   Windows and macOS.
+   Windows and macOS. Every current user updates through the Tauri updater, so the first GPUI
+   release has to install through it: see "Upgrading from the Tauri app" below.
    *Done when* every checklist row is ticked; then delete `src/`, `src-tauri/` and the npm setup.
 
 ## Code standard
@@ -129,6 +130,23 @@ Move into crates, keeping their hard-won behaviour and comments:
 Leave behind: the licensing, paywall and Supabase auth chain (unused), `git_root` (dead), the
 launcher remnants, and anything only the webview needed.
 
+## Upgrading from the Tauri app
+
+The installed Tauri app checks `releases/latest/download/latest.json`, downloads the installer it
+names for its platform, verifies it against the minisign public key in `src-tauri/tauri.conf.json`,
+and runs it. The first GPUI release must satisfy that exact chain, or every current user stays on
+the last Tauri version forever:
+
+- **Windows:** an NSIS `-setup.exe` that installs per-user to the same place and replaces the old
+  app, signed with the same updater key (the `TAURI_SIGNING_PRIVATE_KEY` secret CI already holds),
+  listed under `windows-x86_64` in `latest.json` with its signature.
+- **macOS:** an `.app.tar.gz` of the new app, signed with the same key, under `darwin-aarch64`.
+- **Same manifest shape:** keep `latest.json` as `{ version, notes, pub_date, platforms }`, so
+  `scripts/ci-build-latest.mjs` and `deploy.ps1` keep working, and the GPUI app's own updater reads
+  the same file from then on.
+- **Prove it before release:** install the last Tauri version, point it at a test release of the
+  GPUI build, and watch it update into the GPUI app on Windows and on macOS.
+
 ## Parity checklist
 
 Tick each row in the GPUI app before deleting the Tauri app.
@@ -146,6 +164,7 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [ ] Intro
 - [ ] Open in editor or Explorer/Finder
 - [ ] Installers, auto-update, CI release for Windows and macOS
+- [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above)
 
 ## Open questions for Ash
 
@@ -200,7 +219,9 @@ layout above, add the CI check, and grow `apps/hyprspace` from there.
 
 ## Phase 2 results
 
-Done on 2026-10-02 locally; the coordinator confirms the CI check on both OSes.
+Done on 2026-10-02. The CI check (`.github/workflows/check.yml`) passed on Windows and macOS in run
+36942895325. `npm run tauri build` compiles and writes the installer, then stops at updater signing
+because no machine holds the key (CI does).
 
 **What exists.** The workspace has the layout above, minus nothing:
 
