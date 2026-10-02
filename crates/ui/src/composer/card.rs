@@ -63,6 +63,27 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .child(pickers::permission_label(c.prefs.permission))
         .child(widgets::caret())
         .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_menu(Menu::Permission, e, cx)));
+    // on: the agent runs interactively in a terminal session, on the plan's terminal limits
+    let forced = c.agent().is_some_and(|a| !a.agent.structured());
+    let on = c.terminal();
+    let terminal_chip = pick.is_some().then(|| {
+        widgets::chip("composer-terminal")
+            .child(icon(
+                "terminal",
+                13.,
+                if on { colors::text1() } else { colors::text3() },
+            ))
+            .child("Terminal")
+            .when(on, |d| {
+                d.bg(colors::surface3())
+                    .border_color(colors::border2())
+                    .text_color(colors::text1())
+            })
+            .when(!forced, |d| {
+                d.on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_terminal(cx)))
+            })
+            .when(forced, |d| d.cursor_default())
+    });
     let frame = match (focused, brand) {
         (true, Some(b)) => b.opacity(0.45),
         _ => colors::border2(),
@@ -111,6 +132,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .child(model_chip)
                 .children(effort_chip)
                 .child(permission_chip)
+                .children(terminal_chip)
                 .child(div().flex_1())
                 .child(
                     widgets::icon_button("composer-attach", "image-plus", 28.)

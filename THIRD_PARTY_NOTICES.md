@@ -8,9 +8,12 @@ its original license, listed here.
 Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron) at commit
 `80b946b`:
 
-- `crates/ui/src/terminal/emulator.rs` from `crates/ui/src/terminal/emulator.rs`
-- `crates/ui/src/terminal/keys.rs` and `crates/ui/src/terminal/paint.rs` from
-  `crates/ui/src/terminal/view.rs`
+- `crates/ui/src/terminal/emulator.rs` (including its selection and scrollback calls) from
+  `crates/ui/src/terminal/emulator.rs`
+- `crates/ui/src/terminal/keys.rs`, `crates/ui/src/terminal/paint.rs` and `paste_bytes` in
+  `crates/ui/src/terminal/clipboard.rs` from `crates/ui/src/terminal/view.rs`
+- the selection gestures in `crates/ui/src/terminal/mouse.rs` (drag threshold, click count to
+  word and line, anchoring at the press) follow `crates/ui/src/terminal/panel.rs`
 - `crates/harness/src/claude/` (the headless `claude` invocation, stdin line shapes, steer
   priorities and the held turn end, tool decoding, inline images) follows
   `crates/harness/src/claude/mod.rs`, `wire.rs` and `normalize.rs`
@@ -99,7 +102,7 @@ files to TrueType (GPUI loads TrueType):
 - JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors
   (https://github.com/JetBrains/JetBrainsMono), as patched by
   [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) ("JetBrainsMono Nerd Font Mono"), from
-  `src/assets/fonts/`.
+  `src/assets/fonts/`: Regular, Bold, Italic and Bold Italic.
 
 Both are licensed under the SIL Open Font License, Version 1.1:
 

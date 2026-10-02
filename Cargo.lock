@@ -2650,8 +2650,10 @@ dependencies = [
  "gpui",
  "hyprspace-proto",
  "hyprspace-theme",
+ "image",
  "pulldown-cmark",
  "unicode-segmentation",
+ "uuid",
 ]
 
 [[package]]

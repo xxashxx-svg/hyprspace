@@ -41,7 +41,18 @@ impl Root {
                 mark(launch.agent, 14., colors::brand(launch.agent).0).into_any_element(),
                 format!("{} · {}", self.model_label(launch), short(&launch.cwd)),
             ),
-            ThreadKind::Terminal { cwd } => (
+            ThreadKind::Terminal {
+                cwd,
+                run: Some(launch),
+            } => (
+                mark(launch.agent, 14., colors::brand(launch.agent).0).into_any_element(),
+                format!(
+                    "{} in a terminal · {}",
+                    self.model_label(launch),
+                    short(cwd)
+                ),
+            ),
+            ThreadKind::Terminal { cwd, run: None } => (
                 icon("terminal", 13., colors::text3()).into_any_element(),
                 format!("Terminal · {}", short(cwd)),
             ),

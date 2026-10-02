@@ -35,6 +35,10 @@ pub struct Spawn {
     pub args: Vec<String>,
     pub cols: u16,
     pub rows: u16,
+    pub env: Vec<(String, String)>,
+    /// A command typed into the shell once it first prints, the way the Tauri app launches
+    /// agents: as keystrokes, so the user's own shell profile and PATH apply.
+    pub input: Option<String>,
 }
 
 type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
@@ -84,6 +88,9 @@ impl PtyManager {
         // GUI-launched apps inherit no TERM, so CLIs (and claude) suppress color without this
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        for (k, v) in &spawn.env {
+            cmd.env(k, v);
+        }
 
         let mut child = pair.slave.spawn_command(cmd)?;
         // drop the slave right after spawn so the master read sees EOF when the child exits (ConPTY)
@@ -110,9 +117,16 @@ impl PtyManager {
         });
 
         let data_out = out.clone();
+        let mut input = spawn.input.map(|cmd| (writer.clone(), cmd));
         thread::spawn(move || {
             coalesce(rx, |bytes| {
                 let _ = data_out.unbounded_send(Event::TerminalOutput { id, bytes });
+                // the shell is up enough to buffer keystrokes; it reads them when it is ready
+                if let Some((writer, cmd)) = input.take() {
+                    let mut w = writer.lock().unwrap_or_else(|e| e.into_inner());
+                    let _ = w.write_all(format!("{cmd}\r").as_bytes());
+                    let _ = w.flush();
+                }
             })
         });
 
@@ -178,36 +192,60 @@ impl PtyManager {
     }
 }
 
-// Leading-edge flush for snappy echo, batching under load. Returns when the reader hangs up.
+/// The coalescer's state, apart from the clock and the channel so tests can drive it with made-up
+/// instants: leading-edge flush for snappy echo, batching under load.
+struct Batch {
+    acc: Vec<u8>,
+    last_flush: Instant,
+    interval: Duration,
+}
+
+impl Batch {
+    fn new(now: Instant) -> Self {
+        Self {
+            acc: Vec::with_capacity(FLUSH_BYTES),
+            last_flush: now,
+            interval: Duration::from_millis(FLUSH_MS),
+        }
+    }
+
+    /// Flush right away if we've been quiet (interactive echo) or hit the size cap; otherwise let
+    /// a fast stream keep accumulating until the next tick.
+    fn push(&mut self, chunk: &[u8], now: Instant) -> Option<Vec<u8>> {
+        self.acc.extend_from_slice(chunk);
+        if self.acc.len() >= FLUSH_BYTES || now.duration_since(self.last_flush) >= self.interval {
+            return self.take(now);
+        }
+        None
+    }
+
+    /// A tick with nothing new: whatever accumulated goes out.
+    fn take(&mut self, now: Instant) -> Option<Vec<u8>> {
+        if self.acc.is_empty() {
+            return None;
+        }
+        self.last_flush = now;
+        let out = std::mem::replace(&mut self.acc, Vec::with_capacity(FLUSH_BYTES));
+        Some(out)
+    }
+}
+
+// Returns when the reader hangs up.
 fn coalesce(rx: std::sync::mpsc::Receiver<Vec<u8>>, mut emit: impl FnMut(Vec<u8>)) {
-    let mut acc: Vec<u8> = Vec::with_capacity(FLUSH_BYTES);
-    let interval = Duration::from_millis(FLUSH_MS);
-    let mut last_flush = Instant::now();
+    let mut batch = Batch::new(Instant::now());
     loop {
-        match rx.recv_timeout(interval) {
-            Ok(chunk) => {
-                acc.extend_from_slice(&chunk);
-                // flush right away if we've been quiet (interactive echo) or hit the size cap;
-                // otherwise let a fast stream keep accumulating until the next tick
-                if acc.len() >= FLUSH_BYTES || last_flush.elapsed() >= interval {
-                    emit(std::mem::take(&mut acc));
-                    acc.reserve(FLUSH_BYTES);
-                    last_flush = Instant::now();
-                }
-            }
-            Err(RecvTimeoutError::Timeout) => {
-                if !acc.is_empty() {
-                    emit(std::mem::take(&mut acc));
-                    acc.reserve(FLUSH_BYTES);
-                    last_flush = Instant::now();
-                }
-            }
+        let out = match rx.recv_timeout(batch.interval) {
+            Ok(chunk) => batch.push(&chunk, Instant::now()),
+            Err(RecvTimeoutError::Timeout) => batch.take(Instant::now()),
             Err(RecvTimeoutError::Disconnected) => {
-                if !acc.is_empty() {
-                    emit(acc);
+                if let Some(rest) = batch.take(Instant::now()) {
+                    emit(rest);
                 }
                 break;
             }
+        };
+        if let Some(bytes) = out {
+            emit(bytes);
         }
     }
 }
@@ -230,39 +268,48 @@ mod tests {
 
     #[test]
     fn a_burst_batches_and_a_chunk_after_a_pause_flushes_alone() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let mut b = Batch::new(t0);
+        // a burst inside one frame accumulates
+        for i in 0..5 {
+            assert_eq!(b.push(b"a", ms(i)), None);
+        }
+        assert_eq!(b.take(ms(16)), Some(b"aaaaa".to_vec()));
+        // after a quiet moment the first byte goes out on its own (keystroke echo)
+        assert_eq!(b.push(b"b", ms(80)), Some(b"b".to_vec()));
+        for i in 0..5 {
+            assert_eq!(b.push(b"c", ms(81 + i)), None);
+        }
+        assert_eq!(b.take(ms(97)), Some(b"ccccc".to_vec()));
+        assert_eq!(b.take(ms(200)), None);
+    }
+
+    #[test]
+    fn the_size_cap_flushes_without_waiting() {
+        let t0 = Instant::now();
+        let mut b = Batch::new(t0);
+        assert_eq!(
+            b.push(&[0; FLUSH_BYTES], t0).map(|v| v.len()),
+            Some(FLUSH_BYTES)
+        );
+        assert_eq!(b.push(&[0; 1], t0), None);
+        assert_eq!(b.take(t0).map(|v| v.len()), Some(1));
+    }
+
+    #[test]
+    fn the_thread_hands_over_every_byte_in_order() {
         let (tx, rx) = sync_channel(16);
         let flushed = thread::spawn(move || {
             let mut out = vec![];
             coalesce(rx, |b| out.push(b));
             out
         });
-        for _ in 0..5 {
-            tx.send(b"a".to_vec()).unwrap();
-        }
-        thread::sleep(Duration::from_millis(60));
-        tx.send(b"b".to_vec()).unwrap();
-        for _ in 0..5 {
-            tx.send(b"c".to_vec()).unwrap();
+        for c in [b"a", b"b", b"c"] {
+            tx.send(c.to_vec()).unwrap();
         }
         drop(tx);
-        let out = flushed.join().unwrap();
-        assert_eq!(out.concat(), b"aaaaabccccc");
-        assert!(out.contains(&b"b".to_vec()), "{out:?}");
-        assert!(out.len() < 11, "{out:?}");
-    }
-
-    #[test]
-    fn the_size_cap_flushes_without_waiting() {
-        let (tx, rx) = sync_channel(16);
-        let flushed = thread::spawn(move || {
-            let mut out = vec![];
-            coalesce(rx, |b| out.push(b.len()));
-            out
-        });
-        tx.send(vec![0; FLUSH_BYTES]).unwrap();
-        tx.send(vec![0; 1]).unwrap();
-        drop(tx);
-        assert_eq!(flushed.join().unwrap(), [FLUSH_BYTES, 1]);
+        assert_eq!(flushed.join().unwrap().concat(), b"abc");
     }
 
     fn echo() -> Spawn {

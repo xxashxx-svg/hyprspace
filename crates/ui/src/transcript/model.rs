@@ -61,6 +61,18 @@ pub enum Status {
     Failed,
 }
 
+/// A terminal session's state from its agent's hooks.
+impl From<hyprspace_proto::AgentState> for Status {
+    fn from(s: hyprspace_proto::AgentState) -> Self {
+        match s {
+            hyprspace_proto::AgentState::Idle => Status::Idle,
+            hyprspace_proto::AgentState::Working => Status::Working,
+            hyprspace_proto::AgentState::Waiting => Status::Waiting,
+            hyprspace_proto::AgentState::Done => Status::Done,
+        }
+    }
+}
+
 struct Run {
     since: Instant,
     tokens: Option<(u64, u64)>,

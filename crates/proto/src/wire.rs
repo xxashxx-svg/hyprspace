@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agents::{Agent, AgentInfo, AgentSession};
+use crate::agents::{Agent, AgentInfo, AgentSession, AgentState};
 use crate::run::{Answer, Launch, Prompt, RunEvent};
 use crate::state::{AppState, Entry};
 
@@ -48,12 +48,16 @@ pub enum Command {
         id: SessionId,
         journal: String,
     },
-    /// Spawn the default shell in a PTY sized `cols` x `rows`.
+    /// Spawn the default shell in a PTY sized `cols` x `rows`. With `run`, the engine types that
+    /// agent's launch command into the shell once it is up, then `prompt` once the CLI is ready
+    /// for it. The command never carries user text; the prompt goes in as keystrokes.
     OpenTerminal {
         id: SessionId,
         cwd: PathBuf,
         cols: u16,
         rows: u16,
+        run: Option<Launch>,
+        prompt: Option<String>,
     },
     /// Keystrokes, pastes and the emulator's answers to terminal queries.
     WriteTerminal {
@@ -68,6 +72,13 @@ pub enum Command {
     /// End a session of either type and kill its process.
     Close {
         id: SessionId,
+    },
+    /// Open a file outside the app: in the user's code editor at `line` and `col` when one is
+    /// installed, else with the OS default.
+    OpenFile {
+        path: PathBuf,
+        line: Option<u32>,
+        col: Option<u32>,
     },
     /// Answered with `Event::State`.
     LoadState,
@@ -107,6 +118,11 @@ pub enum Event {
     TerminalExit {
         id: SessionId,
         code: i32,
+    },
+    /// What the agent in a terminal session is doing, from its hooks.
+    AgentState {
+        id: SessionId,
+        state: AgentState,
     },
     /// The engine could not do what a command asked. `message` is user-facing.
     Failed {
@@ -203,6 +219,8 @@ mod tests {
                 cwd: PathBuf::new(),
                 cols: 80,
                 rows: 24,
+                run: Some(Launch::new(Agent::Gemini, "/w")),
+                prompt: Some("hi".into()),
             },
             Command::WriteTerminal {
                 id: SessionId(2),
@@ -214,6 +232,11 @@ mod tests {
                 rows: 30,
             },
             Command::Close { id: SessionId(2) },
+            Command::OpenFile {
+                path: PathBuf::from("/w/a.rs"),
+                line: Some(3),
+                col: None,
+            },
         ];
         for cmd in &cmds {
             assert_eq!(&round_trip(cmd), cmd);
@@ -243,6 +266,10 @@ mod tests {
             Event::TerminalExit {
                 id: SessionId(2),
                 code: 0,
+            },
+            Event::AgentState {
+                id: SessionId(2),
+                state: AgentState::Waiting,
             },
             Event::Failed {
                 id: SessionId(3),
@@ -281,6 +308,8 @@ mod tests {
             cwd: PathBuf::new(),
             cols: 1,
             rows: 1,
+            run: None,
+            prompt: None,
         })
         .unwrap();
         assert!(json.contains(r#""type":"openTerminal""#), "{json}");

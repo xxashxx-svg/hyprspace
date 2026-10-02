@@ -97,6 +97,7 @@ impl Default for Thread {
             title: String::new(),
             kind: ThreadKind::Terminal {
                 cwd: PathBuf::new(),
+                run: None,
             },
             archived: false,
             created: 0,
@@ -108,7 +109,15 @@ impl Thread {
     pub fn cwd(&self) -> &PathBuf {
         match &self.kind {
             ThreadKind::Structured { launch } => &launch.cwd,
-            ThreadKind::Terminal { cwd } => cwd,
+            ThreadKind::Terminal { cwd, .. } => cwd,
+        }
+    }
+
+    /// The agent the thread runs, if any: a plain shell runs none.
+    pub fn agent(&self) -> Option<&Launch> {
+        match &self.kind {
+            ThreadKind::Structured { launch } => Some(launch),
+            ThreadKind::Terminal { run, .. } => run.as_ref(),
         }
     }
 
@@ -123,11 +132,13 @@ impl Thread {
 pub enum ThreadKind {
     /// An agent over its machine protocol. `launch.resume` holds the CLI's thread id once it
     /// started, so the thread picks the conversation up again after a restart.
-    Structured {
-        launch: Launch,
-    },
+    Structured { launch: Launch },
+    /// A shell in `cwd`. With `run`, the shell starts that agent's CLI interactively. For Claude,
+    /// `run.resume` is the conversation id the thread claimed, so it comes back after a restart.
     Terminal {
         cwd: PathBuf,
+        #[serde(default)]
+        run: Option<Launch>,
     },
 }
 
@@ -165,6 +176,8 @@ pub struct ComposerPrefs {
     pub agent: Option<Agent>,
     pub permission: Permission,
     pub picks: Vec<Pick>,
+    /// Start agents in a terminal session instead of a structured one.
+    pub terminal: bool,
 }
 
 /// A model and effort picked for one agent. Empty means the CLI's own default.
@@ -246,6 +259,14 @@ mod tests {
         assert_eq!(t.journal(), format!("thread-{thread}"));
         let back: AppState = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn terminal_threads_saved_before_agents_ran_in_them_still_load() {
+        let t: Thread =
+            serde_json::from_str(r#"{"id":1,"kind":{"type":"terminal","cwd":"/w"}}"#).unwrap();
+        assert_eq!(t.agent(), None);
+        assert_eq!(t.cwd(), &PathBuf::from("/w"));
     }
 
     #[test]

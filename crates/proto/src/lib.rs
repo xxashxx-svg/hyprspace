@@ -13,7 +13,7 @@ pub mod state;
 pub mod usage;
 pub mod wire;
 
-pub use agents::Agent;
+pub use agents::{Agent, AgentState};
 pub use channel::{Client, Events};
 pub use run::{Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 pub use state::{AppState, Entry, Space, Thread, ThreadKind};

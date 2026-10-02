@@ -54,13 +54,14 @@ pub struct SkillItem {
     pub kind: SkillKind,
 }
 
-/// An agent CLI that runs as a structured session. The others (Gemini, OpenCode, Grok) run as
-/// terminal sessions only for now (docs/REWRITE.md, open questions).
+/// An agent CLI the app can start. Claude and Codex run as structured sessions or in a
+/// terminal; Gemini only in a terminal for now (docs/REWRITE.md, open questions).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Agent {
     Claude,
     Codex,
+    Gemini,
 }
 
 impl Agent {
@@ -68,8 +69,37 @@ impl Agent {
         match self {
             Agent::Claude => "Claude",
             Agent::Codex => "Codex",
+            Agent::Gemini => "Gemini",
         }
     }
+
+    /// The CLI's command name, which is also its provider id.
+    pub fn cli(self) -> &'static str {
+        match self {
+            Agent::Claude => "claude",
+            Agent::Codex => "codex",
+            Agent::Gemini => "gemini",
+        }
+    }
+
+    /// Whether a harness drives it over a machine protocol. The rest only run in a terminal.
+    pub fn structured(self) -> bool {
+        !matches!(self, Agent::Gemini)
+    }
+}
+
+/// What the agent in a terminal session is doing, as its hooks report it. Only Claude has hooks,
+/// so other terminal sessions stay `Idle`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentState {
+    #[default]
+    Idle,
+    Working,
+    /// Blocked on the user: a permission prompt or a question.
+    Waiting,
+    /// The last turn finished.
+    Done,
 }
 
 /// One model the composer offers for an agent.

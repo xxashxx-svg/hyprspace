@@ -164,7 +164,7 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Sidebar: folders and threads, live status, archive, rename, search, right-click menu
 - [x] Composer: agent, model, effort, permission mode, resume past sessions, clone with choices
 - [x] Structured transcript: streaming markdown, tool calls, approvals, diffs, images in prompts
-- [ ] Terminal sessions: selection, scrollback, search, links, ctrl+click paths, paste images
+- [x] Terminal sessions: selection, scrollback, search, links, ctrl+click paths, paste images
 - [ ] Panes or tabs for several sessions at once
 - [ ] Dock: files tree, git stage, commit, push, diff view
 - [ ] File viewing (CodeMirror replacement, or open in the external editor at first)
@@ -344,4 +344,52 @@ and the light side. Closing the app left no CLI, shell or ConPTY children.
 resume list shows no earlier messages. No question UI for Claude's `AskUserQuestion` beyond
 allow or deny. The full settings screen is phase 6; Appearance at the sidebar's foot covers
 theme and mode for now.
+
+## Phase 5 results
+
+Done on 2026-10-02 against claude 2.1.287 and codex-cli 0.159.3 (then 0.160.0, see below). The
+Terminal sessions row is ticked. Shapes and reasons: [adr/0006](./adr/0006-terminal-sessions.md).
+Screenshots are in the phase 5 agent's scratchpad (`p5/`), including `61-side-by-side.png`
+against the installed Tauri app's terminal pane.
+
+**What exists.**
+
+- `crates/ui/src/terminal/`: `emulator.rs` (alacritty Term: selection, scrollback, find, modes,
+  cursor shape and blink, color query answers), `keys.rs`, `input.rs` (GPUI input handler: typed
+  text, IME preedit, non-ASCII), `mouse.rs` (drag, word and line selection, wheel with alternate
+  screen and mouse-mode handling, scrollbar, right-click paste, link hover and ctrl+click),
+  `links.rs` (URLs and `path:line:col`), `clipboard.rs` (copy, bracketed paste, image paste),
+  `search.rs` (Ctrl+F bar), `glyphs.rs` (block and line characters as rectangles, like xterm's
+  custom glyphs), `paint.rs`. Look follows the Tauri app: 13px JetBrains Mono with its italics,
+  line height 1.1, 12/18/10 padding, the adaptive ANSI palette, hover-only scrollbar.
+- `crates/engine/src/terminal.rs`: launch commands for claude, codex and gemini, Claude's hooks
+  wired to `Event::AgentState`, the prompt typed at Claude's first status line or passed to
+  Codex and Gemini as `$env:HYPRSPACE_PROMPT`. `open.rs` opens ctrl+clicked files in VS Code or
+  Cursor at their line (`Command::OpenFile`; `Root::open_file` is where phase 6 routes it to the
+  viewer). `env.rs` clears an inherited ignore-Ctrl+C flag.
+- `proto`: `ThreadKind::Terminal { cwd, run }`, `Agent::Gemini` (terminal only),
+  `AgentState`, `ComposerPrefs.terminal`. The composer has a Terminal chip; the sidebar and
+  header show the agent's mark with a terminal glyph for agents running in a terminal.
+- `hyprspace agent-hook` and `hyprspace status-line` subcommands in the app binary.
+- CI fix: the PTY coalescer's batching is a `Batch` driven by made-up instants in tests, so the
+  macOS runner's timing can no longer fail it (run 36952879579). No other test asserts on sleeps.
+
+**Checked in the running app**, input posted to its own window (Ctrl and Shift shared with the
+app's thread only, through AttachThreadInput): drag, double-click and triple-click selection;
+Ctrl+C copy with a selection and interrupt without one (ping and Start-Sleep stop), Ctrl+Shift+C;
+paste by right-click, Ctrl+V and Ctrl+Shift+V; multi-line paste into Claude stays bracketed; a
+real clipboard bitmap pasted as a PNG path; wheel, scrollbar drag, position kept while ping
+streams; less on the alternate screen scrolls by wheel and restores the shell; Ctrl+F with
+highlights, Enter, Shift+Enter, Esc; URL hover and ctrl+click (opened the browser); ctrl+click
+`src/main.rs:2:5` opened VS Code at Ln 2, Col 5; é, ü, CJK and emoji typed; reflow on resize;
+bar and underline cursors, blink, cursor hidden without focus. Claude in a terminal: the prompt
+typed in, sidebar Working, Needs your answer and Done from hooks, and `--resume <id>` brought the
+conversation back after three restarts. Codex in a terminal answered a prompt holding `$(whoami)`
+literally. Closing a thread killed its shell and CLI; quitting killed every child.
+
+**Not checked or not done.** IME composition (posted messages can't drive an IME; the handler
+is the same shape as the text box's). Gemini is not installed here; its command is unit tested.
+macOS builds in CI only. Mouse reports for clicks (only the wheel is reported). Codex and Gemini
+rows show no live state (no hooks). Testing let an automated Enter reach Codex's update dialog,
+which updated the user's codex to 0.160.0; that path is gone (ADR 0006).
 

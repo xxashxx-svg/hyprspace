@@ -32,11 +32,12 @@ pub struct Target {
 }
 
 pub enum ComposerEvent {
-    /// Start a thread in the target space.
+    /// Start a thread in the target space, in a terminal session when `terminal`.
     Start {
         launch: Launch,
         prompt: Option<Prompt>,
         title: String,
+        terminal: bool,
     },
     /// A clone finished. `open_here` starts the thread in the target space; otherwise the
     /// folder becomes its own space, with a thread when there was a task.
@@ -45,6 +46,7 @@ pub enum ComposerEvent {
         open_here: bool,
         launch: Launch,
         prompt: Option<Prompt>,
+        terminal: bool,
     },
     /// The picks changed; the root saves them.
     Prefs(ComposerPrefs),
@@ -196,6 +198,17 @@ impl Composer {
             .or_else(|| self.installed().next())
     }
 
+    /// Whether the next thread runs in a terminal: picked, or the only way the agent runs.
+    fn terminal(&self) -> bool {
+        self.prefs.terminal || self.agent().is_some_and(|a| !a.agent.structured())
+    }
+
+    fn toggle_terminal(&mut self, cx: &mut Context<Self>) {
+        self.prefs.terminal = !self.prefs.terminal;
+        cx.emit(ComposerEvent::Prefs(self.prefs.clone()));
+        cx.notify();
+    }
+
     fn pick(&self) -> Option<Pick> {
         self.agent().map(|a| self.prefs.pick(a.agent))
     }
@@ -278,6 +291,7 @@ impl Composer {
                         open_here: self.clone.open_here && self.target.is_some(),
                         launch,
                         prompt,
+                        terminal: self.terminal(),
                     });
                 }
                 self.reset(cx);
@@ -344,6 +358,7 @@ impl Composer {
             launch,
             prompt,
             title,
+            terminal: self.terminal(),
         });
         self.reset(cx);
     }
@@ -359,6 +374,7 @@ impl Composer {
             launch,
             prompt,
             title: session.title,
+            terminal: self.terminal(),
         });
         self.reset(cx);
     }

@@ -62,6 +62,17 @@ pub fn fallback(agent: Agent) -> AgentCatalog {
             ],
             CODEX_EFFORTS,
         ),
+        // Gemini takes `-m` and has no effort setting
+        Agent::Gemini => (
+            vec![
+                default_model(),
+                model("gemini-3-pro", "Gemini 3 Pro", None, &[]),
+                model("gemini-3-flash", "Gemini 3 Flash", None, &[]),
+                model("gemini-2.5-pro", "Gemini 2.5 Pro", None, &[]),
+                model("gemini-2.5-flash", "Gemini 2.5 Flash", None, &[]),
+            ],
+            &[][..],
+        ),
     };
     AgentCatalog {
         agent,

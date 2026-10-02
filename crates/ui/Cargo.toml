@@ -13,3 +13,5 @@ alacritty_terminal.workspace = true
 futures.workspace = true
 pulldown-cmark.workspace = true
 unicode-segmentation.workspace = true
+image.workspace = true
+uuid.workspace = true

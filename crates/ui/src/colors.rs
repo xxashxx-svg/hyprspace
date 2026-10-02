@@ -65,11 +65,7 @@ pub fn ink(a: f32) -> Hsla {
 
 /// An agent's signature color and its gradient's second stop.
 pub fn brand(agent: Agent) -> (Hsla, Hsla) {
-    let id = match agent {
-        Agent::Claude => "claude",
-        Agent::Codex => "codex",
-    };
-    let (a, b) = hyprspace_theme::brand(id);
+    let (a, b) = hyprspace_theme::brand(agent.cli());
     (hsla(a), hsla(b))
 }
 

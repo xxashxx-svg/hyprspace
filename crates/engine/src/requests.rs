@@ -73,11 +73,11 @@ impl Requests {
         let tx = self.tx.clone();
         tokio::task::spawn_blocking(move || {
             let home = crate::home_dir();
-            let agents = [Agent::Claude, Agent::Codex]
+            let agents = [Agent::Claude, Agent::Codex, Agent::Gemini]
                 .into_iter()
                 .map(|agent| AgentInfo {
                     agent,
-                    status: crate::providers::status(id(agent)),
+                    status: crate::providers::status(agent.cli()),
                     catalog: hyprspace_harness::catalog::catalog(agent, &home),
                 })
                 .collect();
@@ -88,7 +88,7 @@ impl Requests {
     pub fn list_resumable(&self, agent: Agent, cwd: PathBuf) {
         let tx = self.tx.clone();
         tokio::task::spawn_blocking(move || {
-            let sessions = crate::sessions::list(id(agent), &cwd);
+            let sessions = crate::sessions::list(agent.cli(), &cwd);
             Self::send(
                 &tx,
                 Event::Resumable {
@@ -113,13 +113,5 @@ impl Requests {
             });
             Self::send(&tx, Event::Cloned { request, result });
         });
-    }
-}
-
-/// The CLI name the provider and session modules key on.
-fn id(agent: Agent) -> &'static str {
-    match agent {
-        Agent::Claude => "claude",
-        Agent::Codex => "codex",
     }
 }

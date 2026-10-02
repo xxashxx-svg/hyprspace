@@ -4,12 +4,12 @@
 use std::path::{Path, PathBuf};
 
 use gpui::{AppContext, Context, Entity, Focusable, Window};
-use hyprspace_proto::{Command, Launch, Prompt, SessionId, Space, Thread, ThreadKind};
+use hyprspace_proto::{Agent, Command, Prompt, SessionId, Space, Thread, ThreadKind};
 
-use super::{Action, Rename, Root, Screen, View};
+use super::{Action, Rename, Root, Screen, Start, View};
 use crate::composer::Target;
 use crate::input::{InputEvent, TextInput};
-use crate::terminal::TerminalView;
+use crate::terminal::{TerminalEvent, TerminalView};
 use crate::time::now_ms;
 use crate::transcript::{TranscriptEvent, TranscriptView};
 
@@ -27,6 +27,25 @@ fn same_folder(a: &Path, b: &Path) -> bool {
         }
     };
     norm(a) == norm(b)
+}
+
+/// A prompt as keystrokes for an agent in a terminal: one line, so no newline sends it early,
+/// with attached images as paths after it (the agents read images by path).
+fn typed(prompt: &Prompt) -> String {
+    let text = prompt.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let paths = prompt.images.iter().map(|p| {
+        let p = p.display().to_string();
+        if p.contains(' ') {
+            format!("\"{p}\"")
+        } else {
+            p
+        }
+    });
+    std::iter::once(text)
+        .chain(paths)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn folder_name(path: &Path) -> String {
@@ -134,9 +153,17 @@ impl Root {
                 }
                 View::Structured(v)
             }
-            ThreadKind::Terminal { cwd } => {
-                let cwd = cwd.clone();
-                View::Terminal(cx.new(|cx| TerminalView::new(session, client, cwd, "", cx)))
+            ThreadKind::Terminal { cwd, run } => {
+                let (cwd, run) = (cwd.clone(), run.clone());
+                let prompt = first.as_ref().map(typed);
+                let v = cx.new(|cx| TerminalView::new(session, client, cwd, run, prompt, cx));
+                let sub = cx.subscribe(&v, |root, _, e: &TerminalEvent, _| match e {
+                    TerminalEvent::OpenFile { path, line, col } => {
+                        root.open_file(path.clone(), *line, *col)
+                    }
+                });
+                self._subs.push(sub);
+                View::Terminal(v)
             }
         };
         self.views.insert(id, view);
@@ -173,20 +200,42 @@ impl Root {
         cx.notify();
     }
 
+    /// Opens a file a terminal pointed at. Until the app has a file viewer (REWRITE.md phase 6)
+    /// it goes to the user's editor; this is the one place that changes when the viewer lands.
+    pub(crate) fn open_file(&self, path: PathBuf, line: Option<u32>, col: Option<u32>) {
+        self.client.send(Command::OpenFile { path, line, col });
+    }
+
     pub(crate) fn start_thread(
         &mut self,
         space: u64,
-        launch: Launch,
-        prompt: Option<Prompt>,
-        title: String,
+        start: Start,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let resumed = launch.resume.is_some();
+        let Start {
+            mut launch,
+            prompt,
+            title,
+            terminal,
+        } = start;
+        let resumed = launch.resume.is_some() && !terminal;
+        let kind = if terminal || !launch.agent.structured() {
+            // a Claude thread claims its conversation id up front, so it can resume it later
+            if launch.agent == Agent::Claude && launch.resume.is_none() {
+                launch.resume = Some(uuid::Uuid::new_v4().to_string());
+            }
+            ThreadKind::Terminal {
+                cwd: launch.cwd.clone(),
+                run: Some(launch),
+            }
+        } else {
+            ThreadKind::Structured { launch }
+        };
         let thread = Thread {
             id: self.state.take_id(),
             title,
-            kind: ThreadKind::Structured { launch },
+            kind,
             archived: false,
             created: now_ms(),
         };
@@ -217,7 +266,7 @@ impl Root {
         let thread = Thread {
             id: self.state.take_id(),
             title: "Terminal".into(),
-            kind: ThreadKind::Terminal { cwd },
+            kind: ThreadKind::Terminal { cwd, run: None },
             archived: false,
             created: now_ms(),
         };
@@ -402,5 +451,14 @@ mod tests {
             assert!(same_folder(Path::new(r"C:\Main\X"), Path::new("c:/main/x")));
         }
         assert_eq!(folder_name(Path::new("/w/app")), "app");
+    }
+
+    #[test]
+    fn a_terminal_prompt_is_one_line_with_its_images() {
+        let p = Prompt {
+            text: "fix  this\nplease".into(),
+            images: vec![PathBuf::from("/t/a b.png"), PathBuf::from("/t/c.png")],
+        };
+        assert_eq!(typed(&p), "fix this please \"/t/a b.png\" /t/c.png");
     }
 }

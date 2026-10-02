@@ -20,12 +20,34 @@ fn folder(args: impl Iterator<Item = String>, cwd: PathBuf) -> Option<PathBuf> {
     })
 }
 
+/// `hyprspace agent-hook <port> <session>` and `hyprspace status-line <port> <session>`: Claude
+/// runs these from a terminal session's hooks (engine/src/hooks.rs). They pass one payload to the
+/// running app and exit, without opening a window.
+fn hook(args: &[String]) -> bool {
+    let [cmd, port, session] = args else {
+        return false;
+    };
+    let Ok(port) = port.parse() else {
+        return false;
+    };
+    match cmd.as_str() {
+        "agent-hook" => hyprspace_engine::hooks::run_agent_hook(port, session),
+        "status-line" => hyprspace_engine::hooks::run_status_line(port, session),
+        _ => return false,
+    }
+    true
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if hook(&args) {
+        return;
+    }
     // SAFETY: first thing in main, before the engine or GPUI start any thread.
     unsafe { hyprspace_engine::env::prepare() };
 
     let cwd = std::env::current_dir().unwrap_or_default();
-    let open = folder(std::env::args().skip(1), cwd).map(|p| dunce(&p));
+    let open = folder(args.into_iter(), cwd).map(|p| dunce(&p));
     let (engine, client, events) = Engine::start().expect("start the engine");
 
     gpui_platform::application()
@@ -85,5 +107,13 @@ mod tests {
         let abs = std::env::temp_dir();
         assert_eq!(parse(&[abs.to_str().unwrap()]), Some(abs));
         assert!(dunce(std::path::Path::new(".")).is_absolute());
+    }
+
+    #[test]
+    fn only_a_full_hook_call_is_a_hook() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(!hook(&args(&["agent-hook", "x", "s"])));
+        assert!(!hook(&args(&["agent-hook", "1"])));
+        assert!(!hook(&args(&["app", "1", "s"])));
     }
 }

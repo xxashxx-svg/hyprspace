@@ -38,6 +38,7 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/circle-check.svg",
     "brand/claude.svg",
     "brand/openai.svg",
+    "brand/gemini.svg",
 );
 
 /// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono
@@ -49,6 +50,9 @@ const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/DMSans-Bold.ttf"),
     include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Regular.ttf"),
     include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Bold.ttf"),
+    // agents print italics (Claude's recaps); without the face they fall back to upright
+    include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Italic.ttf"),
+    include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-BoldItalic.ttf"),
 ];
 
 /// Hands the bundled fonts to GPUI. A font that fails to load falls back to the system's.
@@ -91,6 +95,7 @@ pub fn mark(agent: Agent, size: f32, color: Hsla) -> Svg {
     let file = match agent {
         Agent::Claude => "brand/claude.svg",
         Agent::Codex => "brand/openai.svg",
+        Agent::Gemini => "brand/gemini.svg",
     };
     svg()
         .path(file)
@@ -113,7 +118,7 @@ mod tests {
             assert!(Assets.load(path).unwrap().is_some());
         }
         assert!(Assets.load("icons/nope.svg").unwrap().is_none());
-        assert_eq!(Assets.list("brand/").unwrap().len(), 2);
+        assert_eq!(Assets.list("brand/").unwrap().len(), 3);
     }
 
     #[test]

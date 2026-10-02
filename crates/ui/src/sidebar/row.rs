@@ -43,19 +43,21 @@ impl Root {
             Some(View::Structured(v)) => v.read(cx).elapsed(),
             _ => None,
         };
-        let (badge, label) = match &t.kind {
-            ThreadKind::Structured { launch } => {
+        let (badge, label) = match t.agent() {
+            Some(launch) => {
                 let (brand, _) = colors::brand(launch.agent);
                 (
                     mark(launch.agent, 13., brand).into_any_element(),
                     self.model_label(launch),
                 )
             }
-            ThreadKind::Terminal { .. } => (
+            None => (
                 icon("terminal", 12., colors::text3()).into_any_element(),
                 "Terminal".to_string(),
             ),
         };
+        // an agent running in a terminal says so after its model
+        let in_terminal = matches!(t.kind, ThreadKind::Terminal { run: Some(_), .. });
         let title: AnyElement = match &self.rename {
             Some((Rename::Thread(r), input, _)) if *r == id => div()
                 .h(px(24.))
@@ -193,10 +195,20 @@ impl Root {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .truncate()
-                            .font_family(MONO)
-                            .text_size(px(10.5))
-                            .child(label),
+                            .flex()
+                            .items_center()
+                            .gap(px(5.))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .font_family(MONO)
+                                    .text_size(px(10.5))
+                                    .child(label),
+                            )
+                            .when(in_terminal, |d| {
+                                d.child(icon("terminal", 10., colors::text3()))
+                            }),
                     )
                     .child(right),
             )

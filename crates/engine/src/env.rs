@@ -17,7 +17,29 @@ pub unsafe fn prepare() {
         }
         drop_claude_session_env();
     }
+    take_ctrl_c();
 }
+
+// A process started with Ctrl+C ignored (CREATE_NEW_PROCESS_GROUP, which tools that launch
+// detached children use) passes that on to everything it spawns, so Ctrl+C in a terminal session
+// would reach PowerShell's prompt but never stop the command running under it. Undo it here, so
+// the shells inherit normal Ctrl+C however the app was started.
+#[cfg(windows)]
+fn take_ctrl_c() {
+    unsafe extern "system" {
+        fn SetConsoleCtrlHandler(
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
+    }
+    // SAFETY: a null handler with FALSE only clears the process's ignore-Ctrl+C flag.
+    unsafe {
+        SetConsoleCtrlHandler(None, 0);
+    }
+}
+
+#[cfg(not(windows))]
+fn take_ctrl_c() {}
 
 // When HyprSpace is started from inside a Claude Code session (a dev build run by an agent, or the
 // app opened from a claude terminal), it inherits that session's own markers, and every session

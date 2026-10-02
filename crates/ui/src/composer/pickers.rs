@@ -69,6 +69,7 @@ fn agent_desc(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "Anthropic's coding agent",
         Agent::Codex => "OpenAI's Codex CLI",
+        Agent::Gemini => "Google's Gemini CLI, in a terminal",
     }
 }
 

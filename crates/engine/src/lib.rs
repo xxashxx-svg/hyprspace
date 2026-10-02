@@ -9,12 +9,14 @@ pub mod env;
 pub mod git;
 pub mod hooks;
 pub mod journal;
+mod open;
 pub mod persist;
 pub mod providers;
 pub mod pty;
 mod requests;
 pub mod sessions;
 pub mod skills;
+pub mod terminal;
 pub mod usage;
 mod util;
 
@@ -32,14 +34,17 @@ use tokio::task::block_in_place;
 
 use journal::Journal;
 use persist::Store;
-use pty::{PtyManager, Spawn};
+use pty::PtyManager;
 use requests::Requests;
+use terminal::Terminals;
 
 pub use util::home_dir;
 
 /// The running engine. The app keeps it only to shut it down; everything else goes through the
 /// `Client`.
 pub struct Engine {
+    terminals: Terminals,
+    #[cfg(test)]
     ptys: PtyManager,
     runtime: Mutex<Option<Runtime>>,
 }
@@ -62,8 +67,11 @@ impl Engine {
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
         let (event_tx, events) = mpsc::unbounded();
         let ptys = PtyManager::default();
-        runtime.spawn(serve(cmd_rx, event_tx, ptys.clone(), store));
+        let terminals = Terminals::new(ptys.clone(), event_tx.clone());
+        runtime.spawn(serve(cmd_rx, event_tx, terminals.clone(), store));
         let engine = Engine {
+            terminals,
+            #[cfg(test)]
             ptys,
             runtime: Mutex::new(Some(runtime)),
         };
@@ -73,7 +81,7 @@ impl Engine {
     /// Kill every session. Call on app quit: ConPTY hosts orphan otherwise, and dropping the
     /// runtime drops each structured session, whose CLI is killed on drop.
     pub fn shutdown(&self) {
-        self.ptys.kill_all();
+        self.terminals.shutdown();
         let runtime = self
             .runtime
             .lock()
@@ -105,7 +113,7 @@ impl Live {
 async fn serve(
     mut rx: UnboundedReceiver<Command>,
     tx: UnboundedSender<Event>,
-    ptys: PtyManager,
+    terminals: Terminals,
     store: Store,
 ) {
     let journals = store.dir().join("journals");
@@ -134,7 +142,11 @@ async fn serve(
                     }
                     let _ = events.unbounded_send(Event::Run { id, event });
                 });
-                match hyprspace_harness::for_agent(agent).start(launch, emit) {
+                let started = match hyprspace_harness::for_agent(agent) {
+                    Some(h) => h.start(launch, emit),
+                    None => Err(std::io::Error::other("it only runs in a terminal")),
+                };
+                match started {
                     Ok(session) => {
                         let live = Live { session, journal };
                         if let Some(prompt) = prompt {
@@ -210,14 +222,11 @@ async fn serve(
                 cwd,
                 cols,
                 rows,
+                run,
+                prompt,
             } => {
-                let spawn = Spawn {
-                    cwd,
-                    cols,
-                    rows,
-                    ..Default::default()
-                };
-                if let Err(e) = block_in_place(|| ptys.create(id, spawn, tx.clone())) {
+                let opened = block_in_place(|| terminals.open(id, cwd, (cols, rows), run, prompt));
+                if let Err(e) = opened {
                     let _ = tx.unbounded_send(Event::Failed {
                         id,
                         message: format!("Could not start the shell: {e}"),
@@ -226,15 +235,22 @@ async fn serve(
             }
             Command::WriteTerminal { id, bytes } => {
                 // a write to a session that just exited is not worth reporting
-                let _ = block_in_place(|| ptys.write(id, &bytes));
+                let _ = block_in_place(|| terminals.ptys().write(id, &bytes));
             }
             Command::ResizeTerminal { id, cols, rows } => {
-                let _ = block_in_place(|| ptys.resize(id, cols, rows));
+                let _ = block_in_place(|| terminals.ptys().resize(id, cols, rows));
             }
             Command::Close { id } => {
                 // dropping the session kills its CLI
                 structured.remove(&id);
-                ptys.kill(id);
+                terminals.close(id);
+            }
+            Command::OpenFile { path, line, col } => {
+                tokio::task::spawn_blocking(move || {
+                    // the UI only offers files it saw on disk; a race with a delete is not worth
+                    // a message
+                    let _ = open::open_file(&path, line, col);
+                });
             }
         }
     }
@@ -269,6 +285,8 @@ mod tests {
             cwd: std::env::temp_dir(),
             cols: 80,
             rows: 24,
+            run: None,
+            prompt: None,
         });
         // any shell prints something on start: a prompt, a banner, or a cursor query
         match events.recv_timeout(wait).unwrap() {

@@ -30,6 +30,15 @@ pub enum View {
     Terminal(Entity<TerminalView>),
 }
 
+/// A new thread, as the composer asked for it.
+pub struct Start {
+    pub launch: hyprspace_proto::Launch,
+    pub prompt: Option<hyprspace_proto::Prompt>,
+    pub title: String,
+    /// Run the agent in a terminal session instead of a structured one.
+    pub terminal: bool,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Rename {
     Space(u64),
@@ -190,6 +199,16 @@ impl Root {
                 if let Some(View::Terminal(v)) = self.view_of(id) {
                     v.update(cx, |v, cx| v.exit(code, cx));
                 }
+                if let Some(&thread) = self.sessions.get(&id) {
+                    self.status.remove(&thread);
+                    cx.notify();
+                }
+            }
+            Event::AgentState { id, state } => {
+                if let Some(&thread) = self.sessions.get(&id) {
+                    self.status.insert(thread, Status::from(state));
+                    cx.notify();
+                }
             }
         }
     }
@@ -234,16 +253,16 @@ impl Root {
                 launch,
                 prompt,
                 title,
+                terminal,
             } => {
                 if let Screen::Compose(Some(space)) = self.screen {
-                    self.start_thread(
-                        space,
-                        launch.clone(),
-                        prompt.clone(),
-                        title.clone(),
-                        window,
-                        cx,
-                    );
+                    let start = Start {
+                        launch: launch.clone(),
+                        prompt: prompt.clone(),
+                        title: title.clone(),
+                        terminal: *terminal,
+                    };
+                    self.start_thread(space, start, window, cx);
                 }
             }
             ComposerEvent::Cloned {
@@ -251,6 +270,7 @@ impl Root {
                 open_here,
                 launch,
                 prompt,
+                terminal,
             } => {
                 let here = match self.screen {
                     Screen::Compose(Some(space)) if *open_here => Some(space),
@@ -261,7 +281,13 @@ impl Root {
                     prompt.as_ref().map(|p| p.text.as_str()).unwrap_or_default(),
                 );
                 if here.is_some() || prompt.is_some() {
-                    self.start_thread(space, launch.clone(), prompt.clone(), title, window, cx);
+                    let start = Start {
+                        launch: launch.clone(),
+                        prompt: prompt.clone(),
+                        title,
+                        terminal: *terminal,
+                    };
+                    self.start_thread(space, start, window, cx);
                 } else {
                     self.compose(Some(space), window, cx);
                 }
