@@ -16,6 +16,7 @@ mod root;
 mod settings;
 mod sidebar;
 mod skills;
+mod spinner;
 mod terminal;
 mod time;
 mod transcript;

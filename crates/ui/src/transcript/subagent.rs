@@ -8,10 +8,10 @@ use gpui::{
 };
 
 use super::model::{AgentState, Item, Subagent};
-use super::render::{fold_head, pulse, tool_card};
+use super::render::{fold_head, tool_card};
 use super::{TranscriptView, tool};
 use crate::assets::icon;
-use crate::{colors, markdown};
+use crate::{colors, markdown, spinner};
 
 pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyElement {
     let state: AnyElement = match a.state {
@@ -19,7 +19,7 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
             .flex()
             .items_center()
             .gap(px(6.))
-            .child(pulse(("agent-live", ix), 6.))
+            .child(spinner::dots(("agent-live", ix), colors::text3()))
             .child(elapsed(a.since.elapsed().as_secs()))
             .into_any_element(),
         AgentState::Done => div().child("Done").into_any_element(),

@@ -2,19 +2,16 @@
 // right, replies as markdown, thinking and each run of tool calls folded into one muted line
 // until clicked, approval prompts with their buttons, and the pill-shaped box to reply or steer.
 
-use std::time::Duration;
-
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable,
-    FontWeight, IntoElement, MouseButton, ScrollWheelEvent, SharedString, Window, div, prelude::*,
-    px, relative,
+    AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable, FontWeight, IntoElement,
+    MouseButton, ScrollWheelEvent, SharedString, Window, div, prelude::*, px, relative,
 };
 use hyprspace_proto::{RunStatus, Tool};
 
 use super::model::Item;
 use super::{TranscriptView, tool};
 use crate::assets::{icon, mark};
-use crate::{attach, colors, markdown, widgets};
+use crate::{attach, colors, markdown, spinner, widgets};
 
 /// The transcript and the composer share one column, so their edges line up.
 const COLUMN: f32 = 720.;
@@ -113,21 +110,6 @@ fn folder_name(v: &TranscriptView) -> String {
         .unwrap_or_else(|| "this folder".into())
 }
 
-/// A small dot that breathes while something is live.
-pub(super) fn pulse(id: impl Into<gpui::ElementId>, size: f32) -> AnyElement {
-    div()
-        .flex_none()
-        .size(px(size))
-        .rounded_full()
-        .bg(colors::busy())
-        .with_animation(
-            id,
-            Animation::new(Duration::from_millis(1200)).repeat(),
-            |d, t| d.opacity(0.35 + 0.65 * (1.0 - (t * 2.0 - 1.0).abs())),
-        )
-        .into_any_element()
-}
-
 fn working(secs: u64) -> AnyElement {
     div()
         .flex()
@@ -135,7 +117,7 @@ fn working(secs: u64) -> AnyElement {
         .gap(px(8.))
         .text_size(px(12.))
         .text_color(colors::text3())
-        .child(pulse("working", 6.))
+        .child(spinner::dots("working", colors::text3()))
         .child(
             div()
                 .text_color(colors::text2())
@@ -473,7 +455,9 @@ fn tool_run(
                     .child(format!("{failed} failed")),
             )
         })
-        .when(live, |d| d.child(pulse(("run-live", start), 5.)));
+        .when(live, |d| {
+            d.child(spinner::dots(("run-live", start), colors::text3()))
+        });
     let head = fold_head(
         ("tool-run", start),
         open,
@@ -529,7 +513,7 @@ pub(super) fn tool_card(
     toggle: impl Fn(&mut TranscriptView) + 'static,
 ) -> AnyElement {
     let state = match done {
-        None => Some(pulse((key.clone(), 1), 5.)),
+        None => Some(spinner::dots((key.clone(), 1), colors::text3())),
         Some((false, _)) => Some(
             div()
                 .text_color(colors::error())
