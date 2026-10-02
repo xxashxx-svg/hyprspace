@@ -40,6 +40,23 @@ const FILES: &[(&str, &[u8])] = files!(
     "brand/openai.svg",
 );
 
+/// DM Sans as static weights cut from the Tauri app's variable font, and its JetBrains Mono
+/// Nerd Font, converted from woff2 since GPUI loads TrueType.
+const FONTS: &[&[u8]] = &[
+    include_bytes!("../assets/fonts/DMSans-Regular.ttf"),
+    include_bytes!("../assets/fonts/DMSans-Medium.ttf"),
+    include_bytes!("../assets/fonts/DMSans-SemiBold.ttf"),
+    include_bytes!("../assets/fonts/DMSans-Bold.ttf"),
+    include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Regular.ttf"),
+    include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Bold.ttf"),
+];
+
+/// Hands the bundled fonts to GPUI. A font that fails to load falls back to the system's.
+pub fn load_fonts(cx: &mut gpui::App) {
+    let fonts = FONTS.iter().map(|f| Cow::Borrowed(*f)).collect();
+    let _ = cx.text_system().add_fonts(fonts);
+}
+
 pub struct Assets;
 
 impl AssetSource for Assets {
@@ -97,5 +114,12 @@ mod tests {
         }
         assert!(Assets.load("icons/nope.svg").unwrap().is_none());
         assert_eq!(Assets.list("brand/").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn fonts_are_truetype() {
+        for font in FONTS {
+            assert_eq!(&font[..4], &[0, 1, 0, 0]);
+        }
     }
 }

@@ -19,5 +19,6 @@ pub use root::Root;
 
 /// Binds the app's keys. Call once before opening the window.
 pub fn init(cx: &mut gpui::App) {
+    assets::load_fonts(cx);
     input::bind_keys(cx);
 }

@@ -325,6 +325,8 @@ scratchpad (`p4/`), including side-by-side shots with the installed Tauri app.
   thread), `markdown/` (pulldown-cmark), `input/` (text box with IME), `assets.rs` (Lucide icons
   and agent marks), `widgets.rs`. The terminal view is reachable as a thread ("New terminal").
 - `hyprspace [folder]` opens a folder as a space.
+- Fonts as in tokens.css: DM Sans for the UI and JetBrains Mono Nerd Font for code and the
+  terminal, converted to TrueType and bundled in `crates/ui/assets/fonts/`.
 
 **Checked in the running app**, input posted to its own window only: for both Claude (Haiku 4.5)
 and Codex (GPT-6-Luna) a thread started from the composer, a mid-run steer joined the run (one
@@ -338,8 +340,7 @@ Codex conversation; a GitHub clone with progress; rename, archive, search, resiz
 and the light side. Closing the app left no CLI, shell or ConPTY children.
 
 **Not done or not checked.** Paste and drag-and-drop of images are wired but were not driven
-(posted messages can't hold Ctrl or start an OLE drop). The UI font is Segoe UI, not the Tauri
-app's DM Sans (woff2 only in the repo). Journals are never trimmed. A conversation picked from the
+(posted messages can't hold Ctrl or start an OLE drop). Journals are never trimmed. A conversation picked from the
 resume list shows no earlier messages. No question UI for Claude's `AskUserQuestion` beyond
 allow or deny. The full settings screen is phase 6; Appearance at the sidebar's foot covers
 theme and mode for now.

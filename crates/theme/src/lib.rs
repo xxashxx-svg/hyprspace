@@ -130,12 +130,12 @@ pub fn brand(agent: &str) -> (Color, Color) {
     }
 }
 
-/// The terminal and code font. Cascadia ships with Windows 11; Menlo with every macOS.
-pub const MONO: &str = if cfg!(windows) {
-    "Cascadia Mono"
-} else {
-    "Menlo"
-};
+/// The UI font, as `--font-ui` in tokens.css. The UI bundles it (crates/ui/assets/fonts).
+pub const SANS: &str = "DM Sans";
+
+/// The terminal and code font, as `--font-mono` in tokens.css: the Nerd Font build, so agent
+/// status lines draw their glyphs. Bundled with the UI like `SANS`.
+pub const MONO: &str = "JetBrainsMono Nerd Font Mono";
 
 #[cfg(test)]
 mod tests {

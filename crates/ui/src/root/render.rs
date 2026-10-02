@@ -145,7 +145,7 @@ impl Render for Root {
             .flex()
             .bg(colors::bg())
             .text_color(colors::text1())
-            .font_family(".SystemUIFont")
+            .font_family(hyprspace_theme::SANS)
             .on_drag_move(cx.listener(|r, e: &DragMoveEvent<SidebarDrag>, _, cx| {
                 let x: f32 = e.event.position.x.into();
                 r.state.sidebar_width = x.clamp(MIN_WIDTH, MAX_WIDTH);
