@@ -19,7 +19,7 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
             .flex()
             .items_center()
             .gap(px(6.))
-            .child(spinner::dots(("agent-live", ix), colors::text3()))
+            .child(spinner::eclipse(("agent-live", ix), colors::text3()))
             .child(elapsed(a.since.elapsed().as_secs()))
             .into_any_element(),
         AgentState::Done => div().child("Done").into_any_element(),

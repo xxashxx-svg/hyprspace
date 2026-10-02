@@ -118,7 +118,7 @@ fn working(secs: u64) -> AnyElement {
         .gap(px(8.))
         .text_size(px(12.))
         .text_color(colors::text3())
-        .child(spinner::dots("working", colors::text3()))
+        .child(spinner::eclipse("working", colors::text3()))
         .child(
             div()
                 .text_color(colors::text2())
@@ -476,7 +476,7 @@ fn tool_run(
             )
         })
         .when(live, |d| {
-            d.child(spinner::dots(("run-live", start), colors::text3()))
+            d.child(spinner::eclipse(("run-live", start), colors::text3()))
         });
     let head = fold_head(
         ("tool-run", start),
@@ -533,7 +533,7 @@ pub(super) fn tool_card(
     toggle: impl Fn(&mut TranscriptView) + 'static,
 ) -> AnyElement {
     let state = match done {
-        None => Some(spinner::dots((key.clone(), 1), colors::text3())),
+        None => Some(spinner::eclipse((key.clone(), 1), colors::text3())),
         Some((false, _)) => Some(
             div()
                 .text_color(colors::error())
