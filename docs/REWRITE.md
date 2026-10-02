@@ -176,8 +176,9 @@ Tick each row in the GPUI app before deleting the Tauri app.
 - [x] Installers, auto-update, CI release for Windows and macOS (release dry run 36972542053
   built and signed both platforms and installed over the real v0.21.1 on the Windows runner) (built in phase 6c; tick once
   the release.yml dry run passes on both runners)
-- [ ] The last Tauri version updates into the GPUI app on Windows and macOS (see above; proved by
-  `.github/workflows/upgrade-test.yml`, tick once a run passes on both runners)
+- [x] The last Tauri version updates into the GPUI app on Windows and macOS (see above; proved by
+  `.github/workflows/upgrade-test.yml`, run 36978840327: v0.21.1's code, built as 0.21.0,
+  updated itself into GPUI 0.21.1 on both runners)
 
 ## Open questions for Ash
 
