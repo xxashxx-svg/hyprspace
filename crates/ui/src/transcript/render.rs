@@ -4,7 +4,7 @@
 
 use gpui::{
     AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable, FontWeight, IntoElement,
-    MouseButton, ScrollWheelEvent, SharedString, Window, div, prelude::*, px, relative,
+    MouseButton, ScrollWheelEvent, SharedString, StyledText, Window, div, prelude::*, px, relative,
 };
 use hyprspace_proto::{RunStatus, Tool};
 
@@ -72,6 +72,8 @@ pub fn view(
                                 cx.notify();
                             }
                         }))
+                        // before any text, so selection knows this transcript's elements
+                        .child(markdown::select::reset(format!("t{}", v.id.0).into()))
                         .child(centered(
                             column()
                                 .pt(px(24.))
@@ -251,7 +253,17 @@ fn item(
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .when(!text.is_empty(), |d| d.child(text.clone()))
+                    .when(!text.is_empty(), |d| {
+                        let text = SharedString::from(text.clone());
+                        let styled = StyledText::new(text.clone());
+                        let layout = styled.layout().clone();
+                        d.child(markdown::select::wrap(
+                            &format!("u{ix}"),
+                            text,
+                            layout,
+                            styled.into_any_element(),
+                        ))
+                    })
                     .when(!images.is_empty(), |d| {
                         d.child(
                             div()

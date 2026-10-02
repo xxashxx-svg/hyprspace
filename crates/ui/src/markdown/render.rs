@@ -9,6 +9,7 @@ use gpui::{
 use hyprspace_theme::MONO;
 
 use super::code::CodeBlock;
+use super::select;
 use super::{Block, Inline};
 use crate::colors;
 
@@ -155,21 +156,24 @@ pub fn inline(i: &Inline, key: &str) -> AnyElement {
     let text = StyledText::new(i.text.clone())
         .with_highlights(highlights)
         .with_font_family_overrides(fonts);
+    let layout = text.layout().clone();
     let links: Vec<_> = i
         .spans
         .iter()
         .filter_map(|(r, s)| s.link.clone().map(|l| (r.clone(), l)))
         .collect();
-    if links.is_empty() {
-        return text.into_any_element();
-    }
-    let ranges = links.iter().map(|(r, _)| r.clone()).collect();
-    let urls: Vec<String> = links.into_iter().map(|(_, l)| l).collect();
-    InteractiveText::new(SharedString::from(format!("md-{key}")), text)
-        .on_click(ranges, move |ix, _, cx| {
-            if let Some(url) = urls.get(ix) {
-                cx.open_url(url);
-            }
-        })
-        .into_any_element()
+    let body = if links.is_empty() {
+        text.into_any_element()
+    } else {
+        let ranges = links.iter().map(|(r, _)| r.clone()).collect();
+        let urls: Vec<String> = links.into_iter().map(|(_, l)| l).collect();
+        InteractiveText::new(SharedString::from(format!("md-{key}")), text)
+            .on_click(ranges, move |ix, _, cx| {
+                if let Some(url) = urls.get(ix) {
+                    cx.open_url(url);
+                }
+            })
+            .into_any_element()
+    };
+    select::wrap(key, i.text.clone().into(), layout, body)
 }

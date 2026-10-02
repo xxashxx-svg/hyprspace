@@ -5,6 +5,7 @@
 
 mod code;
 mod render;
+pub mod select;
 
 use std::ops::Range;
 

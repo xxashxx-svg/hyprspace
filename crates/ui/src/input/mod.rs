@@ -412,9 +412,14 @@ impl TextInput {
         }
     }
 
+    /// The box's own selection, or else text selected in a transcript above it.
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected.is_empty() {
-            let text = self.content[self.selected.clone()].to_string();
+        let text = if self.selected.is_empty() {
+            crate::markdown::select::selected_text()
+        } else {
+            Some(self.content[self.selected.clone()].to_string())
+        };
+        if let Some(text) = text {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }

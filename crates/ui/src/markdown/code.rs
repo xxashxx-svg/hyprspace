@@ -121,6 +121,7 @@ impl Colors {
 
 impl RenderOnce for CodeBlock {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let key = self.key.to_string();
         let path = path_for(&self.lang);
         let highlights = match path {
             Some(path) => {
@@ -161,7 +162,12 @@ impl RenderOnce for CodeBlock {
                     .text_size(px(12.))
                     .line_height(px(19.))
                     .text_color(colors::hsla(colors::theme().syntax.plain))
-                    .child(StyledText::new(self.text).with_highlights(highlights)),
+                    .child({
+                        let text = SharedString::from(self.text);
+                        let styled = StyledText::new(text.clone()).with_highlights(highlights);
+                        let layout = styled.layout().clone();
+                        super::select::wrap(&key, text, layout, styled.into_any_element())
+                    }),
             )
     }
 }
