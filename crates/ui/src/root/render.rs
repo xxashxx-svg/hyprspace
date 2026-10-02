@@ -5,6 +5,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, Window, div, prelude::*,
     px,
 };
+use hyprspace_proto::Opener;
 
 use super::{Action, Root, Screen, SidebarDrag};
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
@@ -26,6 +27,8 @@ impl Root {
                 }
                 Action::RemoveSpace(_) | Action::RemoveThread(_) => (Some("trash-2"), true),
                 Action::OpenBeside(_) => (Some("panel-right"), false),
+                Action::OpenIn(Opener::Files, _) => (Some("folder-open"), false),
+                Action::OpenIn(..) => (Some("external-link"), false),
             };
             widgets::menu_row(("menu", i), glyph, label, danger).on_click(
                 cx.listener(move |r, _: &ClickEvent, window, cx| r.act(action, window, cx)),
