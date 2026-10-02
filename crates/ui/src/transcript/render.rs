@@ -4,7 +4,8 @@
 
 use gpui::{
     AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable, FontWeight, IntoElement,
-    MouseButton, ScrollWheelEvent, SharedString, StyledText, Window, div, prelude::*, px, relative,
+    MouseButton, ScrollHandle, ScrollWheelEvent, SharedString, StyledText, Window, div, prelude::*,
+    px, relative,
 };
 use hyprspace_proto::{RunStatus, Tool};
 
@@ -14,8 +15,9 @@ use crate::assets::{icon, mark};
 use crate::composer::model_menu::{self, Host as _, ModelMenu};
 use crate::{attach, colors, markdown, spinner, widgets};
 
-/// The transcript and the composer share one column, so their edges line up.
-const COLUMN: f32 = 720.;
+/// The transcript and the composer share one column, so their edges line up. Text runs 768px
+/// wide, as T3 Code's chat does.
+const COLUMN: f32 = 816.;
 const GUTTER: f32 = 24.;
 
 pub fn view(
@@ -46,6 +48,22 @@ pub fn view(
     });
     // only while a reply streams: then new text would land out of sight
     let jump = (v.model.running() && !v.at_bottom()).then(|| jump(cx));
+    // every row is its own child of the scroll, so the scroll handle knows where each prompt is
+    let lead = usize::from(loading.is_some()) + usize::from(empty.is_some());
+    let prompts: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, (user, _))| *user)
+        .map(|(i, _)| lead + i)
+        .collect();
+    let rows = loading
+        .map(IntoElement::into_any_element)
+        .into_iter()
+        .chain(empty.map(IntoElement::into_any_element))
+        .chain(items.into_iter().map(|(_, row)| row))
+        .chain(working)
+        .map(|row| centered(column().child(row)));
+    let ticks = ticks(v, &prompts, window, cx);
     div()
         .id("transcript")
         .size_full()
@@ -60,31 +78,25 @@ pub fn view(
                 .relative()
                 .flex_1()
                 .min_h_0()
+                // before any text, so selection knows this transcript's elements
+                .child(markdown::select::reset(format!("t{}", v.id.0).into()))
                 .child(
                     div()
                         .id("transcript-scroll")
                         .size_full()
                         .overflow_y_scroll()
                         .track_scroll(&v.scroll)
-                        // repaint as the user scrolls, so the jump button comes and goes
-                        .on_scroll_wheel(cx.listener(|v, _: &ScrollWheelEvent, _, cx| {
-                            if v.model.running() {
-                                cx.notify();
-                            }
-                        }))
-                        // before any text, so selection knows this transcript's elements
-                        .child(markdown::select::reset(format!("t{}", v.id.0).into()))
-                        .child(centered(
-                            column()
-                                .pt(px(24.))
-                                .pb(px(24.))
-                                .gap(px(20.))
-                                .children(loading)
-                                .children(empty)
-                                .children(items)
-                                .children(working),
-                        )),
+                        .flex()
+                        .flex_col()
+                        .pt(px(24.))
+                        .pb(px(24.))
+                        .gap(px(20.))
+                        // repaint as the user scrolls, so the jump button comes and goes and
+                        // the ticks follow
+                        .on_scroll_wheel(cx.listener(|_, _: &ScrollWheelEvent, _, cx| cx.notify()))
+                        .children(rows),
                 )
+                .children(ticks)
                 .children(jump),
         )
         .child(composer(v, window, cx))
@@ -166,7 +178,8 @@ fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
 
 /// Every item. Thinking and tool calls in a row sit together as one quiet block, and each run
 /// of two or more tool calls in it folds into one line.
-fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<AnyElement> {
+/// Each row, and whether it is one of the user's prompts.
+fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<(bool, AnyElement)> {
     let all = &v.model.items;
     let mut out = Vec::new();
     let mut ix = 0;
@@ -185,7 +198,8 @@ fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<AnyElement
             continue;
         }
         if quiet == 0 {
-            out.push(item(v, ix, &all[ix], cx));
+            let user = matches!(all[ix], Item::User { .. });
+            out.push((user, item(v, ix, &all[ix], cx)));
             ix += 1;
             continue;
         }
@@ -204,16 +218,90 @@ fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<AnyElement
                 ix += 1;
             }
         }
-        out.push(
+        out.push((
+            false,
             div()
                 .flex()
                 .flex_col()
                 .gap(px(8.))
                 .children(rows)
                 .into_any_element(),
-        );
+        ));
     }
     out
+}
+
+/// The prompt being read: the last one above a line a third of the way down the view.
+fn lit(scroll: &ScrollHandle, prompts: &[usize]) -> usize {
+    let view = scroll.bounds();
+    // a row's bounds are where it sits unscrolled, so the line moves down by the scroll instead
+    let line = view.top() + view.size.height / 3. - scroll.offset().y;
+    prompts
+        .iter()
+        .rposition(|&row| scroll.bounds_for_item(row).is_some_and(|b| b.top() <= line))
+        .unwrap_or(0)
+}
+
+/// One tick per prompt on the left edge, like T3 Code's and zeron's: the one for the part being
+/// read lit, a click scrolling to its prompt. `prompts` are the prompts' rows in the scroll.
+fn ticks(
+    v: &TranscriptView,
+    prompts: &[usize],
+    window: &mut Window,
+    cx: &mut Context<TranscriptView>,
+) -> Option<AnyElement> {
+    // two prompts at least, and room beside the column so the ticks don't sit on the text
+    if prompts.len() < 2 || v.scroll.bounds().size.width < px(COLUMN + 80.) {
+        return None;
+    }
+    // positions come from the last layout, and a scroll set during this one (to the bottom, say)
+    // only shows in the next, so check again then and redraw if the lit tick moved
+    let lit = lit(&v.scroll, prompts);
+    let rows = prompts.to_vec();
+    cx.on_next_frame(window, move |v, _, cx| {
+        if self::lit(&v.scroll, &rows) != lit {
+            cx.notify();
+        }
+    });
+    let marks = prompts.iter().enumerate().map(|(n, &row)| {
+        let on = n == lit;
+        let group = SharedString::from(format!("tick-{n}"));
+        div()
+            .id(("tick", n))
+            .group(group.clone())
+            .flex()
+            .items_center()
+            .w(px(16.))
+            .h(px(8.))
+            .cursor_pointer()
+            .child(
+                div()
+                    .h(px(1.5))
+                    .w(px(if on { 10. } else { 7. }))
+                    .rounded_full()
+                    .bg(if on {
+                        colors::text1()
+                    } else {
+                        colors::text3().opacity(0.6)
+                    })
+                    .group_hover(group, |s| s.bg(colors::text1()).w(px(10.))),
+            )
+            .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+                v.scroll.scroll_to_top_of_item(row);
+                cx.notify();
+            }))
+    });
+    Some(
+        div()
+            .absolute()
+            .left(px(14.))
+            .top_0()
+            .bottom_0()
+            .flex()
+            .items_center()
+            .child(div().flex().flex_col().children(marks))
+            .into_any_element(),
+    )
 }
 
 fn item(
