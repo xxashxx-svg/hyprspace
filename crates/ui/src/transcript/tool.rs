@@ -12,7 +12,7 @@ use crate::colors;
 /// One line saying what a tool does or did.
 pub fn label(tool: &Tool) -> String {
     match tool {
-        Tool::Command { command } => format!("Run {}", first_line(command)),
+        Tool::Command { command } => format!("Run {}", first_line(without_cd(command))),
         Tool::Read { path } => format!("Read {}", short(path)),
         Tool::Edit { changes } => {
             let names: Vec<String> = changes.iter().map(|c| short(&c.path)).collect();
@@ -35,6 +35,33 @@ pub fn label(tool: &Tool) -> String {
         Tool::Mcp { server, tool, .. } => format!("{server}: {tool}"),
         Tool::Other { name, .. } => name.clone(),
     }
+}
+
+/// Agents often open a command by moving into the thread's own folder (`cd "C:\..." && git
+/// status`). That prefix is the same every time and pushes the real command off the line, so the
+/// label drops it; the full command still shows when the call is opened.
+fn without_cd(cmd: &str) -> &str {
+    let Some(rest) = cmd.trim_start().strip_prefix("cd ") else {
+        return cmd;
+    };
+    let rest = rest.trim_start();
+    let after = match rest.strip_prefix('"') {
+        Some(quoted) => quoted.find('"').map(|i| &quoted[i + 1..]),
+        None => rest
+            .find(|c: char| c.is_whitespace() || c == ';' || c == '&')
+            .map(|i| &rest[i..]),
+    };
+    let Some(after) = after.map(str::trim_start) else {
+        return cmd;
+    };
+    for sep in ["&&", ";"] {
+        if let Some(next) = after.strip_prefix(sep).map(str::trim_start)
+            && !next.is_empty()
+        {
+            return next;
+        }
+    }
+    cmd
 }
 
 /// One line counting a run of calls by kind: "Ran 4 commands · read 1 file · called 1 tool".
@@ -238,6 +265,15 @@ mod tests {
             command: "ls -la\necho hi".into(),
         };
         assert_eq!(label(&cmd), "Run ls -la");
+        let in_folder = |c: &str| label(&Tool::Command { command: c.into() });
+        assert_eq!(
+            in_folder(r#"cd "C:\a b\repo" && git status"#),
+            "Run git status"
+        );
+        assert_eq!(in_folder("cd /tmp/repo; ls"), "Run ls");
+        // a bare cd, or one with nothing after it, stays as it is
+        assert_eq!(in_folder("cd repo"), "Run cd repo");
+        assert_eq!(in_folder("cd repo &&"), "Run cd repo &&");
         let add = Tool::Edit {
             changes: vec![edit(ChangeKind::Add, r"C:\w\src\new.rs", "+x")],
         };
