@@ -4,8 +4,9 @@
 
 use std::cell::Cell;
 
-use gpui::{BoxShadow, Hsla, point, px, rgba};
+use gpui::{BoxShadow, Hsla, WindowAppearance, point, px, rgba};
 use hyprspace_proto::Agent;
+use hyprspace_proto::state::Scheme;
 use hyprspace_theme::{Color, Theme, build};
 
 thread_local! {
@@ -17,8 +18,25 @@ pub fn set(id: &str, dark: bool) {
     CURRENT.with(|c| c.set(build(id, dark)));
 }
 
+/// Whether `scheme` paints the dark side, given what the system is set to.
+pub fn dark(scheme: Scheme, system: WindowAppearance) -> bool {
+    match scheme {
+        Scheme::Dark => true,
+        Scheme::Light => false,
+        Scheme::System => matches!(
+            system,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        ),
+    }
+}
+
 pub fn theme() -> Theme {
     CURRENT.with(Cell::get)
+}
+
+/// Theme `id` on the side now showing, for drawing a preview of it beside the current one.
+pub fn other(id: &str) -> Theme {
+    build(id, theme().dark)
 }
 
 pub fn hsla(c: Color) -> Hsla {
@@ -95,5 +113,13 @@ mod tests {
         set("iris", true);
         assert_ne!(accent(), hsla(build("t3", true).accent));
         set("t3", true);
+    }
+
+    #[test]
+    fn the_scheme_overrides_the_system() {
+        assert!(dark(Scheme::Dark, WindowAppearance::Light));
+        assert!(!dark(Scheme::Light, WindowAppearance::Dark));
+        assert!(dark(Scheme::System, WindowAppearance::Dark));
+        assert!(!dark(Scheme::System, WindowAppearance::Light));
     }
 }

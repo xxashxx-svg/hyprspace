@@ -1,5 +1,5 @@
-// The window's layout: sidebar, then the space on screen (its panes, see `crate::panes`) or the
-// composer. Context menus open from here so they float over everything.
+// The window's layout: sidebar, then the space on screen (its panes, see `crate::panes`), the
+// composer, or settings. Context menus open from here so they float over everything.
 
 use gpui::{
     AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, Window, div, prelude::*,
@@ -25,8 +25,6 @@ impl Root {
                     (Some("archive-restore"), false)
                 }
                 Action::RemoveSpace(_) | Action::RemoveThread(_) => (Some("trash-2"), true),
-                Action::AddProject => (Some("folder-open"), false),
-                Action::NewOpenSpace => (Some("plus"), false),
             };
             widgets::menu_row(("menu", i), glyph, label, danger).on_click(
                 cx.listener(move |r, _: &ClickEvent, window, cx| r.act(action, window, cx)),
@@ -54,12 +52,12 @@ impl Render for Root {
             match self.screen {
                 Screen::Thread(id) => self.workbench(id, window, cx),
                 Screen::Compose(space) => self.compose_screen(space, window, cx),
+                Screen::Settings => self.settings(window, cx),
             }
         };
         let menu = self.menu(window, cx);
-        let appearance = self
-            .appearance_at
-            .map(|at| self.appearance_menu(at, window, cx));
+        // Settings takes the whole window
+        let sidebar = (self.screen != Screen::Settings).then(|| self.sidebar(window, cx));
         div()
             .id("root")
             .size_full()
@@ -73,9 +71,8 @@ impl Render for Root {
                 cx.notify();
             }))
             .on_drop(cx.listener(|r, _: &SidebarDrag, _, _| r.save()))
-            .child(self.sidebar(window, cx))
+            .children(sidebar)
             .child(div().flex_1().min_w_0().h_full().child(main))
             .children(menu)
-            .children(appearance)
     }
 }

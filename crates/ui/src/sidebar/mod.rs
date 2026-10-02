@@ -1,14 +1,13 @@
-// The sidebar: search and a new-space button, then every space as a section that folds open to
-// its threads, an Archived group under a divider, and Appearance at the foot. Right-click a
-// space or a thread for its menu; drag the right edge to resize. Sizes follow the Tauri app's
-// rail.css; the drag handle follows zeron's shell (MIT, see THIRD_PARTY_NOTICES.md).
+// The sidebar: search and a New thread button, then every space as a quiet folder heading over
+// its threads, an Archived group under a divider, and Settings at the foot. Right-click a space
+// or a thread for its menu; drag the right edge to resize. The compact sections follow zeron's
+// sidebar; the drag handle follows zeron's shell (MIT, see THIRD_PARTY_NOTICES.md).
 
-mod appearance;
 mod row;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton,
-    MouseDownEvent, SharedString, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Div, ElementId, Focusable, FontWeight, IntoElement,
+    MouseButton, MouseDownEvent, SharedString, Stateful, Window, div, prelude::*, px,
 };
 use hyprspace_proto::{Space, Thread};
 
@@ -38,6 +37,37 @@ pub(crate) fn row_hover() -> gpui::Hsla {
     colors::surface3().opacity(0.55)
 }
 
+/// A quiet 28px heading over a group of rows: a space's folder, or Archived.
+fn heading(id: impl Into<ElementId>) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .h(px(28.))
+        .pl(px(8.))
+        .pr(px(3.))
+        .rounded(px(7.))
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors::text3())
+        .cursor_pointer()
+        .hover(|s| s.text_color(colors::text2()))
+}
+
+/// A chevron that says whether a group is open.
+fn chevron(open: bool) -> impl IntoElement {
+    icon(
+        if open {
+            "chevron-down"
+        } else {
+            "chevron-right"
+        },
+        13.,
+        colors::text3(),
+    )
+}
+
 impl Root {
     pub(crate) fn sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let query = self.search.read(cx).text().trim().to_lowercase();
@@ -45,10 +75,10 @@ impl Root {
         let mut list = div()
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(px(8.))
             .px(px(8.))
-            .pt(px(2.))
-            .pb(px(4.));
+            .pt(px(4.))
+            .pb(px(8.));
         let mut shown = 0;
         for space in self.state.spaces.iter().filter(|s| !s.archived) {
             let Some(threads) = visible(space, &query) else {
@@ -56,42 +86,37 @@ impl Root {
             };
             shown += 1;
             let open = !space.folded || !query.is_empty();
-            list = list.child(self.space_row(space, open, threads.len(), cx));
-            if !open {
-                continue;
-            }
-            let mut body = div()
+            let mut section = div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
-                .mt(px(2.))
-                .mb(px(6.))
-                .ml(px(12.));
-            for t in &threads {
-                body = body.child(self.thread_row(t, None, now, cx));
+                .gap(px(1.))
+                .child(self.space_row(space, open, cx));
+            if open {
+                for t in &threads {
+                    section = section.child(self.thread_row(t, now, cx));
+                }
+                if threads.is_empty() {
+                    section = section.child(
+                        div()
+                            .px(px(8.))
+                            .py(px(4.))
+                            .text_size(px(12.))
+                            .text_color(colors::text3())
+                            .child("No threads yet. Press + to start one."),
+                    );
+                }
             }
-            if threads.is_empty() {
-                body = body.child(
-                    div()
-                        .px(px(8.))
-                        .pt(px(4.))
-                        .pb(px(6.))
-                        .text_size(px(11.5))
-                        .text_color(colors::text3())
-                        .child("No threads yet. Press + to start one."),
-                );
-            }
-            list = list.child(body);
+            list = list.child(section);
         }
         if shown == 0 {
             list = list.child(
                 div()
-                    .px(px(10.))
+                    .px(px(8.))
                     .py(px(6.))
                     .text_size(px(12.))
                     .text_color(colors::text3())
                     .child(if query.is_empty() {
-                        "Add a project folder to start."
+                        "No threads yet. Start one with the button above."
                     } else {
                         "Nothing matches."
                     }),
@@ -135,7 +160,7 @@ impl Root {
             .into_any_element()
     }
 
-    /// The top row: the search field and a square button for a new space beside it.
+    /// The top row: the search field and the square New thread button beside it.
     fn nav(&self, searching: bool, cx: &mut Context<Self>) -> AnyElement {
         div()
             .flex_none()
@@ -143,10 +168,8 @@ impl Root {
             .items_center()
             .gap(px(6.))
             .px(px(8.))
-            .py(px(10.))
-            .mb(px(4.))
-            .border_b_1()
-            .border_color(colors::border0())
+            .pt(px(10.))
+            .pb(px(6.))
             .child(
                 div()
                     .flex_1()
@@ -160,21 +183,16 @@ impl Root {
                     .rounded(px(8.))
                     .border_1()
                     .border_color(if searching {
-                        colors::accent().opacity(0.5)
+                        colors::border2()
                     } else {
                         colors::border1()
                     })
-                    .bg(colors::ink(0.04))
-                    .text_color(if searching {
-                        colors::accent()
-                    } else {
-                        colors::text3()
-                    })
+                    .bg(colors::ink(if searching { 0.06 } else { 0.04 }))
                     .child(icon(
                         "search",
                         14.,
                         if searching {
-                            colors::accent()
+                            colors::text2()
                         } else {
                             colors::text3()
                         },
@@ -190,7 +208,7 @@ impl Root {
             )
             .child(
                 div()
-                    .id("sidebar-add")
+                    .id("new-thread")
                     .flex()
                     .flex_none()
                     .items_center()
@@ -200,45 +218,27 @@ impl Root {
                     .border_1()
                     .border_color(colors::border1())
                     .bg(colors::ink(0.04))
-                    .text_color(colors::text2())
                     .cursor_pointer()
-                    .hover(|s| s.bg(colors::ink(0.08)).text_color(colors::text1()))
+                    .hover(|s| s.bg(colors::ink(0.08)).border_color(colors::border2()))
                     .child(icon("square-pen", 15., colors::text2()))
-                    .on_click(cx.listener(|r, e: &ClickEvent, _, cx| {
-                        r.menu = Some((
-                            e.position(),
-                            vec![
-                                ("Add a project folder".into(), Action::AddProject),
-                                ("New open space".into(), Action::NewOpenSpace),
-                            ],
-                        ));
-                        cx.notify();
+                    .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
+                        r.menu = None;
+                        r.pick_thread_folder(window, cx);
                     })),
             )
             .into_any_element()
     }
 
-    fn space_row(
-        &self,
-        space: &Space,
-        open: bool,
-        count: usize,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn space_row(&self, space: &Space, open: bool, cx: &mut Context<Self>) -> AnyElement {
         let id = space.id;
-        let active = match self.screen {
-            Screen::Compose(Some(s)) => s == id,
-            Screen::Thread(t) => space.threads.iter().any(|x| x.id == t),
-            Screen::Compose(None) => false,
-        };
         let name: AnyElement = match &self.rename {
             Some((Rename::Space(r), input, _)) if *r == id => div()
                 .flex_1()
-                .h(px(26.))
+                .h(px(24.))
                 .flex()
                 .items_center()
-                .px(px(8.))
-                .rounded(px(7.))
+                .px(px(6.))
+                .rounded(px(6.))
                 .border_1()
                 .border_color(colors::accent())
                 .bg(colors::bg())
@@ -260,68 +260,30 @@ impl Root {
             ("Remove from the sidebar".into(), Action::RemoveSpace(id)),
         ];
         let group: SharedString = format!("space-{id}").into();
-        div()
-            .id(("space", id))
+        // the controls show on hover, except a folded section's chevron: it is the only sign
+        // the section holds threads
+        let hidden = |d: Stateful<Div>| d.opacity(0.).group_hover(group.clone(), |s| s.opacity(1.));
+        heading(("space", id))
             .group(group.clone())
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .h(px(30.))
-            .pl(px(2.))
-            .pr(px(4.))
-            .rounded(px(7.))
-            .text_size(px(13.))
-            .font_weight(if active {
-                FontWeight::SEMIBOLD
-            } else {
-                FontWeight::MEDIUM
-            })
-            .text_color(if active {
-                colors::text1()
-            } else {
-                colors::text2()
-            })
-            .cursor_pointer()
-            .hover(|s| s.bg(row_hover()).text_color(colors::text1()))
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .size(px(20.))
-                    .text_color(colors::text3())
-                    .child(icon(
-                        if open {
-                            "chevron-down"
-                        } else {
-                            "chevron-right"
-                        },
-                        13.,
-                        colors::text3(),
-                    )),
-            )
             .child(name)
-            .when(count > 0, |d| {
-                d.child(
-                    div()
-                        .flex_none()
-                        .pr(px(4.))
-                        .font_family(hyprspace_theme::MONO)
-                        .text_size(px(10.5))
-                        .text_color(colors::text3())
-                        .child(count.to_string()),
-                )
-            })
             .child(
                 widgets::icon_button(("space-new", id), "plus", 22.)
-                    .when(!active, |d| {
-                        d.opacity(0.).group_hover(group.clone(), |s| s.opacity(1.))
-                    })
+                    .map(hidden)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                         r.act(Action::NewThread(id), window, cx)
                     })),
+            )
+            .child(
+                div()
+                    .id(("space-fold", id))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .size(px(22.))
+                    .when(open, hidden)
+                    .child(chevron(open)),
             )
             .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| r.toggle_fold(id, cx)))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
@@ -343,12 +305,12 @@ impl Root {
 
     fn archived(&self, now: u64, cx: &mut Context<Self>) -> AnyElement {
         let spaces: Vec<&Space> = self.state.spaces.iter().filter(|s| s.archived).collect();
-        let threads: Vec<(&Space, &Thread)> = self
+        let threads: Vec<&Thread> = self
             .state
             .spaces
             .iter()
             .filter(|s| !s.archived)
-            .flat_map(|s| s.threads.iter().filter(|t| t.archived).map(move |t| (s, t)))
+            .flat_map(|s| s.threads.iter().filter(|t| t.archived))
             .collect();
         let count = spaces.len() + threads.len();
         if count == 0 {
@@ -358,50 +320,28 @@ impl Root {
         let mut col = div()
             .flex()
             .flex_col()
-            .gap(px(2.))
-            .mt(px(6.))
-            .pt(px(6.))
+            .gap(px(1.))
+            .pt(px(8.))
             .border_t_1()
-            .border_color(colors::border1())
+            .border_color(colors::border0())
             .child(
-                div()
-                    .id("archived")
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .h(px(30.))
-                    .pl(px(2.))
-                    .pr(px(4.))
-                    .rounded(px(7.))
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors::text3())
-                    .cursor_pointer()
-                    .hover(|s| s.bg(row_hover()).text_color(colors::text1()))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(20.))
-                            .child(icon(
-                                if open {
-                                    "chevron-down"
-                                } else {
-                                    "chevron-right"
-                                },
-                                13.,
-                                colors::text3(),
-                            )),
-                    )
-                    .child(icon("archive", 13., colors::text3()))
-                    .child(div().flex_1().ml(px(2.)).child("Archived"))
+                heading("archived")
+                    .child(div().flex_1().child("Archived"))
                     .child(
                         div()
                             .pr(px(4.))
                             .font_family(hyprspace_theme::MONO)
                             .text_size(px(10.5))
                             .child(count.to_string()),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(22.))
+                            .child(chevron(open)),
                     )
                     .on_click(cx.listener(|r, _: &ClickEvent, _, cx| {
                         r.archived_open = !r.archived_open;
@@ -422,16 +362,22 @@ impl Root {
                     .id(("archived-space", id))
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(px(6.))
                     .h(px(30.))
-                    .ml(px(12.))
-                    .pl(px(8.))
-                    .pr(px(6.))
-                    .rounded(px(7.))
+                    .px(px(8.))
+                    .rounded(px(8.))
                     .text_size(px(13.))
                     .text_color(colors::text3())
                     .cursor_pointer()
                     .hover(|d| d.bg(row_hover()).text_color(colors::text1()))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .justify_center()
+                            .w(px(14.))
+                            .child(icon("folder", 12., colors::text3())),
+                    )
                     .child(div().flex_1().min_w_0().truncate().child(s.name.clone()))
                     .child(
                         div()
@@ -442,14 +388,14 @@ impl Root {
                     .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx)),
             );
         }
-        let mut body = div().flex().flex_col().gap(px(2.)).ml(px(12.));
-        for (s, t) in threads {
-            body = body.child(self.thread_row(t, Some(&s.name), now, cx));
+        for t in threads {
+            col = col.child(self.thread_row(t, now, cx));
         }
-        col.child(body).into_any_element()
+        col.into_any_element()
     }
 
     fn foot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let on = self.screen == Screen::Settings;
         div()
             .flex_none()
             .flex()
@@ -461,24 +407,24 @@ impl Root {
             .border_color(colors::border0())
             .child(
                 div()
-                    .id("appearance")
+                    .id("settings")
                     .flex_1()
                     .flex()
                     .items_center()
                     .gap(px(9.))
-                    .h(px(28.))
+                    .h(px(30.))
                     .px(px(8.))
-                    .rounded(px(6.))
-                    .text_size(px(12.5))
-                    .text_color(colors::text2())
+                    .rounded(px(8.))
+                    .text_size(px(13.))
+                    .text_color(if on { colors::text1() } else { colors::text2() })
                     .cursor_pointer()
-                    .hover(|s| s.bg(row_hover()).text_color(colors::text1()))
-                    .child(icon("palette", 14., colors::text3()))
-                    .child("Appearance")
-                    .on_click(cx.listener(|r, e: &ClickEvent, _, cx| {
-                        r.appearance_at = Some(e.position());
-                        cx.notify();
-                    })),
+                    .when(on, |d| d.bg(colors::surface3()))
+                    .when(!on, |d| {
+                        d.hover(|s| s.bg(row_hover()).text_color(colors::text1()))
+                    })
+                    .child(icon("settings", 14., colors::text3()))
+                    .child("Settings")
+                    .on_click(cx.listener(|r, _: &ClickEvent, _, cx| r.open_settings(cx))),
             )
             .into_any_element()
     }

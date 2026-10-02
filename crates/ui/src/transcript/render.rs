@@ -1,11 +1,13 @@
-// Draws a transcript: the user's prompts, replies as markdown, thinking and tool calls folded
-// shut until clicked, approval prompts with their buttons, and the box to reply or steer.
+// Draws a transcript after zeron's: one centered column, the user's prompts as bubbles on the
+// right, replies as markdown, thinking and each run of tool calls folded into one muted line
+// until clicked, approval prompts with their buttons, and the pill-shaped box to reply or steer.
 
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, ExternalPaths, Focusable,
-    IntoElement, MouseButton, SharedString, Window, div, prelude::*, px, relative,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable,
+    FontWeight, IntoElement, MouseButton, ScrollWheelEvent, SharedString, Window, div, prelude::*,
+    px, relative,
 };
 use hyprspace_proto::{RunStatus, Tool};
 
@@ -14,22 +16,20 @@ use super::{TranscriptView, tool};
 use crate::assets::{icon, mark};
 use crate::{attach, colors, markdown, widgets};
 
+/// The transcript and the composer share one column, so their edges line up.
+const COLUMN: f32 = 720.;
+const GUTTER: f32 = 24.;
+
 pub fn view(
     v: &mut TranscriptView,
     window: &mut Window,
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
-    let items: Vec<AnyElement> = v
-        .model
-        .items
-        .iter()
-        .enumerate()
-        .map(|(ix, item)| self::item(v, ix, item, cx))
-        .collect();
+    let items = items(v, cx);
     let working = v.model.elapsed().map(working);
     let loading = v.loading.then(|| {
         div()
-            .text_xs()
+            .text_size(px(12.))
             .text_color(colors::text3())
             .child("Loading the conversation...")
     });
@@ -43,13 +43,11 @@ pub fn view(
             .child(format!(
                 "Send a message to start {} in {}.",
                 v.launch.agent.name(),
-                v.launch
-                    .cwd
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "this folder".into())
+                folder_name(v)
             ))
     });
+    // only while a reply streams: then new text would land out of sight
+    let jump = (v.model.running() && !v.at_bottom()).then(|| jump(cx));
     div()
         .id("transcript")
         .size_full()
@@ -61,31 +59,72 @@ pub fn view(
         .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent_dim()))
         .child(
             div()
-                .id("transcript-scroll")
+                .relative()
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
-                .track_scroll(&v.scroll)
                 .child(
-                    div().w_full().flex().justify_center().child(
-                        div()
-                            .w_full()
-                            .max_w(px(780.))
-                            .px_5()
-                            .py_5()
-                            .flex()
-                            .flex_col()
-                            .gap_3()
-                            .text_sm()
-                            .children(loading)
-                            .children(empty)
-                            .children(items)
-                            .children(working),
-                    ),
-                ),
+                    div()
+                        .id("transcript-scroll")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&v.scroll)
+                        // repaint as the user scrolls, so the jump button comes and goes
+                        .on_scroll_wheel(cx.listener(|v, _: &ScrollWheelEvent, _, cx| {
+                            if v.model.running() {
+                                cx.notify();
+                            }
+                        }))
+                        .child(centered(
+                            column()
+                                .pt(px(24.))
+                                .pb(px(24.))
+                                .gap(px(20.))
+                                .children(loading)
+                                .children(empty)
+                                .children(items)
+                                .children(working),
+                        )),
+                )
+                .children(jump),
         )
         .child(composer(v, window, cx))
         .children(v.menu.map(|at| model_menu(v, at, window, cx)))
+        .into_any_element()
+}
+
+fn centered(child: Div) -> Div {
+    div().w_full().flex().justify_center().child(child)
+}
+
+fn column() -> Div {
+    div()
+        .w_full()
+        .max_w(px(COLUMN))
+        .px(px(GUTTER))
+        .flex()
+        .flex_col()
+}
+
+fn folder_name(v: &TranscriptView) -> String {
+    v.launch
+        .cwd
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "this folder".into())
+}
+
+/// A small dot that breathes while something is live.
+fn pulse(id: impl Into<gpui::ElementId>, size: f32) -> AnyElement {
+    div()
+        .flex_none()
+        .size(px(size))
+        .rounded_full()
+        .bg(colors::busy())
+        .with_animation(
+            id,
+            Animation::new(Duration::from_millis(1200)).repeat(),
+            |d, t| d.opacity(0.35 + 0.65 * (1.0 - (t * 2.0 - 1.0).abs())),
+        )
         .into_any_element()
 }
 
@@ -93,23 +132,94 @@ fn working(secs: u64) -> AnyElement {
     div()
         .flex()
         .items_center()
-        .gap_2()
-        .text_xs()
-        .text_color(colors::text2())
+        .gap(px(8.))
+        .text_size(px(12.))
+        .text_color(colors::text3())
+        .child(pulse("working", 6.))
         .child(
             div()
-                .size(px(7.))
-                .rounded_full()
-                .bg(colors::busy())
-                .with_animation(
-                    "working",
-                    Animation::new(Duration::from_millis(1200)).repeat(),
-                    |d, t| d.opacity(0.35 + 0.65 * (1.0 - (t * 2.0 - 1.0).abs())),
-                ),
+                .text_color(colors::text2())
+                .child(format!("Working {secs}s")),
         )
-        .child(format!("Working {secs}s"))
-        .child(div().text_color(colors::text3()).child("Esc to stop"))
+        .child("· Esc to stop")
         .into_any_element()
+}
+
+fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
+    div()
+        .absolute()
+        .bottom(px(12.))
+        .left_0()
+        .right_0()
+        .flex()
+        .justify_center()
+        .child(
+            div()
+                .id("scroll-to-bottom")
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .h(px(28.))
+                .px(px(12.))
+                .rounded_full()
+                .border_1()
+                .border_color(colors::border2())
+                .bg(colors::surface2())
+                .text_size(px(12.))
+                .text_color(colors::text1())
+                .cursor_pointer()
+                .hover(|s| s.bg(colors::surface3()))
+                .child(icon("arrow-down", 12., colors::text2()))
+                .child("Scroll to bottom")
+                .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
+                    v.scroll.scroll_to_bottom();
+                    cx.notify();
+                })),
+        )
+        .into_any_element()
+}
+
+/// Every item. Thinking and tool calls in a row sit together as one quiet block, and each run
+/// of two or more tool calls in it folds into one line.
+fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<AnyElement> {
+    let all = &v.model.items;
+    let mut out = Vec::new();
+    let mut ix = 0;
+    while ix < all.len() {
+        let quiet = all[ix..]
+            .iter()
+            .take_while(|i| matches!(i, Item::Tool { .. } | Item::Thinking { .. }))
+            .count();
+        if quiet == 0 {
+            out.push(item(v, ix, &all[ix], cx));
+            ix += 1;
+            continue;
+        }
+        let mut rows = Vec::new();
+        let end = ix + quiet;
+        while ix < end {
+            let calls = all[ix..end]
+                .iter()
+                .take_while(|i| matches!(i, Item::Tool { .. }))
+                .count();
+            if calls > 1 {
+                rows.push(tool_run(v, ix, ix + calls, cx));
+                ix += calls;
+            } else {
+                rows.push(item(v, ix, &all[ix], cx));
+                ix += 1;
+            }
+        }
+        out.push(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .children(rows)
+                .into_any_element(),
+        );
+    }
+    out
 }
 
 fn item(
@@ -129,17 +239,25 @@ fn item(
             .items_end()
             .gap_1()
             .when(*steer, |d| {
-                d.child(div().text_xs().text_color(colors::text3()).child("Steer"))
+                d.child(
+                    div()
+                        .text_size(px(11.5))
+                        .text_color(colors::text3())
+                        .child("Steer"),
+                )
             })
             .child(
                 div()
-                    .max_w(relative(0.85))
-                    .px_3()
-                    .py_2()
-                    .rounded_lg()
+                    .max_w(relative(0.8))
+                    .px(px(14.))
+                    .py(px(10.))
+                    .rounded(px(14.))
                     .bg(colors::surface2())
                     .border_1()
                     .border_color(colors::border1())
+                    .text_size(px(13.5))
+                    .line_height(relative(1.55))
+                    .text_color(colors::text1())
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -156,7 +274,12 @@ fn item(
             )
             .into_any_element(),
         Item::Text { blocks, .. } => match blocks {
-            Some(b) => markdown::render(b, &format!("t{ix}")),
+            Some(b) => div()
+                .text_size(px(13.5))
+                .line_height(relative(1.6))
+                .text_color(colors::text1())
+                .child(markdown::render(b, &format!("t{ix}")))
+                .into_any_element(),
             None => div().into_any_element(),
         },
         Item::Thinking { text, open } => {
@@ -175,15 +298,16 @@ fn item(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(px(6.))
                 .child(head)
                 .when(*open, |d| {
                     d.child(
                         div()
-                            .pl_4()
-                            .text_xs()
+                            .pl(px(18.))
+                            .text_size(px(12.5))
+                            .line_height(relative(1.55))
                             .italic()
-                            .text_color(colors::text2())
+                            .text_color(colors::text3())
                             .child(text.trim().to_string()),
                     )
                 })
@@ -220,12 +344,13 @@ fn item(
             div()
                 .flex()
                 .gap_2()
-                .px_3()
-                .py_2()
-                .rounded(px(8.))
+                .px(px(12.))
+                .py(px(10.))
+                .rounded(px(10.))
                 .border_1()
                 .border_color(colors::error().opacity(0.4))
                 .bg(colors::error().opacity(0.08))
+                .text_size(px(13.))
                 .child(
                     div()
                         .pt(px(2.))
@@ -242,14 +367,9 @@ fn item(
                 )
                 .into_any_element()
         }
-        Item::Finished {
-            status,
-            ms,
-            error,
-            tokens,
-        } => {
+        Item::Finished { status, ms, error } => {
             let secs = *ms as f32 / 1000.0;
-            let mut line = match status {
+            let line = match status {
                 RunStatus::Done => format!("Done in {secs:.1}s"),
                 RunStatus::Interrupted => format!("Stopped after {secs:.1}s"),
                 RunStatus::Failed => match error {
@@ -257,11 +377,8 @@ fn item(
                     None => format!("Failed after {secs:.1}s"),
                 },
             };
-            if let Some((i, o)) = tokens {
-                line.push_str(&format!(", {} in, {} out", short(*i), short(*o)));
-            }
             div()
-                .text_xs()
+                .text_size(px(11.5))
                 .text_color(if *status == RunStatus::Failed {
                     colors::error()
                 } else {
@@ -271,25 +388,16 @@ fn item(
                 .into_any_element()
         }
         Item::Note(text) => div()
-            .text_xs()
+            .text_size(px(11.5))
             .text_color(colors::text3())
             .child(text.clone())
             .into_any_element(),
     }
 }
 
-/// Token counts the way people read them: 950, 12.4k, 1.2M.
-fn short(n: u64) -> String {
-    match n {
-        0..=999 => n.to_string(),
-        1000..=999_999 => format!("{:.1}k", n as f32 / 1000.0),
-        _ => format!("{:.1}M", n as f32 / 1_000_000.0),
-    }
-}
-
-/// A clickable line with a fold arrow. `toggle` flips the item's open state.
+/// A muted clickable line with a fold chevron. `toggle` flips what it opens.
 fn fold_head(
-    id: (&'static str, usize),
+    id: impl Into<gpui::ElementId>,
     open: bool,
     label: SharedString,
     right: Option<AnyElement>,
@@ -300,23 +408,98 @@ fn fold_head(
         .id(id)
         .flex()
         .items_center()
-        .gap_2()
-        .text_xs()
-        .text_color(colors::text2())
+        .gap(px(6.))
+        .min_w_0()
+        .text_size(px(12.5))
+        .text_color(colors::text3())
         .cursor_pointer()
-        .hover(|s| s.text_color(colors::text1()))
-        .child(
-            div()
-                .w(px(10.))
-                .text_color(colors::text3())
-                .child(if open { "▾" } else { "▸" }),
-        )
+        .hover(|s| s.text_color(colors::text2()))
+        .child(icon(
+            if open {
+                "chevron-down"
+            } else {
+                "chevron-right"
+            },
+            12.,
+            colors::text3(),
+        ))
         .child(div().min_w_0().truncate().child(label))
         .children(right)
         .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
             toggle(v);
             cx.notify();
         }))
+        .into_any_element()
+}
+
+/// A run of tool calls as one line counting them, opening to the single calls.
+fn tool_run(
+    v: &TranscriptView,
+    start: usize,
+    end: usize,
+    cx: &mut Context<TranscriptView>,
+) -> AnyElement {
+    let calls = &v.model.items[start..end];
+    let tools = calls.iter().filter_map(|i| match i {
+        Item::Tool { tool, .. } => Some(tool),
+        _ => None,
+    });
+    let failed = calls
+        .iter()
+        .filter(|i| {
+            matches!(
+                i,
+                Item::Tool {
+                    done: Some((false, _)),
+                    ..
+                }
+            )
+        })
+        .count();
+    let live = calls
+        .iter()
+        .any(|i| matches!(i, Item::Tool { done: None, .. }));
+    let open = v.open_runs.contains(&start);
+    let right = div()
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .flex_none()
+        .when(failed > 0, |d| {
+            d.child(
+                div()
+                    .text_color(colors::error())
+                    .child(format!("{failed} failed")),
+            )
+        })
+        .when(live, |d| d.child(pulse(("run-live", start), 5.)));
+    let head = fold_head(
+        ("tool-run", start),
+        open,
+        tool::summary(tools).into(),
+        Some(right.into_any_element()),
+        cx,
+        move |v| {
+            if !v.open_runs.remove(&start) {
+                v.open_runs.insert(start);
+            }
+        },
+    );
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .child(head)
+        .when(open, |d| {
+            d.child(div().pl(px(18.)).flex().flex_col().gap(px(6.)).children(
+                (start..end).filter_map(|ix| match &v.model.items[ix] {
+                    Item::Tool {
+                        tool, done, open, ..
+                    } => Some(tool_card(ix, tool, done.as_ref(), *open, cx)),
+                    _ => None,
+                }),
+            ))
+        })
         .into_any_element()
 }
 
@@ -327,10 +510,15 @@ fn tool_card(
     open: bool,
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
-    let mark = match done {
-        None => div().text_color(colors::busy()).child("•"),
-        Some((true, _)) => div().text_color(colors::ok()).child("✓"),
-        Some((false, _)) => div().text_color(colors::error()).child("✕"),
+    let state = match done {
+        None => Some(pulse(("tool-live", ix), 5.)),
+        Some((false, _)) => Some(
+            div()
+                .text_color(colors::error())
+                .child("Failed")
+                .into_any_element(),
+        ),
+        Some((true, _)) => None,
     };
     let counts = match t {
         Tool::Edit { changes } => {
@@ -339,10 +527,8 @@ fn tool_card(
                 div()
                     .flex()
                     .gap_1()
-                    .flex_none()
                     .child(div().text_color(colors::diff_add()).child(format!("+{a}")))
-                    .child(div().text_color(colors::diff_del()).child(format!("-{d}")))
-                    .into_any_element(),
+                    .child(div().text_color(colors::diff_del()).child(format!("-{d}"))),
             )
         }
         _ => None,
@@ -354,11 +540,11 @@ fn tool_card(
         Some(
             div()
                 .flex()
-                .gap_2()
+                .gap(px(6.))
                 .items_center()
                 .flex_none()
-                .child(mark)
                 .children(counts)
+                .children(state)
                 .into_any_element(),
         ),
         cx,
@@ -371,15 +557,15 @@ fn tool_card(
     div()
         .flex()
         .flex_col()
-        .gap_1()
+        .gap(px(6.))
         .child(head)
         .when(open, |d| {
             d.child(
                 div()
-                    .pl_4()
+                    .pl(px(18.))
                     .flex()
                     .flex_col()
-                    .gap_1()
+                    .gap(px(6.))
                     .children(tool::input(t).map(|i| tool::mono(&i)))
                     .when_some(
                         match t {
@@ -397,6 +583,8 @@ fn tool_card(
         .into_any_element()
 }
 
+/// The reply box: a pill holding the prompt, with the agent and model on the left of its bottom
+/// bar and attach and send on the right. Under it, the folder and its branch.
 fn composer(
     v: &TranscriptView,
     window: &mut Window,
@@ -406,95 +594,129 @@ fn composer(
     let agent = v.launch.agent;
     let (brand, _) = colors::brand(agent);
     let focused = v.input.focus_handle(cx).is_focused(window);
-    let chip = widgets::chip("thread-model")
+    let chip = div()
+        .id("thread-model")
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .h(px(26.))
+        .px(px(8.))
+        .min_w_0()
+        .rounded(px(8.))
+        .text_size(px(12.5))
         .child(mark(agent, 13., brand))
-        .child(div().truncate().child(v.model_label()));
+        .child(
+            div()
+                .truncate()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text1())
+                .child(v.model_label()),
+        )
+        .children(
+            v.effort_label()
+                .map(|e| div().flex_none().text_color(colors::text3()).child(e)),
+        );
     // the model is fixed while a run is live; it can change between runs
-    let model_chip = if running {
-        chip.cursor_default().into_any_element()
+    let chip = if running {
+        chip.into_any_element()
     } else {
-        chip.child(widgets::caret())
+        chip.cursor_pointer()
+            .hover(|s| s.bg(colors::ink(0.06)))
             .on_click(cx.listener(|v, e: &ClickEvent, _, cx| {
                 v.menu = Some(e.position());
                 cx.notify();
             }))
             .into_any_element()
     };
-    div()
+    // a live run with nothing typed can only be stopped; typed text steers it
+    let action = if running && v.empty && v.images.is_empty() {
+        widgets::stop("stop")
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.interrupt(cx)))
+    } else {
+        widgets::send("send", "arrow-up")
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(cx)))
+    };
+    let pill = div()
         .w_full()
         .flex()
-        .justify_center()
-        .px_5()
-        .pb_4()
+        .flex_col()
+        .rounded(px(16.))
+        .border_1()
+        .border_color(if focused {
+            colors::ink(0.2)
+        } else {
+            colors::border2()
+        })
+        .bg(colors::surface2().opacity(0.85))
+        .shadow(colors::shadow())
+        .when(!v.images.is_empty(), |d| {
+            d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
+                "thread-img",
+                &v.images,
+                cx.listener(|v, ix: &usize, _, cx| {
+                    if *ix < v.images.len() {
+                        v.images.remove(*ix);
+                    }
+                    cx.notify();
+                }),
+            )))
+        })
         .child(
             div()
-                .w_full()
-                .max_w(px(780.))
-                .flex()
-                .flex_col()
-                .rounded(px(14.))
-                .border_1()
-                .border_color(if focused {
-                    brand.opacity(0.45)
-                } else {
-                    colors::border2()
-                })
-                .bg(colors::surface2().opacity(0.85))
-                .shadow(colors::shadow())
-                .when(!v.images.is_empty(), |d| {
-                    d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
-                        "thread-img",
-                        &v.images,
-                        cx.listener(|v, ix: &usize, _, cx| {
-                            if *ix < v.images.len() {
-                                v.images.remove(*ix);
-                            }
-                            cx.notify();
-                        }),
-                    )))
-                })
-                .child(
-                    div()
-                        .min_h(px(44.))
-                        .px(px(14.))
-                        .pt(px(12.))
-                        .pb(px(8.))
-                        .text_size(px(14.5))
-                        .line_height(px(22.))
-                        .child(v.input.clone()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px(px(10.))
-                        .py(px(8.))
-                        .border_t_1()
-                        .border_color(colors::border1())
-                        .child(model_chip)
-                        .child(div().flex_1())
-                        .when(running, |d| {
-                            d.child(
-                                div()
-                                    .text_size(px(11.))
-                                    .text_color(colors::text3())
-                                    .child("Enter steers the run"),
-                            )
-                            .child(
-                                widgets::button("stop", "Stop").on_click(
-                                    cx.listener(|v, _: &ClickEvent, _, cx| v.interrupt(cx)),
-                                ),
-                            )
-                        })
-                        .child(
-                            widgets::send("send", "arrow-up")
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(cx))),
-                        ),
-                ),
+                .min_h(px(34.))
+                .px(px(16.))
+                .pt(px(12.))
+                .pb(px(4.))
+                .text_size(px(14.))
+                .line_height(px(22.))
+                .child(v.input.clone()),
         )
-        .into_any_element()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .pl(px(8.))
+                .pr(px(8.))
+                .pb(px(8.))
+                .child(chip)
+                .child(div().flex_1())
+                .child(
+                    widgets::icon_button("thread-attach", "paperclip", 28.)
+                        .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.pick_images(cx))),
+                )
+                .child(action),
+        );
+    let foot = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.))
+        .px(px(12.))
+        .pt(px(8.))
+        .text_size(px(11.5))
+        .text_color(colors::text3())
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .min_w_0()
+                .child(icon("folder", 12., colors::text3()))
+                .child(div().truncate().child(folder_name(v))),
+        )
+        .children(v.branch.clone().map(|b| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .min_w_0()
+                .child(icon("git-branch", 12., colors::text3()))
+                .child(div().truncate().child(b))
+        }));
+    centered(column().pb(px(12.)).child(pill).child(foot)).into_any_element()
 }
 
 fn model_menu(

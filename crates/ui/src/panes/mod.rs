@@ -87,6 +87,7 @@ impl Root {
         match self.screen {
             Screen::Thread(id) => self.state.thread(id).map(|(s, _)| s.id),
             Screen::Compose(space) => space,
+            Screen::Settings => None,
         }
     }
 

@@ -46,7 +46,6 @@ pub enum Item {
         status: RunStatus,
         ms: u64,
         error: Option<String>,
-        tokens: Option<(u64, u64)>,
     },
     Note(String),
 }
@@ -75,7 +74,6 @@ impl From<hyprspace_proto::AgentState> for Status {
 
 struct Run {
     since: Instant,
-    tokens: Option<(u64, u64)>,
     said: bool,
 }
 
@@ -137,7 +135,6 @@ impl Transcript {
             self.failed = false;
             self.run = Some(Run {
                 since: Instant::now(),
-                tokens: None,
                 said: false,
             });
         }
@@ -223,12 +220,7 @@ impl Transcript {
                 answer: None,
                 expired: false,
             }),
-            RunEvent::Steered => {}
-            RunEvent::Usage { input, output } => {
-                if let Some(run) = self.run.as_mut() {
-                    run.tokens = Some((input, output));
-                }
-            }
+            RunEvent::Steered | RunEvent::Usage { .. } => {}
             RunEvent::Error { message } => self.items.push(Item::Error(message)),
             RunEvent::Finished {
                 status,
@@ -254,12 +246,7 @@ impl Transcript {
                         .any(|i| matches!(i, Item::Error(m) if m == e))
                 };
                 let error = error.filter(|e| !said(e));
-                self.items.push(Item::Finished {
-                    status,
-                    ms,
-                    error,
-                    tokens: run.and_then(|r| r.tokens).filter(|t| *t != (0, 0)),
-                });
+                self.items.push(Item::Finished { status, ms, error });
             }
             RunEvent::Failed { message } => {
                 self.items.push(Item::Error(message));
@@ -367,13 +354,7 @@ mod tests {
             })
             .collect();
         assert_eq!(texts, ["Hello"]);
-        assert!(matches!(
-            t.items.last(),
-            Some(Item::Finished {
-                tokens: Some((10, 2)),
-                ..
-            })
-        ));
+        assert!(matches!(t.items.last(), Some(Item::Finished { .. })));
     }
 
     #[test]
@@ -456,11 +437,7 @@ mod tests {
         });
         assert!(matches!(
             t.items.last(),
-            Some(Item::Finished {
-                error: None,
-                tokens: None,
-                ..
-            })
+            Some(Item::Finished { error: None, .. })
         ));
     }
 

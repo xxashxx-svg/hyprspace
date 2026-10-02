@@ -51,7 +51,7 @@ pub fn primary(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stat
         .child(label.into())
 }
 
-/// The square send button under a prompt box.
+/// The round send button in a prompt box: the one accent on screen.
 pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
     div()
         .id(id)
@@ -59,13 +59,31 @@ pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(32.))
-        .rounded(px(9.))
+        .size(px(30.))
+        .rounded_full()
         .bg(colors::accent())
         .text_color(colors::on_accent())
         .cursor_pointer()
         .hover(|s| s.bg(colors::accent_hover()))
         .child(icon(icon_name, 15., colors::on_accent()))
+}
+
+/// Send's neutral twin while a run is live: a round button with a filled square.
+pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(30.))
+        .rounded_full()
+        .border_1()
+        .border_color(colors::border2())
+        .bg(colors::surface3())
+        .cursor_pointer()
+        .hover(|s| s.bg(colors::ink(0.14)))
+        .child(div().size(px(10.)).rounded(px(2.)).bg(colors::text1()))
 }
 
 /// A square icon button with no frame until hovered.
@@ -302,4 +320,97 @@ pub fn status_dot(status: Status) -> Div {
         Status::Done => d.bg(colors::ok()),
         Status::Failed => d.bg(colors::error()),
     }
+}
+
+/// A segmented control's frame (defaults.css `.df-seg`). Its options are `segment`s.
+pub fn segments() -> Div {
+    div()
+        .flex()
+        .gap(px(3.))
+        .p(px(3.))
+        .rounded(px(9.))
+        .border_1()
+        .border_color(colors::border1())
+        .bg(colors::ink(0.04))
+}
+
+/// One option of a segmented control. The picked one sits on a raised neutral surface, never the
+/// accent. A `risky` option turns red only while it is picked, so the warning shows when it
+/// applies and not before.
+pub fn segment(
+    id: impl Into<ElementId>,
+    icon_name: Option<&str>,
+    label: impl Into<SharedString>,
+    on: bool,
+    risky: bool,
+) -> Stateful<Div> {
+    let (fg, glyph) = match (on, risky) {
+        (true, true) => (colors::error(), colors::error()),
+        (true, false) => (colors::text1(), colors::text2()),
+        _ => (colors::text2(), colors::text3()),
+    };
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(7.))
+        .h(px(28.))
+        .px(px(12.))
+        .rounded(px(6.))
+        .border_1()
+        .border_color(gpui::transparent_black())
+        .text_size(px(12.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(fg)
+        .cursor_pointer()
+        .when(on && !risky, |d| {
+            d.bg(colors::surface3()).border_color(colors::border1())
+        })
+        .when(on && risky, |d| {
+            d.bg(colors::error().opacity(0.14))
+                .border_color(colors::error().opacity(0.4))
+        })
+        .when(!on, |d| {
+            d.hover(|s| s.bg(colors::ink(0.05)).text_color(colors::text1()))
+        })
+        .children(icon_name.map(|n| icon(n, 14., glyph)))
+        .child(label.into())
+}
+
+/// A dropdown's face (defaults.css `.set-select`): the current value and a chevron. The caller
+/// opens the menu on click.
+pub fn select(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(34.))
+        .pl(px(12.))
+        .pr(px(10.))
+        .rounded(px(8.))
+        .border_1()
+        .border_color(colors::border1())
+        .bg(colors::ink(0.04))
+        .text_size(px(13.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors::text1())
+        .cursor_pointer()
+        .hover(|s| s.bg(colors::ink(0.07)))
+        .child(div().flex_1().min_w_0().truncate().child(label.into()))
+        .child(icon("chevron-down", 12., colors::text3()))
+}
+
+/// A key's name in a small frame, like the Esc beside Settings' way back.
+pub fn keycap(label: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .px(px(5.))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(colors::border1())
+        .text_size(px(10.))
+        .text_color(colors::text3())
+        .child(label.into())
 }

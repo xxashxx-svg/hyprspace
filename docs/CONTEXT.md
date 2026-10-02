@@ -5,11 +5,11 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
 
 ## Where work happens
 
-- **Space**: a place sessions live, shown as one section of the sidebar. Either a **project**
-  (one folder) or an **open space** (a scratch space whose sessions can each sit in a different
-  folder). The Tauri app calls the same thing a workspace in code; the GPUI app says space.
-- **Project**: a space tied to one folder.
-- **Open space**: a space with no folder of its own.
+- **Space**: one folder, shown as one section of the sidebar, with the threads that run in it.
+  The Tauri app calls the same thing a workspace in code; the GPUI app says space.
+- **Project**: the older word for a space. Code that adds a space may still say `add_project`.
+  The Tauri app also had open spaces with no folder of their own; the GPUI app dropped them (see
+  [adr/0008](./adr/0008-no-open-spaces.md)).
 - **Worktree**: a separate git checkout under `~/.hyprspace/worktrees/` so an agent can work on its
   own branch (`hs/<name>`) without touching the main checkout.
 

@@ -10,6 +10,7 @@ mod input;
 mod markdown;
 mod panes;
 mod root;
+mod settings;
 mod sidebar;
 mod terminal;
 mod time;

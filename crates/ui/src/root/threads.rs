@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui::{AppContext, Context, Entity, Focusable, Window};
+use gpui::{AppContext, Context, Entity, Focusable, PathPromptOptions, Window};
 use hyprspace_proto::{Agent, Command, Prompt, SessionId, Space, Thread, ThreadKind};
 
 use super::{Action, Rename, Root, Screen, Start, View};
@@ -11,7 +11,7 @@ use crate::composer::Target;
 use crate::input::{InputEvent, TextInput};
 use crate::terminal::{TerminalEvent, TerminalView};
 use crate::time::now_ms;
-use crate::transcript::{TranscriptEvent, TranscriptView};
+use crate::transcript::{Status, TranscriptEvent, TranscriptView};
 
 /// Two paths name the same folder. Windows paths are case-blind.
 fn same_folder(a: &Path, b: &Path) -> bool {
@@ -48,7 +48,7 @@ fn typed(prompt: &Prompt) -> String {
         .join(" ")
 }
 
-fn folder_name(path: &Path) -> String {
+pub(crate) fn folder_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| path.display().to_string())
@@ -78,16 +78,53 @@ impl Root {
         id
     }
 
-    fn new_open_space(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.state.take_id();
-        let n = self.state.spaces.iter().filter(|s| s.cwd.is_none()).count() + 1;
-        self.state.spaces.push(Space {
-            id,
-            name: format!("Open space {n}"),
-            ..Default::default()
+    /// New thread from the sidebar's top button: pick a folder, then the composer for its space.
+    pub(crate) fn pick_thread_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Choose".into()),
         });
-        self.save();
-        self.compose(Some(id), window, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = this.update_in(cx, |root, window, cx| {
+                let space = root.add_project(path, cx);
+                root.save();
+                root.compose(Some(space), window, cx);
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
+        if self.screen != Screen::Settings {
+            self.back = self.screen;
+            self.screen = Screen::Settings;
+        }
+        self.menu = None;
+        cx.notify();
+    }
+
+    /// Settings' Back: the screen it was opened from, or the first space if that one is gone.
+    pub(crate) fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.back {
+            Screen::Thread(id) if self.state.thread(id).is_some() => {
+                self.open_thread(id, window, cx)
+            }
+            Screen::Compose(Some(id)) if self.state.space(id).is_some() => {
+                self.compose(Some(id), window, cx)
+            }
+            _ => {
+                let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
+                self.compose(first, window, cx);
+            }
+        }
     }
 
     pub(crate) fn compose(
@@ -149,7 +186,7 @@ impl Root {
                 });
                 self._subs.push(sub);
                 if let Some(status) = Some(v.read(cx).status()) {
-                    self.status.insert(id, status);
+                    self.set_status(id, status);
                 }
                 View::Structured(v)
             }
@@ -169,10 +206,19 @@ impl Root {
         self.views.insert(id, view);
     }
 
+    pub(crate) fn set_status(&mut self, thread: u64, status: Status) {
+        if status == Status::Done && self.screen != Screen::Thread(thread) {
+            self.unseen.insert(thread);
+        } else {
+            self.unseen.remove(&thread);
+        }
+        self.status.insert(thread, status);
+    }
+
     fn on_transcript(&mut self, thread: u64, e: &TranscriptEvent, cx: &mut Context<Self>) {
         match e {
             TranscriptEvent::Status(s) => {
-                self.status.insert(thread, *s);
+                self.set_status(thread, *s);
             }
             TranscriptEvent::Started { thread: t, cwd } => {
                 if let Some(Thread {
@@ -299,6 +345,7 @@ impl Root {
         // ctrl+click (cmd on macOS) opens it beside the panes on screen instead of in place
         self.place_thread(id, window.modifiers().secondary());
         self.screen = Screen::Thread(id);
+        self.unseen.remove(&id);
         self.state.active = Some(id);
         self.save();
         let focus = match &self.views[&id] {
@@ -324,6 +371,7 @@ impl Root {
             }
         }
         self.status.remove(&thread);
+        self.unseen.remove(&thread);
     }
 
     /// After the thread or space on screen went away.
@@ -334,7 +382,7 @@ impl Root {
                 .thread(id)
                 .is_some_and(|(s, t)| !t.archived && !s.archived),
             Screen::Compose(Some(id)) => self.state.space(id).is_some_and(|s| !s.archived),
-            Screen::Compose(None) => true,
+            Screen::Compose(None) | Screen::Settings => true,
         };
         if !still_there {
             if let Screen::Thread(gone) = self.screen
@@ -385,12 +433,6 @@ impl Root {
                 }
                 self.leave(window, cx);
             }
-            Action::AddProject => {
-                self.composer.update(cx, |c, cx| {
-                    c.pick_folder(crate::composer::PickFor::Project, cx)
-                });
-            }
-            Action::NewOpenSpace => self.new_open_space(window, cx),
         }
         self.save();
         cx.notify();

@@ -1,5 +1,6 @@
 // Tool calls in the transcript: a one-line summary that opens to show the call's input, its
-// output and, for file edits, the diff. Approval prompts reuse the same summary.
+// output and, for file edits, the diff. A run of calls in a row folds into one line that counts
+// them, after zeron's "Ran 4 commands · read 1 file". Approval prompts reuse the same summary.
 
 use gpui::{AnyElement, FontWeight, IntoElement, SharedString, div, prelude::*, px};
 use hyprspace_proto::Tool;
@@ -11,7 +12,7 @@ use crate::colors;
 /// One line saying what a tool does or did.
 pub fn label(tool: &Tool) -> String {
     match tool {
-        Tool::Command { command } => format!("Run {}", first_line(command)),
+        Tool::Command { command } => format!("Run {}", first_line(without_cd(command))),
         Tool::Read { path } => format!("Read {}", short(path)),
         Tool::Edit { changes } => {
             let names: Vec<String> = changes.iter().map(|c| short(&c.path)).collect();
@@ -33,6 +34,86 @@ pub fn label(tool: &Tool) -> String {
         Tool::Web { target } => format!("Look up {target}"),
         Tool::Mcp { server, tool, .. } => format!("{server}: {tool}"),
         Tool::Other { name, .. } => name.clone(),
+    }
+}
+
+/// Agents often open a command by moving into the thread's own folder (`cd "C:\..." && git
+/// status`). That prefix is the same every time and pushes the real command off the line, so the
+/// label drops it; the full command still shows when the call is opened.
+fn without_cd(cmd: &str) -> &str {
+    let Some(rest) = cmd.trim_start().strip_prefix("cd ") else {
+        return cmd;
+    };
+    let rest = rest.trim_start();
+    let after = match rest.strip_prefix('"') {
+        Some(quoted) => quoted.find('"').map(|i| &quoted[i + 1..]),
+        None => rest
+            .find(|c: char| c.is_whitespace() || c == ';' || c == '&')
+            .map(|i| &rest[i..]),
+    };
+    let Some(after) = after.map(str::trim_start) else {
+        return cmd;
+    };
+    for sep in ["&&", ";"] {
+        if let Some(next) = after.strip_prefix(sep).map(str::trim_start)
+            && !next.is_empty()
+        {
+            return next;
+        }
+    }
+    cmd
+}
+
+/// One line counting a run of calls by kind: "Ran 4 commands · read 1 file · called 1 tool".
+pub fn summary<'a>(tools: impl IntoIterator<Item = &'a Tool>) -> String {
+    // commands, files read, files edited, searches, lookups, other tools
+    let mut n = [0usize; 6];
+    for t in tools {
+        match t {
+            Tool::Command { .. } => n[0] += 1,
+            Tool::Read { .. } => n[1] += 1,
+            Tool::Edit { changes } => n[2] += changes.len().max(1),
+            Tool::Search { .. } => n[3] += 1,
+            Tool::Web { .. } => n[4] += 1,
+            Tool::Mcp { .. } | Tool::Other { .. } => n[5] += 1,
+        }
+    }
+    let plural = |n: usize, one: &str, many: &str| if n == 1 { one } else { many }.to_string();
+    let parts: Vec<String> = [
+        (
+            n[0],
+            format!("ran {} {}", n[0], plural(n[0], "command", "commands")),
+        ),
+        (
+            n[1],
+            format!("read {} {}", n[1], plural(n[1], "file", "files")),
+        ),
+        (
+            n[2],
+            format!("edited {} {}", n[2], plural(n[2], "file", "files")),
+        ),
+        (
+            n[3],
+            format!("searched {} {}", n[3], plural(n[3], "time", "times")),
+        ),
+        (
+            n[4],
+            format!("looked up {} {}", n[4], plural(n[4], "page", "pages")),
+        ),
+        (
+            n[5],
+            format!("called {} {}", n[5], plural(n[5], "tool", "tools")),
+        ),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(_, s)| s)
+    .collect();
+    let line = parts.join(" · ");
+    let mut chars = line.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => line,
     }
 }
 
@@ -92,12 +173,13 @@ pub fn input(tool: &Tool) -> Option<String> {
 /// A block of mono text, for inputs and outputs.
 pub fn mono(text: &str) -> AnyElement {
     div()
-        .px_2()
-        .py_1()
-        .rounded_sm()
+        .px(px(10.))
+        .py(px(6.))
+        .rounded(px(8.))
         .bg(colors::surface2())
         .font_family(MONO)
-        .text_xs()
+        .text_size(px(11.5))
+        .line_height(px(17.))
         .text_color(colors::text2())
         .child(text.trim_end().to_string())
         .into_any_element()
@@ -183,6 +265,15 @@ mod tests {
             command: "ls -la\necho hi".into(),
         };
         assert_eq!(label(&cmd), "Run ls -la");
+        let in_folder = |c: &str| label(&Tool::Command { command: c.into() });
+        assert_eq!(
+            in_folder(r#"cd "C:\a b\repo" && git status"#),
+            "Run git status"
+        );
+        assert_eq!(in_folder("cd /tmp/repo; ls"), "Run ls");
+        // a bare cd, or one with nothing after it, stays as it is
+        assert_eq!(in_folder("cd repo"), "Run cd repo");
+        assert_eq!(in_folder("cd repo &&"), "Run cd repo &&");
         let add = Tool::Edit {
             changes: vec![edit(ChangeKind::Add, r"C:\w\src\new.rs", "+x")],
         };
@@ -198,6 +289,30 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn a_run_of_calls_counts_by_kind() {
+        let cmd = Tool::Command {
+            command: "ls".into(),
+        };
+        let read = Tool::Read { path: "a".into() };
+        let other = Tool::Other {
+            name: "X".into(),
+            input: String::new(),
+        };
+        let run = [cmd.clone(), cmd.clone(), cmd.clone(), cmd, read, other];
+        assert_eq!(
+            summary(&run),
+            "Ran 4 commands · read 1 file · called 1 tool"
+        );
+        let edit = Tool::Edit {
+            changes: vec![
+                edit(ChangeKind::Update, "a", ""),
+                edit(ChangeKind::Add, "b", ""),
+            ],
+        };
+        assert_eq!(summary([&edit]), "Edited 2 files");
     }
 
     #[test]
