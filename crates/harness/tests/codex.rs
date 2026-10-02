@@ -81,6 +81,10 @@ async fn streams_a_reply_with_reasoning_and_tool_items() {
         input: 10,
         output: 20
     }));
+    assert!(run.contains(&RunEvent::Context {
+        used: 30,
+        window: 1000
+    }));
     // a retried error is not the user's problem
     assert_eq!(count(&run, |e| matches!(e, RunEvent::Error { .. })), 0);
     assert_eq!(finished(&run), (RunStatus::Done, "Done.".into(), None));

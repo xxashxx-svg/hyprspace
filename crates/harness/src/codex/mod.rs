@@ -400,10 +400,18 @@ impl Actor {
             }
             "item/completed" => self.completed(&params["item"]),
             "thread/tokenUsage/updated" => {
-                let last = &params["tokenUsage"]["last"];
+                let usage = &params["tokenUsage"];
+                let last = &usage["last"];
                 if let Some(run) = self.run.as_mut() {
                     run.input += last["inputTokens"].as_u64().unwrap_or(0);
                     run.output += last["outputTokens"].as_u64().unwrap_or(0);
+                }
+                // the latest turn's total is what sits in the window, as Codex's own TUI counts it
+                if let (Some(used), Some(window)) = (
+                    last["totalTokens"].as_u64(),
+                    usage["modelContextWindow"].as_u64(),
+                ) {
+                    (self.emit)(RunEvent::Context { used, window });
                 }
             }
             "serverRequest/resolved" => {

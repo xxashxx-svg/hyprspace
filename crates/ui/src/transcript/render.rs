@@ -735,16 +735,43 @@ fn composer(
                 .child(icon("folder", 12., colors::text3()))
                 .child(div().truncate().child(folder_name(v))),
         )
-        .children(v.branch.clone().map(|b| {
+        .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(px(14.))
                 .min_w_0()
-                .child(icon("git-branch", 12., colors::text3()))
-                .child(div().truncate().child(b))
-        }));
+                .children(v.branch.clone().map(|b| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .min_w_0()
+                        .child(icon("git-branch", 12., colors::text3()))
+                        .child(div().truncate().child(b))
+                }))
+                .children(v.model.context.map(context)),
+        );
     centered(column().pb(px(12.)).child(pill).child(foot)).into_any_element()
+}
+
+/// How full the context window is, as a ring and a percent the way zeron shows it under its
+/// composer. It warms as the window fills, since a full one makes the CLI compact.
+fn context((used, window): (u64, u64)) -> AnyElement {
+    let pct = (used as f32 / window.max(1) as f32 * 100.).clamp(0., 100.);
+    let color = match pct {
+        p if p >= 90. => colors::error(),
+        p if p >= 75. => colors::busy(),
+        _ => colors::text2(),
+    };
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(5.))
+        .child(crate::usage::ring(pct, color))
+        .child(format!("{}% context", pct.round()))
+        .into_any_element()
 }
 
 fn model_menu(

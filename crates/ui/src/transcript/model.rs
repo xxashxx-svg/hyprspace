@@ -153,6 +153,8 @@ pub struct Transcript {
     /// The id `Launch::resume` takes, once the CLI started.
     pub thread: Option<String>,
     pub cwd: Option<PathBuf>,
+    /// Tokens in the context window and its size, as of the latest reply.
+    pub context: Option<(u64, u64)>,
     last: Option<RunStatus>,
     failed: bool,
 }
@@ -365,6 +367,7 @@ impl Transcript {
                 answer: None,
                 expired: false,
             }),
+            RunEvent::Context { used, window } => self.context = Some((used, window)),
             RunEvent::Steered | RunEvent::Usage { .. } => {}
             RunEvent::Error { message } => self.items.push(Item::Error(message)),
             RunEvent::Finished {

@@ -26,7 +26,7 @@ pub(super) fn tone_color(tone: Tone) -> Option<Hsla> {
 }
 
 /// A 16px ring, filled clockwise from the top to `pct`.
-fn ring(pct: f32, color: Hsla) -> impl IntoElement {
+pub(crate) fn ring(pct: f32, color: Hsla) -> impl IntoElement {
     let track = colors::ink(0.22);
     canvas(
         |_, _, _| {},

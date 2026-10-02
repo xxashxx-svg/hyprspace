@@ -130,6 +130,8 @@ impl Harness for Claude {
             open_tools: HashSet::new(),
             agents: HashMap::new(),
             nested: HashMap::new(),
+            context: 0,
+            window: None,
         };
         let stdout = BufReader::new(proc.stdout).lines();
         Ok(Session::new(tx, tokio::spawn(actor.serve(stdout, rx))))
@@ -182,6 +184,10 @@ struct Actor {
     agents: HashMap<String, bool>,
     /// Agent calls a subagent made, to the main thread's call they report under.
     nested: HashMap<String, String>,
+    /// Tokens the main thread's latest message saw and wrote.
+    context: u64,
+    /// The main model's context window, from the latest `result`.
+    window: Option<u64>,
 }
 
 type Lines = tokio::io::Lines<BufReader<tokio::process::ChildStdout>>;
@@ -366,6 +372,12 @@ impl Actor {
                         message: error_text(code),
                     });
                 }
+                if let Some(used) = context_used(&v["message"]["usage"]) {
+                    self.context = used;
+                    if let Some(window) = self.window {
+                        (self.emit)(RunEvent::Context { used, window });
+                    }
+                }
             }
             "user" => {
                 for block in blocks(&v) {
@@ -514,6 +526,16 @@ impl Actor {
     }
 
     fn result(&mut self, v: Value) {
+        // the window size only comes with a result, so the first turn's ring waits for it
+        if let Some(window) = context_window(&v["modelUsage"]) {
+            self.window = Some(window);
+            if self.context > 0 {
+                (self.emit)(RunEvent::Context {
+                    used: self.context,
+                    window,
+                });
+            }
+        }
         let Some(run) = self.run.as_mut() else {
             return;
         };
@@ -549,6 +571,35 @@ impl Actor {
             error,
         });
     }
+}
+
+/// What a message's usage puts in the context window: everything it read, cached or not, and
+/// what it wrote. None when the message carries no usage.
+fn context_used(usage: &Value) -> Option<u64> {
+    let n = |k: &str| usage[k].as_u64();
+    let input = n("input_tokens")?;
+    Some(
+        input
+            + n("cache_creation_input_tokens").unwrap_or(0)
+            + n("cache_read_input_tokens").unwrap_or(0)
+            + n("output_tokens").unwrap_or(0),
+    )
+}
+
+/// The main model's window from a result's `modelUsage`. A subagent on another model shows up
+/// there too, so the model that read the most is taken as the main one.
+fn context_window(models: &Value) -> Option<u64> {
+    let read = |m: &Value| {
+        [
+            "inputTokens",
+            "cacheReadInputTokens",
+            "cacheCreationInputTokens",
+        ]
+        .iter()
+        .map(|k| m[*k].as_u64().unwrap_or(0))
+        .sum::<u64>()
+    };
+    models.as_object()?.values().max_by_key(|m| read(m))?["contextWindow"].as_u64()
 }
 
 async fn sleep_until(at: Option<Instant>) {
@@ -628,6 +679,23 @@ mod tests {
         assert!(a.windows(2).any(|w| w == ["--resume", "abc"]));
         assert!(a.contains(&"--dangerously-skip-permissions".to_string()));
         assert!(!a.contains(&"--permission-mode".to_string()));
+    }
+
+    #[test]
+    fn context_counts_cache_and_takes_the_main_models_window() {
+        let usage: Value = serde_json::from_str(
+            r#"{"input_tokens":9,"cache_creation_input_tokens":13137,"cache_read_input_tokens":17943,"output_tokens":3}"#,
+        )
+        .unwrap();
+        assert_eq!(context_used(&usage), Some(31092));
+        assert_eq!(context_used(&Value::Null), None);
+        let models: Value = serde_json::from_str(
+            r#"{"claude-haiku-4-5":{"inputTokens":50,"cacheReadInputTokens":10,"contextWindow":200000},
+                "claude-opus-5-5":{"inputTokens":9,"cacheReadInputTokens":17943,"cacheCreationInputTokens":13137,"contextWindow":1000000}}"#,
+        )
+        .unwrap();
+        assert_eq!(context_window(&models), Some(1_000_000));
+        assert_eq!(context_window(&Value::Null), None);
     }
 
     #[test]

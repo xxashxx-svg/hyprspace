@@ -81,6 +81,11 @@ async fn streams_a_reply_with_thinking_and_tool_calls() {
         input: 10,
         output: 20
     }));
+    // the window only comes with the result, so the first turn reports at its end
+    assert!(run.contains(&RunEvent::Context {
+        used: 420,
+        window: 1000
+    }));
     assert_eq!(finished(&run), (RunStatus::Done, "Hello".into(), None));
 }
 

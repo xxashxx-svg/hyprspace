@@ -22,6 +22,7 @@ use hyprspace_proto::{Agent, Client, Command, UsageCommand, UsageEvent};
 
 use model::{Heard, Readings};
 
+pub(crate) use meter::ring;
 pub(crate) use page::masked;
 
 const CLAUDE_EVERY: Duration = Duration::from_secs(180);

@@ -22,6 +22,7 @@ fn result(subtype: &str, text: &str, errors: Value) {
         "type": "result", "subtype": subtype, "is_error": subtype != "success",
         "duration_ms": 5, "result": text, "errors": errors,
         "usage": { "input_tokens": 10, "output_tokens": 20 },
+        "modelUsage": { "claude-opus-5-5": { "inputTokens": 10, "contextWindow": 1000 } },
         "session_id": "ignored",
     }));
 }
@@ -146,7 +147,9 @@ fn hello() {
             { "type": "tool_use", "id": "t1", "name": "Bash", "input": { "command": "ls" } },
             { "type": "tool_use", "id": "t2", "name": "Edit",
               "input": { "file_path": "/a.rs", "old_string": "a", "new_string": "b" } },
-        ] },
+        ],
+        "usage": { "input_tokens": 5, "cache_creation_input_tokens": 100,
+                   "cache_read_input_tokens": 300, "output_tokens": 15 } },
     }));
     emit(json!({
         "type": "user", "parent_tool_use_id": null,

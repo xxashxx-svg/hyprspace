@@ -127,6 +127,9 @@ pub enum RunEvent {
     Steered,
     /// Tokens the run used.
     Usage { input: u64, output: u64 },
+    /// How full the model's context window is: the tokens the latest reply saw and wrote, out of
+    /// the window's size.
+    Context { used: u64, window: u64 },
     /// Something went wrong that the user should see. The run may still go on.
     Error { message: String },
     Finished {
