@@ -1,6 +1,7 @@
-// The composer's box and the resume list under it: a framed card like the thread's reply pill
-// whose line firms up a little while you type, the folder on top, the prompt, and a row of chips
-// with attach and the round send button at the bottom.
+// The composer's box, the folder picker over it, and the resume list under it. The box is framed
+// like the thread's reply pill and its line firms up a little while you type: the prompt, then
+// attach, permission and terminal on the left of its bottom row and the model, effort and the
+// round send button on the right, the way zeron lays it out.
 
 use gpui::{
     AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton, Window, div,
@@ -9,6 +10,7 @@ use gpui::{
 use hyprspace_proto::state::Pick;
 use hyprspace_theme::MONO;
 
+use super::model_menu::Host as _;
 use super::{Composer, PickFor, model_menu, pickers};
 use crate::assets::{icon, mark};
 use crate::{attach, colors, time, widgets};
@@ -26,19 +28,12 @@ pub fn model_label(c: &Composer, pick: &Pick) -> String {
 pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> AnyElement {
     let pick = c.pick();
     let focused = c.input.focus_handle(cx).is_focused(window);
-    let top = top_row(c, cx);
     let model_chip: AnyElement = match &pick {
         Some(p) => model_menu::anchored_chip(
             &c.anchor,
             widgets::chip("composer-model")
                 .child(mark(p.agent, 13., colors::brand(p.agent).0))
                 .child(div().truncate().child(model_label(c, p)))
-                .children((!p.effort.is_empty()).then(|| {
-                    div()
-                        .flex_none()
-                        .text_color(colors::text3())
-                        .child(pickers::effort_label(&p.effort))
-                }))
                 .child(widgets::caret())
                 .on_click(cx.listener(|c, _: &ClickEvent, window, cx| c.open_models(window, cx))),
         )
@@ -54,6 +49,20 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             .child("No agent installed")
             .into_any_element(),
     };
+    let effort_chip = c
+        .model_spec()
+        .filter(|s| !s.efforts.is_empty() || s.long.is_some())
+        .map(|spec| {
+            model_menu::anchored_chip(
+                &c.effort_anchor,
+                widgets::chip("composer-effort")
+                    .child(model_menu::effort_chip_label(&spec))
+                    .child(widgets::caret())
+                    .on_click(
+                        cx.listener(|c, _: &ClickEvent, window, cx| c.open_effort(window, cx)),
+                    ),
+            )
+        });
     let permission_chip = widgets::chip("composer-permission")
         .child(pickers::permission_label(c.prefs.permission))
         .child(widgets::caret())
@@ -93,9 +102,8 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .border_color(frame)
         .bg(colors::surface2().opacity(0.85))
         .shadow(colors::shadow())
-        .children(top)
         .when(!c.images.is_empty(), |d| {
-            d.child(div().px(px(14.)).pb(px(8.)).child(attach::tray(
+            d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
                 "composer-img",
                 &c.images,
                 cx.listener(|c, ix: &usize, _, cx| {
@@ -108,10 +116,10 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         })
         .child(
             div()
-                .min_h(px(68.))
-                .px(px(14.))
-                .pt(px(4.))
-                .pb(px(10.))
+                .min_h(px(64.))
+                .px(px(16.))
+                .pt(px(14.))
+                .pb(px(8.))
                 .text_size(px(14.))
                 .line_height(px(22.))
                 .child(c.input.clone()),
@@ -121,16 +129,17 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .flex()
                 .items_center()
                 .gap_2()
-                .px(px(10.))
+                .px(px(8.))
                 .pb(px(8.))
-                .child(model_chip)
-                .child(permission_chip)
-                .children(terminal_chip)
-                .child(div().flex_1())
                 .child(
                     widgets::icon_button("composer-attach", "paperclip", 28.)
                         .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.pick_images(cx))),
                 )
+                .child(permission_chip)
+                .children(terminal_chip)
+                .child(div().flex_1())
+                .child(model_chip)
+                .children(effort_chip)
                 .child(
                     widgets::send("composer-start", "arrow-up")
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -140,63 +149,41 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .into_any_element()
 }
 
-/// The folder row: where the thread will run. A project shows its folder; an open space asks.
-fn top_row(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElement> {
-    let target = c.target.as_ref();
-    let row = div().flex().items_center().gap_2().px(px(12.)).py(px(10.));
-    match target {
-        None => Some(
-            row.child(
-                widgets::chip("composer-folder")
-                    .child(icon("folder-open", 13., colors::text2()))
-                    .child("Choose a folder")
-                    .on_click(
-                        cx.listener(|c, _: &ClickEvent, _, cx| c.pick_folder(PickFor::Project, cx)),
-                    ),
-            )
-            .into_any_element(),
-        ),
-        Some(t) if t.cwd.is_none() => {
-            let label = c
-                .folder
+/// Where the thread will run, as a quiet button above the box on its right, like zeron's folder
+/// picker. A project shows its folder; an open space asks for one.
+pub fn folder_picker(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
+    let (label, pick) = match c.target.as_ref() {
+        None => ("Choose a folder".to_string(), Some(PickFor::Project)),
+        Some(t) if t.cwd.is_none() => (
+            c.folder
                 .as_ref()
-                .map_or("Choose a folder".to_string(), |f| f.display().to_string());
-            Some(
-                row.child(
-                    widgets::chip("composer-folder")
-                        .child(icon("folder", 13., colors::text2()))
-                        .child(div().truncate().child(label))
-                        .child(widgets::caret())
-                        .on_click(cx.listener(|c, _: &ClickEvent, _, cx| {
-                            c.pick_folder(PickFor::Folder, cx)
-                        })),
-                )
-                .into_any_element(),
-            )
-        }
-        Some(t) => {
-            let path = t.cwd.as_ref()?.display().to_string();
-            Some(
-                row.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(5.))
-                        .min_w_0()
-                        .text_color(colors::text3())
-                        .child(icon("folder", 12., colors::text3()))
-                        .child(
-                            div()
-                                .truncate()
-                                .font_family(MONO)
-                                .text_size(px(11.5))
-                                .child(path),
-                        ),
-                )
-                .into_any_element(),
-            )
-        }
-    }
+                .and_then(|f| f.file_name())
+                .map_or("Choose a folder".to_string(), |n| {
+                    n.to_string_lossy().to_string()
+                }),
+            Some(PickFor::Folder),
+        ),
+        Some(t) => (t.name.clone(), None),
+    };
+    div()
+        .id("composer-folder")
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .h(px(26.))
+        .px(px(8.))
+        .rounded(px(7.))
+        .text_size(px(12.5))
+        .text_color(colors::text2())
+        .child(icon("folder", 13., colors::text3()))
+        .child(div().max_w(px(260.)).truncate().child(label))
+        .when_some(pick, |d, pick| {
+            d.cursor_pointer()
+                .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
+                .child(icon("chevron-down", 12., colors::text3()))
+                .on_click(cx.listener(move |c, _: &ClickEvent, _, cx| c.pick_folder(pick, cx)))
+        })
+        .into_any_element()
 }
 
 /// The agent's saved conversations for this folder, to pick one up again.

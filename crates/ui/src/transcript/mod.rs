@@ -55,6 +55,7 @@ pub struct TranscriptView {
     menu: Option<ModelMenu>,
     /// Where the model chip sits, for its menu to open from.
     anchor: Anchor,
+    effort_anchor: Anchor,
     /// Runs of tool calls opened to their single calls, by the index of their first call.
     open_runs: HashSet<usize>,
     /// The reply box is empty, so a live run shows Stop instead of Send.
@@ -114,6 +115,7 @@ impl TranscriptView {
             catalog: None,
             menu: None,
             anchor: Anchor::default(),
+            effort_anchor: Anchor::default(),
             open_runs: HashSet::new(),
             empty: true,
             branch,
@@ -211,7 +213,11 @@ impl TranscriptView {
     }
 
     fn pick_model(&mut self, model: String, cx: &mut Context<Self>) {
-        let model = Some(model).filter(|m| !m.is_empty());
+        // the 1M window carries over to a model that has one
+        let current = self.launch.model.as_deref().unwrap_or_default();
+        let long =
+            crate::models::is_long(current) && crate::models::takes_long(self.launch.agent, &model);
+        let model = Some(crate::models::windowed(&model, long)).filter(|m| !m.is_empty());
         if model == self.launch.model {
             return;
         }
@@ -226,6 +232,19 @@ impl TranscriptView {
         }
         let name = self.model_label();
         self.relaunch(format!("Model set to {name}."), cx);
+    }
+
+    fn pick_long(&mut self, long: bool, cx: &mut Context<Self>) {
+        let Some(model) = self.launch.model.clone() else {
+            return;
+        };
+        let model = crate::models::windowed(&model, long);
+        if Some(&model) == self.launch.model.as_ref() {
+            return;
+        }
+        self.launch.model = Some(model);
+        let size = if long { "1M" } else { "standard" };
+        self.relaunch(format!("Context window set to {size}."), cx);
     }
 
     fn pick_effort(&mut self, effort: String, cx: &mut Context<Self>) {
@@ -260,25 +279,6 @@ impl TranscriptView {
             Some(id) => crate::models::name(self.catalog.as_ref(), id),
             None => "Default".into(),
         }
-    }
-
-    /// The effort the thread runs at, when it set one or its model has a default.
-    fn effort_label(&self) -> Option<String> {
-        let model = self.launch.model.as_deref().unwrap_or_default();
-        self.launch
-            .effort
-            .clone()
-            .or_else(|| {
-                self.catalog
-                    .as_ref()?
-                    .models
-                    .iter()
-                    .find(|m| m.id == model)?
-                    .default_effort
-                    .clone()
-            })
-            .filter(|e| !e.is_empty())
-            .map(|e| crate::composer::effort_label(&e))
     }
 
     pub fn apply(&mut self, event: RunEvent, cx: &mut Context<Self>) {
@@ -437,11 +437,8 @@ impl model_menu::Host for TranscriptView {
         Some(Spec {
             models,
             efforts: catalog.efforts_for(&model).to_vec(),
-            default_effort: catalog
-                .models
-                .iter()
-                .find(|m| m.id == model)
-                .and_then(|m| m.default_effort.clone()),
+            default_effort: catalog.model(&model).and_then(|m| m.default_effort.clone()),
+            long: crate::models::takes_long(agent, &model).then(|| crate::models::is_long(&model)),
             agent,
             model,
             effort: self.launch.effort.clone().unwrap_or_default(),
@@ -461,6 +458,7 @@ impl model_menu::Host for TranscriptView {
         match choice {
             Choice::Model(_, model) => self.pick_model(model, cx),
             Choice::Effort(effort) => self.pick_effort(effort, cx),
+            Choice::Long(long) => self.pick_long(long, cx),
         }
     }
 }

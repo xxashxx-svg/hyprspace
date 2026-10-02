@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use gpui::{
     ClickEvent, Context, Entity, EventEmitter, ExternalPaths, Focusable, FontWeight, IntoElement,
-    PathPromptOptions, Pixels, Point, Render, Subscription, Window, div, prelude::*, px,
+    PathPromptOptions, Pixels, Point, Render, Subscription, Window, div, prelude::*, px, relative,
 };
 use hyprspace_proto::agents::{AgentInfo, AgentSession};
 use hyprspace_proto::state::{ComposerPrefs, Pick};
@@ -79,6 +79,7 @@ pub struct Composer {
     models: Option<ModelMenu>,
     /// Where the model chip sits, for the model menu to open from.
     anchor: Anchor,
+    effort_anchor: Anchor,
     resumable: Vec<AgentSession>,
     /// The (agent, folder) the resume list is for.
     asked: Option<(Agent, PathBuf)>,
@@ -132,6 +133,7 @@ impl Composer {
             menu: None,
             models: None,
             anchor: Anchor::default(),
+            effort_anchor: Anchor::default(),
             resumable: Vec::new(),
             asked: None,
             clone: CloneCard {
@@ -473,6 +475,14 @@ impl Composer {
         }
     }
 
+    fn open_effort(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(spec) = self.model_spec() {
+            self.menu = None;
+            self.models = Some(ModelMenu::open_effort(&spec, window, cx));
+            cx.notify();
+        }
+    }
+
     fn drop_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
         self.images.extend(
             paths
@@ -521,15 +531,17 @@ impl Render for Composer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.input.read(cx).text().to_string();
         let repo = repo::split(&text).map(|(r, _)| r);
-        let name = self.target.as_ref().map(|t| t.name.clone());
-        let heading = match (&repo, &name) {
-            (Some(r), _) => div().child("Clone ").child(bold(r.label.clone())),
-            (None, Some(n)) => div()
-                .child("What should we work on in ")
-                .child(bold(n.clone()))
-                .child("?"),
-            (None, None) => div().child("What should we work on?"),
-        };
+        // only a clone says what it will do; otherwise the box speaks for itself, as zeron's does
+        let heading = repo.as_ref().map(|r| {
+            div()
+                .flex()
+                .justify_center()
+                .mb(px(16.))
+                .text_size(px(22.))
+                .font_weight(FontWeight::MEDIUM)
+                .child("Clone ")
+                .child(bold(r.label.clone()))
+        });
         let agent_name = self.agent().map(|a| a.agent.name()).unwrap_or("The agent");
         let below = match &repo {
             Some(r) => Some(clone::render(
@@ -548,7 +560,14 @@ impl Render for Composer {
             .models
             .as_ref()
             .zip(self.model_spec())
-            .and_then(|(m, spec)| model_menu::render(m, &spec, &self.anchor, window, cx));
+            .and_then(|(m, spec)| {
+                let anchor = if m.is_effort() {
+                    &self.effort_anchor
+                } else {
+                    &self.anchor
+                };
+                model_menu::render(m, &spec, anchor, window, cx)
+            });
         div()
             .id("composer")
             .size_full()
@@ -560,22 +579,23 @@ impl Render for Composer {
             .on_drop(cx.listener(|c, paths: &ExternalPaths, _, cx| c.drop_paths(paths, cx)))
             .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent_dim()))
             .overflow_y_scroll()
+            // the box sits a third of the way down, like zeron's
+            .child(div().flex_none().h(relative(0.3)))
             .child(
                 div()
                     .w_full()
                     .max_w(px(760.))
                     .px(px(24.))
-                    .pt(px(110.))
                     .pb(px(24.))
                     .flex()
                     .flex_col()
+                    .children(heading)
                     .child(
-                        heading
+                        div()
                             .flex()
-                            .justify_center()
-                            .mb(px(16.))
-                            .text_size(px(22.))
-                            .font_weight(FontWeight::MEDIUM),
+                            .justify_end()
+                            .mb(px(6.))
+                            .child(card::folder_picker(self, cx)),
                     )
                     .child(card::card(self, window, cx))
                     .children(self.error.clone().map(|e| {
@@ -612,10 +632,10 @@ impl model_menu::Host for Composer {
             models,
             efforts: catalog.efforts_for(&pick.model).to_vec(),
             default_effort: catalog
-                .models
-                .iter()
-                .find(|m| m.id == pick.model)
+                .model(&pick.model)
                 .and_then(|m| m.default_effort.clone()),
+            long: crate::models::takes_long(pick.agent, &pick.model)
+                .then(|| crate::models::is_long(&pick.model)),
             agent: pick.agent,
             model: pick.model,
             effort: pick.effort,
@@ -638,14 +658,23 @@ impl model_menu::Host for Composer {
                     .find(|a| a.agent == agent)
                     .is_some_and(|a| a.catalog.efforts_for(&model).contains(&old.effort));
                 let effort = if takes { old.effort } else { String::new() };
+                // the 1M window carries over to a model that has one
+                let long =
+                    crate::models::is_long(&old.model) && crate::models::takes_long(agent, &model);
                 self.set_pick(
                     Pick {
                         agent,
-                        model,
+                        model: crate::models::windowed(&model, long),
                         effort,
                     },
                     cx,
                 );
+            }
+            Choice::Long(long) => {
+                if let Some(pick) = self.pick() {
+                    let model = crate::models::windowed(&pick.model, long);
+                    self.set_pick(Pick { model, ..pick }, cx);
+                }
             }
             Choice::Effort(effort) => {
                 if let Some(pick) = self.pick() {

@@ -1,6 +1,7 @@
 // What a model is called on screen. Every chip, header and picker goes through `name`, so one
 // model reads the same everywhere, and nobody sees a raw id like `claude-opus-5-5[1m]`.
 
+use hyprspace_proto::Agent;
 use hyprspace_proto::agents::AgentCatalog;
 
 /// A model's name from the agent's catalog. Ids arrive in three shapes: the catalog's own, the
@@ -39,6 +40,31 @@ pub(crate) fn name(catalog: Option<&AgentCatalog>, id: &str) -> String {
         name = format!("{name} {}", version.join("."));
     }
     name
+}
+
+/// The tag that puts a Claude model on its 1M context window.
+const LONG: &str = "[1m]";
+
+/// Whether `id` can run on the 1M window: Claude's Opus and Sonnet can, Haiku and the CLI's own
+/// default (an empty id) can't.
+pub(crate) fn takes_long(agent: Agent, id: &str) -> bool {
+    let b = bare(id);
+    agent == Agent::Claude && (b.starts_with("claude-opus") || b.starts_with("claude-sonnet"))
+}
+
+/// Whether `id` is on the 1M window.
+pub(crate) fn is_long(id: &str) -> bool {
+    id.ends_with(LONG)
+}
+
+/// `id` on the 1M window when `long`, else on the standard one.
+pub(crate) fn windowed(id: &str, long: bool) -> String {
+    let id = id.strip_suffix(LONG).unwrap_or(id);
+    if long {
+        format!("{id}{LONG}")
+    } else {
+        id.to_string()
+    }
 }
 
 fn capitalized(word: &str) -> String {
@@ -102,5 +128,17 @@ mod tests {
         assert_eq!(name(Some(&c), "opus"), "Opus 5.5");
         // a family the catalog doesn't list still reads as a word, not an id
         assert_eq!(name(Some(&c), "sonnet"), "Sonnet");
+    }
+
+    #[test]
+    fn only_opus_and_sonnet_take_the_long_window() {
+        assert!(takes_long(Agent::Claude, "claude-opus-5-5"));
+        assert!(takes_long(Agent::Claude, "claude-sonnet-5-5[1m]"));
+        assert!(!takes_long(Agent::Claude, "claude-haiku-4-5"));
+        assert!(!takes_long(Agent::Claude, ""));
+        assert!(!takes_long(Agent::Codex, "gpt-5.5"));
+        assert_eq!(windowed("claude-opus-5-5", true), "claude-opus-5-5[1m]");
+        assert_eq!(windowed("claude-opus-5-5[1m]", false), "claude-opus-5-5");
+        assert!(is_long("claude-opus-5-5[1m]"));
     }
 }

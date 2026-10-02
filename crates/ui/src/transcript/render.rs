@@ -716,45 +716,61 @@ fn composer(
     let agent = v.launch.agent;
     let (brand, _) = colors::brand(agent);
     let focused = v.input.focus_handle(cx).is_focused(window);
-    let chip = div()
-        .id("thread-model")
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .h(px(26.))
-        .px(px(8.))
-        .min_w_0()
-        .rounded(px(8.))
-        .text_size(px(12.5))
-        .child(mark(agent, 13., brand))
-        .child(
-            div()
-                .truncate()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(colors::text1())
-                .child(v.model_label()),
-        )
-        .children(
-            v.effort_label()
-                .map(|e| div().flex_none().text_color(colors::text3()).child(e)),
-        );
-    // the model is fixed while a run is live; it can change between runs
-    let chip = if running {
-        chip.into_any_element()
-    } else {
-        model_menu::anchored_chip(
-            &v.anchor,
-            chip.cursor_pointer()
-                .hover(|s| s.bg(colors::ink(0.06)))
-                .on_click(cx.listener(|v, _: &ClickEvent, window, cx| {
+    // a quiet chip that lifts on hover; while a run is live the model is fixed, so it only shows
+    let chip = |id: &'static str| {
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .h(px(26.))
+            .px(px(8.))
+            .min_w_0()
+            .rounded(px(8.))
+            .text_size(px(12.5))
+            .when(!running, |d| {
+                d.cursor_pointer().hover(|s| s.bg(colors::ink(0.06)))
+            })
+    };
+    let model_chip = model_menu::anchored_chip(
+        &v.anchor,
+        chip("thread-model")
+            .child(mark(agent, 13., brand))
+            .child(
+                div()
+                    .truncate()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors::text1())
+                    .child(v.model_label()),
+            )
+            .when(!running, |d| {
+                d.on_click(cx.listener(|v, _: &ClickEvent, window, cx| {
                     if let Some(spec) = v.model_spec() {
                         v.menu = Some(ModelMenu::open(&spec, window, cx));
                         cx.notify();
                     }
-                })),
-        )
-        .into_any_element()
-    };
+                }))
+            }),
+    );
+    let effort_chip = v
+        .model_spec()
+        .filter(|s| !s.efforts.is_empty() || s.long.is_some())
+        .map(|spec| {
+            model_menu::anchored_chip(
+                &v.effort_anchor,
+                chip("thread-effort")
+                    .text_color(colors::text3())
+                    .child(model_menu::effort_chip_label(&spec))
+                    .when(!running, |d| {
+                        d.on_click(cx.listener(|v, _: &ClickEvent, window, cx| {
+                            if let Some(spec) = v.model_spec() {
+                                v.menu = Some(ModelMenu::open_effort(&spec, window, cx));
+                                cx.notify();
+                            }
+                        }))
+                    }),
+            )
+        });
     // a live run with nothing typed can only be stopped; typed text steers it
     let action = if running && v.empty && v.images.is_empty() {
         widgets::stop("stop")
@@ -817,7 +833,8 @@ fn composer(
                         .flex_none()
                         .items_center()
                         .gap(px(4.))
-                        .child(chip)
+                        .child(model_chip)
+                        .children(effort_chip)
                         .child(action),
                 ),
         );
@@ -884,5 +901,11 @@ fn model_menu(
     cx: &mut Context<TranscriptView>,
 ) -> Option<AnyElement> {
     let spec = v.model_spec()?;
-    model_menu::render(v.menu.as_ref()?, &spec, &v.anchor, window, cx)
+    let menu = v.menu.as_ref()?;
+    let anchor = if menu.is_effort() {
+        &v.effort_anchor
+    } else {
+        &v.anchor
+    };
+    model_menu::render(menu, &spec, anchor, window, cx)
 }

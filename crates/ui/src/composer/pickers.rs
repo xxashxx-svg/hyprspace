@@ -1,13 +1,14 @@
-// The composer's permission picker, and the names and notes for effort levels that the model
-// menu shows.
+// The composer's permission picker, and the names for effort levels that the effort menu shows.
 
 use gpui::{
-    AnyElement, ClickEvent, Context, IntoElement, Pixels, Point, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window, div,
+    prelude::*, px,
 };
 use hyprspace_proto::Permission;
 
 use super::Composer;
-use crate::widgets;
+use crate::assets::icon;
+use crate::{colors, widgets};
 
 pub fn permission_label(p: Permission) -> &'static str {
     match p {
@@ -44,22 +45,6 @@ pub fn effort_label(level: &str) -> String {
     .to_string()
 }
 
-/// One line on what a level does.
-pub fn effort_note(level: &str) -> &'static str {
-    match level {
-        "" => "The CLI picks",
-        "none" => "No extra thinking",
-        "minimal" => "Fastest, barely thinks",
-        "low" => "Quick answers",
-        "medium" => "Balanced",
-        "high" => "Thinks longer",
-        "xhigh" => "Thinks much longer",
-        "max" => "Everything it has",
-        "ultra" => "Max, plus it delegates to sub-agents",
-        _ => "Thinks harder",
-    }
-}
-
 /// The permission menu, opened upward from where its chip was clicked.
 pub fn permission_menu(
     c: &Composer,
@@ -81,31 +66,57 @@ pub fn permission_menu(
     )
 }
 
+/// One row per mode, T3 Code's way: an icon, the mode's name, and a line on what it does.
 fn permission_rows(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
     let modes = [
-        Permission::Plan,
-        Permission::Ask,
-        Permission::Auto,
-        Permission::Bypass,
+        (Permission::Plan, "list-checks"),
+        (Permission::Ask, "hand"),
+        (Permission::Auto, "file-pen-line"),
+        (Permission::Bypass, "shield-off"),
     ];
     div()
-        .w(px(280.))
+        .w(px(300.))
         .flex()
         .flex_col()
-        .child(widgets::menu_heading("Permission"))
-        .children(modes.into_iter().enumerate().map(|(i, mode)| {
-            widgets::menu_item(
-                ("permission", i),
-                permission_label(mode),
-                Some(permission_note(mode).into()),
-                c.prefs.permission == mode,
-            )
-            .on_click(cx.listener(move |c, _: &ClickEvent, _, cx| {
-                c.prefs.permission = mode;
-                c.menu = None;
-                cx.emit(super::ComposerEvent::Prefs(c.prefs.clone()));
-                cx.notify();
-            }))
+        .gap(px(1.))
+        .children(modes.into_iter().enumerate().map(|(i, (mode, glyph))| {
+            let on = c.prefs.permission == mode;
+            div()
+                .id(("permission", i))
+                .flex()
+                .gap(px(10.))
+                .px(px(10.))
+                .py(px(7.))
+                .rounded(px(8.))
+                .cursor_pointer()
+                .when(on, |d| d.bg(colors::ink(0.07)))
+                .hover(|s| s.bg(colors::ink(0.05)))
+                .child(div().pt(px(2.)).child(icon(glyph, 14., colors::text2())))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(1.))
+                        .child(
+                            div()
+                                .text_size(px(12.5))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(colors::text1())
+                                .child(permission_label(mode)),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.5))
+                                .text_color(colors::text3())
+                                .child(permission_note(mode)),
+                        ),
+                )
+                .on_click(cx.listener(move |c, _: &ClickEvent, _, cx| {
+                    c.prefs.permission = mode;
+                    c.menu = None;
+                    cx.emit(super::ComposerEvent::Prefs(c.prefs.clone()));
+                    cx.notify();
+                }))
         }))
         .into_any_element()
 }
@@ -119,6 +130,5 @@ mod tests {
         assert_eq!(effort_label("xhigh"), "Extra high");
         assert_eq!(effort_label(""), "Default");
         assert_eq!(effort_label("turbo"), "turbo");
-        assert_eq!(effort_note("max"), "Everything it has");
     }
 }

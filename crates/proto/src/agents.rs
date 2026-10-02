@@ -126,9 +126,15 @@ pub struct AgentCatalog {
 }
 
 impl AgentCatalog {
+    /// The catalog's entry for `model`, whatever context window tag (`[1m]`) it carries.
+    pub fn model(&self, model: &str) -> Option<&ModelInfo> {
+        let id = model.split('[').next().unwrap_or(model);
+        self.models.iter().find(|m| m.id == id)
+    }
+
     /// The effort levels a start can pick for `model`: its own list, else the agent's.
     pub fn efforts_for(&self, model: &str) -> &[String] {
-        match self.models.iter().find(|m| m.id == model) {
+        match self.model(model) {
             Some(m) if !m.efforts.is_empty() => &m.efforts,
             _ => &self.efforts,
         }
