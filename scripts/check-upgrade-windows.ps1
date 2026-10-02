@@ -158,7 +158,7 @@ try {
   Get-ItemProperty $uninstKey -ErrorAction SilentlyContinue | Out-File (Join-Path $Out "apps-entry.txt")
   Get-ChildItem $dir -ErrorAction SilentlyContinue | Out-File (Join-Path $Out "install-folder.txt")
   Get-ChildItem $env:TEMP -Directory -ErrorAction SilentlyContinue | Out-File (Join-Path $Out "temp.txt")
-  foreach ($p in (Running $exe) + (Running $tauri)) {
+  foreach ($p in @(Running $exe) + @(Running $tauri)) {
     [void]$p.CloseMainWindow()
     if (-not $p.WaitForExit(5000)) { $p.Kill() }
   }
