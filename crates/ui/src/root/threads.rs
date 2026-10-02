@@ -433,6 +433,15 @@ impl Root {
                 }
                 self.leave(window, cx);
             }
+            Action::OpenBeside(id) => {
+                self.place_thread(id, true);
+                self.open_thread(id, window, cx);
+            }
+            Action::OpenIn(opener, space) => {
+                if let Some(cwd) = self.state.space(space).and_then(|s| s.cwd.clone()) {
+                    self.open_in(opener, &cwd, cx);
+                }
+            }
         }
         self.save();
         cx.notify();

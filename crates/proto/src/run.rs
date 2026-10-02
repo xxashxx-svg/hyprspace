@@ -70,7 +70,7 @@ impl Prompt {
 }
 
 /// What a structured session reports, in order. A run starts when a prompt is sent while no
-/// run is live, and ends with exactly one `Finished`.
+/// run is live, or on its own with `Woke`, and ends with exactly one `Finished`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RunEvent {
@@ -88,12 +88,33 @@ pub enum RunEvent {
     Thinking { text: String },
     /// A tool call began. The same id can come again with more detail filled in.
     Tool { id: String, tool: Tool },
-    /// A tool call ended. `output` is capped, for display.
+    /// A tool call ended. `output` is capped, for display, except a `Tool::Agent` call's,
+    /// which is the subagent's whole report.
     ToolDone {
         id: String,
         ok: bool,
         output: String,
     },
+    /// A tool call a subagent made. `parent` is the id of the `Tool::Agent` call that started
+    /// the subagent; a subagent's own subagents report under the same `parent`.
+    SubagentTool {
+        parent: String,
+        id: String,
+        tool: Tool,
+    },
+    /// A subagent's tool call ended. `output` is capped, for display.
+    SubagentToolDone {
+        parent: String,
+        id: String,
+        ok: bool,
+        output: String,
+    },
+    /// A block of text a subagent wrote along the way. Its final report comes as the
+    /// `ToolDone` of its `Tool::Agent` call.
+    SubagentText { parent: String, text: String },
+    /// The agent started a run without a prompt, to pick up what a background subagent
+    /// reported after the last run ended.
+    Woke,
     /// The agent waits for a yes or no before running `tool`. Answer with `Command::Approve`.
     /// `always` says whether the CLI can remember a yes for the rest of the session.
     Approval {
@@ -165,6 +186,14 @@ pub enum Tool {
         tool: String,
         input: String,
     },
+    /// A subagent doing `description`. `agent_type` is the CLI's name for the kind of subagent
+    /// (`general-purpose`), and `prompt` what it was told. The call's `ToolDone` comes when the
+    /// subagent finishes, which for one running in the background can be after the run ended.
+    Agent {
+        description: String,
+        agent_type: String,
+        prompt: String,
+    },
     /// Anything else, with its input as compact JSON.
     Other {
         name: String,
@@ -228,6 +257,16 @@ mod tests {
                 reason: None,
                 always: true,
             },
+            RunEvent::SubagentTool {
+                parent: "a1".into(),
+                id: "c2".into(),
+                tool: Tool::Agent {
+                    description: "Write a poem".into(),
+                    agent_type: "general-purpose".into(),
+                    prompt: "Four lines.".into(),
+                },
+            },
+            RunEvent::Woke,
             RunEvent::Finished {
                 status: RunStatus::Interrupted,
                 ms: 10,

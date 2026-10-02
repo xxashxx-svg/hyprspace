@@ -108,7 +108,12 @@ impl Root {
                 .text_color(colors::text3())
                 .child(ago(t.created, now)),
         };
-        let menu: MenuItems = vec![
+        let mut menu: MenuItems = Vec::new();
+        // an archived thread can't be a pane
+        if !t.archived {
+            menu.push(("Open beside".into(), Action::OpenBeside(id)));
+        }
+        menu.extend([
             ("Rename".into(), Action::Rename(Rename::Thread(id))),
             if t.archived {
                 ("Restore".into(), Action::ArchiveThread(id, false))
@@ -116,7 +121,7 @@ impl Root {
                 ("Archive".into(), Action::ArchiveThread(id, true))
             },
             ("Remove".into(), Action::RemoveThread(id)),
-        ];
+        ]);
         div()
             .id(("thread", id))
             .flex()

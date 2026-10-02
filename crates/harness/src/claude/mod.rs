@@ -5,6 +5,11 @@
 // One process per session. Each prompt is a stdin user line; a prompt sent mid-run is a steer
 // line the CLI folds in at its next step. Tool approvals arrive as `can_use_tool` control
 // requests (--permission-prompt-tool stdio) and wait until the user answers.
+//
+// Subagents (the Agent tool) send their own traffic tagged with the spawning call's id. It goes
+// out as `Subagent*` events under that id, never into the main reply. A subagent the CLI runs in
+// the background answers its call at once with a launch note, so that call stays open until the
+// subagent's `task_notification`, and the CLI then starts a run of its own to read the result.
 
 mod resume;
 mod tools;
@@ -15,7 +20,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use hyprspace_proto::{Agent, Launch, Permission, Prompt, RunEvent, RunStatus};
+use hyprspace_proto::{Agent, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
@@ -123,6 +128,8 @@ impl Harness for Claude {
             run: None,
             approvals: HashMap::new(),
             open_tools: HashSet::new(),
+            agents: HashMap::new(),
+            nested: HashMap::new(),
         };
         let stdout = BufReader::new(proc.stdout).lines();
         Ok(Session::new(tx, tokio::spawn(actor.serve(stdout, rx))))
@@ -143,6 +150,20 @@ struct Run {
     output: u64,
 }
 
+impl Run {
+    fn new() -> Self {
+        Self {
+            since: Instant::now(),
+            steers: VecDeque::new(),
+            interrupted: false,
+            held: None,
+            kill_at: None,
+            input: 0,
+            output: 0,
+        }
+    }
+}
+
 struct Actor {
     child: Child,
     stdin: ChildStdin,
@@ -157,6 +178,10 @@ struct Actor {
     approvals: HashMap<String, (Value, Value)>,
     /// Tool calls of the main thread that have no result yet.
     open_tools: HashSet<String>,
+    /// The main thread's Agent calls, true once their `ToolDone` went out.
+    agents: HashMap<String, bool>,
+    /// Agent calls a subagent made, to the main thread's call they report under.
+    nested: HashMap<String, String>,
 }
 
 type Lines = tokio::io::Lines<BufReader<tokio::process::ChildStdout>>;
@@ -241,15 +266,7 @@ impl Actor {
             run.steers.push_back(uuid.clone());
             wire::steer_line(content, &uuid, now)
         } else {
-            self.run = Some(Run {
-                since: Instant::now(),
-                steers: VecDeque::new(),
-                interrupted: false,
-                held: None,
-                kill_at: None,
-                input: 0,
-                output: 0,
-            });
+            self.run = Some(Run::new());
             wire::user_line(content)
         };
         self.write(line).await;
@@ -289,9 +306,16 @@ impl Actor {
             *at = Instant::now() + self.patience;
         }
         // subagent traffic carries the spawning tool's id; it belongs to that subagent's own
-        // transcript, never the main reply
-        let main = v["parent_tool_use_id"].is_null();
-        match v["type"].as_str().unwrap_or_default() {
+        // transcript, never the main reply. Control requests stay here whatever they carry: an
+        // approval a subagent asks for still waits on the user.
+        let kind = v["type"].as_str().unwrap_or_default();
+        if let Some(parent) = v["parent_tool_use_id"].as_str()
+            && matches!(kind, "assistant" | "user" | "stream_event")
+        {
+            self.subagent(parent, &v);
+            return;
+        }
+        match kind {
             "system" if v["subtype"] == "init" && !self.started => {
                 self.started = true;
                 let cwd = v["cwd"].as_str().map(PathBuf::from);
@@ -302,7 +326,14 @@ impl Actor {
                     cwd: cwd.unwrap_or_else(|| self.cwd.clone()),
                 });
             }
-            "stream_event" if main && v["event"]["type"] == "content_block_delta" => {
+            // the CLI starts every turn with an init; one with no run live is a turn it took
+            // on its own, after a background subagent finished
+            "system" if v["subtype"] == "init" && self.run.is_none() => {
+                self.run = Some(Run::new());
+                (self.emit)(RunEvent::Woke);
+            }
+            "system" if v["subtype"] == "task_notification" => self.notified(&v),
+            "stream_event" if v["event"]["type"] == "content_block_delta" => {
                 let delta = &v["event"]["delta"];
                 match delta["type"].as_str() {
                     Some("text_delta") => (self.emit)(RunEvent::Text {
@@ -315,7 +346,7 @@ impl Actor {
                 }
             }
             // text already streamed as deltas; the full message adds the tool calls
-            "assistant" if main => {
+            "assistant" => {
                 for block in blocks(&v) {
                     if block["type"] == "tool_use" {
                         let id = text(&block["id"]);
@@ -324,6 +355,9 @@ impl Actor {
                             block["name"].as_str().unwrap_or_default(),
                             &block["input"],
                         );
+                        if matches!(tool, Tool::Agent { .. }) {
+                            self.agents.entry(id.clone()).or_insert(false);
+                        }
                         (self.emit)(RunEvent::Tool { id, tool });
                     }
                 }
@@ -333,16 +367,25 @@ impl Actor {
                     });
                 }
             }
-            "user" if main => {
+            "user" => {
                 for block in blocks(&v) {
                     if block["type"] == "tool_result" {
                         let id = text(&block["tool_use_id"]);
                         self.open_tools.remove(&id);
-                        (self.emit)(RunEvent::ToolDone {
-                            id,
-                            ok: !block["is_error"].as_bool().unwrap_or(false),
-                            output: tools::result_text(&block["content"]),
-                        });
+                        let ok = !block["is_error"].as_bool().unwrap_or(false);
+                        let content = &block["content"];
+                        let output = match self.agents.get_mut(&id) {
+                            None => tools::result_text(content),
+                            // its task_notification already said how it ended
+                            Some(true) => continue,
+                            // a background subagent is still working; it ends by notification
+                            Some(_) if ok && tools::launched(&v, content) => continue,
+                            Some(done) => {
+                                *done = true;
+                                tools::report(content)
+                            }
+                        };
+                        (self.emit)(RunEvent::ToolDone { id, ok, output });
                     }
                 }
                 self.replayed(v["uuid"].as_str());
@@ -378,6 +421,82 @@ impl Actor {
             "result" => self.result(v),
             _ => {}
         }
+    }
+
+    /// A line from a subagent: its tool calls and results, and the text it wrote. The CLI
+    /// streams no partial text for subagents, so text comes whole with the assistant message.
+    fn subagent(&mut self, parent: &str, v: &Value) {
+        let parent = self
+            .nested
+            .get(parent)
+            .cloned()
+            .unwrap_or_else(|| parent.to_string());
+        match v["type"].as_str().unwrap_or_default() {
+            "assistant" => {
+                for block in blocks(v) {
+                    match block["type"].as_str() {
+                        Some("text") if !text(&block["text"]).trim().is_empty() => {
+                            (self.emit)(RunEvent::SubagentText {
+                                parent: parent.clone(),
+                                text: text(&block["text"]),
+                            })
+                        }
+                        Some("tool_use") => {
+                            let id = text(&block["id"]);
+                            let tool = tools::decode(
+                                block["name"].as_str().unwrap_or_default(),
+                                &block["input"],
+                            );
+                            if matches!(tool, Tool::Agent { .. }) {
+                                self.nested.insert(id.clone(), parent.clone());
+                            }
+                            (self.emit)(RunEvent::SubagentTool {
+                                parent: parent.clone(),
+                                id,
+                                tool,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // its text blocks are the prompt it was given, already on the Agent call
+            "user" => {
+                for block in blocks(v) {
+                    if block["type"] == "tool_result" {
+                        (self.emit)(RunEvent::SubagentToolDone {
+                            parent: parent.clone(),
+                            id: text(&block["tool_use_id"]),
+                            ok: !block["is_error"].as_bool().unwrap_or(false),
+                            output: tools::result_text(&block["content"]),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A background task ended. For a subagent this is the only word of it finishing, and
+    /// `summary` holds its report. Background shell commands end the same way; those are not
+    /// Agent calls and are left alone.
+    fn notified(&mut self, v: &Value) {
+        let id = text(&v["tool_use_id"]);
+        let Some(done) = self.agents.get_mut(&id).filter(|d| !**d) else {
+            return;
+        };
+        let ok = match v["status"].as_str().unwrap_or_default() {
+            "completed" => true,
+            "failed" | "killed" | "stopped" | "cancelled" => false,
+            // not an ending
+            _ => return,
+        };
+        *done = true;
+        (self.emit)(RunEvent::ToolDone {
+            id,
+            ok,
+            output: text(&v["summary"]).trim().to_string(),
+        });
     }
 
     /// The CLI echoed a user message. One of ours confirms that steer and every earlier one,

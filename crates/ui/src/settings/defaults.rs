@@ -44,19 +44,8 @@ const MODES: [(Permission, &str, &str, &str); 4] = [
     ),
 ];
 
-/// A model's name from the catalog. A saved id the catalog no longer lists is still a real
-/// choice, but its raw id means nothing to read.
 fn model_label(catalog: &AgentCatalog, model: &str) -> String {
-    catalog.models.iter().find(|m| m.id == model).map_or_else(
-        || {
-            if model.is_empty() {
-                "Default".into()
-            } else {
-                "Custom model".into()
-            }
-        },
-        |m| m.label.clone(),
-    )
+    crate::models::name(Some(catalog), model)
 }
 
 impl Root {
@@ -427,6 +416,6 @@ mod tests {
         };
         assert_eq!(model_label(&catalog, "claude-opus-5-5"), "Opus 5.5");
         assert_eq!(model_label(&catalog, ""), "Default");
-        assert_eq!(model_label(&catalog, "claude-gone-1"), "Custom model");
+        assert_eq!(model_label(&catalog, "claude-gone-1"), "Gone 1");
     }
 }

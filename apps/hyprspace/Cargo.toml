@@ -10,3 +10,6 @@ hyprspace-engine.workspace = true
 hyprspace-ui.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

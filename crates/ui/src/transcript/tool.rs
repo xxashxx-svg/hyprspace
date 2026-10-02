@@ -33,6 +33,8 @@ pub fn label(tool: &Tool) -> String {
         },
         Tool::Web { target } => format!("Look up {target}"),
         Tool::Mcp { server, tool, .. } => format!("{server}: {tool}"),
+        Tool::Agent { description, .. } if !description.is_empty() => description.clone(),
+        Tool::Agent { .. } => "Subagent".into(),
         Tool::Other { name, .. } => name.clone(),
     }
 }
@@ -75,7 +77,7 @@ pub fn summary<'a>(tools: impl IntoIterator<Item = &'a Tool>) -> String {
             Tool::Edit { changes } => n[2] += changes.len().max(1),
             Tool::Search { .. } => n[3] += 1,
             Tool::Web { .. } => n[4] += 1,
-            Tool::Mcp { .. } | Tool::Other { .. } => n[5] += 1,
+            Tool::Mcp { .. } | Tool::Agent { .. } | Tool::Other { .. } => n[5] += 1,
         }
     }
     let plural = |n: usize, one: &str, many: &str| if n == 1 { one } else { many }.to_string();
@@ -163,6 +165,7 @@ pub fn input(tool: &Tool) -> Option<String> {
             None => pattern.clone(),
         }),
         Tool::Web { target } => Some(target.clone()),
+        Tool::Agent { prompt, .. } => Some(prompt.clone()).filter(|p| !p.is_empty()),
         Tool::Mcp { input, .. } | Tool::Other { input, .. } => {
             Some(input.clone()).filter(|s| !s.is_empty() && s != "{}")
         }

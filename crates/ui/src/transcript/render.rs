@@ -114,7 +114,7 @@ fn folder_name(v: &TranscriptView) -> String {
 }
 
 /// A small dot that breathes while something is live.
-fn pulse(id: impl Into<gpui::ElementId>, size: f32) -> AnyElement {
+pub(super) fn pulse(id: impl Into<gpui::ElementId>, size: f32) -> AnyElement {
     div()
         .flex_none()
         .size(px(size))
@@ -315,7 +315,8 @@ fn item(
         }
         Item::Tool {
             tool, done, open, ..
-        } => tool_card(ix, tool, done.as_ref(), *open, cx),
+        } => main_tool(ix, tool, done.as_ref(), *open, cx),
+        Item::Agent(a) => super::subagent::card(ix, a, cx),
         Item::Approval {
             request,
             tool,
@@ -396,7 +397,7 @@ fn item(
 }
 
 /// A muted clickable line with a fold chevron. `toggle` flips what it opens.
-fn fold_head(
+pub(super) fn fold_head(
     id: impl Into<gpui::ElementId>,
     open: bool,
     label: SharedString,
@@ -495,7 +496,7 @@ fn tool_run(
                 (start..end).filter_map(|ix| match &v.model.items[ix] {
                     Item::Tool {
                         tool, done, open, ..
-                    } => Some(tool_card(ix, tool, done.as_ref(), *open, cx)),
+                    } => Some(main_tool(ix, tool, done.as_ref(), *open, cx)),
                     _ => None,
                 }),
             ))
@@ -503,15 +504,32 @@ fn tool_run(
         .into_any_element()
 }
 
-fn tool_card(
+fn main_tool(
     ix: usize,
     t: &Tool,
     done: Option<&(bool, String)>,
     open: bool,
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
+    tool_card(format!("tool-{ix}").into(), t, done, open, cx, move |v| {
+        if let Some(Item::Tool { open, .. }) = v.model.items.get_mut(ix) {
+            *open = !*open;
+        }
+    })
+}
+
+/// One tool call as a muted line that opens to its input and output. `key` keeps its element
+/// ids apart from every other call's; `toggle` flips where its open state lives.
+pub(super) fn tool_card(
+    key: SharedString,
+    t: &Tool,
+    done: Option<&(bool, String)>,
+    open: bool,
+    cx: &mut Context<TranscriptView>,
+    toggle: impl Fn(&mut TranscriptView) + 'static,
+) -> AnyElement {
     let state = match done {
-        None => Some(pulse(("tool-live", ix), 5.)),
+        None => Some(pulse((key.clone(), 1), 5.)),
         Some((false, _)) => Some(
             div()
                 .text_color(colors::error())
@@ -534,7 +552,7 @@ fn tool_card(
         _ => None,
     };
     let head = fold_head(
-        ("tool", ix),
+        (key, 0),
         open,
         tool::label(t).into(),
         Some(
@@ -548,11 +566,7 @@ fn tool_card(
                 .into_any_element(),
         ),
         cx,
-        move |v| {
-            if let Some(Item::Tool { open, .. }) = v.model.items.get_mut(ix) {
-                *open = !*open;
-            }
-        },
+        toggle,
     );
     div()
         .flex()

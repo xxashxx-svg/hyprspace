@@ -252,13 +252,24 @@ impl Root {
                 .child(space.name.clone())
                 .into_any_element(),
         };
-        let menu: MenuItems = vec![
+        let mut menu: MenuItems = vec![
             ("New thread".into(), Action::NewThread(id)),
             ("New terminal".into(), Action::NewTerminal(id)),
+        ];
+        // the same apps, in the same order, as the Open button's menu
+        if space.cwd.is_some() {
+            menu.extend(self.work.openers.iter().map(|&o| {
+                (
+                    format!("Open in {}", o.name()).into(),
+                    Action::OpenIn(o, id),
+                )
+            }));
+        }
+        menu.extend([
             ("Rename".into(), Action::Rename(Rename::Space(id))),
             ("Archive".into(), Action::ArchiveSpace(id, true)),
             ("Remove from the sidebar".into(), Action::RemoveSpace(id)),
-        ];
+        ]);
         let group: SharedString = format!("space-{id}").into();
         // the controls show on hover, except a folded section's chevron: it is the only sign
         // the section holds threads

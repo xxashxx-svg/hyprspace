@@ -2,6 +2,7 @@
 // same way, so they read as one family. Shared bits (status colors, ANSI) come from tokens.css.
 
 use crate::oklch::{oklch, oklch_a};
+use crate::syntax;
 use crate::{Color, Theme};
 
 pub struct ThemeInfo {
@@ -124,6 +125,7 @@ pub fn build(id: &str, dark: bool) -> Theme {
             cursor: oklch(0.82, 0.1, hue),
             selection: oklch_a(0.82, 0.1, hue, 0.25),
             ansi: XTERM,
+            syntax: syntax::derive(hue, tint, true),
         }
     } else {
         let (al, ac) = t.light;
@@ -159,6 +161,7 @@ pub fn build(id: &str, dark: bool) -> Theme {
             cursor: oklch(al, ac, hue),
             selection: oklch_a(al, ac, hue, 0.22),
             ansi: XTERM_LIGHT,
+            syntax: syntax::derive(hue, tint, false),
         }
     }
 }

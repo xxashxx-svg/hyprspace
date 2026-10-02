@@ -57,6 +57,10 @@ pub enum Action {
     ArchiveThread(u64, bool),
     RemoveSpace(u64),
     RemoveThread(u64),
+    /// Opens the thread as a new pane beside the ones on screen.
+    OpenBeside(u64),
+    /// Opens the space's folder in an editor or the file manager.
+    OpenIn(hyprspace_proto::Opener, u64),
 }
 
 /// A context menu's rows: what each says and does.
@@ -343,11 +347,12 @@ impl Root {
         let Some(id) = launch.model.as_deref() else {
             return launch.agent.name().to_string();
         };
-        self.agents
+        let catalog = self
+            .agents
             .iter()
             .find(|a| a.agent == launch.agent)
-            .and_then(|a| a.catalog.models.iter().find(|m| m.id == id))
-            .map_or_else(|| id.to_string(), |m| m.label.clone())
+            .map(|a| &a.catalog);
+        crate::models::name(catalog, id)
     }
 
     pub(crate) fn save(&self) {

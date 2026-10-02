@@ -3,6 +3,7 @@
 // (MIT, see THIRD_PARTY_NOTICES.md): a block tree with flattened inline runs, drawn as styled
 // text. A streaming reply is simply parsed again as it grows; replies are short enough.
 
+mod code;
 mod render;
 
 use std::ops::Range;

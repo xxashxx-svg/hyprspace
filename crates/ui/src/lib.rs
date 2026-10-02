@@ -9,6 +9,7 @@ mod dock;
 mod input;
 mod intro;
 mod markdown;
+mod models;
 mod palette;
 mod panes;
 mod root;

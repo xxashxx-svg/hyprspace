@@ -337,3 +337,100 @@ async fn a_missing_cli_fails_to_start() {
         Ok(_session) => assert!(matches!(events.next().await, RunEvent::Failed { .. })),
     }
 }
+
+fn agent_done(events: &[RunEvent], agent: &str) -> Vec<(bool, String)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            RunEvent::ToolDone { id, ok, output } if id == agent => Some((*ok, output.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_subagent_reports_under_its_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session, mut events) = start(&claude(), dir.path());
+    session.send(Prompt::text("subagent"));
+    let run = events.run().await;
+
+    assert!(run.contains(&RunEvent::Tool {
+        id: "toolu_agent".into(),
+        tool: Tool::Agent {
+            description: "Write a short poem".into(),
+            agent_type: "general-purpose".into(),
+            prompt: "Four lines.".into(),
+        }
+    }));
+    // nothing the subagent says reaches the main reply
+    assert_eq!(text(&run), "Wrote it.");
+    let sub = |id: &str, tool: Tool| RunEvent::SubagentTool {
+        parent: "toolu_agent".into(),
+        id: id.into(),
+        tool,
+    };
+    assert!(run.contains(&sub(
+        "s1",
+        Tool::Command {
+            command: "ls".into()
+        }
+    )));
+    assert!(run.contains(&RunEvent::SubagentToolDone {
+        parent: "toolu_agent".into(),
+        id: "s1".into(),
+        ok: true,
+        output: "a.txt".into(),
+    }));
+    assert!(run.contains(&RunEvent::SubagentText {
+        parent: "toolu_agent".into(),
+        text: "Let me look.".into(),
+    }));
+    // a subagent's own subagent reports under the call the user sees
+    assert!(run.contains(&sub(
+        "s3",
+        Tool::Read {
+            path: "/a.txt".into()
+        }
+    )));
+    // the call ends once, with the report and none of the CLI's framing
+    assert_eq!(
+        agent_done(&run, "toolu_agent"),
+        [(true, "Roses are red.\nDone.".to_string())]
+    );
+    assert_eq!(finished(&run), (RunStatus::Done, "Wrote it.".into(), None));
+}
+
+#[tokio::test]
+async fn a_background_subagent_outlives_the_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session, mut events) = start(&claude(), dir.path());
+    session.send(Prompt::text("background"));
+    let first = events.run().await;
+    assert!(
+        first
+            .iter()
+            .any(|e| matches!(e, RunEvent::Tool { id, .. } if id == "toolu_bg"))
+    );
+    // the launch note is not the end of the subagent
+    assert!(agent_done(&first, "toolu_bg").is_empty());
+    assert_eq!(text(&first), "Started it.");
+
+    let later = events.run().await;
+    assert!(later.contains(&RunEvent::SubagentText {
+        parent: "toolu_bg".into(),
+        text: "Found a.txt.".into(),
+    }));
+    assert_eq!(
+        agent_done(&later, "toolu_bg"),
+        [(true, "Found a.txt.".to_string())]
+    );
+    // only the subagent's notification counts; the shell command's is left alone
+    assert_eq!(count(&later, |e| matches!(e, RunEvent::ToolDone { .. })), 1);
+    // the CLI's own turn after it is a run of its own
+    assert_eq!(count(&later, |e| *e == RunEvent::Woke), 1);
+    assert_eq!(text(&later), "It found a.txt.");
+    assert_eq!(finished(&later).0, RunStatus::Done);
+    session.send(Prompt::text("after"));
+    assert_eq!(text(&events.run().await), "echo: after");
+}
