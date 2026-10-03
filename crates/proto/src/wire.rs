@@ -77,6 +77,14 @@ pub enum Command {
     Close {
         id: SessionId,
     },
+    /// Find the file behind Claude's `[Image #n]` marker in a terminal session, for its preview.
+    /// `conversation` is the Claude conversation the session is on. Answered with `ImageFound`.
+    FindImage {
+        id: SessionId,
+        cwd: PathBuf,
+        conversation: Option<String>,
+        n: u32,
+    },
     /// Open a file outside the app: in the user's code editor at `line` and `col` when one is
     /// installed, else with the OS default.
     OpenFile {
@@ -148,6 +156,12 @@ pub enum Event {
         id: SessionId,
         doing: Option<String>,
         subs: Vec<SubAgent>,
+    },
+    /// The file behind `[Image #n]` in a terminal session, or None when there is no such image.
+    ImageFound {
+        id: SessionId,
+        n: u32,
+        path: Option<PathBuf>,
     },
     /// The engine could not do what a command asked. `message` is user-facing.
     Failed {
@@ -266,6 +280,12 @@ mod tests {
                 line: Some(3),
                 col: None,
             },
+            Command::FindImage {
+                id: SessionId(2),
+                cwd: PathBuf::from("/w"),
+                conversation: Some("c1".into()),
+                n: 3,
+            },
             Command::Folder(FolderCommand::Stage {
                 cwd: PathBuf::from("/w"),
                 path: "a.rs".into(),
@@ -327,6 +347,11 @@ mod tests {
             Event::AgentState {
                 id: SessionId(2),
                 state: AgentState::Waiting,
+            },
+            Event::ImageFound {
+                id: SessionId(2),
+                n: 3,
+                path: Some(PathBuf::from("/c/3.png")),
             },
             Event::AgentActivity {
                 id: SessionId(2),

@@ -1,5 +1,5 @@
 // The read-only viewer: a file with its syntax colored and its line numbers, scrolled to the line
-// a terminal pointed at, or one file's working tree diff. A space has one viewer pane; showing
+// a terminal pointed at, an image fitted to the pane, or one file's working tree diff. A space has one viewer pane; showing
 // another file replaces what it shows. Editing stays in the user's editor, one click away in the
 // pane header.
 
@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{
-    App, Context, EventEmitter, FocusHandle, Focusable, IntoElement, MouseButton, Render,
-    ScrollStrategy, SharedString, Task, UniformListScrollHandle, Window, div, prelude::*, px,
+    App, Context, EventEmitter, FocusHandle, Focusable, IntoElement, MouseButton, ObjectFit,
+    Render, ScrollStrategy, SharedString, StyledImage, Task, UniformListScrollHandle, Window, div,
+    img, prelude::*, px,
 };
 use hyprspace_proto::{Client, Command, FolderCommand, FolderEvent, Pane};
 
@@ -22,8 +23,7 @@ use diff::Diff;
 /// Files the viewer can't draw; they open in the system's app for them.
 pub fn is_media(path: &Path) -> bool {
     const MEDIA: &[&str] = &[
-        "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "pdf", "mp4", "mov", "webm", "mp3",
-        "wav", "zip", "exe", "dll",
+        "ico", "pdf", "mp4", "mov", "webm", "mp3", "wav", "zip", "exe", "dll",
     ];
     path.extension()
         .and_then(|e| e.to_str())
@@ -40,6 +40,8 @@ enum Body {
     Failed(SharedString),
     Code(Code),
     Diff(Diff),
+    /// An image, and its size once read off its header.
+    Image(PathBuf, Option<(u32, u32)>),
 }
 
 pub struct Viewer {
@@ -110,6 +112,24 @@ impl Viewer {
         self._work = None;
         self.scroll = UniformListScrollHandle::new();
         match pane {
+            Pane::File { path, .. } if crate::attach::is_image(&path) => {
+                self.body = Body::Image(path.clone(), None);
+                let job = cx.background_spawn({
+                    let path = path.clone();
+                    async move { image::image_dimensions(&path).ok() }
+                });
+                self._work = Some(cx.spawn(async move |this, cx| {
+                    let size = job.await;
+                    let _ = this.update(cx, |v, cx| {
+                        if let Body::Image(p, s) = &mut v.body
+                            && *p == path
+                        {
+                            *s = size;
+                            cx.notify();
+                        }
+                    });
+                }));
+            }
             Pane::File { path, .. } => self
                 .client
                 .send(Command::Folder(FolderCommand::ReadFile { path })),
@@ -230,6 +250,27 @@ impl Render for Viewer {
                 .into_any_element(),
             Body::Code(c) => c.render(self.scroll.clone(), cx),
             Body::Diff(d) => d.render(self.scroll.clone(), cx),
+            Body::Image(path, size) => div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(10.))
+                .p(px(20.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .child(img(path.clone()).size_full().object_fit(ObjectFit::Contain)),
+                )
+                .children(size.map(|(w, h)| {
+                    div()
+                        .text_size(px(11.))
+                        .text_color(colors::text3())
+                        .child(format!("{w} \u{d7} {h}"))
+                }))
+                .into_any_element(),
         };
         div()
             .id("viewer")

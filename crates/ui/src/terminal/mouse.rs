@@ -1,7 +1,8 @@
 // The pointer over a terminal: drag, double-click and triple-click selection, the wheel (history,
 // or arrow keys and wheel reports for full-screen programs), the scrollbar, a right-click paste,
-// and links. A URL or an existing file path under the pointer is underlined; Ctrl+click (Cmd on
-// macOS) opens it. Selection gestures follow zeron's terminal panel (MIT, see
+// and links. A URL, an existing file path or Claude's `[Image #N]` under the pointer is
+// underlined; Ctrl+click (Cmd on macOS) opens it, and an image previews while the pointer rests
+// on it (images.rs). Selection gestures follow zeron's terminal panel (MIT, see
 // THIRD_PARTY_NOTICES.md).
 
 use std::path::PathBuf;
@@ -39,6 +40,8 @@ pub(super) enum Open {
         line: Option<u32>,
         col: Option<u32>,
     },
+    /// Claude's `[Image #N]`.
+    Marker(u32),
 }
 
 /// The link under the pointer and the cells it covers.
@@ -232,6 +235,7 @@ impl TerminalView {
         } else {
             self.emu.scroll(step);
             self.hover = None;
+            self.rest_on(None, cx);
             cx.notify();
         }
     }
@@ -247,6 +251,7 @@ impl TerminalView {
 
     fn hover_at(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
         let found = self.link_at(at);
+        self.hover_image(found.as_ref().map(|h| &h.open), at, cx);
         if found != self.hover {
             self.hover = found;
             cx.notify();
@@ -280,6 +285,14 @@ impl TerminalView {
                 }
                 Open::File { path, line, col }
             }
+            Target::Marker(n) => {
+                // a marker known to have no image isn't worth underlining
+                if !self.images.claude() || self.images.missing(n) {
+                    return None;
+                }
+                self.ask_marker(n);
+                Open::Marker(n)
+            }
         };
         Some(Hover {
             range: line.points[link.start]..=line.points[link.end - 1],
@@ -307,6 +320,7 @@ impl TerminalView {
         match open {
             Open::Url(url) => cx.open_url(&url),
             Open::File { path, line, col } => cx.emit(TerminalEvent::OpenFile { path, line, col }),
+            Open::Marker(n) => self.open_marker(n, cx),
         }
     }
 }

@@ -9,6 +9,7 @@ pub mod env;
 mod folder;
 pub mod git;
 pub mod hooks;
+mod images;
 pub mod journal;
 mod legacy;
 mod open;
@@ -250,6 +251,19 @@ async fn serve(
                 // dropping the session kills its CLI
                 structured.remove(&id);
                 terminals.close(id);
+            }
+            Command::FindImage {
+                id,
+                cwd,
+                conversation,
+                n,
+            } => {
+                let events = tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let path =
+                        images::find(&crate::util::home_dir(), &cwd, conversation.as_deref(), n);
+                    let _ = events.unbounded_send(Event::ImageFound { id, n, path });
+                });
             }
             Command::OpenFile { path, line, col } => {
                 tokio::task::spawn_blocking(move || {

@@ -80,7 +80,9 @@ impl TerminalView {
         });
         match saved {
             Some(path) => {
+                let before = self.before_paste();
                 self.paste_text(&image_text(&path), cx);
+                self.pasted(path, before, cx);
                 true
             }
             None => false,

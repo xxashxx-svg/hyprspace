@@ -286,6 +286,11 @@ impl Root {
                     cx.notify();
                 }
             }
+            Event::ImageFound { id, n, path } => {
+                if let Some(View::Terminal(v)) = self.view_of(id) {
+                    v.update(cx, |v, cx| v.image_found(n, path, cx));
+                }
+            }
             Event::TerminalConversation { id, resume } => {
                 let Some(&thread) = self.sessions.get(&id) else {
                     return;

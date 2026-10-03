@@ -1,6 +1,7 @@
-// Finding what is clickable in a line of terminal output: URLs, and file paths with an optional
-// `:line:col` the way compilers print them (`src/main.rs:12:5`, `C:\a\b.rs:3`). Pure text in,
-// char ranges out; the view checks a path exists before it underlines it.
+// Finding what is clickable in a line of terminal output: URLs, file paths with an optional
+// `:line:col` the way compilers print them (`src/main.rs:12:5`, `C:\a\b.rs:3`), and Claude's
+// `[Image #N]` markers. Pure text in, char ranges out; the view checks a path exists before it
+// underlines it.
 
 use std::path::{Path, PathBuf};
 
@@ -12,6 +13,8 @@ pub enum Target {
         line: Option<u32>,
         col: Option<u32>,
     },
+    /// Claude's `[Image #N]`: an image pasted into its prompt.
+    Marker(u32),
 }
 
 /// A link and the chars it covers in the line, `start..end`.
@@ -35,15 +38,17 @@ pub fn at(text: &str, at: usize) -> Option<Link> {
 
 pub fn all(text: &str) -> Vec<Link> {
     let chars: Vec<char> = text.chars().collect();
-    let mut out: Vec<Link> = Vec::new();
-    // quoted paths first: a Windows profile folder often has a space ("C:\Users\First Last")
+    let mut out: Vec<Link> = markers(&chars);
+    // quoted paths next: a Windows profile folder often has a space ("C:\Users\First Last")
     let mut i = 0;
     while i < chars.len() {
         if (chars[i] == '"' || chars[i] == '\'')
             && let Some(len) = chars[i + 1..].iter().position(|c| *c == chars[i])
         {
             let inner: String = chars[i + 1..i + 1 + len].iter().collect();
-            if let Some(target) = file(&inner) {
+            if let Some(target) = file(&inner)
+                && !out.iter().any(|l| l.start < i + 1 + len && i + 1 < l.end)
+            {
                 out.push(Link {
                     start: i + 1,
                     end: i + 1 + len,
@@ -72,6 +77,36 @@ pub fn all(text: &str) -> Vec<Link> {
         start = end;
     }
     out.sort_by_key(|l| l.start);
+    out
+}
+
+/// Every `[Image #N]` in a line. They go first: the space inside one would split it in two.
+fn markers(chars: &[char]) -> Vec<Link> {
+    const OPEN: &[char] = &['[', 'I', 'm', 'a', 'g', 'e', ' ', '#'];
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + OPEN.len() < chars.len() {
+        if chars[i..].starts_with(OPEN) {
+            let digits = chars[i + OPEN.len()..]
+                .iter()
+                .take_while(|c| c.is_ascii_digit())
+                .count();
+            let close = i + OPEN.len() + digits;
+            if digits > 0 && chars.get(close) == Some(&']') {
+                let n: String = chars[i + OPEN.len()..close].iter().collect();
+                if let Ok(n) = n.parse() {
+                    out.push(Link {
+                        start: i,
+                        end: close + 1,
+                        target: Target::Marker(n),
+                    });
+                    i = close + 1;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
     out
 }
 
@@ -204,15 +239,26 @@ mod tests {
     fn file_at(text: &str, at_char: usize) -> Option<(String, Option<u32>, Option<u32>)> {
         match at(text, at_char)?.target {
             Target::File { path, line, col } => Some((path, line, col)),
-            Target::Url(_) => None,
+            _ => None,
         }
     }
 
     fn url_at(text: &str, at_char: usize) -> Option<String> {
         match at(text, at_char)?.target {
             Target::Url(u) => Some(u),
-            Target::File { .. } => None,
+            _ => None,
         }
+    }
+
+    #[test]
+    fn image_markers_are_links_of_their_own() {
+        let line = "> look at [Image #3] and [Image #12], not [Image #] or [Image #4";
+        let l = at(line, 12).unwrap();
+        assert_eq!((l.start, l.end, l.target), (10, 20, Target::Marker(3)));
+        assert_eq!(at(line, 30).unwrap().target, Target::Marker(12));
+        // the space inside a marker doesn't make "#3]" a path or a stray link
+        assert_eq!(at(line, 18).unwrap().target, Target::Marker(3));
+        assert_eq!(at(line, 45), None);
     }
 
     #[test]

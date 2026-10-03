@@ -147,6 +147,13 @@ drop(session)                    // kills the CLI
   handler, so IME, dead keys and AltGr work. Keys with a meaning are encoded in `keys.rs`; links
   and `path:line:col` open on ctrl+click; pasted bitmaps are saved as PNGs and pasted as paths.
   `Root` keeps one view per thread, so moving a pane never rebuilds an emulator.
+- **Image previews.** Resting the pointer on an image path or on Claude's `[Image #N]` opens a
+  preview beside it, and ctrl+click shows the image in the viewer (`terminal/images.rs`). A
+  marker for an image pasted but not sent comes from the paste itself: the view reads Claude's
+  input box as it redraws to learn which number the paste became. Anything else is asked of the
+  engine (`FindImage`), whose `images.rs` looks in Claude's old `~/.claude/image-cache`, then
+  decodes the image out of the conversation's transcript into `~/.hyprspace/image-cache`, ported
+  from the Tauri app.
 
 ## Panes, dock and viewer (`ui/src/panes/`, `dock/`, `viewer/`, `engine/src/folder.rs`)
 

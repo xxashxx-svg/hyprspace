@@ -6,6 +6,7 @@
 mod clipboard;
 mod emulator;
 mod glyphs;
+mod images;
 mod input;
 mod keys;
 mod links;
@@ -75,6 +76,8 @@ pub struct TerminalView {
     blink_on: bool,
     /// When the user last typed. The cursor holds solid while they type, like xterm.
     typed: Instant,
+    /// Image previews, and the images pasted into Claude's prompt.
+    images: images::Images,
     _blink: Task<()>,
 }
 
@@ -94,6 +97,7 @@ impl TerminalView {
         let (cols, rows) = (80, 24);
         // claude draws its own cursor and the Tauri app never blinked over it
         let blink = run.as_ref().is_none_or(|r| r.agent != Agent::Claude);
+        let images = images::Images::new(run.as_ref());
         client.send(Command::OpenTerminal {
             id,
             cwd: cwd.clone(),
@@ -141,6 +145,7 @@ impl TerminalView {
             refocus: false,
             blink_on: true,
             typed: Instant::now(),
+            images,
             _blink: blinker,
         }
     }
@@ -155,6 +160,9 @@ impl TerminalView {
         self.emu.scroll_to_bottom();
         self.blink_on = true;
         self.typed = Instant::now();
+        if bytes == b"\r" || bytes.contains(&0x03) {
+            self.images.sent();
+        }
         self.write(bytes);
         cx.notify();
     }
@@ -367,6 +375,9 @@ impl Render for TerminalView {
                     .on_scroll_wheel(cx.listener(Self::on_wheel))
                     .on_hover(cx.listener(|v, hovered: &bool, _, cx| {
                         v.hovered = *hovered;
+                        if !*hovered {
+                            v.rest_on(None, cx);
+                        }
                         cx.notify();
                     }))
                     .child(
@@ -389,7 +400,13 @@ impl Render for TerminalView {
                         )
                         .size_full(),
                     )
-                    .children(self.find.as_ref().map(|f| f.render(cx))),
+                    .children(self.find.as_ref().map(|f| f.render(cx)))
+                    .children(
+                        self.images
+                            .peek
+                            .as_ref()
+                            .map(|p| p.render(window.viewport_size())),
+                    ),
             )
             .children(self.status.clone().map(|s| {
                 div()
