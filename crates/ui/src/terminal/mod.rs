@@ -71,6 +71,8 @@ pub struct TerminalView {
     /// IME text not committed yet.
     preedit: String,
     focused: bool,
+    /// Whether the window is the one in front; the cursor blinks only then.
+    active: bool,
     /// Take focus back on the next frame (after the find bar closes).
     refocus: bool,
     blink_on: bool,
@@ -113,6 +115,7 @@ impl TerminalView {
                 cx.background_executor().timer(BLINK).await;
                 let alive = this.update(cx, |v, cx| {
                     if v.focused
+                        && v.active
                         && v.emu.cursor().is_some_and(|c| c.blink)
                         && v.typed.elapsed() >= BLINK
                     {
@@ -144,6 +147,7 @@ impl TerminalView {
             find: None,
             preedit: String::new(),
             focused: false,
+            active: false,
             refocus: false,
             blink_on: true,
             typed: Instant::now(),
@@ -343,11 +347,16 @@ impl Render for TerminalView {
             self._focus = vec![
                 cx.on_focus(&self.focus, window, |_, _, cx| cx.notify()),
                 cx.on_blur(&self.focus, window, |_, _, cx| cx.notify()),
+                cx.observe_window_activation(window, |_, _, cx| cx.notify()),
             ];
         }
         let focused = self.focus.is_focused(window);
-        if focused != self.focused {
+        // in a window in the background the cursor holds still: no blinking, and no redrawing the
+        // whole window twice a second while someone works in another app
+        let active = window.is_window_active();
+        if focused != self.focused || active != self.active {
             self.focused = focused;
+            self.active = active;
             self.blink_on = true;
         }
         let view = cx.entity();

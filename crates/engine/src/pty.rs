@@ -244,11 +244,17 @@ impl Batch {
     }
 }
 
-// Returns when the reader hangs up.
+// Returns when the reader hangs up. With nothing held back it sleeps until output comes; a timed
+// wait there woke every quiet terminal sixty times a second for nothing.
 fn coalesce(rx: std::sync::mpsc::Receiver<Vec<u8>>, mut emit: impl FnMut(Vec<u8>)) {
     let mut batch = Batch::new(Instant::now());
     loop {
-        let out = match rx.recv_timeout(batch.interval) {
+        let next = if batch.acc.is_empty() {
+            rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
+        } else {
+            rx.recv_timeout(batch.interval)
+        };
+        let out = match next {
             Ok(chunk) => batch.push(&chunk, Instant::now()),
             Err(RecvTimeoutError::Timeout) => batch.take(Instant::now()),
             Err(RecvTimeoutError::Disconnected) => {
