@@ -117,6 +117,8 @@ pub struct Root {
     pub(crate) folder_picker: Option<Entity<crate::folders::FolderPicker>>,
     /// The intro while it is showing (`crate::intro`).
     pub(crate) intro: Option<crate::intro::Intro>,
+    /// Takes the intro away once its exit has played.
+    pub(crate) _intro_exit: Option<Task<()>>,
     /// The app updating itself (`crate::update`).
     pub(crate) updater: Entity<crate::update::Updater>,
     /// A press in the title row on macOS, until the pointer moves and the window drag starts.
@@ -245,6 +247,7 @@ impl Root {
             palette: None,
             folder_picker: None,
             intro: None,
+            _intro_exit: None,
             updater,
             moving: false,
             sidebar_flips: Default::default(),

@@ -568,7 +568,8 @@ impl crate::root::Root {
                         }),
                 ),
             )
-            .with_priority(2)
+            // above the intro too, whose last step opens it
+            .with_priority(4)
             .into_any_element(),
         )
     }

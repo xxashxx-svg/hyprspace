@@ -7,6 +7,8 @@
 mod sketches;
 mod steps;
 
+use std::time::{Duration, Instant};
+
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, Window, anchored, deferred, div,
     point, prelude::*, px,
@@ -16,6 +18,12 @@ use hyprspace_proto::Agent;
 use crate::assets::icon;
 use crate::root::Root;
 use crate::{colors, widgets};
+
+/// The exit, after the Tauri app's: the card sinks away while the backdrop closes in to a point
+/// over the app, like an iris.
+const SINK: Duration = Duration::from_millis(380);
+const IRIS_AFTER: Duration = Duration::from_millis(120);
+const IRIS: Duration = Duration::from_millis(600);
 
 const STEPS: [&str; 6] = [
     "Welcome",
@@ -35,6 +43,8 @@ pub struct Intro {
     /// tell that it worked.
     spaces: usize,
     copied: Option<Agent>,
+    /// When the exit started.
+    leaving: Option<Instant>,
 }
 
 impl Intro {
@@ -45,6 +55,7 @@ impl Intro {
             tools: 0,
             spaces,
             copied: None,
+            leaving: None,
         }
     }
 }
@@ -70,10 +81,25 @@ impl Root {
         }
     }
 
+    /// Plays the exit, then takes the intro away. Seen counts from the start of it.
     fn finish_intro(&mut self, cx: &mut Context<Self>) {
-        self.intro = None;
         self.state.intro_seen = true;
         self.save();
+        let Some(intro) = &mut self.intro else {
+            return;
+        };
+        if !crate::slide::animations() {
+            self.intro = None;
+        } else if intro.leaving.is_none() {
+            intro.leaving = Some(Instant::now());
+            self._intro_exit = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(IRIS_AFTER + IRIS).await;
+                let _ = this.update(cx, |r, cx| {
+                    r.intro = None;
+                    cx.notify();
+                });
+            }));
+        }
         cx.notify();
     }
 
@@ -91,11 +117,15 @@ impl Root {
     ) -> Option<AnyElement> {
         let intro = self.intro.as_ref()?;
         // a folder picked on the last step: the space is there, so the intro is done
-        if self.state.spaces.len() > intro.spaces {
+        if intro.leaving.is_none() && self.state.spaces.len() > intro.spaces {
             self.finish_intro(cx);
-            return None;
         }
+        let intro = self.intro.as_ref()?;
         let step = intro.step;
+        let leaving = intro.leaving.map(|at| at.elapsed());
+        if leaving.is_some() {
+            window.request_animation_frame();
+        }
         let size = window.viewport_size();
         let body = match step {
             0 => self.intro_welcome(),
@@ -165,9 +195,17 @@ impl Root {
                     .child(body),
             )
             .child(foot);
+        // sinks: fades and drops, faster as it goes
+        let sink = leaving.map_or(0., |d| {
+            let t = (d.as_secs_f32() / SINK.as_secs_f32()).min(1.);
+            t * t
+        });
         let frame = div()
             .id("intro")
             .occlude()
+            .relative()
+            .top(px(18. * sink))
+            .opacity(1. - sink)
             .flex()
             .w(px(980.).min(size.width - px(48.)))
             .h(px(660.).min(size.height - px(48.)))
@@ -185,12 +223,16 @@ impl Root {
                     div()
                         .id("intro-backdrop")
                         .occlude()
+                        .relative()
                         .w(size.width)
                         .h(size.height)
                         .flex()
                         .items_center()
                         .justify_center()
-                        .bg(colors::bg())
+                        .map(|d| match leaving {
+                            None => d.bg(colors::bg()),
+                            Some(d_) => d.child(iris(d_, size)),
+                        })
                         .child(frame),
                 ),
             )
@@ -295,4 +337,28 @@ impl Root {
             )
             .into_any_element()
     }
+}
+
+/// The backdrop as a circle closing in on the middle of the window, `elapsed` into the exit. It
+/// starts wide enough to cover the corners, and a faint accent ring rides its edge.
+fn iris(elapsed: Duration, size: gpui::Size<gpui::Pixels>) -> AnyElement {
+    let t = (elapsed.saturating_sub(IRIS_AFTER).as_secs_f32() / IRIS.as_secs_f32()).min(1.);
+    // ease in and out
+    let t = if t < 0.5 {
+        4. * t * t * t
+    } else {
+        1. - (-2. * t + 2.).powi(3) / 2.
+    };
+    let (w, h) = (f32::from(size.width), f32::from(size.height));
+    let r = (w.hypot(h) / 2. + 2.) * (1. - t);
+    div()
+        .absolute()
+        .left(px(w / 2. - r))
+        .top(px(h / 2. - r))
+        .size(px(2. * r))
+        .rounded_full()
+        .bg(colors::bg())
+        .border_2()
+        .border_color(colors::accent().opacity(0.45 * t.min(1. - t) * 2.))
+        .into_any_element()
 }
