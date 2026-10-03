@@ -185,9 +185,10 @@ impl Thread {
     }
 
     /// Due to settle by itself at `now` after `after`. The caller rules out threads that are on
-    /// screen or working.
+    /// screen or working. One with no known time has nothing to count from, so it stays.
     pub fn settles(&self, now: u64, after: SettleAfter) -> bool {
         self.active()
+            && self.last_touch() > 0
             && after
                 .ms()
                 .is_some_and(|wait| now.saturating_sub(self.last_touch()) >= wait)
@@ -415,6 +416,8 @@ mod tests {
             ..t
         };
         assert!(!snoozed.settles(40 * DAY, SettleAfter::Day));
+        // no known time at all: nothing to count from
+        assert!(!Thread::default().settles(40 * DAY, SettleAfter::Day));
     }
 
     #[test]

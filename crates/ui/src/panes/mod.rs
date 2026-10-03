@@ -9,7 +9,7 @@ mod grid;
 mod header;
 pub mod layout;
 
-pub use header::short;
+pub use header::{PaneDrag, short};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

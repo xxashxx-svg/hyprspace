@@ -382,6 +382,12 @@ impl Render for TerminalView {
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::on_up))
                     .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_up))
                     .on_scroll_wheel(cx.listener(Self::on_wheel))
+                    .drag_over::<gpui::ExternalPaths>(|s, _, _, _| {
+                        s.bg(colors::accent().opacity(0.08))
+                    })
+                    .on_drop(cx.listener(|v, paths: &gpui::ExternalPaths, window, cx| {
+                        v.drop_paths(paths, window, cx)
+                    }))
                     .on_hover(cx.listener(|v, hovered: &bool, _, cx| {
                         v.hovered = *hovered;
                         if !*hovered {

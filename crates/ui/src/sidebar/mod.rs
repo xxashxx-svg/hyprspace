@@ -9,6 +9,7 @@
 // smooth with dozens of spaces. The wheel eases the list along instead of jumping a notch at a
 // time, the way the Tauri app's webview scrolled.
 
+mod drag;
 mod row;
 
 use std::cell::Cell;
@@ -17,10 +18,10 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, DispatchPhase, Entity, Focusable, FontWeight, HitboxBehavior,
-    IntoElement, ListAlignment, ListState, MouseButton, MouseDownEvent, ScrollWheelEvent,
-    SharedString, Subscription, Transformation, WeakEntity, Window, canvas, div, list, percentage,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, DispatchPhase, Entity, ExternalPaths, Focusable, FontWeight,
+    HitboxBehavior, IntoElement, ListAlignment, ListState, MouseButton, MouseDownEvent,
+    ScrollWheelEvent, SharedString, Subscription, Transformation, WeakEntity, Window, canvas, div,
+    list, percentage, prelude::*, px,
 };
 use hyprspace_proto::{Pane, Space, Thread};
 use hyprspace_theme::MONO;
@@ -28,8 +29,10 @@ use hyprspace_theme::MONO;
 use crate::assets::icon;
 use crate::colors;
 use crate::palette::TogglePalette;
+use crate::panes::PaneDrag;
 use crate::root::{Action, MenuItems, Rename, Root, Screen, SidebarDrag};
 use crate::time::now_ms;
+use drag::SpaceDrag;
 
 pub const MIN_WIDTH: f32 = 200.;
 pub const MAX_WIDTH: f32 = 480.;
@@ -475,7 +478,17 @@ impl Root {
             .border_r_1()
             .border_color(colors::border0())
             .child(self.nav_row(&q, cx))
-            .child(div().flex_1().min_h_0().child(rows))
+            .child(
+                div()
+                    .id("sidebar-rows")
+                    .flex_1()
+                    .min_h_0()
+                    .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent().opacity(0.06)))
+                    .on_drop(cx.listener(|r, paths: &ExternalPaths, window, cx| {
+                        r.drop_folders(paths, window, cx)
+                    }))
+                    .child(rows),
+            )
             .child(self.foot(cx))
             .child(
                 div()
@@ -715,6 +728,17 @@ impl Root {
                 r.open_space(id, window, cx)
             }))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
+            .on_drag(
+                SpaceDrag {
+                    id,
+                    name: space.name.clone().into(),
+                },
+                |d, offset, _, cx| cx.new(|_| d.ghost(offset)),
+            )
+            .drag_over::<SpaceDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
+            .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
+            .on_drop(cx.listener(move |r, d: &SpaceDrag, _, cx| r.drop_space(d, id, cx)))
+            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| r.drop_on_space(d, id, cx)))
             .into_any_element()
     }
 
@@ -836,6 +860,10 @@ impl Root {
                     r.settled_open.insert(space);
                 }
                 cx.notify();
+            }))
+            .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
+            .on_drop(cx.listener(move |r, d: &PaneDrag, window, cx| {
+                r.drop_on_settled(d, space, window, cx)
             }))
             .into_any_element()
     }

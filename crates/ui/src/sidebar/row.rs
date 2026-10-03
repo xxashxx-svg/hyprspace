@@ -12,7 +12,9 @@ use gpui::{
     IntoElement, MouseButton, SharedString, Transformation, div, linear_color_stop,
     linear_gradient, percentage, prelude::*, px, relative,
 };
-use hyprspace_proto::{Agent, Thread, ThreadKind};
+use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
+
+use crate::panes::PaneDrag;
 use hyprspace_theme::MONO;
 
 use super::row_hover;
@@ -478,6 +480,17 @@ impl Root {
                 r.open_thread(id, window, cx)
             }))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
+            .on_drag(
+                PaneDrag {
+                    space: self.state.thread(id).map_or(0, |(s, _)| s.id),
+                    pane: Pane::Thread { id },
+                    title: t.title.clone().into(),
+                    agent,
+                },
+                |d, offset, _, cx| cx.new(|_| d.ghost(offset, true)),
+            )
+            .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
+            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| r.drop_on_thread(d, id, cx)))
             .into_any_element()
     }
 }

@@ -331,9 +331,23 @@ impl Root {
             .capture_any_mouse_down(cx.listener(move |r, _, window, cx| {
                 r.focus_pane(space, clicked.clone(), false, window, cx)
             }))
-            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| {
-                if d.space == space && d.pane != target {
-                    r.swap_panes(space, &d.pane, &target, cx);
+            .on_drop(cx.listener(move |r, d: &PaneDrag, window, cx| {
+                if d.space != space || d.pane == target {
+                    return;
+                }
+                let on_screen = r
+                    .state
+                    .space(space)
+                    .is_some_and(|s| s.grid.panes.contains(&d.pane));
+                match d.pane.thread() {
+                    // a thread from the sidebar takes this pane's place
+                    Some(id) if !on_screen => {
+                        if let Some(s) = r.state.space_mut(space) {
+                            s.grid.focus = Some(target.clone());
+                        }
+                        r.open_thread(id, window, cx);
+                    }
+                    _ => r.swap_panes(space, &d.pane, &target, cx),
                 }
             }))
             .child(

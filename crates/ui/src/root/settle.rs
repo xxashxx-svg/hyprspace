@@ -55,7 +55,7 @@ impl Root {
     }
 
     /// Gives up an idle thread's session; a busy one keeps it until its turn ends.
-    fn free(&mut self, thread: u64) {
+    pub(crate) fn free(&mut self, thread: u64) {
         if !self.busy(thread) {
             self.drop_view(thread);
         }

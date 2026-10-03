@@ -33,12 +33,24 @@ pub fn short(path: &Path) -> String {
     }
 }
 
-/// A pane picked up by its header.
+/// A pane picked up by its header, or a thread picked up by its sidebar row.
 pub struct PaneDrag {
     pub space: u64,
     pub pane: Pane,
-    title: SharedString,
-    agent: Option<Agent>,
+    pub(crate) title: SharedString,
+    pub(crate) agent: Option<Agent>,
+}
+
+impl PaneDrag {
+    /// What follows the cursor: the pane card, or a one-line chip for a sidebar row.
+    pub(crate) fn ghost(&self, grab: Point<Pixels>, compact: bool) -> Ghost {
+        Ghost {
+            title: self.title.clone(),
+            agent: self.agent,
+            grab,
+            compact,
+        }
+    }
 }
 
 /// What follows the cursor while a pane is dragged: a small card with the pane's name, not the
@@ -49,6 +61,8 @@ pub struct Ghost {
     /// Where the header was grabbed. The drag view is drawn from the header's corner, so the
     /// card is pushed over by this much to sit under the cursor.
     grab: Point<Pixels>,
+    /// A sidebar row's chip rather than a pane's card.
+    compact: bool,
 }
 
 impl Render for Ghost {
@@ -57,6 +71,30 @@ impl Render for Ghost {
             Some(a) => mark(a, 12., colors::brand(a).0).into_any_element(),
             None => icon("terminal", 12., colors::text2()).into_any_element(),
         };
+        if self.compact {
+            return div()
+                .pl((self.grab.x - px(16.)).max(px(0.)))
+                .pt((self.grab.y - px(14.)).max(px(0.)))
+                .child(
+                    div()
+                        .w(px(220.))
+                        .h(px(30.))
+                        .flex()
+                        .items_center()
+                        .gap(px(7.))
+                        .px(px(10.))
+                        .rounded(px(8.))
+                        .border_1()
+                        .border_color(colors::border2())
+                        .bg(colors::surface3())
+                        .shadow(colors::shadow())
+                        .text_size(px(12.5))
+                        .text_color(colors::text1())
+                        .child(badge)
+                        .child(div().truncate().child(self.title.clone())),
+                )
+                .into_any_element();
+        }
         div()
             .pl((self.grab.x - px(24.)).max(px(0.)))
             .pt((self.grab.y - px(12.)).max(px(0.)))
@@ -90,6 +128,7 @@ impl Render for Ghost {
                     )
                     .child(div().flex_1().bg(colors::bg().opacity(0.85))),
             )
+            .into_any_element()
     }
 }
 
@@ -235,13 +274,7 @@ impl Root {
             .pr(px(6.))
             .bg(colors::surface1())
             .cursor_grab()
-            .on_drag(drag, |d, offset, _, cx| {
-                cx.new(|_| Ghost {
-                    title: d.title.clone(),
-                    agent: d.agent,
-                    grab: offset,
-                })
-            })
+            .on_drag(drag, |d, offset, _, cx| cx.new(|_| d.ghost(offset, false)))
             .on_click(cx.listener(move |r, e: &ClickEvent, _, cx| {
                 if e.click_count() == 2 {
                     r.toggle_max(space, max_pane.clone(), cx);

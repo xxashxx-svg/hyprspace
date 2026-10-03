@@ -3,7 +3,7 @@
 // a pasted image is saved to a temp file and its path typed in, since the agents read images by
 // path (the Tauri app's TerminalPane does the same).
 
-use gpui::{ClipboardEntry, ClipboardItem, Context};
+use gpui::{ClipboardEntry, ClipboardItem, Context, ExternalPaths, Window};
 
 use super::TerminalView;
 use crate::attach;
@@ -42,6 +42,27 @@ pub fn image_text(path: &std::path::Path) -> String {
 }
 
 impl TerminalView {
+    /// Files dropped from File Explorer or Finder: their paths typed in, the way a terminal does,
+    /// and images kept so their `[Image #N]` previews before the prompt goes.
+    pub(super) fn drop_paths(
+        &mut self,
+        paths: &ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let paths = paths.paths();
+        if paths.is_empty() {
+            return;
+        }
+        window.focus(&self.focus, cx);
+        let before = self.before_paste();
+        let text: String = paths.iter().map(|p| image_text(p)).collect();
+        self.paste_text(&text, cx);
+        for p in paths.iter().filter(|p| attach::is_image(p)) {
+            self.pasted(p.clone(), before.clone(), cx);
+        }
+    }
+
     /// Copies the selection. False when nothing is selected.
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(text) = self.emu.selection_text() else {
