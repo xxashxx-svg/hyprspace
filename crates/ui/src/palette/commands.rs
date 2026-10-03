@@ -391,7 +391,12 @@ impl Root {
                                 r.toggle_palette(&TogglePalette, window, cx)
                             }),
                         )
-                        .child(palette),
+                        .child(crate::slide::rise_in(palette, "palette-in"))
+                        .map(|scrim| {
+                            crate::slide::ease_in(scrim, "palette-scrim-in", 140, |d, t| {
+                                d.opacity(t)
+                            })
+                        }),
                 ),
             )
             .with_priority(2)

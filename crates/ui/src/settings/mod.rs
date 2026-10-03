@@ -143,10 +143,11 @@ pub(crate) const TABS: &[Entry] = &[
 
 impl Root {
     pub(crate) fn settings(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let entry = TABS
+        let i = TABS
             .iter()
-            .find(|e| e.tab == self.settings.tab)
-            .unwrap_or(&TABS[0]);
+            .position(|e| e.tab == self.settings.tab)
+            .unwrap_or(0);
+        let entry = &TABS[i];
         let body = match self.settings.tab {
             Tab::General => self.general(cx),
             Tab::Appearance => self.appearance(cx),
@@ -178,7 +179,15 @@ impl Root {
                     .min_w_0()
                     .h_full()
                     .overflow_y_scroll()
-                    .child(controls::page(entry.label, entry.desc, body)),
+                    // each page settles a few pixels down into place as it fades in
+                    .child(crate::slide::ease_in(
+                        div()
+                            .relative()
+                            .child(controls::page(entry.label, entry.desc, body)),
+                        ("settings-tab", i),
+                        220,
+                        |d, t| d.opacity(t).top(px(-6. * (1. - t))),
+                    )),
             )
             .children(menu)
             .into_any_element()

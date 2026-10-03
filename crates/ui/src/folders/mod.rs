@@ -557,7 +557,12 @@ impl crate::root::Root {
                             MouseButton::Left,
                             cx.listener(|r, _, window, cx| r.close_folder_picker(window, cx)),
                         )
-                        .child(picker),
+                        .child(crate::slide::rise_in(picker, "folders-in"))
+                        .map(|scrim| {
+                            crate::slide::ease_in(scrim, "folders-scrim-in", 140, |d, t| {
+                                d.opacity(t)
+                            })
+                        }),
                 ),
             )
             .with_priority(2)

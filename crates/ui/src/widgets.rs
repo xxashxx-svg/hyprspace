@@ -157,10 +157,21 @@ pub fn layer(
     close: impl Fn(&mut Window, &mut App) + 'static,
     content: impl IntoElement,
 ) -> AnyElement {
-    let (corner, at) = match open {
-        Open::Down => (Anchor::TopLeft, at),
-        Open::Up => (Anchor::BottomLeft, point(at.x - px(12.), at.y - px(16.))),
+    let (corner, at, from) = match open {
+        Open::Down => (Anchor::TopLeft, at, -4.),
+        Open::Up => (
+            Anchor::BottomLeft,
+            point(at.x - px(12.), at.y - px(16.)),
+            4.,
+        ),
     };
+    // fades in while travelling a few pixels away from where it opened
+    let content = crate::slide::ease_in(
+        div().relative().child(content),
+        "popup-in",
+        130,
+        move |d, t| d.opacity(t).top(px(from * (1. - t))),
+    );
     float(corner, at, window, close, content)
 }
 

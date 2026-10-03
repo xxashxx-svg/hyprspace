@@ -42,6 +42,22 @@ pub fn ease_in<E: IntoElement + 'static>(
     )
     .into_any_element()
 }
+/// A dialog's card rising 8px into place as it fades in, the first time it shows under `id`.
+/// The frame spans its parent so a card sized against the window keeps its width.
+pub fn rise_in(card: impl IntoElement, id: impl Into<ElementId>) -> AnyElement {
+    ease_in(
+        div()
+            .relative()
+            .w_full()
+            .flex()
+            .justify_center()
+            .child(card),
+        id,
+        180,
+        |d, t| d.opacity(t).top(px(8. * (1. - t))),
+    )
+}
+
 /// Short enough to keep up with the arrow keys and the mouse.
 const GLIDE: Duration = Duration::from_millis(140);
 

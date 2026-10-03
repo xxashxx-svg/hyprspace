@@ -82,7 +82,13 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let composer = self.composer.clone().into_any_element();
+        // settles down into place as it fades in, each time a space's composer comes up
+        let composer = crate::slide::ease_in(
+            div().relative().size_full().child(self.composer.clone()),
+            ("compose-in", space.unwrap_or(0) as usize),
+            300,
+            |d, t| d.opacity(t).top(px(-10. * (1. - t))),
+        );
         match space.filter(|s| self.state.space(*s).is_some()) {
             Some(space) => {
                 self.sync_dock(space, cx);
