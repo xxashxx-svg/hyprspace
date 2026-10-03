@@ -505,8 +505,13 @@ impl Root {
     /// hands terminals the saved font.
     pub(crate) fn apply_theme(&self, window: &mut Window) {
         let a = &self.state.appearance;
-        crate::colors::set(&a.theme, crate::colors::dark(a.scheme, window.appearance()));
+        crate::colors::set(
+            &a.theme,
+            crate::colors::dark(a.scheme, window.appearance()),
+            a.diff_colors == hyprspace_proto::state::DiffColors::BlueOrange,
+        );
         crate::settings::set_terminal_font(a);
+        crate::slide::set_animations(a.animations);
         window.refresh();
     }
 

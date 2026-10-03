@@ -8,19 +8,18 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle,
-    Focusable, FontWeight, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle,
-    SharedString, Stateful, Window, div, prelude::*, px,
+    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, Focusable, FontWeight,
+    IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle, SharedString, Stateful,
+    Window, div, prelude::*, px,
 };
 use hyprspace_proto::Agent;
 
 use super::effort::{self, Slider};
 use super::pickers::effort_label;
 use crate::assets::{icon, mark};
-use crate::slide::{Glide, ease_out};
+use crate::slide::Glide;
 use crate::{colors, widgets};
 
 /// Heights in the model list, which place the gliding highlight.
@@ -328,13 +327,11 @@ pub fn render<H: Host>(
         .text_size(px(12.5))
         .text_color(colors::text1())
         .child(body)
-        .children(foot)
-        // rises a few pixels into place as it fades in
-        .with_animation(
-            ("model-menu-open", m.opened),
-            Animation::new(Duration::from_millis(160)).with_easing(ease_out),
-            |d, t| d.opacity(t).top(px(8. * (1. - t))),
-        );
+        .children(foot);
+    // rises a few pixels into place as it fades in
+    let frame = crate::slide::ease_in(frame, ("model-menu-open", m.opened), 160, |d, t| {
+        d.opacity(t).top(px(8. * (1. - t)))
+    });
     let dismiss = cx.listener(|h: &mut H, _: &(), window, cx| close(h, window, cx));
     Some(widgets::above(
         chip,

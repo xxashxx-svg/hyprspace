@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, Context, ObjectFit, Pixels, Point, Size, StyledImage,
-    Task, anchored, deferred, div, img, point, prelude::*, px,
+    AnyElement, Context, ObjectFit, Pixels, Point, Size, StyledImage, Task, anchored, deferred,
+    div, img, point, prelude::*, px,
 };
 use hyprspace_proto::{Agent, Command, Launch};
 
@@ -168,12 +168,7 @@ impl Peek {
                                 .child(size.unwrap_or_default())
                                 .child(open),
                         )
-                        .with_animation(
-                            "peek",
-                            Animation::new(Duration::from_millis(120))
-                                .with_easing(crate::slide::ease_out),
-                            |d, t| d.opacity(t),
-                        ),
+                        .map(|card| crate::slide::ease_in(card, "peek", 120, |d, t| d.opacity(t))),
                 ),
         )
         .with_priority(2)

@@ -79,6 +79,15 @@ const WHITE: Color = Color::rgb(0xffffff);
 const BLACK: Color = Color::rgb(0x000000);
 
 /// The theme `id` (the default for an unknown one), on its dark or light side.
+/// Added and removed in blue and orange, for the setting that swaps out red and green.
+pub fn blue_orange(dark: bool) -> (Color, Color) {
+    if dark {
+        (Color::rgb(0x3b9eff), Color::rgb(0xf5a14b))
+    } else {
+        (Color::rgb(0x0b6bcb), Color::rgb(0xc2620a))
+    }
+}
+
 pub fn build(id: &str, dark: bool) -> Theme {
     let t = THEMES.iter().find(|t| t.id == id).unwrap_or(&THEMES[0]);
     let (hue, tint) = (t.hue, t.tint);

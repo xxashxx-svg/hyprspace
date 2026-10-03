@@ -22,7 +22,7 @@ use gpui::{
 use hyprspace_proto::Agent;
 use hyprspace_proto::state::ComposerPrefs;
 
-pub(crate) use appearance::{set_terminal_font, terminal_font};
+pub(crate) use appearance::{set_terminal_font, terminal_font, terminal_line_height, ui_font};
 
 use crate::assets::icon;
 use crate::root::Root;
@@ -46,6 +46,7 @@ enum Picker {
     Permission,
     Opener,
     Font,
+    UiFont,
     Model(Agent),
     Effort(Agent),
 }
@@ -105,7 +106,7 @@ pub(crate) const TABS: &[Entry] = &[
     Entry {
         tab: Tab::Appearance,
         label: "Appearance",
-        desc: "The theme, light or dark, and the terminal font",
+        desc: "The theme, light or dark, fonts and motion",
         icon: "palette",
     },
     Entry {
@@ -304,6 +305,7 @@ fn picker_key(p: Picker) -> String {
         Picker::Permission => "permission".into(),
         Picker::Opener => "opener".into(),
         Picker::Font => "font".into(),
+        Picker::UiFont => "ui-font".into(),
         Picker::Model(a) => format!("model-{}", a.cli()),
         Picker::Effort(a) => format!("effort-{}", a.cli()),
     }

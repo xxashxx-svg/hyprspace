@@ -10,6 +10,38 @@ use gpui::{
 };
 
 const LENGTH: Duration = Duration::from_millis(180);
+
+thread_local! {
+    /// Settings, Appearance, Animations. Off, panels, menus and rows snap into place.
+    static ANIMATIONS: Cell<bool> = const { Cell::new(true) };
+}
+
+pub fn set_animations(on: bool) {
+    ANIMATIONS.with(|a| a.set(on));
+}
+
+pub fn animations() -> bool {
+    ANIMATIONS.with(Cell::get)
+}
+
+/// `el` eased in by `f` over `ms` the first time it shows under `id`, or drawn as it ends when
+/// animations are off.
+pub fn ease_in<E: IntoElement + 'static>(
+    el: E,
+    id: impl Into<ElementId>,
+    ms: u64,
+    f: impl Fn(E, f32) -> E + 'static,
+) -> AnyElement {
+    if !animations() {
+        return f(el, 1.).into_any_element();
+    }
+    el.with_animation(
+        id,
+        Animation::new(Duration::from_millis(ms)).with_easing(ease_out),
+        f,
+    )
+    .into_any_element()
+}
 /// Short enough to keep up with the arrow keys and the mouse.
 const GLIDE: Duration = Duration::from_millis(140);
 
@@ -62,6 +94,7 @@ pub fn slide(
     end: bool,
     body: impl IntoElement,
 ) -> AnyElement {
+    let flips = if animations() { flips } else { 0 };
     let frame = div()
         .flex_none()
         .h_full()
@@ -136,7 +169,7 @@ impl Motion {
         f: impl Fn(E, f32) -> E + 'static,
     ) -> AnyElement {
         let Motion { from, to, moves } = self;
-        if moves == 0 {
+        if moves == 0 || !animations() {
             return f(el, to).into_any_element();
         }
         el.with_animation(

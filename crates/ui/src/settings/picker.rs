@@ -5,7 +5,7 @@ use gpui::{AnyElement, ClickEvent, Context, SharedString, Window, div, point, pr
 use hyprspace_proto::state::Pick;
 
 use super::agents::effort_name;
-use super::appearance::mono_families;
+use super::appearance::{SYSTEM_UI, mono_families};
 use super::general::MODES;
 use super::{Picker, Root};
 use crate::widgets;
@@ -21,6 +21,7 @@ impl Root {
             Picker::Permission => self.permission_menu(cx),
             Picker::Opener => self.opener_menu(cx),
             Picker::Font => self.font_menu(window, cx),
+            Picker::UiFont => self.ui_font_menu(cx),
             Picker::Model(_) | Picker::Effort(_) => self.pick_menu(picker, cx)?,
         };
         let close = cx.listener(|r, _: &(), _, cx| {
@@ -92,6 +93,39 @@ impl Root {
                     }),
                 )
             }))
+    }
+
+    /// The interface font: the bundled Geist, or whatever the system uses for its own UI.
+    fn ui_font_menu(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let current = self.state.appearance.ui_font.clone();
+        let system = if cfg!(target_os = "macos") {
+            "San Francisco, as macOS draws its own"
+        } else {
+            "Segoe UI, as Windows draws its own"
+        };
+        let choices = [
+            (String::new(), "Geist", "Built in"),
+            (SYSTEM_UI.to_string(), "System", system),
+        ];
+        div()
+            .flex()
+            .flex_col()
+            .children(
+                choices
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (family, name, note))| {
+                        let checked = family == current;
+                        widgets::menu_item(("ui-font", i), name, Some(note.into()), checked)
+                            .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
+                                r.settings.menu = None;
+                                r.state.appearance.ui_font = family.clone();
+                                r.apply_theme(window);
+                                r.save();
+                                cx.notify();
+                            }))
+                    }),
+            )
     }
 
     fn font_menu(&self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {

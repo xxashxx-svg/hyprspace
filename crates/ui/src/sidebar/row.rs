@@ -137,12 +137,9 @@ fn subagents(thread: u64, agent: Option<Agent>, subs: &[(String, String, u64)]) 
                                 .text_color(colors::text3())
                                 .child(elapsed(*secs)),
                         )
-                        .with_animation(
-                            name("sub"),
-                            Animation::new(Duration::from_millis(220))
-                                .with_easing(crate::slide::ease_out),
-                            |d, t| d.opacity(t),
-                        )
+                        .map(|card| {
+                            crate::slide::ease_in(card, name("sub"), 220, |d, t| d.opacity(t))
+                        })
                 }),
         )
         .when(more > 0, |d| {

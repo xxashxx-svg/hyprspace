@@ -14,7 +14,6 @@ use super::emulator::{Cell, CellColor, Cursor, Mark, Shape};
 use super::{cell_color, glyphs};
 use crate::colors::{self, hsla, theme};
 
-const LINE_HEIGHT: f32 = 1.1;
 pub const PAD_X: f32 = 18.0;
 pub const PAD_TOP: f32 = 12.0;
 pub const PAD_BOTTOM: f32 = 10.0;
@@ -85,7 +84,9 @@ pub fn measure(bounds: Bounds<Pixels>, window: &mut Window) -> Grid {
     let cell_w = ts.em_advance(id, font_size).unwrap_or(px(size * 0.6));
     // xterm's row: the font's own line box times the line height setting
     let natural = f32::from(ts.ascent(id, font_size)) + f32::from(ts.descent(id, font_size)).abs();
-    let line_h = px((natural * LINE_HEIGHT).round().max(size));
+    let line_h = px((natural * crate::settings::terminal_line_height())
+        .round()
+        .max(size));
     let w = f32::from(bounds.size.width) - 2.0 * PAD_X - BAR_W;
     let h = f32::from(bounds.size.height) - PAD_TOP - PAD_BOTTOM;
     Grid {

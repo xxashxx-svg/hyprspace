@@ -198,6 +198,14 @@ pub struct Appearance {
     /// A font family by name. Empty means the bundled JetBrains Mono.
     pub terminal_font: String,
     pub terminal_font_size: f32,
+    /// A terminal row's height as a multiple of the font's own line box.
+    pub terminal_line_height: f32,
+    /// The font everything outside terminals draws in. Empty means the bundled Geist.
+    pub ui_font: String,
+    /// Which pair of colors marks added and removed lines.
+    pub diff_colors: DiffColors,
+    /// Menus, panels and rows ease in and out. Off, they snap.
+    pub animations: bool,
 }
 
 impl Default for Appearance {
@@ -207,8 +215,22 @@ impl Default for Appearance {
             scheme: Scheme::System,
             terminal_font: String::new(),
             terminal_font_size: 13.0,
+            terminal_line_height: 1.1,
+            ui_font: String::new(),
+            diff_colors: DiffColors::RedGreen,
+            animations: true,
         }
     }
+}
+
+/// The colors of added and removed lines. Blue and orange read for people who can't tell red from
+/// green.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DiffColors {
+    #[default]
+    RedGreen,
+    BlueOrange,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

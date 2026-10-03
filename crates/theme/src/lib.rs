@@ -12,7 +12,7 @@ mod themes;
 
 pub use oklch::{oklch, oklch_a};
 pub use syntax::Syntax;
-pub use themes::{THEMES, ThemeInfo, build};
+pub use themes::{THEMES, ThemeInfo, blue_orange, build};
 
 /// 0xRRGGBBAA
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

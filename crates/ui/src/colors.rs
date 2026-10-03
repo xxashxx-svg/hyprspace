@@ -16,9 +16,14 @@ thread_local! {
     static CURRENT: Cell<Theme> = Cell::new(build("t3", true));
 }
 
-/// Switches to theme `id` on its dark or light side.
-pub fn set(id: &str, dark: bool) {
-    CURRENT.with(|c| c.set(build(id, dark)));
+/// Switches to theme `id` on its dark or light side, with blue and orange for added and removed
+/// lines when `blue_orange`.
+pub fn set(id: &str, dark: bool, blue_orange: bool) {
+    let mut t = build(id, dark);
+    if blue_orange {
+        (t.diff_add, t.diff_del) = hyprspace_theme::blue_orange(dark);
+    }
+    CURRENT.with(|c| c.set(t));
 }
 
 /// Whether `scheme` paints the dark side, given what the system is set to.
@@ -35,11 +40,6 @@ pub fn dark(scheme: Scheme, system: WindowAppearance) -> bool {
 
 pub fn theme() -> Theme {
     CURRENT.with(Cell::get)
-}
-
-/// Theme `id` on the side now showing, for drawing a preview of it beside the current one.
-pub fn other(id: &str) -> Theme {
-    build(id, theme().dark)
 }
 
 pub fn hsla(c: Color) -> Hsla {
@@ -143,15 +143,15 @@ mod tests {
 
     #[test]
     fn follows_the_theme_it_is_set_to() {
-        set("t3", true);
+        set("t3", true, false);
         assert!((border2().a - 0x1a as f32 / 255.0).abs() < 0.01);
         assert_eq!(bg().a, 1.0);
         let dark_text = text1();
-        set("t3", false);
+        set("t3", false, false);
         assert_ne!(text1(), dark_text);
-        set("iris", true);
+        set("iris", true, false);
         assert_ne!(accent(), hsla(build("t3", true).accent));
-        set("t3", true);
+        set("t3", true, false);
     }
 
     #[test]

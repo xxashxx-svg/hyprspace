@@ -203,11 +203,12 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
         None => div().text_color(colors::text1()).child("Default"),
     }
     .text_size(px(14.))
-    .font_weight(FontWeight::SEMIBOLD)
+    .font_weight(FontWeight::SEMIBOLD);
     // each new level fades up into place
-    .with_animation(
+    let name = crate::slide::ease_in(
+        name,
         ("effort-name", now.map_or(0, |i| i + 1)),
-        Animation::new(Duration::from_millis(160)).with_easing(crate::slide::ease_out),
+        160,
         |d, t| d.opacity(0.3 + 0.7 * t),
     );
     let chip = div()
