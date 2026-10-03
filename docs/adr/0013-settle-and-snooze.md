@@ -20,8 +20,9 @@ settle, auto-settle and snooze, and Ash asked for that.
   and may be running a dev server, so it keeps its terminal. This is what keeps a large sidebar
   cheap.
 - **Untouched threads settle by themselves** after three days by default (Settings, General:
-  never, 1 day, 3 days, 1 week). "Touched" means a turn started or ended, or the thread was
-  opened. A thread on screen or at work never settles by itself.
+  never, 1 day, 3 days, 1 week). "Touched" means a turn started or ended, or the thread came
+  back from Settled or Snoozed. Only opening it doesn't count, so the age in its row stays the
+  time of its last activity. A thread on screen or at work never settles by itself.
 - **Snooze** hides a thread until a time (1 hour, 3 hours, this evening, tomorrow morning, next
   Monday morning) or until its agent finishes. A snoozed thread keeps its session, wakes into the
   active list marked new, and waits on a shelf near the bottom of the sidebar meanwhile.
