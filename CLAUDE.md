@@ -85,6 +85,7 @@ Rule 1's wording predates structured sessions and still names Tauri-era files; A
 ## Run, build and check (quick reference)
 
 ```bash
+./scripts/dev.ps1                     # the dev loop: rebuilds on save and swaps the running app
 cargo run -p hyprspace                # the app, debug build (dependencies build at opt-level 2)
 cargo run -p hyprspace -- <folder>    # open a folder as a space, the way `code .` does
 cargo build --release -p hyprspace    # target/release/hyprspace(.exe)
@@ -102,7 +103,11 @@ cargo test --workspace --locked
 ```
 
 UI changes are checked by running the app. A dev build shares `~/.hyprspace/native` with an
-installed copy; set `HYPRSPACE_STATE_DIR` to a scratch folder to keep them apart.
+installed copy; set `HYPRSPACE_STATE_DIR` to a scratch folder to keep them apart. `scripts/dev.ps1`
+does that for you (`~/.hyprspace/dev`, seeded from your threads with none open), and keeps the
+running dev app until a build succeeds. Windows dev builds link with `rust-lld`
+(`.cargo/config.toml`) and dependencies carry no debug info, which took a one-file change from
+about 14 s to 7 s.
 
 Releases are cut by `deploy.ps1`: it bumps the workspace version and `Cargo.lock`, writes the
 changelog entry, commits and tags, opens a draft GitHub release with the notes, and runs

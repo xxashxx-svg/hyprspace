@@ -1,0 +1,4 @@
+# rust-lld links several times faster than MSVC's link.exe, and a dev build's wait is mostly the
+# link. It ships with the Rust toolchain, so nothing extra to install.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"

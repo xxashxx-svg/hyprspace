@@ -60,7 +60,11 @@ image = { version = "0.25", default-features = false, features = ["png", "bmp", 
 
 [profile.dev]
 opt-level = 0
+# File and line in a backtrace, without the full symbols that had every link write a 300 MB pdb.
+debug = "line-tables-only"
 
 # gpui is slow unoptimized, so dependencies build optimized even in dev (zeron and Zed do the same).
+# Nobody steps through them, so they carry no debug info, which keeps links quick.
 [profile.dev.package."*"]
 opt-level = 2
+debug = false

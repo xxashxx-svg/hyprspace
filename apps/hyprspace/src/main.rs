@@ -71,7 +71,12 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 // the UI draws its own title row (ui/src/root/titlebar.rs)
                 titlebar: Some(TitlebarOptions {
-                    title: Some("HyprSpace".into()),
+                    // scripts/dev.ps1 sets HYPRSPACE_DEV, so the taskbar tells the two copies apart
+                    title: Some(if std::env::var_os("HYPRSPACE_DEV").is_some() {
+                        "HyprSpace dev".into()
+                    } else {
+                        "HyprSpace".into()
+                    }),
                     appears_transparent: true,
                     traffic_light_position: Some(point(px(14.), px(13.))),
                 }),
