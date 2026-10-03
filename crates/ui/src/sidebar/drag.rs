@@ -1,6 +1,6 @@
 // Dragging in the sidebar. A thread row dropped on another row of its space moves there, and
 // takes that row's side of Settled; dropped on its space's header it comes back to the active
-// list; dropped on a Settled row it settles. A pane's header drags the same way, and a row
+// list; dropped on the Settled shelf it settles. A pane's header drags the same way, and a row
 // dropped on a pane opens there (panes/grid.rs). A space's header dropped on another moves the
 // space above it. Folders dropped from File Explorer or Finder open as spaces.
 
@@ -117,16 +117,14 @@ impl Root {
         }
     }
 
-    /// A thread dropped on its space's Settled row settles.
+    /// A thread dropped on the Settled shelf settles.
     pub(crate) fn drop_on_settled(
         &mut self,
         d: &PaneDrag,
-        space: u64,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(id) = d.pane.thread()
-            && self.space_of(id) == Some(space)
             && self.state.thread(id).is_some_and(|(_, t)| !t.settled)
         {
             self.settle(id, true, window, cx);

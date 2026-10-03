@@ -92,8 +92,8 @@ pub struct Root {
     pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     pub(crate) archived_open: bool,
-    /// The spaces whose Settled row is open, and whether the Snoozed shelf is.
-    pub(crate) settled_open: HashSet<u64>,
+    /// Whether the Settled and Snoozed shelves are open.
+    pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
     /// The snooze menu: where it opened, for which thread.
     pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
@@ -233,7 +233,7 @@ impl Root {
             rename: None,
             menu: None,
             archived_open: false,
-            settled_open: HashSet::new(),
+            settled_open: false,
             snoozed_open: false,
             snooze_menu: None,
             undo: None,

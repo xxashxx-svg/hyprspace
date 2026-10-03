@@ -1,5 +1,5 @@
-// Settling and snoozing threads, after T3 Code's. Settled threads leave the active list for their
-// space's Settled row; untouched ones settle by themselves after a while. A snoozed thread hides
+// Settling and snoozing threads, after T3 Code's. Settled threads leave their space for the
+// Settled shelf at the bottom of the sidebar; untouched ones settle by themselves after a while. A snoozed thread hides
 // until a time, or until its agent finishes, and comes back marked new. Either can be undone for
 // a few seconds from the toast.
 //

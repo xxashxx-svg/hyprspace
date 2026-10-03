@@ -52,7 +52,7 @@ fn ring(key: impl Into<ElementId>, size: f32, inset: f32) -> AnyElement {
 
 /// A band of light sweeping slowly across a working row.
 fn sheen(key: impl Into<ElementId>) -> AnyElement {
-    let glow = colors::busy().opacity(0.07);
+    let glow = colors::busy().opacity(0.035);
     let clear = colors::busy().opacity(0.);
     let half = |from: Hsla, to: Hsla| {
         div().flex_1().h_full().bg(linear_gradient(
@@ -243,7 +243,12 @@ impl Root {
             ThreadKind::Structured { launch } => launch.cwd.clone(),
         };
         // a branch when the folder is a repo, otherwise the folder; the icon says which
+        // on a shelf, away from its space, a row says which space it is from
+        let shelf = (!t.active())
+            .then(|| self.state.thread(id).map(|(s, _)| s.name.clone()))
+            .flatten();
         let place = match self.git.get(&cwd).map(|g| &g.branch) {
+            _ if shelf.is_some() => ("folder", shelf.unwrap_or_default()),
             Some(b) if b.is_repo && !b.branch.is_empty() => ("git-branch", b.branch.clone()),
             _ => (
                 "folder",

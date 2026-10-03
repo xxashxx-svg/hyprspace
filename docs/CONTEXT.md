@@ -17,8 +17,8 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
 
 - **Thread**: one conversation in a space, shown as one sidebar row with its live status. A
   thread is what the user names, archives, reopens and resumes.
-- **Settled**: a thread moved out of its space's active list into the space's Settled row, by
-  hand or after sitting untouched (Settings, General). Its conversation is kept; opening it
+- **Settled**: a thread moved out of its space onto the Settled shelf at the bottom of the
+  sidebar, by hand or after sitting untouched (Settings, General). Its conversation is kept; opening it
   brings it back. Replaced archiving threads; spaces are still archived.
 - **Snoozed**: a thread hidden until a time, or until its agent finishes its turn, then back in
   the active list marked new. Snoozed threads wait on the shelf near the bottom of the sidebar.

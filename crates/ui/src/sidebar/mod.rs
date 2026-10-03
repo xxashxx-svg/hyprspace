@@ -64,9 +64,8 @@ enum Item {
     Empty(u64),
     /// Room after an open section, or at the end.
     Gap(u8),
-    /// A space's settled threads, folded under one row.
+    /// The settled threads of every space, on a shelf near the bottom.
     Settled {
-        space: u64,
         count: usize,
         open: bool,
     },
@@ -95,7 +94,7 @@ impl Item {
             (Item::Space { id: a, .. }, Item::Space { id: b, .. }) => a == b,
             (Item::Archived { .. }, Item::Archived { .. }) => true,
             (Item::Snoozed { .. }, Item::Snoozed { .. }) => true,
-            (Item::Settled { space: a, .. }, Item::Settled { space: b, .. }) => a == b,
+            (Item::Settled { .. }, Item::Settled { .. }) => true,
             (Item::Nothing { .. }, Item::Nothing { .. }) => true,
             (a, b) => a == b,
         }
@@ -294,24 +293,14 @@ impl Root {
                 .filter(|t| t.active())
                 .filter(hit)
                 .collect();
-            let settled: Vec<&Thread> = space
-                .threads
-                .iter()
-                .filter(|t| t.settled)
-                .filter(hit)
-                .collect();
-            if !q.is_empty()
-                && threads.is_empty()
-                && settled.is_empty()
-                && !space.name.to_lowercase().contains(&q)
-            {
+            if !q.is_empty() && threads.is_empty() && !space.name.to_lowercase().contains(&q) {
                 continue;
             }
             shown += 1;
             let open = if q.is_empty() {
                 !space.folded
             } else {
-                !threads.is_empty() || !settled.is_empty()
+                !threads.is_empty()
             };
             items.push(Item::Space {
                 id: space.id,
@@ -323,20 +312,9 @@ impl Root {
                     items.push(Item::Summary(space.id));
                 }
                 items.extend(threads.iter().map(|t| Item::Thread(t.id)));
-                if threads.is_empty() && settled.is_empty() {
+                // a space whose threads all settled shows just its header
+                if space.threads.is_empty() {
                     items.push(Item::Empty(space.id));
-                }
-                if !settled.is_empty() {
-                    // a search shows settled hits without asking
-                    let open = !q.is_empty() || self.settled_open.contains(&space.id);
-                    items.push(Item::Settled {
-                        space: space.id,
-                        count: settled.len(),
-                        open,
-                    });
-                    if open {
-                        items.extend(settled.iter().map(|t| Item::Thread(t.id)));
-                    }
                 }
                 items.push(Item::Gap(6));
             }
@@ -364,6 +342,27 @@ impl Root {
             });
             if open {
                 items.extend(snoozed.into_iter().map(Item::Thread));
+            }
+        }
+        // settled threads leave their spaces for one shelf, most recently active first
+        let mut settled: Vec<&Thread> = self
+            .state
+            .spaces
+            .iter()
+            .filter(|s| !s.archived)
+            .flat_map(|s| s.threads.iter())
+            .filter(|t| t.settled)
+            .filter(|t| q.is_empty() || t.title.to_lowercase().contains(&q))
+            .collect();
+        if !settled.is_empty() {
+            settled.sort_by_key(|t| std::cmp::Reverse(t.last_touch()));
+            let open = self.settled_open || !q.is_empty();
+            items.push(Item::Settled {
+                count: settled.len(),
+                open,
+            });
+            if open {
+                items.extend(settled.iter().map(|t| Item::Thread(t.id)));
             }
         }
         let spaces: Vec<&Space> = self.state.spaces.iter().filter(|s| s.archived).collect();
@@ -410,8 +409,31 @@ impl Root {
                 )
                 .into_any_element(),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
-            Item::Settled { space, count, open } => slot(true)
-                .child(self.settled_row(space, count, open, cx))
+            Item::Settled { count, open } => slot(false)
+                .pt(px(8.))
+                .child(
+                    div()
+                        .id("settled-shelf")
+                        .pt(px(6.))
+                        .border_t_1()
+                        .border_color(colors::border1())
+                        .rounded(px(7.))
+                        .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
+                        .on_drop(cx.listener(|r, d: &PaneDrag, window, cx| {
+                            r.drop_on_settled(d, window, cx)
+                        }))
+                        .child(self.shelf_header(
+                            "settled",
+                            "circle-check",
+                            "Settled",
+                            count,
+                            open,
+                            cx.listener(|r, _: &ClickEvent, _, cx| {
+                                r.settled_open = !r.settled_open;
+                                cx.notify();
+                            }),
+                        )),
+                )
                 .into_any_element(),
             Item::Snoozed { count, open } => slot(false)
                 .pt(px(8.))
@@ -827,50 +849,7 @@ impl Root {
         )
     }
 
-    /// A space's Settled row: folded, it is one quiet line with the count.
-    fn settled_row(
-        &self,
-        space: u64,
-        count: usize,
-        open: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        div()
-            .id(("settled", space))
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .h(px(26.))
-            .pl(px(4.))
-            .pr(px(8.))
-            .rounded(px(7.))
-            .text_size(px(12.))
-            .text_color(colors::text3())
-            .cursor_pointer()
-            .hover(|s| s.bg(row_hover()).text_color(colors::text2()))
-            .child(twist(open))
-            .child(icon("circle-check", 12., colors::text3()))
-            .child(div().flex_1().child("Settled"))
-            .child(
-                div()
-                    .font_family(MONO)
-                    .text_size(px(10.5))
-                    .child(count.to_string()),
-            )
-            .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                if !r.settled_open.remove(&space) {
-                    r.settled_open.insert(space);
-                }
-                cx.notify();
-            }))
-            .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
-            .on_drop(cx.listener(move |r, d: &PaneDrag, window, cx| {
-                r.drop_on_settled(d, space, window, cx)
-            }))
-            .into_any_element()
-    }
-
-    /// The heading of a shelf near the bottom: Snoozed, Archived.
+    /// The heading of a shelf near the bottom: Snoozed, Settled, Archived.
     #[allow(clippy::too_many_arguments)]
     fn shelf_header(
         &self,

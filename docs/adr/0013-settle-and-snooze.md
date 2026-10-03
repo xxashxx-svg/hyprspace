@@ -12,8 +12,9 @@ settle, auto-settle and snooze, and Ash asked for that.
 
 ## Decision
 
-- **Settle replaces archiving a thread.** A settled thread leaves the active list for its
-  space's Settled row. Saved `archived` threads load as settled.
+- **Settle replaces archiving a thread.** A settled thread leaves its space for one Settled
+  shelf at the bottom of the sidebar, newest first, each row naming its space. A space whose
+  threads all settled shows just its header. Saved `archived` threads load as settled.
 - **Settling frees the session.** An idle settled thread's terminal and agent close, and the
   conversation resumes when the thread is opened again (ADR 0006). A busy one finishes its turn
   first, and one waiting on an approval keeps its question. A plain shell has nothing to resume

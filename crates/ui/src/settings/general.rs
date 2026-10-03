@@ -164,7 +164,7 @@ impl Root {
                 "Threads",
                 vec![row(
                     "Settle untouched threads",
-                    "A thread nobody touched for this long moves to its space's Settled list. One on screen or at work stays.",
+                    "A thread nobody touched for this long moves to the Settled shelf. One on screen or at work stays.",
                     settle,
                 )],
             ))
