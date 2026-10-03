@@ -27,14 +27,16 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
 }
 
 /// What gets typed for a pasted image: its path, quoted when it holds a space (Windows profile
-/// folders often do) so the agent reads it as one argument, then a space to keep typing after.
+/// folders often do) or anything a shell reads as syntax, like zsh's parentheses in "shot(1).png",
+/// so the agent reads it as one argument, then a space to keep typing after.
 /// Forward slashes on Windows: the CLIs take them, and a bash in the pane won't eat them.
 pub fn image_text(path: &std::path::Path) -> String {
     let mut p = path.display().to_string();
     if cfg!(windows) {
         p = p.replace('\\', "/");
     }
-    if p.contains(' ') {
+    let plain = |c: char| c.is_alphanumeric() || "/._-:~+@,=".contains(c);
+    if !p.chars().all(plain) {
         format!("\"{p}\" ")
     } else {
         format!("{p} ")
@@ -137,6 +139,10 @@ mod tests {
         assert_eq!(
             image_text(Path::new("C:/Users/First Last/a.png")),
             "\"C:/Users/First Last/a.png\" "
+        );
+        assert_eq!(
+            image_text(Path::new("/tmp/shot(1).png")),
+            "\"/tmp/shot(1).png\" "
         );
     }
 }

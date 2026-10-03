@@ -5,10 +5,14 @@
 use gpui::Modifiers;
 
 /// Whether the platform will deliver this key as typed text. Ctrl+Alt is AltGr on Windows
-/// keyboards (`@` on a German layout), so a char typed with both is text too.
+/// keyboards (`@` on a German layout), so a char typed with both is text too. On macOS Option
+/// types the layout's characters, as Terminal.app does unless told to use it as Meta: a German
+/// Mac types `@` with Option+L. Option+arrows and Option+Enter carry no typed char, so they still
+/// reach the shell and the agent as Meta.
 pub fn is_text(key_char: Option<&str>, mods: &Modifiers) -> bool {
     let typed = key_char.is_some_and(|c| !c.is_empty() && !c.chars().any(char::is_control));
-    typed && !mods.platform && (mods.control == mods.alt)
+    let option = cfg!(target_os = "macos") && !mods.control;
+    typed && !mods.platform && (mods.control == mods.alt || option)
 }
 
 /// xterm's modifier parameter: 1 plus shift 1, alt 2, ctrl 4.
@@ -161,6 +165,13 @@ mod tests {
         };
         assert!(!is_text(Some("c"), &ctrl));
         assert!(!is_text(None, &none()));
+        // Option types characters on macOS, and is Meta elsewhere
+        let alt = Modifiers {
+            alt: true,
+            ..none()
+        };
+        assert_eq!(is_text(Some("@"), &alt), cfg!(target_os = "macos"));
+        assert!(!is_text(Some("\r"), &alt));
     }
 
     #[test]

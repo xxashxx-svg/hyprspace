@@ -46,6 +46,9 @@ pub fn file_manager() -> &'static str {
     }
 }
 
+/// What ends a folder's name in a typed path. A backslash is a plain character in a macOS name.
+const SEPS: &[char] = if cfg!(windows) { &['/', '\\'] } else { &['/'] };
+
 /// The folder a typed path lists, and the start of a name being typed after its last separator.
 /// `~` is the home folder.
 pub fn split(text: &str, home: &Path) -> (PathBuf, String) {
@@ -57,10 +60,10 @@ pub fn split(text: &str, home: &Path) -> (PathBuf, String) {
     if t.is_empty() {
         return (home.to_path_buf(), String::new());
     }
-    match t.rfind(['/', '\\']) {
+    match t.rfind(SEPS) {
         Some(i) => (PathBuf::from(&t[..=i]), t[i + 1..].to_string()),
         // "C:" alone is that drive's root
-        None if t.len() == 2 && t.ends_with(':') => {
+        None if cfg!(windows) && t.len() == 2 && t.ends_with(':') => {
             (PathBuf::from(format!("{t}\\")), String::new())
         }
         None => (home.to_path_buf(), t),
@@ -91,7 +94,7 @@ pub fn matching(entries: &[DirEntry], partial: &str) -> Vec<String> {
 /// A folder as the box shows it: with a separator at the end, ready for the next name.
 fn with_sep(path: &Path) -> String {
     let s = path.display().to_string();
-    if s.ends_with(['/', '\\']) {
+    if s.ends_with(SEPS) {
         s
     } else {
         format!("{s}{MAIN_SEPARATOR}")
@@ -593,11 +596,16 @@ mod tests {
             split("/work/ap", home),
             (PathBuf::from("/work/"), "ap".into())
         );
-        assert_eq!(
-            split(r"C:\Main\Hyp", home),
-            (PathBuf::from(r"C:\Main\"), "Hyp".into())
-        );
-        assert_eq!(split("C:", home), (PathBuf::from("C:\\"), String::new()));
+        if cfg!(windows) {
+            assert_eq!(
+                split(r"C:\Main\Hyp", home),
+                (PathBuf::from(r"C:\Main\"), "Hyp".into())
+            );
+            assert_eq!(split("C:", home), (PathBuf::from("C:\\"), String::new()));
+        } else {
+            // a backslash is part of the name on macOS
+            assert_eq!(split(r"/a\b", home), (PathBuf::from("/"), r"a\b".into()));
+        }
         assert_eq!(
             split("~/code", home),
             (PathBuf::from("/home/me/"), "code".into())
