@@ -92,6 +92,9 @@ pub fn effort_chip_label(spec: &Spec) -> String {
     }
 }
 
+/// Counts openings, so each one eases in afresh.
+static OPENED: AtomicUsize = AtomicUsize::new(0);
+
 /// The open menu.
 pub struct ModelMenu {
     focus: FocusHandle,
@@ -124,7 +127,6 @@ impl ModelMenu {
     }
 
     fn new(spec: &Spec, effort: bool, window: &mut Window, cx: &mut App) -> Self {
-        static OPENED: AtomicUsize = AtomicUsize::new(0);
         let m = Self {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
@@ -185,6 +187,27 @@ pub(super) fn close<H: Host>(h: &mut H, window: &mut Window, cx: &mut Context<H>
     let level = h.model_menu().as_mut().and_then(|m| m.slider.take());
     *h.model_menu() = None;
     window.focus(&h.focus_handle(cx), cx);
+    if let Some(level) = level {
+        effort::apply(h, level, cx);
+    }
+    cx.notify();
+}
+
+/// From the effort card to the model list, which opens over the model chip instead.
+pub(super) fn to_models<H: Host>(h: &mut H, window: &mut Window, cx: &mut Context<H>) {
+    let Some(spec) = h.model_spec() else {
+        return;
+    };
+    let level = h.model_menu().as_mut().and_then(|m| {
+        m.effort = false;
+        m.opened = OPENED.fetch_add(1, Ordering::Relaxed);
+        m.hi = shown(&spec, "", None)
+            .iter()
+            .position(|x| is_pick(&spec, x))
+            .unwrap_or(0);
+        window.focus(&m.focus, cx);
+        m.slider.take()
+    });
     if let Some(level) = level {
         effort::apply(h, level, cx);
     }
@@ -293,7 +316,7 @@ pub fn render<H: Host>(
         .track_focus(&m.focus)
         .on_key_down(cx.listener(key::<H>))
         .relative()
-        .w(px(if m.effort { 300. } else { 340. }))
+        .w(px(if m.effort { effort::CARD } else { 340. }))
         .flex()
         .flex_col()
         .rounded(px(12.))
