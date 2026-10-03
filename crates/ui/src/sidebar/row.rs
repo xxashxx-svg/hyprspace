@@ -255,6 +255,10 @@ impl Root {
         let title: AnyElement = match &self.rename {
             Some((Rename::Thread(r), input, _)) if *r == id => div()
                 .h(px(24.))
+                // drawn over the title's own line, its text where the title's was, so the rows
+                // below don't jump while it is open
+                .my(px(-2.))
+                .mx(px(-7.))
                 .flex()
                 .items_center()
                 .px(px(6.))

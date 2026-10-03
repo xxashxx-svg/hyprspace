@@ -635,6 +635,8 @@ impl Root {
         let name: AnyElement = match &self.rename {
             Some((Rename::Space(r), input, _)) if *r == id => div()
                 .flex_1()
+                // its text where the name's was
+                .ml(px(-7.))
                 .h(px(24.))
                 .flex()
                 .items_center()
