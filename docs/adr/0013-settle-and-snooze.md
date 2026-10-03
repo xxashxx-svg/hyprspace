@@ -16,7 +16,9 @@ settle, auto-settle and snooze, and Ash asked for that.
   space's Settled row. Saved `archived` threads load as settled.
 - **Settling frees the session.** An idle settled thread's terminal and agent close, and the
   conversation resumes when the thread is opened again (ADR 0006). A busy one finishes its turn
-  first. This is what keeps a large sidebar cheap.
+  first, and one waiting on an approval keeps its question. A plain shell has nothing to resume
+  and may be running a dev server, so it keeps its terminal. This is what keeps a large sidebar
+  cheap.
 - **Untouched threads settle by themselves** after three days by default (Settings, General:
   never, 1 day, 3 days, 1 week). "Touched" means a turn started or ended, or the thread was
   opened. A thread on screen or at work never settles by itself.

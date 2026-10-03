@@ -4,7 +4,8 @@
 // a few seconds from the toast.
 //
 // A settled thread that is idle gives up its terminal and agent process; the conversation
-// resumes when it is opened again. That is what keeps dozens of threads cheap.
+// resumes when it is opened again. That is what keeps dozens of threads cheap. A plain shell has
+// nothing to resume, and may be running a dev server or a watcher, so it keeps its terminal.
 
 use std::time::{Duration, Instant};
 
@@ -12,7 +13,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window, div,
     prelude::*, px,
 };
-use hyprspace_proto::{Pane, Snooze};
+use hyprspace_proto::{Pane, Snooze, ThreadKind};
 
 use super::{Root, Screen};
 use crate::assets::icon;
@@ -54,9 +55,19 @@ impl Root {
                 .any(|s| s.grid.panes.contains(&Pane::Thread { id: thread }))
     }
 
-    /// Gives up an idle thread's session; a busy one keeps it until its turn ends.
+    /// Gives up an idle thread's session when its conversation can resume; a busy one keeps it
+    /// until its turn ends.
     pub(crate) fn free(&mut self, thread: u64) {
-        if !self.busy(thread) {
+        let resumes = self
+            .state
+            .thread(thread)
+            .is_some_and(|(_, t)| match &t.kind {
+                ThreadKind::Structured { .. } => true,
+                ThreadKind::Terminal { run, .. } => {
+                    run.as_ref().is_some_and(|l| l.resume.is_some())
+                }
+            });
+        if resumes && !self.busy(thread) {
             self.drop_view(thread);
         }
     }
@@ -178,14 +189,15 @@ impl Root {
                 self.unseen.insert(thread);
             }
         }
-        // a settled thread kept its session only to finish its turn
+        // a settled thread kept its session only to finish its turn; one that stopped to ask
+        // still counts as busy, so its question isn't lost
         if ended
             && self
                 .state
                 .thread(thread)
                 .is_some_and(|(_, t)| t.settled && !self.on_screen(thread))
         {
-            self.drop_view(thread);
+            self.free(thread);
         }
         if changed {
             self.save();
