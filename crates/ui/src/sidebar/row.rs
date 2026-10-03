@@ -398,7 +398,7 @@ impl Root {
                 }),
             ]
         };
-        div()
+        let row = div()
             .id(("thread", id))
             .group(group.clone())
             .relative()
@@ -490,8 +490,15 @@ impl Root {
                 |d, offset, _, cx| cx.new(|_| d.ghost(offset, true)),
             )
             .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
-            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| r.drop_on_thread(d, id, cx)))
-            .into_any_element()
+            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| r.drop_on_thread(d, id, cx)));
+        // a thread made a moment ago fades in, rising into its slot; the age check keeps rows
+        // the list draws again later, like after a scroll, from fading in a second time
+        if now.saturating_sub(t.created) < 1000 {
+            return crate::slide::ease_in(row, ("row-in", id as usize), 260, |d, t| {
+                d.opacity(t).top(px(4. * (1. - t)))
+            });
+        }
+        row.into_any_element()
     }
 }
 
