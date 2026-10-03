@@ -75,6 +75,7 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/text-search.svg",
     "icons/rotate-cw.svg",
     "icons/rotate-ccw.svg",
+    "icons/clock.svg",
     "icons/triangle-alert.svg",
     "icons/square-slash.svg",
     "icons/arrow-right.svg",

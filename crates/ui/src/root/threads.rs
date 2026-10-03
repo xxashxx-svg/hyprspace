@@ -226,7 +226,11 @@ impl Root {
         } else {
             self.unseen.remove(&thread);
         }
-        self.status.insert(thread, status);
+        let before = self.status.insert(thread, status);
+        // a real change, not the status a view reports when it is made
+        if before.is_some_and(|b| b != status) || (before.is_none() && status == Status::Working) {
+            self.touched(thread, status);
+        }
     }
 
     fn on_transcript(&mut self, thread: u64, e: &TranscriptEvent, cx: &mut Context<Self>) {
@@ -304,8 +308,9 @@ impl Root {
             id: self.state.take_id(),
             title,
             kind,
-            archived: false,
             created: now_ms(),
+            touched: now_ms(),
+            ..Thread::default()
         };
         let Some(s) = self.state.space_mut(space) else {
             return;
@@ -336,8 +341,9 @@ impl Root {
             id: self.state.take_id(),
             title: "Terminal".into(),
             kind: ThreadKind::Terminal { cwd, run: None },
-            archived: false,
             created: now_ms(),
+            touched: now_ms(),
+            ..Thread::default()
         };
         let Some(s) = self.state.space_mut(space) else {
             return;
@@ -350,6 +356,14 @@ impl Root {
     }
 
     pub(crate) fn open_thread(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        // opening a settled or snoozed thread brings it back to the active list
+        if let Some(t) = self.state.thread_mut(id)
+            && !t.active()
+        {
+            t.settled = false;
+            t.snooze = None;
+            t.touched = now_ms();
+        }
         let Some((_, thread)) = self.state.thread(id) else {
             return;
         };
@@ -372,7 +386,7 @@ impl Root {
     }
 
     /// Kills a thread's session and forgets its view.
-    fn drop_view(&mut self, thread: u64) {
+    pub(crate) fn drop_view(&mut self, thread: u64) {
         if self.views.remove(&thread).is_some() {
             let ids: Vec<SessionId> = self
                 .sessions
@@ -390,12 +404,12 @@ impl Root {
     }
 
     /// After the thread or space on screen went away.
-    fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let still_there = match self.screen {
             Screen::Thread(id) => self
                 .state
                 .thread(id)
-                .is_some_and(|(s, t)| !t.archived && !s.archived),
+                .is_some_and(|(s, t)| t.active() && !s.archived),
             Screen::Compose(Some(id)) => self.state.space(id).is_some_and(|s| !s.archived),
             Screen::Compose(None) | Screen::Settings => true,
         };
@@ -412,7 +426,8 @@ impl Root {
     }
 
     pub(crate) fn act(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
-        self.menu = None;
+        // a menu row that opens another menu opens it where this one was
+        let at = self.menu.take().map(|(at, _)| at);
         match action {
             Action::NewThread(space) => self.compose(Some(space), window, cx),
             Action::NewTerminal(space) => self.new_terminal(space, window, cx),
@@ -423,12 +438,13 @@ impl Root {
                 }
                 self.leave(window, cx);
             }
-            Action::ArchiveThread(id, on) => {
-                if let Some(t) = self.state.thread_mut(id) {
-                    t.archived = on;
+            Action::Settle(id, on) => self.settle(id, on, window, cx),
+            Action::Snooze(id) => {
+                if let Some(at) = at {
+                    self.open_snooze_menu(at, id, cx);
                 }
-                self.leave(window, cx);
             }
+            Action::Wake(id) => self.snooze(id, None, window, cx),
             Action::RemoveSpace(id) => {
                 let threads: Vec<u64> = self
                     .state

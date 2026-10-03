@@ -61,6 +61,17 @@ enum Item {
     Empty(u64),
     /// Room after an open section, or at the end.
     Gap(u8),
+    /// A space's settled threads, folded under one row.
+    Settled {
+        space: u64,
+        count: usize,
+        open: bool,
+    },
+    /// The snoozed threads of every space, on a shelf near the bottom.
+    Snoozed {
+        count: usize,
+        open: bool,
+    },
     /// The Archived heading and how many sit under it.
     Archived {
         count: usize,
@@ -80,6 +91,8 @@ impl Item {
         match (self, other) {
             (Item::Space { id: a, .. }, Item::Space { id: b, .. }) => a == b,
             (Item::Archived { .. }, Item::Archived { .. }) => true,
+            (Item::Snoozed { .. }, Item::Snoozed { .. }) => true,
+            (Item::Settled { space: a, .. }, Item::Settled { space: b, .. }) => a == b,
             (Item::Nothing { .. }, Item::Nothing { .. }) => true,
             (a, b) => a == b,
         }
@@ -271,20 +284,31 @@ impl Root {
         let mut items = Vec::new();
         let mut shown = 0;
         for space in self.state.spaces.iter().filter(|s| !s.archived) {
+            let hit = |t: &&Thread| q.is_empty() || t.title.to_lowercase().contains(&q);
             let threads: Vec<&Thread> = space
                 .threads
                 .iter()
-                .filter(|t| !t.archived)
-                .filter(|t| q.is_empty() || t.title.to_lowercase().contains(&q))
+                .filter(|t| t.active())
+                .filter(hit)
                 .collect();
-            if !q.is_empty() && threads.is_empty() && !space.name.to_lowercase().contains(&q) {
+            let settled: Vec<&Thread> = space
+                .threads
+                .iter()
+                .filter(|t| t.settled)
+                .filter(hit)
+                .collect();
+            if !q.is_empty()
+                && threads.is_empty()
+                && settled.is_empty()
+                && !space.name.to_lowercase().contains(&q)
+            {
                 continue;
             }
             shown += 1;
             let open = if q.is_empty() {
                 !space.folded
             } else {
-                !threads.is_empty()
+                !threads.is_empty() || !settled.is_empty()
             };
             items.push(Item::Space {
                 id: space.id,
@@ -296,8 +320,20 @@ impl Root {
                     items.push(Item::Summary(space.id));
                 }
                 items.extend(threads.iter().map(|t| Item::Thread(t.id)));
-                if threads.is_empty() {
+                if threads.is_empty() && settled.is_empty() {
                     items.push(Item::Empty(space.id));
+                }
+                if !settled.is_empty() {
+                    // a search shows settled hits without asking
+                    let open = !q.is_empty() || self.settled_open.contains(&space.id);
+                    items.push(Item::Settled {
+                        space: space.id,
+                        count: settled.len(),
+                        open,
+                    });
+                    if open {
+                        items.extend(settled.iter().map(|t| Item::Thread(t.id)));
+                    }
                 }
                 items.push(Item::Gap(6));
             }
@@ -307,21 +343,35 @@ impl Root {
                 searching: !q.is_empty(),
             });
         }
-        let spaces: Vec<&Space> = self.state.spaces.iter().filter(|s| s.archived).collect();
-        let threads: Vec<u64> = self
+        let snoozed: Vec<u64> = self
             .state
             .spaces
             .iter()
             .filter(|s| !s.archived)
-            .flat_map(|s| s.threads.iter().filter(|t| t.archived).map(|t| t.id))
+            .flat_map(|s| s.threads.iter())
+            .filter(|t| t.snooze.is_some())
+            .filter(|t| q.is_empty() || t.title.to_lowercase().contains(&q))
+            .map(|t| t.id)
             .collect();
-        let count = spaces.len() + threads.len();
-        if count > 0 {
+        if !snoozed.is_empty() {
+            let open = self.snoozed_open || !q.is_empty();
+            items.push(Item::Snoozed {
+                count: snoozed.len(),
+                open,
+            });
+            if open {
+                items.extend(snoozed.into_iter().map(Item::Thread));
+            }
+        }
+        let spaces: Vec<&Space> = self.state.spaces.iter().filter(|s| s.archived).collect();
+        if !spaces.is_empty() {
             let open = self.archived_open;
-            items.push(Item::Archived { count, open });
+            items.push(Item::Archived {
+                count: spaces.len(),
+                open,
+            });
             if open {
                 items.extend(spaces.iter().map(|s| Item::ArchivedSpace(s.id)));
-                items.extend(threads.into_iter().map(Item::Thread));
             }
         }
         items.push(Item::Gap(4));
@@ -357,6 +407,29 @@ impl Root {
                 )
                 .into_any_element(),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
+            Item::Settled { space, count, open } => slot(true)
+                .child(self.settled_row(space, count, open, cx))
+                .into_any_element(),
+            Item::Snoozed { count, open } => slot(false)
+                .pt(px(8.))
+                .child(
+                    div()
+                        .pt(px(6.))
+                        .border_t_1()
+                        .border_color(colors::border1())
+                        .child(self.shelf_header(
+                            "snoozed",
+                            "clock",
+                            "Snoozed",
+                            count,
+                            open,
+                            cx.listener(|r, _: &ClickEvent, _, cx| {
+                                r.snoozed_open = !r.snoozed_open;
+                                cx.notify();
+                            }),
+                        )),
+                )
+                .into_any_element(),
             Item::Archived { count, open } => slot(false)
                 .pt(px(8.))
                 .child(
@@ -713,10 +786,73 @@ impl Root {
         })
     }
 
-    /// The Archived heading over archived spaces and threads.
+    /// The Archived heading over archived spaces.
     fn archived_header(&self, count: usize, open: bool, cx: &mut Context<Self>) -> AnyElement {
+        self.shelf_header(
+            "archived",
+            "archive",
+            "Archived",
+            count,
+            open,
+            cx.listener(|r, _: &ClickEvent, _, cx| {
+                r.archived_open = !r.archived_open;
+                cx.notify();
+            }),
+        )
+    }
+
+    /// A space's Settled row: folded, it is one quiet line with the count.
+    fn settled_row(
+        &self,
+        space: u64,
+        count: usize,
+        open: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         div()
-            .id("archived")
+            .id(("settled", space))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .h(px(26.))
+            .pl(px(4.))
+            .pr(px(8.))
+            .rounded(px(7.))
+            .text_size(px(12.))
+            .text_color(colors::text3())
+            .cursor_pointer()
+            .hover(|s| s.bg(row_hover()).text_color(colors::text2()))
+            .child(twist(open))
+            .child(icon("circle-check", 12., colors::text3()))
+            .child(div().flex_1().child("Settled"))
+            .child(
+                div()
+                    .font_family(MONO)
+                    .text_size(px(10.5))
+                    .child(count.to_string()),
+            )
+            .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
+                if !r.settled_open.remove(&space) {
+                    r.settled_open.insert(space);
+                }
+                cx.notify();
+            }))
+            .into_any_element()
+    }
+
+    /// The heading of a shelf near the bottom: Snoozed, Archived.
+    #[allow(clippy::too_many_arguments)]
+    fn shelf_header(
+        &self,
+        id: &'static str,
+        glyph: &str,
+        label: &'static str,
+        count: usize,
+        open: bool,
+        toggle: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    ) -> AnyElement {
+        div()
+            .id(id)
             .flex()
             .items_center()
             .gap(px(4.))
@@ -738,12 +874,8 @@ impl Root {
                     .size(px(20.))
                     .child(twist(open)),
             )
-            .child(
-                div()
-                    .mr(px(2.))
-                    .child(icon("archive", 13., colors::text3())),
-            )
-            .child(div().flex_1().child("Archived"))
+            .child(div().mr(px(2.)).child(icon(glyph, 13., colors::text3())))
+            .child(div().flex_1().child(label))
             .child(
                 div()
                     .pr(px(4.))
@@ -751,10 +883,7 @@ impl Root {
                     .text_size(px(10.5))
                     .child(count.to_string()),
             )
-            .on_click(cx.listener(|r, _: &ClickEvent, _, cx| {
-                r.archived_open = !r.archived_open;
-                cx.notify();
-            }))
+            .on_click(toggle)
             .into_any_element()
     }
 

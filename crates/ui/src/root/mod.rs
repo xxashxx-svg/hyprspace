@@ -3,6 +3,7 @@
 // so runs go on while another thread is on screen, and routes the engine's events to them.
 
 mod render;
+mod settle;
 mod threads;
 pub mod titlebar;
 
@@ -56,7 +57,11 @@ pub enum Action {
     NewTerminal(u64),
     Rename(Rename),
     ArchiveSpace(u64, bool),
-    ArchiveThread(u64, bool),
+    /// Settles a thread, or brings it back.
+    Settle(u64, bool),
+    /// Opens the snooze menu for a thread where the context menu was.
+    Snooze(u64),
+    Wake(u64),
     RemoveSpace(u64),
     RemoveThread(u64),
     /// Opens the thread as a new pane beside the ones on screen.
@@ -87,6 +92,14 @@ pub struct Root {
     pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     pub(crate) archived_open: bool,
+    /// The spaces whose Settled row is open, and whether the Snoozed shelf is.
+    pub(crate) settled_open: HashSet<u64>,
+    pub(crate) snoozed_open: bool,
+    /// The snooze menu: where it opened, for which thread.
+    pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
+    /// The last settle or snooze, which the toast can undo for a few seconds.
+    pub(crate) undo: Option<settle::Undo>,
+    _undo_timer: Option<Task<()>>,
     /// Where Settings' Back button returns to.
     pub(crate) back: Screen,
     pub(crate) settings: crate::settings::Settings,
@@ -183,7 +196,11 @@ impl Root {
                 cx.background_executor()
                     .timer(Duration::from_secs(15))
                     .await;
-                if this.update(cx, |r, cx| r.git_poll(cx)).is_err() {
+                let alive = this.update(cx, |r, cx| {
+                    r.git_poll(cx);
+                    r.tidy_threads(cx);
+                });
+                if alive.is_err() {
                     break;
                 }
             }
@@ -206,6 +223,11 @@ impl Root {
             rename: None,
             menu: None,
             archived_open: false,
+            settled_open: HashSet::new(),
+            snoozed_open: false,
+            snooze_menu: None,
+            undo: None,
+            _undo_timer: None,
             back: Screen::Compose(None),
             settings: crate::settings::Settings::new(cx),
             open_arg: open,
@@ -355,7 +377,7 @@ impl Root {
             .filter(|s| !s.archived && !s.folded)
         {
             folders.extend(s.cwd.clone());
-            for t in s.threads.iter().filter(|t| !t.archived) {
+            for t in s.threads.iter().filter(|t| t.active()) {
                 if let hyprspace_proto::ThreadKind::Terminal { cwd, .. } = &t.kind {
                     folders.push(cwd.clone());
                 }

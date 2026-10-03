@@ -20,12 +20,12 @@ impl Root {
                 Action::NewThread(_) => (Some("square-pen"), false),
                 Action::NewTerminal(_) => (Some("terminal"), false),
                 Action::Rename(_) => (Some("pencil"), false),
-                Action::ArchiveSpace(_, true) | Action::ArchiveThread(_, true) => {
-                    (Some("archive"), false)
-                }
-                Action::ArchiveSpace(_, false) | Action::ArchiveThread(_, false) => {
-                    (Some("archive-restore"), false)
-                }
+                Action::ArchiveSpace(_, true) => (Some("archive"), false),
+                Action::ArchiveSpace(_, false) => (Some("archive-restore"), false),
+                Action::Settle(_, true) => (Some("circle-check"), false),
+                Action::Settle(_, false) => (Some("rotate-ccw"), false),
+                Action::Snooze(_) => (Some("clock"), false),
+                Action::Wake(_) => (Some("sun"), false),
                 Action::RemoveSpace(_) | Action::RemoveThread(_) => (Some("trash-2"), true),
                 Action::OpenBeside(_) => (Some("panel-right"), false),
                 Action::OpenIn(Opener::Files, _) => (Some("folder-open"), false),
@@ -66,6 +66,8 @@ impl Render for Root {
         }
         let titlebar = self.titlebar(window, cx);
         let menu = self.menu(window, cx);
+        let snooze = self.snooze_popup(window, cx);
+        let toast = self.undo_toast(cx);
         let palette = self.palette_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
         let update = crate::update::overlay(&self.updater, cx);
@@ -85,6 +87,7 @@ impl Render for Root {
         });
         div()
             .id("root")
+            .relative()
             .key_context("Root")
             .on_action(cx.listener(Self::toggle_palette))
             .on_action(cx.listener(Self::toggle_sidebar))
@@ -111,6 +114,8 @@ impl Render for Root {
             )
             .children(update)
             .children(menu)
+            .children(snooze)
+            .children(toast)
             .children(palette)
             .children(intro)
     }

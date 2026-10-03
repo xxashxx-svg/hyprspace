@@ -308,8 +308,9 @@ fn thread(state: &mut AppState, home: &Path, pane: Pane, cwd: &str) {
             cwd: path,
             run: Some(launch),
         },
-        archived: false,
         created,
+        touched: created,
+        ..Thread::default()
     });
 }
 

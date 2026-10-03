@@ -102,6 +102,28 @@ impl Root {
             self.dropdown(Picker::Permission, mode.1, cx),
         );
 
+        let after = self.state.settle_after;
+        let settle = widgets::segments().children(
+            hyprspace_proto::SettleAfter::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, value)| {
+                    let name = match value {
+                        hyprspace_proto::SettleAfter::Never => "Never",
+                        hyprspace_proto::SettleAfter::Day => "1 day",
+                        hyprspace_proto::SettleAfter::ThreeDays => "3 days",
+                        hyprspace_proto::SettleAfter::Week => "1 week",
+                    };
+                    widgets::segment(("settle-after", i), None, name, after == value, false)
+                        .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
+                            r.state.settle_after = value;
+                            r.save();
+                            r.tidy_threads(cx);
+                            cx.notify();
+                        }))
+                }),
+        );
+
         let opener = self.state.open_with;
         let open_control = if self.work.openers.is_empty() {
             text("Looking for apps").into_any_element()
@@ -137,6 +159,14 @@ impl Root {
                 .into_iter()
                 .flatten()
                 .collect(),
+            ))
+            .child(group(
+                "Threads",
+                vec![row(
+                    "Settle untouched threads",
+                    "A thread nobody touched for this long moves to its space's Settled list. One on screen or at work stays.",
+                    settle,
+                )],
             ))
             .child(group(
                 "Experimental",

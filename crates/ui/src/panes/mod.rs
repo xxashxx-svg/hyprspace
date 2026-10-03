@@ -107,7 +107,7 @@ impl Root {
             .panes
             .iter()
             .filter(|p| match p {
-                Pane::Thread { id } => s.threads.iter().any(|t| t.id == *id && !t.archived),
+                Pane::Thread { id } => s.threads.iter().any(|t| t.id == *id && t.active()),
                 _ => true,
             })
             .cloned()

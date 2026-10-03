@@ -33,6 +33,8 @@ pub struct AppState {
     /// The version that last ran. A different one on launch means the app was updated, so it
     /// shows what's new in this one. Empty on a first run, which stays quiet.
     pub seen_version: String,
+    /// How long a thread sits untouched before it settles by itself.
+    pub settle_after: SettleAfter,
 }
 
 impl Default for AppState {
@@ -49,6 +51,33 @@ impl Default for AppState {
             open_with: Opener::default(),
             intro_seen: false,
             seen_version: String::new(),
+            settle_after: SettleAfter::default(),
+        }
+    }
+}
+
+/// How long a thread sits untouched before it settles by itself, after T3 Code's auto-settle.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SettleAfter {
+    Never,
+    Day,
+    #[default]
+    ThreeDays,
+    Week,
+}
+
+impl SettleAfter {
+    pub const ALL: [SettleAfter; 4] = [Self::Never, Self::Day, Self::ThreeDays, Self::Week];
+
+    /// The wait in ms, or None for never.
+    pub fn ms(self) -> Option<u64> {
+        const DAY: u64 = 24 * 60 * 60 * 1000;
+        match self {
+            Self::Never => None,
+            Self::Day => Some(DAY),
+            Self::ThreeDays => Some(3 * DAY),
+            Self::Week => Some(7 * DAY),
         }
     }
 }
@@ -104,9 +133,27 @@ pub struct Thread {
     pub id: u64,
     pub title: String,
     pub kind: ThreadKind,
-    pub archived: bool,
+    /// Out of the active list: finished work, kept to come back to. Saved as `archived` before
+    /// settling existed, so those come back settled.
+    #[serde(alias = "archived")]
+    pub settled: bool,
     /// unix ms
     pub created: u64,
+    /// When it last did something, unix ms: a turn started or ended, or it was opened. Auto-settle
+    /// counts from here, or from `created` for a thread saved before this existed.
+    pub touched: u64,
+    /// Hidden from the active list until it wakes.
+    pub snooze: Option<Snooze>,
+}
+
+/// When a snoozed thread comes back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "until", rename_all = "camelCase")]
+pub enum Snooze {
+    /// At this time, unix ms.
+    Time { at: u64 },
+    /// When its agent finishes the turn it is on.
+    Done,
 }
 
 impl Default for Thread {
@@ -118,13 +165,34 @@ impl Default for Thread {
                 cwd: PathBuf::new(),
                 run: None,
             },
-            archived: false,
+            settled: false,
             created: 0,
+            touched: 0,
+            snooze: None,
         }
     }
 }
 
 impl Thread {
+    /// In the active list: neither settled nor snoozed.
+    pub fn active(&self) -> bool {
+        !self.settled && self.snooze.is_none()
+    }
+
+    /// When it last did something.
+    pub fn last_touch(&self) -> u64 {
+        self.touched.max(self.created)
+    }
+
+    /// Due to settle by itself at `now` after `after`. The caller rules out threads that are on
+    /// screen or working.
+    pub fn settles(&self, now: u64, after: SettleAfter) -> bool {
+        self.active()
+            && after
+                .ms()
+                .is_some_and(|wait| now.saturating_sub(self.last_touch()) >= wait)
+    }
+
     pub fn cwd(&self) -> &PathBuf {
         match &self.kind {
             ThreadKind::Structured { launch } => &launch.cwd,
@@ -305,6 +373,49 @@ pub enum Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archived_threads_load_settled_and_snoozes_round_trip() {
+        let t: Thread = serde_json::from_str(r#"{"id":1,"archived":true,"created":5}"#).unwrap();
+        assert!(t.settled && !t.active());
+        let snoozed = Thread {
+            snooze: Some(Snooze::Time { at: 99 }),
+            ..Thread::default()
+        };
+        let json = serde_json::to_string(&snoozed).unwrap();
+        assert!(
+            json.contains(r#""snooze":{"until":"time","at":99}"#),
+            "{json}"
+        );
+        let back: Thread = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.snooze, Some(Snooze::Time { at: 99 }));
+        let done: Thread = serde_json::from_str(r#"{"snooze":{"until":"done"}}"#).unwrap();
+        assert_eq!(done.snooze, Some(Snooze::Done));
+    }
+
+    #[test]
+    fn a_thread_settles_after_sitting_untouched() {
+        const DAY: u64 = 24 * 60 * 60 * 1000;
+        let t = Thread {
+            created: 0,
+            touched: DAY,
+            ..Thread::default()
+        };
+        assert!(!t.settles(3 * DAY, SettleAfter::ThreeDays));
+        assert!(t.settles(4 * DAY, SettleAfter::ThreeDays));
+        assert!(!t.settles(40 * DAY, SettleAfter::Never));
+        // settled or snoozed already, nothing to do
+        let settled = Thread {
+            settled: true,
+            ..t.clone()
+        };
+        assert!(!settled.settles(40 * DAY, SettleAfter::Day));
+        let snoozed = Thread {
+            snooze: Some(Snooze::Done),
+            ..t
+        };
+        assert!(!snoozed.settles(40 * DAY, SettleAfter::Day));
+    }
 
     #[test]
     fn old_and_partial_files_still_load() {

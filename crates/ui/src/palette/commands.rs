@@ -80,7 +80,7 @@ impl Root {
             _ => None,
         };
         for s in self.state.spaces.iter().filter(|s| !s.archived) {
-            for t in s.threads.iter().filter(|t| !t.archived) {
+            for t in &s.threads {
                 let glyph = match t.agent() {
                     Some(l) => Glyph::Mark(l.agent),
                     None => Glyph::Icon("square-terminal"),

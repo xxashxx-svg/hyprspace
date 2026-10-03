@@ -155,6 +155,34 @@ fn subagents(thread: u64, agent: Option<Agent>, subs: &[(String, String, u64)]) 
 }
 
 impl Root {
+    /// A small icon button on a row's hover strip.
+    fn row_button(
+        &self,
+        id: u64,
+        key: &'static str,
+        glyph: &'static str,
+        cx: &mut Context<Self>,
+        run: fn(&mut Root, u64, &ClickEvent, &mut gpui::Window, &mut Context<Root>),
+    ) -> AnyElement {
+        div()
+            .id((key, id))
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(20.))
+            .rounded(px(5.))
+            .cursor_pointer()
+            .hover(|s| s.bg(colors::ink(0.1)))
+            .child(icon(glyph, 12., colors::text2()))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |r, e: &ClickEvent, window, cx| {
+                cx.stop_propagation();
+                r.menu = None;
+                run(r, id, e, window, cx)
+            }))
+            .into_any_element()
+    }
+
     pub(crate) fn thread_row(&self, t: &Thread, now: u64, cx: &mut Context<Self>) -> AnyElement {
         let id = t.id;
         let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
@@ -240,13 +268,29 @@ impl Root {
                 .truncate()
                 .text_size(px(13.))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(colors::text1())
+                // settled work steps back
+                .text_color(if t.settled {
+                    colors::text2()
+                } else {
+                    colors::text1()
+                })
                 .child(t.title.clone())
                 .into_any_element(),
         };
         let group: SharedString = format!("row-{id}").into();
-        let right = match running {
-            Some(secs) => Some(
+        let right = match (running, t.snooze) {
+            // a snoozed thread says when it comes back
+            (_, Some(snooze)) => Some(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .text_size(px(10.5))
+                    .text_color(colors::text3())
+                    .child(icon("clock", 10., colors::text3()))
+                    .child(self.wake_text(snooze)),
+            ),
+            (Some(secs), None) => Some(
                 div()
                     .font_family(MONO)
                     .text_size(px(10.))
@@ -254,11 +298,11 @@ impl Root {
                     .text_color(colors::busy())
                     .child(elapsed(secs)),
             ),
-            None => (t.created > 0).then(|| {
+            (None, None) => (t.last_touch() > 0).then(|| {
                 div()
                     .text_size(px(10.5))
                     .text_color(colors::text3())
-                    .child(ago(t.created, now))
+                    .child(ago(t.last_touch(), now))
             }),
         }
         .map(|d| d.flex_none().group_hover(group.clone(), |s| s.opacity(0.)));
@@ -314,21 +358,44 @@ impl Root {
                         .child(place.1),
                 ),
         };
-        let mut menu: MenuItems = Vec::new();
-        // an archived thread can't be a pane
-        if !t.archived {
-            menu.push(("Open beside".into(), Action::OpenBeside(id)));
-        }
-        menu.extend([
+        let mut menu: MenuItems = vec![
+            ("Open beside".into(), Action::OpenBeside(id)),
             ("Rename".into(), Action::Rename(Rename::Thread(id))),
-            if t.archived {
-                ("Restore".into(), Action::ArchiveThread(id, false))
-            } else {
-                ("Archive".into(), Action::ArchiveThread(id, true))
-            },
-            ("Remove".into(), Action::RemoveThread(id)),
-        ]);
-        let archived = t.archived;
+        ];
+        if t.snooze.is_some() {
+            menu.push(("Wake now".into(), Action::Wake(id)));
+        } else if !t.settled {
+            menu.push(("Snooze".into(), Action::Snooze(id)));
+        }
+        menu.push(if t.settled {
+            ("Un-settle".into(), Action::Settle(id, false))
+        } else {
+            ("Settle".into(), Action::Settle(id, true))
+        });
+        menu.push(("Remove".into(), Action::RemoveThread(id)));
+        // the buttons that show on hover: snooze and settle, or the one that undoes either
+        let buttons: Vec<AnyElement> = if t.snooze.is_some() {
+            vec![
+                self.row_button(id, "wake", "sun", cx, |r, id, _, window, cx| {
+                    r.snooze(id, None, window, cx)
+                }),
+            ]
+        } else if t.settled {
+            vec![
+                self.row_button(id, "unsettle", "rotate-ccw", cx, |r, id, _, window, cx| {
+                    r.settle(id, false, window, cx)
+                }),
+            ]
+        } else {
+            vec![
+                self.row_button(id, "snooze", "clock", cx, |r, id, e, _, cx| {
+                    r.open_snooze_menu(e.position(), id, cx)
+                }),
+                self.row_button(id, "settle", "circle-check", cx, |r, id, _, window, cx| {
+                    r.settle(id, true, window, cx)
+                }),
+            ]
+        };
         div()
             .id(("thread", id))
             .group(group.clone())
@@ -394,32 +461,17 @@ impl Root {
             .when(!subs.is_empty(), |d| d.child(subagents(id, agent, &subs)))
             .child(
                 div()
-                    .id(("row-archive", id))
                     .absolute()
-                    .top(px(7.))
-                    .right(px(8.))
+                    .top(px(6.))
+                    .right(px(6.))
                     .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(px(18.))
-                    .rounded(px(4.))
+                    .gap(px(2.))
+                    .p(px(1.))
+                    .rounded(px(6.))
                     .bg(colors::surface3())
                     .opacity(0.)
                     .group_hover(group, |s| s.opacity(1.))
-                    .child(icon(
-                        if archived {
-                            "archive-restore"
-                        } else {
-                            "archive"
-                        },
-                        11.,
-                        colors::text3(),
-                    ))
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                        cx.stop_propagation();
-                        r.act(Action::ArchiveThread(id, !archived), window, cx)
-                    })),
+                    .children(buttons),
             )
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
