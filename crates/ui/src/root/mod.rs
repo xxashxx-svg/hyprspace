@@ -10,6 +10,7 @@ pub(crate) use threads::folder_name;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use gpui::{AppContext, Context, Entity, Pixels, Point, SharedString, Subscription, Task, Window};
@@ -107,8 +108,22 @@ pub struct Root {
     pub(crate) moving: bool,
     /// The sidebar's slide (`crate::slide`), shared by its column and its part of the title row.
     pub(crate) sidebar_flips: crate::slide::Flips,
+    /// What each terminal thread's agent is doing, from its hooks.
+    pub(crate) activity: HashMap<u64, Activity>,
+    /// When each terminal thread's current turn began, for the sidebar's running count.
+    pub(crate) turns: HashMap<u64, Instant>,
+    /// A one-second tick runs while a thread works or a subagent runs, so their counts move.
+    ticking: bool,
+    _ticker: Option<Task<()>>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
+}
+
+/// One line on what an agent does and the subagents it has running.
+#[derive(Default)]
+pub(crate) struct Activity {
+    pub doing: Option<String>,
+    pub subs: Vec<hyprspace_proto::SubAgent>,
 }
 
 impl Root {
@@ -174,6 +189,10 @@ impl Root {
             updater,
             moving: false,
             sidebar_flips: Default::default(),
+            activity: HashMap::new(),
+            turns: HashMap::new(),
+            ticking: false,
+            _ticker: None,
             _pump: pump,
             _subs: subs,
         }
@@ -235,6 +254,8 @@ impl Root {
                 }
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.status.remove(&thread);
+                    self.activity.remove(&thread);
+                    self.turns.remove(&thread);
                     cx.notify();
                 }
             }
@@ -264,11 +285,59 @@ impl Root {
             }
             Event::AgentState { id, state } => {
                 if let Some(&thread) = self.sessions.get(&id) {
-                    self.set_status(thread, Status::from(state));
+                    let status = Status::from(state);
+                    // a turn passes through working and waiting, and neither restarts its count
+                    if matches!(status, Status::Working | Status::Waiting) {
+                        self.turns.entry(thread).or_insert_with(Instant::now);
+                    } else {
+                        self.turns.remove(&thread);
+                    }
+                    self.set_status(thread, status);
+                    self.tick(cx);
+                    cx.notify();
+                }
+            }
+            Event::AgentActivity { id, doing, subs } => {
+                if let Some(&thread) = self.sessions.get(&id) {
+                    self.activity.insert(thread, Activity { doing, subs });
+                    self.tick(cx);
                     cx.notify();
                 }
             }
         }
+    }
+
+    /// Whether anything in the sidebar is counting.
+    fn live(&self) -> bool {
+        self.status
+            .values()
+            .any(|s| matches!(s, Status::Working | Status::Waiting))
+            || self.activity.values().any(|a| !a.subs.is_empty())
+    }
+
+    /// Starts the one-second tick if something counts and it isn't running. It stops itself.
+    pub(crate) fn tick(&mut self, cx: &mut Context<Self>) {
+        if self.ticking || !self.live() {
+            return;
+        }
+        self.ticking = true;
+        self._ticker = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let live = this
+                    .update(cx, |r, cx| {
+                        r.ticking = r.live();
+                        if r.ticking {
+                            cx.notify();
+                        }
+                        r.ticking
+                    })
+                    .unwrap_or(false);
+                if !live {
+                    break;
+                }
+            }
+        }));
     }
 
     /// The view for a session. An event for a session whose view is gone is stale, so it is

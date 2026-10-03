@@ -17,7 +17,7 @@ pub mod update;
 pub mod usage;
 pub mod wire;
 
-pub use agents::{Agent, AgentState};
+pub use agents::{Agent, AgentState, SubAgent};
 pub use channel::{Client, Events};
 pub use folder::{FolderCommand, FolderEvent, Opener};
 pub use grid::{Grid, Pane};

@@ -233,6 +233,7 @@ impl Root {
         match e {
             TranscriptEvent::Status(s) => {
                 self.set_status(thread, *s);
+                self.tick(cx);
             }
             TranscriptEvent::Started { thread: t, cwd } => {
                 if let Some(Thread {

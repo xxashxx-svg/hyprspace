@@ -123,13 +123,19 @@ drop(session)                    // kills the CLI
   read from `HYPRSPACE_PROMPT`, which no shell re-parses (ADR 0006).
 - **A Claude thread owns its conversation id.** The UI picks a UUID when it creates the thread; the
   engine passes `--session-id <id>` the first time and `--resume <id>` once Claude's transcript
-  for that folder exists.
+  for that folder exists. Codex can't be handed an id, so the engine watches its rollouts in the
+  folder for the one a new session starts and sends it as `TerminalConversation`; the thread saves
+  it and runs `codex resume <id>` after a restart.
 - **Hooks.** Each Claude terminal session gets a scoped `--settings` file whose hooks
   (`UserPromptSubmit`, `Stop`, `SessionStart`, `Notification`, `SubagentStop`, `PreToolUse`,
   `PostToolUse`) and status line re-invoke our own binary: `hyprspace agent-hook <port>
   <session>` or `hyprspace status-line <port> <session>`. That short-lived process reads the
   payload from stdin and posts it to a loopback listener on an OS-picked port, so the sidebar
-  shows Working, Needs your answer and Done as they happen. Session ids are checked against
+  shows Working, Needs your answer and Done as they happen. The same hooks feed `AgentActivity`:
+  one line on what the agent does (the tool and its main argument, why it waits, what it last
+  said) and the subagents still running, taken from the `background_tasks` list Claude sends with
+  `Stop` and `SubagentStop`. A delegation shows from its `PreToolUse` until that list arrives.
+  Structured threads show the same two things from their own transcript. Session ids are checked against
   `[A-Za-z0-9_-]` because they go into a command and a path. Approving a permission produces no
   hook of its own, which is why `PostToolUse` is wired: it's what ends a "needs your answer" state.
   `HYPRSPACE_DEBUG_HOOKS=1` logs payloads; it's off by default because they hold prompts. Codex and

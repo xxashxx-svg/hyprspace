@@ -102,6 +102,17 @@ pub enum AgentState {
     Done,
 }
 
+/// A subagent an agent in a terminal session delegated to, still running.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgent {
+    pub id: String,
+    /// The task it was given, or its agent type.
+    pub label: String,
+    /// When it started, in ms since the epoch.
+    pub started: u64,
+}
+
 /// One model the composer offers for an agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

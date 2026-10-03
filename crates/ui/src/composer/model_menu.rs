@@ -1,23 +1,34 @@
 // The model and effort menus both prompt boxes open from their chips: the composer's, for the
 // next thread, and a thread's own. After T3 Code's pickers. The model menu has a rail of agents
-// on the left when more than one is installed, a search box, and one two-line row per model,
-// the pick marked by an accent bar. The effort menu lists the reasoning levels and, for a Claude
-// model that has one, the 1M context window. Arrows move, Enter picks, Esc closes, and typing
-// searches the models.
+// on the left when more than one is installed, a search box, and the models grouped under their
+// agent with the pick ticked. The highlight glides between rows and the menu eases in. Arrows
+// move, Enter picks, Esc closes, and typing searches the models. The effort menu is a slider,
+// in effort.rs.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, Focusable, FontWeight,
-    IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle, SharedString, Stateful,
-    Window, div, prelude::*, px,
+    Animation, AnimationExt, AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle,
+    Focusable, FontWeight, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle,
+    SharedString, Stateful, Window, div, prelude::*, px,
 };
 use hyprspace_proto::Agent;
 
+use super::effort::{self, Slider};
 use super::pickers::effort_label;
 use crate::assets::{icon, mark};
+use crate::slide::{Glide, ease_out};
 use crate::{colors, widgets};
+
+/// Heights in the model list, which place the gliding highlight.
+const HEADING: f32 = 26.;
+const ROW: f32 = 32.;
+/// Where the rail's first button sits, and the step to the next.
+const RAIL_TOP: f32 = 8.;
+const RAIL_STEP: f32 = 34.;
 
 pub struct Model {
     pub agent: Agent,
@@ -92,13 +103,13 @@ pub struct ModelMenu {
     effort: bool,
     /// The agent the rail narrows the models to, or all of them.
     rail: Option<Agent>,
-}
-
-#[derive(Clone, PartialEq)]
-enum Item {
-    Model(Agent, String),
-    Level(String),
-    Long(bool),
+    /// This opening's number, so each opening eases in afresh.
+    opened: usize,
+    glide: Glide,
+    rail_glide: Glide,
+    /// Each model's place among the list's children, which the agent headings shift.
+    rows: RefCell<Vec<usize>>,
+    pub(super) slider: Slider,
 }
 
 impl ModelMenu {
@@ -113,16 +124,23 @@ impl ModelMenu {
     }
 
     fn new(spec: &Spec, effort: bool, window: &mut Window, cx: &mut App) -> Self {
-        let mut m = Self {
+        static OPENED: AtomicUsize = AtomicUsize::new(0);
+        let m = Self {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
-            hi: 0,
+            hi: shown(spec, "", None)
+                .iter()
+                .position(|m| is_pick(spec, m))
+                .unwrap_or(0),
             query: String::new(),
             effort,
             rail: None,
+            opened: OPENED.fetch_add(1, Ordering::Relaxed),
+            glide: Glide::default(),
+            rail_glide: Glide::default(),
+            rows: RefCell::default(),
+            slider: Slider::default(),
         };
-        let items = m.items(spec);
-        m.hi = items.iter().position(|i| picked(spec, i)).unwrap_or(0);
         window.focus(&m.focus, cx);
         m
     }
@@ -130,16 +148,6 @@ impl ModelMenu {
     /// Whether this is the effort menu, so the host opens it from the effort chip.
     pub fn is_effort(&self) -> bool {
         self.effort
-    }
-
-    fn items(&self, spec: &Spec) -> Vec<Item> {
-        if self.effort {
-            return effort_items(spec);
-        }
-        shown(spec, &self.query, self.rail)
-            .into_iter()
-            .map(|m| Item::Model(m.agent, m.id.clone()))
-            .collect()
     }
 }
 
@@ -156,39 +164,9 @@ fn shown<'a>(spec: &'a Spec, query: &str, rail: Option<Agent>) -> Vec<&'a Model>
         .collect()
 }
 
-/// The effort menu's rows: the CLI's own default when the catalog can't say what it is, each
-/// level, then the two windows when the model has both.
-fn effort_items(spec: &Spec) -> Vec<Item> {
-    let default = spec
-        .default_effort
-        .is_none()
-        .then(|| Item::Level(String::new()));
-    let longs = spec
-        .long
-        .is_some()
-        .then_some([Item::Long(false), Item::Long(true)]);
-    default
-        .into_iter()
-        .chain(spec.efforts.iter().cloned().map(Item::Level))
-        .chain(longs.into_iter().flatten())
-        .collect()
-}
-
-/// Whether `item` is what is picked now. A thread on its default effort shows that level picked.
-fn picked(spec: &Spec, item: &Item) -> bool {
-    match item {
-        Item::Model(agent, id) => *agent == spec.agent && *id == base(&spec.model),
-        Item::Level(level) => {
-            *level == spec.effort
-                || (spec.effort.is_empty() && spec.default_effort.as_ref() == Some(level))
-        }
-        Item::Long(long) => spec.long == Some(*long),
-    }
-}
-
-/// The catalog's id for a model, without its window tag.
-fn base(id: &str) -> String {
-    crate::models::windowed(id, false)
+/// Whether `model` is the one picked now, whichever window it's on.
+fn is_pick(spec: &Spec, model: &Model) -> bool {
+    model.agent == spec.agent && model.id == crate::models::windowed(&spec.model, false)
 }
 
 /// The agents in the order the list has them.
@@ -202,37 +180,44 @@ fn agents(spec: &Spec) -> Vec<Agent> {
     out
 }
 
-fn close<H: Host>(h: &mut H, window: &mut Window, cx: &mut Context<H>) {
+/// Closes the menu, applying a level the effort slider moved to but hadn't applied yet.
+pub(super) fn close<H: Host>(h: &mut H, window: &mut Window, cx: &mut Context<H>) {
+    let level = h.model_menu().as_mut().and_then(|m| m.slider.take());
     *h.model_menu() = None;
     window.focus(&h.focus_handle(cx), cx);
+    if let Some(level) = level {
+        effort::apply(h, level, cx);
+    }
     cx.notify();
 }
 
-fn activate<H: Host>(h: &mut H, item: Item, window: &mut Window, cx: &mut Context<H>) {
+fn pick<H: Host>(h: &mut H, agent: Agent, id: String, window: &mut Window, cx: &mut Context<H>) {
     close(h, window, cx);
-    let choice = match item {
-        Item::Model(agent, id) => Choice::Model(agent, id),
-        Item::Level(level) => Choice::Effort(level),
-        Item::Long(long) => Choice::Long(long),
-    };
-    h.choose(choice, cx);
+    h.choose(Choice::Model(agent, id), cx);
 }
 
 fn key<H: Host>(h: &mut H, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<H>) {
     let Some(spec) = h.model_spec() else {
         return;
     };
+    if h.model_menu().as_ref().is_some_and(|m| m.effort) {
+        effort::key(h, &spec, e, window, cx);
+        return;
+    }
     let Some(m) = h.model_menu() else {
         return;
     };
-    let items = m.items(&spec);
+    let count = shown(&spec, &m.query, m.rail).len();
     let k = &e.keystroke;
     match k.key.as_str() {
         "up" => m.hi = m.hi.saturating_sub(1),
-        "down" => m.hi = (m.hi + 1).min(items.len().saturating_sub(1)),
+        "down" => m.hi = (m.hi + 1).min(count.saturating_sub(1)),
         "enter" => {
-            if let Some(item) = items.get(m.hi).cloned() {
-                activate(h, item, window, cx);
+            let model = shown(&spec, &m.query, m.rail)
+                .get(m.hi)
+                .map(|m| (m.agent, m.id.clone()));
+            if let Some((agent, id)) = model {
+                pick(h, agent, id, window, cx);
             }
             cx.stop_propagation();
             return;
@@ -242,14 +227,14 @@ fn key<H: Host>(h: &mut H, e: &KeyDownEvent, window: &mut Window, cx: &mut Conte
             cx.stop_propagation();
             return;
         }
-        "backspace" if !m.effort => {
+        "backspace" => {
             m.query.pop();
             m.hi = 0;
         }
         _ => {
             let plain = !(k.modifiers.control || k.modifiers.alt || k.modifiers.platform);
             match k.key_char.as_deref() {
-                Some(c) if plain && !m.effort && !c.chars().any(char::is_control) => {
+                Some(c) if plain && !c.chars().any(char::is_control) => {
                     m.query.push_str(c);
                     m.hi = 0;
                 }
@@ -257,54 +242,16 @@ fn key<H: Host>(h: &mut H, e: &KeyDownEvent, window: &mut Window, cx: &mut Conte
             }
         }
     }
-    m.scroll.scroll_to_item(m.hi);
+    let row = m.rows.borrow().get(m.hi).copied();
+    if let Some(row) = row {
+        m.scroll.scroll_to_item(row);
+    }
     cx.stop_propagation();
     cx.notify();
 }
 
-/// Hooks a row up: the mouse moves the highlight onto it, a click picks it.
-fn wire<H: Host>(row: Stateful<Div>, i: usize, item: Item, cx: &mut Context<H>) -> Stateful<Div> {
-    row.on_mouse_move(cx.listener(move |h: &mut H, _: &MouseMoveEvent, _, cx| {
-        if let Some(m) = h.model_menu()
-            && m.hi != i
-        {
-            m.hi = i;
-            cx.notify();
-        }
-    }))
-    .on_click(cx.listener(move |h: &mut H, _: &ClickEvent, window, cx| {
-        activate(h, item.clone(), window, cx)
-    }))
-}
-
-/// A row's frame: a wash under the highlight, and the accent bar on the left for the pick.
-fn row_frame(id: impl Into<gpui::ElementId>, on: bool, hi: bool) -> Stateful<Div> {
-    div()
-        .id(id)
-        .relative()
-        .flex()
-        .items_center()
-        .gap(px(10.))
-        .px(px(10.))
-        .rounded(px(8.))
-        .cursor_pointer()
-        .when(hi, |d| d.bg(colors::ink(0.06)))
-        .when(on, |d| {
-            d.child(
-                div()
-                    .absolute()
-                    .left(px(2.))
-                    .top(px(8.))
-                    .bottom(px(8.))
-                    .w(px(2.))
-                    .rounded_full()
-                    .bg(colors::accent()),
-            )
-        })
-}
-
 /// A small label beside a name: a model's note, or which level is the default.
-fn badge(text: impl Into<SharedString>) -> Div {
+pub(super) fn badge(text: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
         .px(px(5.))
@@ -317,17 +264,6 @@ fn badge(text: impl Into<SharedString>) -> Div {
         .child(text.into())
 }
 
-fn heading(text: &'static str) -> Div {
-    div()
-        .px(px(10.))
-        .pt(px(6.))
-        .pb(px(4.))
-        .text_size(px(11.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(colors::text3())
-        .child(text)
-}
-
 /// The open menu over its chip, or nothing before the chip has been painted once.
 pub fn render<H: Host>(
     m: &ModelMenu,
@@ -338,7 +274,7 @@ pub fn render<H: Host>(
 ) -> Option<AnyElement> {
     let chip = anchor.get()?;
     let body = if m.effort {
-        effort_body(m, spec, cx)
+        effort::body(m, spec, cx)
     } else {
         models_body(m, spec, cx)
     };
@@ -356,7 +292,8 @@ pub fn render<H: Host>(
         .id("model-menu")
         .track_focus(&m.focus)
         .on_key_down(cx.listener(key::<H>))
-        .w(px(if m.effort { 240. } else { 380. }))
+        .relative()
+        .w(px(if m.effort { 300. } else { 340. }))
         .flex()
         .flex_col()
         .rounded(px(12.))
@@ -368,7 +305,13 @@ pub fn render<H: Host>(
         .text_size(px(12.5))
         .text_color(colors::text1())
         .child(body)
-        .children(foot);
+        .children(foot)
+        // rises a few pixels into place as it fades in
+        .with_animation(
+            ("model-menu-open", m.opened),
+            Animation::new(Duration::from_millis(160)).with_easing(ease_out),
+            |d, t| d.opacity(t).top(px(8. * (1. - t))),
+        );
     let dismiss = cx.listener(|h: &mut H, _: &(), window, cx| close(h, window, cx));
     Some(widgets::above(
         chip,
@@ -381,7 +324,7 @@ pub fn render<H: Host>(
 fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyElement {
     let all = agents(spec);
     let rail = (all.len() > 1).then(|| {
-        let button = |id: &'static str, n: usize, on: bool| {
+        let button = |id: &'static str, n: usize| {
             div()
                 .id((id, n))
                 .flex()
@@ -390,10 +333,9 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
                 .size(px(30.))
                 .rounded(px(8.))
                 .cursor_pointer()
-                .when(on, |d| d.bg(colors::ink(0.09)))
-                .when(!on, |d| d.hover(|s| s.bg(colors::ink(0.05))))
+                .hover(|s| s.bg(colors::ink(0.04)))
         };
-        let pick = |agent: Option<Agent>| {
+        let choose = |agent: Option<Agent>| {
             cx.listener(move |h: &mut H, _: &ClickEvent, _, cx| {
                 if let Some(m) = h.model_menu() {
                     m.rail = agent;
@@ -403,25 +345,41 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
                 cx.notify();
             })
         };
+        let at = m
+            .rail
+            .and_then(|a| all.iter().position(|&x| x == a))
+            .map_or(0, |i| i + 1);
+        let spot = m.rail_glide.toward(RAIL_TOP + at as f32 * RAIL_STEP).apply(
+            "rail-spot",
+            div()
+                .absolute()
+                .left(px(7.))
+                .size(px(30.))
+                .rounded(px(8.))
+                .bg(colors::ink(0.09)),
+            |d, y| d.top(px(y)),
+        );
         div()
+            .relative()
             .flex()
             .flex_none()
             .flex_col()
             .items_center()
             .gap(px(4.))
             .w(px(44.))
-            .py(px(8.))
+            .py(px(RAIL_TOP))
             .border_r_1()
             .border_color(colors::ink(0.08))
+            .child(spot)
             .child(
-                button("rail-all", 0, m.rail.is_none())
+                button("rail-all", 0)
                     .child(icon("layout-grid", 14., colors::text2()))
-                    .on_click(pick(None)),
+                    .on_click(choose(None)),
             )
             .children(all.iter().enumerate().map(|(n, &agent)| {
-                button("rail", n, m.rail == Some(agent))
+                button("rail", n)
                     .child(mark(agent, 15., colors::brand(agent).0))
-                    .on_click(pick(Some(agent)))
+                    .on_click(choose(Some(agent)))
             }))
     });
     let search = div()
@@ -431,7 +389,7 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
         .h(px(32.))
         .mx(px(6.))
         .mt(px(6.))
-        .mb(px(4.))
+        .mb(px(2.))
         .px(px(10.))
         .rounded(px(8.))
         .border_1()
@@ -443,65 +401,80 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
         } else {
             div().text_color(colors::text1()).child(m.query.clone())
         });
+
+    // agent headings and model rows, measured as they go so the highlight knows where to sit
     let shown = shown(spec, &m.query, m.rail);
-    let mut list = div()
+    let mut children: Vec<AnyElement> = Vec::new();
+    let mut rows = Vec::new();
+    let mut y = 0.;
+    let mut hi_y = None;
+    let mut group = None;
+    for (i, model) in shown.iter().enumerate() {
+        if group != Some(model.agent) {
+            group = Some(model.agent);
+            children.push(heading(model.agent).into_any_element());
+            y += HEADING;
+        }
+        if i == m.hi {
+            hi_y = Some(y);
+        }
+        // the highlight goes in front of every row
+        rows.push(children.len() + 1);
+        let (agent, id) = (model.agent, model.id.clone());
+        children.push(
+            model_row(i, model, is_pick(spec, model))
+                .on_mouse_move(cx.listener(move |h: &mut H, _: &MouseMoveEvent, _, cx| {
+                    if let Some(m) = h.model_menu()
+                        && m.hi != i
+                    {
+                        m.hi = i;
+                        cx.notify();
+                    }
+                }))
+                .on_click(cx.listener(move |h: &mut H, _: &ClickEvent, window, cx| {
+                    pick(h, agent, id.clone(), window, cx)
+                }))
+                .into_any_element(),
+        );
+        y += ROW;
+    }
+    *m.rows.borrow_mut() = rows;
+    let highlight = match hi_y {
+        Some(y) => m.glide.toward(y).apply(
+            "model-hi",
+            div()
+                .absolute()
+                .left(px(4.))
+                .right(px(4.))
+                .h(px(ROW))
+                .rounded(px(8.))
+                .bg(colors::ink(0.06)),
+            |d, y| d.top(px(y)),
+        ),
+        None => div().into_any_element(),
+    };
+    let empty = shown.is_empty();
+    let list = div()
         .id("model-menu-list")
         .track_scroll(&m.scroll)
-        .max_h(px(340.))
+        .relative()
+        .max_h(px(320.))
         .overflow_y_scroll()
         .flex()
         .flex_col()
-        .gap(px(1.))
         .px(px(4.))
-        .pb(px(4.));
-    if shown.is_empty() {
-        list = list.child(
-            div()
-                .px(px(10.))
-                .py(px(8.))
-                .text_color(colors::text3())
-                .child("No model matches."),
-        );
-    }
-    for (i, model) in shown.into_iter().enumerate() {
-        let item = Item::Model(model.agent, model.id.clone());
-        let note = model.note.as_deref().filter(|n| short(n));
-        let row = row_frame(("model-row", i), picked(spec, &item), m.hi == i)
-            .py(px(6.))
-            .child(
+        .pb(px(4.))
+        .child(highlight)
+        .children(children)
+        .when(empty, |d| {
+            d.child(
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(1.))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .truncate()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(model.label.clone()),
-                            )
-                            .children(note.map(|n| badge(n.to_string()))),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(5.))
-                            .text_size(px(11.5))
-                            .text_color(colors::text3())
-                            .child(mark(model.agent, 11., colors::brand(model.agent).0))
-                            .child(model.agent.name()),
-                    ),
-            );
-        list = list.child(wire(row, i, item, cx));
-    }
+                    .px(px(10.))
+                    .py(px(8.))
+                    .text_color(colors::text3())
+                    .child("No model matches."),
+            )
+        });
     div()
         .flex()
         .children(rail)
@@ -517,31 +490,46 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
         .into_any_element()
 }
 
-fn effort_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyElement {
-    let mut body = div()
+/// An agent's name over its models.
+fn heading(agent: Agent) -> Div {
+    div()
+        .flex_none()
+        .h(px(HEADING))
         .flex()
-        .flex_col()
-        .p(px(4.))
-        .child(heading("Reasoning"));
-    for (i, item) in effort_items(spec).into_iter().enumerate() {
-        let (label, default) = match &item {
-            Item::Level(l) => (effort_label(l), spec.default_effort.as_ref() == Some(l)),
-            Item::Long(false) => ("Standard".to_string(), true),
-            Item::Long(true) => ("1M".to_string(), false),
-            Item::Model(..) => continue,
-        };
-        if item == Item::Long(false) {
-            body = body
-                .child(div().h(px(1.)).mx(px(6.)).my(px(4.)).bg(colors::ink(0.08)))
-                .child(heading("Context window"));
-        }
-        let row = row_frame(("effort-row", i), picked(spec, &item), m.hi == i)
-            .h(px(30.))
-            .child(div().child(label))
-            .when(default, |d| d.child(badge("Default")));
-        body = body.child(wire(row, i, item, cx));
-    }
-    body.into_any_element()
+        .items_end()
+        .gap(px(6.))
+        .px(px(10.))
+        .pb(px(5.))
+        .text_size(px(11.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors::text3())
+        .child(mark(agent, 11., colors::brand(agent).0))
+        .child(agent.name())
+}
+
+/// One model: its name, a short note, and a tick on the pick.
+fn model_row(i: usize, model: &Model, on: bool) -> Stateful<Div> {
+    let note = model.note.as_deref().filter(|n| short(n));
+    div()
+        .id(("model-row", i))
+        .flex_none()
+        .h(px(ROW))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .px(px(10.))
+        .rounded(px(8.))
+        .cursor_pointer()
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .font_weight(FontWeight::MEDIUM)
+                .child(model.label.clone()),
+        )
+        .children(note.map(|n| badge(n.to_string())))
+        .child(div().flex_1())
+        .when(on, |d| d.child(icon("check", 13., colors::accent())))
 }
 
 /// Whether a model's note fits beside its name as a badge. The catalog's own notes do
@@ -551,10 +539,10 @@ fn short(note: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
-    fn spec() -> Spec {
+    pub(in crate::composer) fn spec() -> Spec {
         let m = |agent, id: &str, label: &str| Model {
             agent,
             id: id.into(),
@@ -591,35 +579,8 @@ mod tests {
     #[test]
     fn a_long_window_model_is_still_the_pick() {
         let s = spec();
-        assert!(picked(
-            &s,
-            &Item::Model(Agent::Claude, "claude-opus-5-5".into())
-        ));
-        assert!(picked(&s, &Item::Long(true)));
-    }
-
-    #[test]
-    fn effort_lists_levels_then_windows_and_marks_the_default() {
-        let s = spec();
-        let items = effort_items(&s);
-        assert!(
-            items
-                == [
-                    Item::Level("low".into()),
-                    Item::Level("high".into()),
-                    Item::Long(false),
-                    Item::Long(true),
-                ]
-        );
-        // on the default effort, the level it comes to is the pick
-        assert!(picked(&s, &Item::Level("high".into())));
+        assert!(is_pick(&s, &s.models[1]));
+        assert!(!is_pick(&s, &s.models[0]));
         assert_eq!(effort_chip_label(&s), "High · 1M");
-        let unknown = Spec {
-            default_effort: None,
-            long: None,
-            ..spec()
-        };
-        assert!(effort_items(&unknown)[0] == Item::Level(String::new()));
-        assert_eq!(effort_items(&unknown).len(), 3);
     }
 }

@@ -1,13 +1,15 @@
-// One thread in the sidebar, as a two-line card like zeron's: the model in small grey type with
-// the age on the right (a running count while it works), and under it the status, the agent's
-// mark and the title.
+// One thread in the sidebar, as a card like zeron's: the model in small grey type with the age
+// on the right (a running count while it works), and under it the status, the agent's mark and
+// the title. While the agent works, a line says what it does (the tool it runs, why it waits,
+// what it concluded), and each subagent it has running gets a line of its own with its count,
+// like the Tauri app's rows.
 // Click to open it, right-click for rename and archive.
 
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, IntoElement, MouseButton,
-    Transformation, div, percentage, prelude::*, px,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, ElementId, IntoElement, MouseButton,
+    SharedString, Transformation, div, percentage, prelude::*, px,
 };
 use hyprspace_proto::{Thread, ThreadKind};
 use hyprspace_theme::MONO;
@@ -57,15 +59,101 @@ fn glyph(status: Status, unseen: bool, id: u64) -> Option<AnyElement> {
     }
 }
 
+/// Subagents shown before the rest fold into a count.
+const SUBS_SHOWN: usize = 4;
+
+/// The subagents under a row, on a guide line: each one's task and how long it has run. A new
+/// one fades in rather than popping.
+fn subagents(thread: u64, subs: &[(String, String, u64)]) -> AnyElement {
+    let more = subs.len().saturating_sub(SUBS_SHOWN);
+    div()
+        .mt(px(3.))
+        .ml(px(5.))
+        .pl(px(10.))
+        .border_l_1()
+        .border_color(colors::ink(0.1))
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .children(subs.iter().take(SUBS_SHOWN).map(|(key, label, secs)| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .h(px(18.))
+                .text_size(px(11.5))
+                .child(icon("bot", 11., colors::text3()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(colors::text2())
+                        .child(label.clone()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .font_family(MONO)
+                        .text_size(px(10.5))
+                        .text_color(colors::busy())
+                        .child(elapsed(*secs)),
+                )
+                .with_animation(
+                    ElementId::Name(SharedString::from(format!("sub-{thread}-{key}"))),
+                    Animation::new(Duration::from_millis(220)).with_easing(crate::slide::ease_out),
+                    |d, t| d.opacity(t),
+                )
+        }))
+        .when(more > 0, |d| {
+            d.child(
+                div()
+                    .h(px(16.))
+                    .text_size(px(11.))
+                    .text_color(colors::text3())
+                    .child(format!("{more} more")),
+            )
+        })
+        .into_any_element()
+}
+
 impl Root {
     pub(crate) fn thread_row(&self, t: &Thread, now: u64, cx: &mut Context<Self>) -> AnyElement {
         let id = t.id;
         let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
         let selected = self.screen == Screen::Thread(id);
-        let running = match self.views.get(&id) {
-            Some(View::Structured(v)) => v.read(cx).elapsed(),
-            _ => None,
+        let busy = matches!(status, Status::Working | Status::Waiting);
+        // a terminal thread hears from its hooks; a structured one reads its own transcript
+        let (running, doing, subs) = match self.views.get(&id) {
+            Some(View::Structured(v)) => {
+                let v = v.read(cx);
+                (v.elapsed(), v.doing(), v.subagents())
+            }
+            _ => {
+                let a = self.activity.get(&id);
+                let subs = a
+                    .map(|a| {
+                        a.subs
+                            .iter()
+                            .map(|s| {
+                                let secs = now.saturating_sub(s.started) / 1000;
+                                (s.id.clone(), s.label.clone(), secs)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (
+                    self.turns
+                        .get(&id)
+                        .filter(|_| busy)
+                        .map(|t| t.elapsed().as_secs()),
+                    a.and_then(|a| a.doing.clone()),
+                    subs,
+                )
+            }
         };
+        // what it concluded stays until the next turn, unless it was already seen
+        let doing = doing.filter(|_| busy || self.unseen.contains(&id));
         let badge = match t.agent() {
             Some(launch) => {
                 mark(launch.agent, 13., colors::brand(launch.agent).0).into_any_element()
@@ -76,9 +164,7 @@ impl Root {
             ThreadKind::Structured { launch } => self.model_label(launch),
             ThreadKind::Terminal {
                 run: Some(launch), ..
-            } => {
-                format!("{} in a terminal", self.model_label(launch))
-            }
+            } => self.model_label(launch),
             ThreadKind::Terminal { run: None, .. } => "Terminal".into(),
         };
         let title: AnyElement = match &self.rename {
@@ -160,6 +246,19 @@ impl Root {
                     .child(badge)
                     .child(title),
             )
+            .children(doing.map(|doing| {
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(11.5))
+                    .text_color(if status == Status::Waiting {
+                        colors::text2()
+                    } else {
+                        colors::text3()
+                    })
+                    .child(doing)
+            }))
+            .when(!subs.is_empty(), |d| d.child(subagents(id, &subs)))
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
                 r.open_thread(id, window, cx)

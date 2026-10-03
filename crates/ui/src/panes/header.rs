@@ -127,27 +127,35 @@ impl Root {
                 let Some((_, t)) = self.state.thread(*id) else {
                     return (div().into_any_element(), "".into(), String::new(), None);
                 };
+                // the mark already says which agent and the title bar which folder, so the detail
+                // only names a model picked on purpose, and a folder other than the space's
+                let home = self.state.space(space).and_then(|s| s.cwd.as_ref());
+                let away =
+                    |cwd: &Path| (home.map(|h| h.as_path()) != Some(cwd)).then(|| short(cwd));
                 let (badge, detail, agent) = match &t.kind {
-                    ThreadKind::Structured { launch } => (
-                        mark(launch.agent, 13., colors::brand(launch.agent).0).into_any_element(),
-                        format!("{} · {}", self.model_label(launch), short(&launch.cwd)),
-                        Some(launch.agent),
-                    ),
-                    ThreadKind::Terminal {
-                        cwd,
-                        run: Some(launch),
-                    } => (
-                        mark(launch.agent, 13., colors::brand(launch.agent).0).into_any_element(),
-                        format!(
-                            "{} in a terminal · {}",
-                            self.model_label(launch),
-                            short(cwd)
-                        ),
-                        Some(launch.agent),
-                    ),
+                    ThreadKind::Structured { launch }
+                    | ThreadKind::Terminal {
+                        run: Some(launch), ..
+                    } => {
+                        let model = launch.model.as_ref().map(|_| self.model_label(launch));
+                        let cwd = match &t.kind {
+                            ThreadKind::Terminal { cwd, .. } => cwd,
+                            _ => &launch.cwd,
+                        };
+                        (
+                            mark(launch.agent, 13., colors::brand(launch.agent).0)
+                                .into_any_element(),
+                            [model, away(cwd)]
+                                .into_iter()
+                                .flatten()
+                                .collect::<Vec<_>>()
+                                .join(" · "),
+                            Some(launch.agent),
+                        )
+                    }
                     ThreadKind::Terminal { cwd, run: None } => (
                         icon("terminal", 12., colors::text3()).into_any_element(),
-                        short(cwd),
+                        away(cwd).unwrap_or_default(),
                         None,
                     ),
                 };
@@ -203,6 +211,7 @@ impl Root {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (badge, title, detail, agent) = self.pane_title(space, pane, cx);
+        let is_thread = matches!(pane, Pane::Thread { .. });
         let status = pane
             .thread()
             .map(|id| self.status.get(&id).copied().unwrap_or(Status::Idle));
@@ -241,8 +250,8 @@ impl Root {
             .child(
                 div()
                     .flex_none()
-                    .opacity(0.5)
-                    .group_hover("pane-head", |s| s.opacity(0.9))
+                    .opacity(0.)
+                    .group_hover("pane-head", |s| s.opacity(0.8))
                     .child(icon("grip-vertical", 12., colors::text3())),
             )
             .child(
@@ -273,12 +282,25 @@ impl Root {
                 div()
                     .flex_1()
                     .min_w(px(8.))
-                    .truncate()
+                    .flex()
                     .pl(px(6.))
-                    .font_family(MONO)
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(detail),
+                    .when(!detail.is_empty(), |d| {
+                        // a thread's detail is a quiet tag; a file's folder stays a path
+                        let tag = div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.))
+                            .text_color(colors::text3());
+                        d.child(if is_thread {
+                            tag.px(px(6.))
+                                .py(px(1.))
+                                .rounded(px(5.))
+                                .bg(colors::ink(0.05))
+                                .child(detail)
+                        } else {
+                            tag.font_family(MONO).child(detail)
+                        })
+                    }),
             )
             .children(actions)
             .child(

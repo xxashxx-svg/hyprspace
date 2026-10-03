@@ -1,11 +1,22 @@
 // Side panels slide open and shut along their width instead of popping. The panel keeps its own
-// width inside a clipping frame, so its contents don't squash while the frame moves.
+// width inside a clipping frame, so its contents don't squash while the frame moves. `Glide` does
+// the same for anything that moves between spots, like a menu's highlight or a slider's knob.
 
-use std::time::Duration;
+use std::cell::Cell;
+use std::time::{Duration, Instant};
 
-use gpui::{Animation, AnimationExt, AnyElement, IntoElement, div, ease_in_out, prelude::*, px};
+use gpui::{
+    Animation, AnimationExt, AnyElement, ElementId, IntoElement, div, ease_in_out, prelude::*, px,
+};
 
 const LENGTH: Duration = Duration::from_millis(180);
+/// Short enough to keep up with the arrow keys and the mouse.
+const GLIDE: Duration = Duration::from_millis(140);
+
+/// Fast at first, settling at the end.
+pub fn ease_out(t: f32) -> f32 {
+    1. - (1. - t).powi(3)
+}
 
 /// A panel's open state as last drawn and how often it changed. Each change replays the slide,
 /// whichever code flipped the state.
@@ -64,9 +75,85 @@ pub fn slide(
         .into_any_element()
 }
 
+/// A value that eases to each new target instead of jumping there. A new target mid-move starts
+/// from wherever the value is, so a quick run of moves stays smooth.
+#[derive(Default)]
+pub struct Glide {
+    /// Where the current move started, where it ends, and when it started.
+    state: Cell<Option<(f32, f32, Instant)>>,
+    moves: Cell<usize>,
+}
+
+/// One frame's look at a `Glide`.
+#[derive(Clone, Copy)]
+pub struct Motion {
+    from: f32,
+    to: f32,
+    moves: usize,
+}
+
+impl Glide {
+    /// The move toward `to`. The first target is where the value starts, with no move.
+    pub fn toward(&self, to: f32) -> Motion {
+        let now = Instant::now();
+        let from = match self.state.get() {
+            None => {
+                self.state.set(Some((to, to, now)));
+                to
+            }
+            Some((from, at, start)) if at != to => {
+                let t = (now - start).as_secs_f32() / GLIDE.as_secs_f32();
+                let here = from + (at - from) * ease_out(t.min(1.));
+                self.moves.set(self.moves.get() + 1);
+                self.state.set(Some((here, to, now)));
+                here
+            }
+            Some((from, _, _)) => from,
+        };
+        Motion {
+            from,
+            to,
+            moves: self.moves.get(),
+        }
+    }
+}
+
+impl Motion {
+    /// `el` drawn by `f` at the value as it moves. Each move replays under a fresh id.
+    pub fn apply<E: IntoElement + 'static>(
+        self,
+        id: &'static str,
+        el: E,
+        f: impl Fn(E, f32) -> E + 'static,
+    ) -> AnyElement {
+        let Motion { from, to, moves } = self;
+        if moves == 0 {
+            return f(el, to).into_any_element();
+        }
+        el.with_animation(
+            ElementId::from((id, moves)),
+            Animation::new(GLIDE).with_easing(ease_out),
+            move |el, t| f(el, from + (to - from) * t),
+        )
+        .into_any_element()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_glide_starts_still_and_counts_each_new_target() {
+        let g = Glide::default();
+        let m = g.toward(10.);
+        assert_eq!((m.from, m.to, m.moves), (10., 10., 0));
+        assert_eq!(g.toward(10.).moves, 0);
+        let m = g.toward(40.);
+        assert_eq!((m.from, m.to, m.moves), (10., 40., 1));
+        // asking again for the same target is the same move
+        assert_eq!(g.toward(40.).moves, 1);
+    }
 
     #[test]
     fn only_a_change_counts() {

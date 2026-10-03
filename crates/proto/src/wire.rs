@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agents::{Agent, AgentInfo, AgentSession, AgentState};
+use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
 use crate::run::{Answer, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
@@ -141,6 +141,13 @@ pub enum Event {
     AgentState {
         id: SessionId,
         state: AgentState,
+    },
+    /// The same agent's work in more detail: one line on what it does now (the tool it runs,
+    /// why it waits, what it last said) and the subagents still running, oldest first.
+    AgentActivity {
+        id: SessionId,
+        doing: Option<String>,
+        subs: Vec<SubAgent>,
     },
     /// The engine could not do what a command asked. `message` is user-facing.
     Failed {
@@ -320,6 +327,15 @@ mod tests {
             Event::AgentState {
                 id: SessionId(2),
                 state: AgentState::Waiting,
+            },
+            Event::AgentActivity {
+                id: SessionId(2),
+                doing: Some("Edit sync.rs".into()),
+                subs: vec![SubAgent {
+                    id: "t1".into(),
+                    label: "Find the bug".into(),
+                    started: 1,
+                }],
             },
             Event::Failed {
                 id: SessionId(3),

@@ -145,6 +145,16 @@ impl TranscriptView {
         self.model.elapsed()
     }
 
+    /// The tool the run is in, while it runs one.
+    pub fn doing(&self) -> Option<String> {
+        self.model.running_tool().map(tool::label)
+    }
+
+    /// The subagents still running: what each was asked, and seconds since it started.
+    pub fn subagents(&self) -> Vec<(String, String, u64)> {
+        self.model.live_agents()
+    }
+
     pub fn agent(&self) -> hyprspace_proto::Agent {
         self.launch.agent
     }

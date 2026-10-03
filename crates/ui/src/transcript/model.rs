@@ -173,6 +173,35 @@ impl Transcript {
                 .any(|i| matches!(i, Item::Agent(a) if a.state == AgentState::Working))
     }
 
+    /// The last call of the live run that hasn't ended.
+    pub fn running_tool(&self) -> Option<&Tool> {
+        self.run.as_ref()?;
+        self.items.iter().rev().find_map(|i| match i {
+            Item::Tool {
+                tool, done: None, ..
+            } => Some(tool),
+            _ => None,
+        })
+    }
+
+    /// Each working subagent's id, label and seconds since it started.
+    pub fn live_agents(&self) -> Vec<(String, String, u64)> {
+        self.items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Agent(a) if a.state == AgentState::Working => {
+                    let label = if a.description.trim().is_empty() {
+                        a.agent_type.clone()
+                    } else {
+                        a.description.clone()
+                    };
+                    Some((a.id.clone(), label, a.since.elapsed().as_secs()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Seconds the live run has taken so far.
     pub fn elapsed(&self) -> Option<u64> {
         self.run.as_ref().map(|r| r.since.elapsed().as_secs())

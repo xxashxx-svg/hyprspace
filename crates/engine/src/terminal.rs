@@ -12,7 +12,9 @@ use std::thread;
 use std::time::Duration;
 
 use futures::channel::mpsc::UnboundedSender;
-use hyprspace_proto::{Agent, AgentState, Event, Launch, Permission, SessionId, UsageEvent};
+use hyprspace_proto::{
+    Agent, AgentState, Event, Launch, Permission, SessionId, SubAgent, UsageEvent,
+};
 use serde_json::Value;
 
 use crate::hooks::{self, Hook};
@@ -167,12 +169,154 @@ pub fn next_state(cur: AgentState, payload: &Value) -> AgentState {
     }
 }
 
+/// "Edit sync.rs", "Bash cargo check", "lualink run_lua": a tool and its most telling argument.
+/// MCP tools arrive as `mcp__<server>__<tool>`, an id rather than a name.
+fn tool_label(tool: &str, input: &Value) -> String {
+    let name = match tool.strip_prefix("mcp__").and_then(|t| t.split_once("__")) {
+        Some((server, tool)) => format!("{server} {tool}"),
+        None => tool.to_string(),
+    };
+    let text = |k: &str| input.get(k).and_then(Value::as_str).map(str::trim);
+    let file = ["file_path", "path", "notebook_path"]
+        .into_iter()
+        .find_map(text)
+        .and_then(|p| p.rsplit(['/', '\\']).find(|s| !s.is_empty()));
+    let arg = file.or_else(|| {
+        ["command", "pattern", "query", "description"]
+            .into_iter()
+            .find_map(text)
+            .filter(|s| !s.is_empty())
+    });
+    match arg {
+        Some(arg) => format!("{name} {}", trim(arg, 44)),
+        None => name,
+    }
+}
+
+/// One line, at most `n` characters.
+fn trim(s: &str, n: usize) -> String {
+    let one = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one.chars().count() > n {
+        format!("{}...", one.chars().take(n - 3).collect::<String>())
+    } else {
+        one
+    }
+}
+
+/// What the agent is doing and which subagents run after one hook, following the Tauri app's
+/// stores/agentStatus.ts. `now` is in ms since the epoch.
+pub fn next_activity(
+    doing: &Option<String>,
+    subs: &[SubAgent],
+    payload: &Value,
+    now: u64,
+) -> (Option<String>, Vec<SubAgent>) {
+    let text = |k: &str| payload.get(k).and_then(Value::as_str).unwrap_or_default();
+    let mut doing = doing.clone();
+    let mut next = subs.to_vec();
+    match text("hook_event_name") {
+        "SessionStart" => {
+            doing = None;
+            next.clear();
+        }
+        "UserPromptSubmit" => doing = Some("Thinking".into()),
+        "Notification" => {
+            let msg = text("message");
+            if !msg.to_lowercase().contains("waiting for your input") {
+                doing = Some(trim(
+                    if msg.is_empty() {
+                        "Waiting for you"
+                    } else {
+                        msg
+                    },
+                    60,
+                ));
+            }
+        }
+        "Stop" => {
+            // what it concluded, rather than just that it stopped
+            doing = Some(trim(text("last_assistant_message"), 80)).filter(|s| !s.is_empty());
+        }
+        "PreToolUse" => {
+            let tool = text("tool_name");
+            let input = payload.get("tool_input").unwrap_or(&Value::Null);
+            // "Agent" on current Claude, "Task" on older builds
+            if tool == "Agent" || tool == "Task" {
+                let label = first_text(input, &["description", "subagent_type"]);
+                doing = Some(format!("Delegating {}", trim(&label, 44)));
+                // shows at once; Claude's own list replaces it at the next Stop or SubagentStop
+                next.push(SubAgent {
+                    id: format!("pending-{now}-{}", next.len()),
+                    label,
+                    started: now,
+                });
+            } else if !tool.is_empty() {
+                doing = Some(tool_label(tool, input));
+            }
+        }
+        _ => {}
+    }
+    // Claude's own list of what still runs rides along on Stop and SubagentStop. It beats
+    // guessing from start and stop hooks: SubagentStop fires while a backgrounded subagent is
+    // still running. An empty list means nothing is.
+    if let Some(tasks) = payload.get("background_tasks").and_then(Value::as_array) {
+        next = tasks
+            .iter()
+            .filter(|t| t.get("status").and_then(Value::as_str) == Some("running"))
+            .filter_map(|t| {
+                let id = t
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())?;
+                // its start stays put, so its age doesn't reset with every list
+                let started = subs.iter().find(|s| s.id == id).map_or(now, |s| s.started);
+                Some(SubAgent {
+                    id: id.to_string(),
+                    label: first_text(t, &["description", "agent_type"]),
+                    started,
+                })
+            })
+            .collect();
+    }
+    (doing, next)
+}
+
+/// The first of `keys` with text in it, or "Subagent".
+fn first_text(v: &Value, keys: &[&str]) -> String {
+    keys.iter()
+        .filter_map(|k| v.get(k).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .unwrap_or("Subagent")
+        .to_string()
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
 /// A terminal session the hooks can name.
 struct Tracked {
     id: SessionId,
     state: AgentState,
     /// Typed in at Claude's first sign of life.
     prompt: Option<String>,
+    doing: Option<String>,
+    subs: Vec<SubAgent>,
+}
+
+impl Tracked {
+    fn new(id: SessionId, prompt: Option<String>) -> Self {
+        Self {
+            id,
+            state: AgentState::Idle,
+            prompt,
+            doing: None,
+            subs: Vec::new(),
+        }
+    }
 }
 
 struct Listener {
@@ -262,14 +406,7 @@ impl Terminals {
                 spawn
                     .env
                     .push(("CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT".into(), "1".into()));
-                lock(&self.tracked).insert(
-                    token(id),
-                    Tracked {
-                        id,
-                        state: AgentState::Idle,
-                        prompt: prompt.clone(),
-                    },
-                );
+                lock(&self.tracked).insert(token(id), Tracked::new(id, prompt.clone()));
             }
             let as_arg = run.agent != Agent::Claude && prompt.is_some();
             if let Some(p) = prompt.as_ref().filter(|_| as_arg) {
@@ -347,7 +484,7 @@ impl Terminals {
         let Some(key) = body.get("session").and_then(Value::as_str) else {
             return;
         };
-        let (id, changed, prompt) = {
+        let (id, changed, activity, prompt) = {
             let mut tracked = lock(&self.tracked);
             let Some(t) = tracked.get_mut(key) else {
                 return;
@@ -355,13 +492,32 @@ impl Terminals {
             let next = payload.map_or(t.state, |p| next_state(t.state, p));
             let changed = (next != t.state).then_some(next);
             t.state = next;
+            let mut activity = None;
+            if let Some(p) = payload {
+                let (doing, subs) = next_activity(&t.doing, &t.subs, p, now_ms());
+                if doing != t.doing || subs != t.subs {
+                    t.doing = doing.clone();
+                    t.subs = subs.clone();
+                    activity = Some((doing, subs));
+                }
+            }
             // the status line draws once the TUI is on screen and reading input; SessionStart
             // can fire before that
             let ready = matches!(hook, Hook::StatusLine(_));
-            (t.id, changed, if ready { t.prompt.take() } else { None })
+            (
+                t.id,
+                changed,
+                activity,
+                if ready { t.prompt.take() } else { None },
+            )
         };
         if let Some(state) = changed {
             let _ = self.tx.unbounded_send(Event::AgentState { id, state });
+        }
+        if let Some((doing, subs)) = activity {
+            let _ = self
+                .tx
+                .unbounded_send(Event::AgentActivity { id, doing, subs });
         }
         if let Hook::StatusLine(v) = &hook {
             let report = crate::usage::status::report(&v["statusLine"]);
@@ -492,18 +648,68 @@ mod tests {
     }
 
     #[test]
+    fn hooks_say_what_it_does_and_which_subagents_run() {
+        let step = |doing: &Option<String>, subs: &[SubAgent], p: Value, now| {
+            next_activity(doing, subs, &p, now)
+        };
+        let (doing, subs) = step(
+            &None,
+            &[],
+            json!({ "hook_event_name": "PreToolUse", "tool_name": "Edit",
+                    "tool_input": { "file_path": "C:/w/src/sync.rs" } }),
+            1,
+        );
+        assert_eq!(doing.as_deref(), Some("Edit sync.rs"));
+        assert!(subs.is_empty());
+        let mcp = json!({ "hook_event_name": "PreToolUse", "tool_name": "mcp__lualink__run_lua",
+                          "tool_input": {} });
+        assert_eq!(
+            step(&None, &[], mcp, 1).0.as_deref(),
+            Some("lualink run_lua")
+        );
+
+        // a delegation shows at once, then Claude's own list takes over and keeps its start
+        let (doing, subs) = step(
+            &doing,
+            &subs,
+            json!({ "hook_event_name": "PreToolUse", "tool_name": "Agent",
+                    "tool_input": { "description": "Find the bug" } }),
+            2,
+        );
+        assert_eq!(doing.as_deref(), Some("Delegating Find the bug"));
+        assert_eq!(subs.len(), 1);
+        let listed = json!({ "hook_event_name": "SubagentStop", "background_tasks": [
+            { "id": "t1", "status": "running", "description": "Find the bug" },
+            { "id": "t2", "status": "completed", "description": "Old one" }
+        ]});
+        let (_, subs) = step(&doing, &subs, listed.clone(), 3);
+        assert_eq!(subs.len(), 1);
+        assert_eq!((subs[0].id.as_str(), subs[0].started), ("t1", 3));
+        let (_, again) = step(&doing, &subs, listed, 9);
+        assert_eq!(again[0].started, 3);
+
+        // a stop says what it concluded and its empty list clears the subagents
+        let (doing, subs) = step(
+            &doing,
+            &subs,
+            json!({ "hook_event_name": "Stop", "last_assistant_message": "Fixed it.\n\nDone",
+                    "background_tasks": [] }),
+            10,
+        );
+        assert_eq!(doing.as_deref(), Some("Fixed it. Done"));
+        assert!(subs.is_empty());
+        // the idle nudge asks nothing
+        let nudge = json!({ "hook_event_name": "Notification",
+                            "message": "Claude is waiting for your input" });
+        assert_eq!(step(&doing, &subs, nudge, 11).0, doing);
+    }
+
+    #[test]
     fn hooks_for_a_tracked_session_report_its_state_and_type_its_prompt() {
         let (tx, mut rx) = futures::channel::mpsc::unbounded();
         let terms = Terminals::new(PtyManager::default(), tx);
         let id = SessionId(5);
-        lock(&terms.tracked).insert(
-            token(id),
-            Tracked {
-                id,
-                state: AgentState::Idle,
-                prompt: Some("hi".into()),
-            },
-        );
+        lock(&terms.tracked).insert(token(id), Tracked::new(id, Some("hi".into())));
         terms.on_hook(Hook::Agent(json!({
             "session": token(id),
             "payload": { "hook_event_name": "UserPromptSubmit" }
@@ -513,6 +719,14 @@ mod tests {
             Some(Event::AgentState {
                 id,
                 state: AgentState::Working
+            })
+        );
+        assert_eq!(
+            rx.try_recv().ok(),
+            Some(Event::AgentActivity {
+                id,
+                doing: Some("Thinking".into()),
+                subs: vec![]
             })
         );
         // the prompt waits for the status line, the sign the TUI reads input

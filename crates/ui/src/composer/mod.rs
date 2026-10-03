@@ -5,6 +5,7 @@
 
 mod card;
 mod clone;
+mod effort;
 pub(crate) mod model_menu;
 mod pickers;
 mod repo;
