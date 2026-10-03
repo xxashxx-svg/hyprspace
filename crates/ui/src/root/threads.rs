@@ -78,8 +78,62 @@ impl Root {
         id
     }
 
-    /// New thread from the sidebar's top button: pick a folder, then the composer for its space.
+    /// New thread from the sidebar's top button: pick a folder in the in-app browser, then the
+    /// composer for its space. It starts beside the space on screen, where projects tend to live.
     pub(crate) fn pick_thread_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.folder_picker.is_some() {
+            return;
+        }
+        let home = std::env::home_dir().unwrap_or_default();
+        let near = self
+            .current_space()
+            .and_then(|id| self.state.space(id))
+            .or_else(|| self.state.spaces.iter().find(|s| !s.archived))
+            .and_then(|s| s.cwd.as_deref())
+            .and_then(|c| c.parent())
+            .filter(|p| p.is_dir())
+            .map(std::path::Path::to_path_buf);
+        let start = near.unwrap_or_else(|| home.clone());
+        let back = window.focused(cx);
+        let client = self.client.clone();
+        let picker = cx.new(|cx| crate::folders::FolderPicker::new(client, start, home, back, cx));
+        cx.subscribe_in(
+            &picker,
+            window,
+            |r, _, e: &crate::folders::PickerEvent, window, cx| match e {
+                crate::folders::PickerEvent::Open(path) => {
+                    let path = path.clone();
+                    r.close_folder_picker(window, cx);
+                    let space = r.add_project(path, cx);
+                    r.save();
+                    r.compose(Some(space), window, cx);
+                }
+                crate::folders::PickerEvent::System => {
+                    r.close_folder_picker(window, cx);
+                    r.pick_folder_from_system(window, cx);
+                }
+                crate::folders::PickerEvent::Close => r.close_folder_picker(window, cx),
+            },
+        )
+        .detach();
+        let focus = picker.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.folder_picker = Some(picker);
+        self.menu = None;
+        cx.notify();
+    }
+
+    pub(crate) fn close_folder_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(p) = self.folder_picker.take()
+            && let Some(back) = p.read(cx).back.clone()
+        {
+            window.focus(&back, cx);
+        }
+        cx.notify();
+    }
+
+    /// The system's own folder dialog, from the browser's footer.
+    pub(crate) fn pick_folder_from_system(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let rx = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,

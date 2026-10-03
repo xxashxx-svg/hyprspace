@@ -113,6 +113,8 @@ pub struct Root {
     pub(crate) skills: Entity<crate::skills::Skills>,
     /// The command palette while it is open (`crate::palette`).
     pub(crate) palette: Option<Entity<crate::palette::Palette>>,
+    /// The in-app folder browser for opening a folder as a space (`crate::folders`).
+    pub(crate) folder_picker: Option<Entity<crate::folders::FolderPicker>>,
     /// The intro while it is showing (`crate::intro`).
     pub(crate) intro: Option<crate::intro::Intro>,
     /// The app updating itself (`crate::update`).
@@ -235,6 +237,7 @@ impl Root {
             limits,
             skills,
             palette: None,
+            folder_picker: None,
             intro: None,
             updater,
             moving: false,

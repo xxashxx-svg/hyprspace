@@ -401,6 +401,9 @@ impl Root {
 
     /// Answers to folder requests, for the dock, the viewers and the Open button.
     pub(crate) fn folder_event(&mut self, e: FolderEvent, cx: &mut Context<Self>) {
+        if let (FolderEvent::Dir { path, entries }, Some(picker)) = (&e, &self.folder_picker) {
+            picker.update(cx, |p, cx| p.listed(path, entries, cx));
+        }
         if let FolderEvent::Git { cwd, status } = &e {
             self.git.insert(cwd.clone(), status.clone());
         }

@@ -69,6 +69,7 @@ impl Render for Root {
         let snooze = self.snooze_popup(window, cx);
         let toast = self.undo_toast(cx);
         let palette = self.palette_overlay(window, cx);
+        let folders = self.folder_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
         let update = crate::update::overlay(&self.updater, cx);
         // Settings takes the whole window. A hidden sidebar comes back from the title row's
@@ -117,6 +118,7 @@ impl Render for Root {
             .children(snooze)
             .children(toast)
             .children(palette)
+            .children(folders)
             .children(intro)
     }
 }

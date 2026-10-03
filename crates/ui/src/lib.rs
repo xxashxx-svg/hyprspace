@@ -6,6 +6,7 @@ mod attach;
 mod colors;
 mod composer;
 mod dock;
+mod folders;
 mod input;
 mod intro;
 mod markdown;
@@ -35,4 +36,5 @@ pub fn init(cx: &mut gpui::App) {
     input::bind_keys(cx);
     panes::bind_keys(cx);
     palette::bind_keys(cx);
+    folders::bind_keys(cx);
 }
