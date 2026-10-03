@@ -18,28 +18,37 @@ pub fn ease_out(t: f32) -> f32 {
     1. - (1. - t).powi(3)
 }
 
-/// A panel's open state as last drawn and how often it changed. Each change replays the slide,
+/// A panel's open state as last drawn and how often it changed. Each change plays the slide once,
 /// whichever code flipped the state.
 #[derive(Default)]
 pub struct Flips {
     open: Option<bool>,
     count: usize,
+    /// When the last change happened.
+    at: Option<Instant>,
 }
 
 impl Flips {
-    /// Notes the state this draw shows and returns the change count. The first look counts as
+    /// Notes the state this draw shows and returns the slide to play. The first look counts as
     /// no change, so a panel saved shut stays shut at launch instead of sliding away.
     pub fn see(&mut self, open: bool) -> usize {
         if self.open.is_some_and(|o| o != open) {
             self.count += 1;
+            self.at = Some(Instant::now());
         }
         self.open = Some(open);
-        self.count
+        self.count()
     }
 
-    /// The change count as of the last `see`.
+    /// The change count while its slide is still going, else 0. A panel drawn again later, after
+    /// Settings or another screen took its place, must not replay the last slide: that is what
+    /// slid the sidebar in again and shoved the terminal right after closing Settings.
     pub fn count(&self) -> usize {
-        self.count
+        // a few frames of slack, so the last frame of the slide still counts as part of it
+        let live = self
+            .at
+            .is_some_and(|t| t.elapsed() < LENGTH + Duration::from_millis(50));
+        if live { self.count } else { 0 }
     }
 }
 
@@ -156,12 +165,16 @@ mod tests {
     }
 
     #[test]
-    fn only_a_change_counts() {
+    fn only_a_change_slides_and_only_while_it_is_new() {
         let mut f = Flips::default();
         assert_eq!(f.see(false), 0);
         assert_eq!(f.see(false), 0);
         assert_eq!(f.see(true), 1);
         assert_eq!(f.see(true), 1);
         assert_eq!(f.see(false), 2);
+        // long after, drawing it again plays nothing
+        f.at = Some(Instant::now() - LENGTH * 3);
+        assert_eq!(f.see(false), 0);
+        assert_eq!(f.count(), 0);
     }
 }
