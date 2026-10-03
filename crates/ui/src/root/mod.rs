@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use futures::StreamExt;
 use gpui::{AppContext, Context, Entity, Pixels, Point, SharedString, Subscription, Task, Window};
 use hyprspace_proto::agents::AgentInfo;
-use hyprspace_proto::{AppState, Client, Command, Event, Events, SessionId};
+use hyprspace_proto::{AppState, Client, Command, Event, Events, SessionId, Thread, ThreadKind};
 
 use crate::composer::{Composer, ComposerEvent};
 use crate::input::TextInput;
@@ -236,6 +236,19 @@ impl Root {
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.status.remove(&thread);
                     cx.notify();
+                }
+            }
+            Event::TerminalConversation { id, resume } => {
+                let Some(&thread) = self.sessions.get(&id) else {
+                    return;
+                };
+                if let Some(Thread {
+                    kind: ThreadKind::Terminal { run: Some(run), .. },
+                    ..
+                }) = self.state.thread_mut(thread)
+                {
+                    run.resume = Some(resume);
+                    self.save();
                 }
             }
             Event::Folder(e) => self.folder_event(e, cx),

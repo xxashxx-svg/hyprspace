@@ -80,7 +80,17 @@ impl PtyManager {
     ) -> anyhow::Result<()> {
         let pair = native_pty_system().openpty(size(spawn.cols, spawn.rows))?;
 
-        let mut cmd = CommandBuilder::new(spawn.shell.unwrap_or_else(default_shell));
+        let mut cmd = match spawn.shell {
+            Some(shell) => CommandBuilder::new(shell),
+            None => {
+                let mut cmd = CommandBuilder::new(default_shell());
+                // PowerShell's copyright banner on every new pane is noise
+                if cfg!(windows) {
+                    cmd.arg("-NoLogo");
+                }
+                cmd
+            }
+        };
         cmd.args(&spawn.args);
         if !spawn.cwd.as_os_str().is_empty() {
             cmd.cwd(&spawn.cwd);
@@ -181,6 +191,10 @@ impl PtyManager {
         for (_, mut s) in self.sessions().drain() {
             let _ = s.killer.kill();
         }
+    }
+
+    pub fn contains(&self, id: SessionId) -> bool {
+        self.sessions().contains_key(&id)
     }
 
     pub fn len(&self) -> usize {

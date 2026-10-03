@@ -5,7 +5,7 @@
 // The command is built from fixed flags and catalog ids only. User text never goes into it; the
 // prompt goes in as keystrokes after the CLI is up.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -28,6 +28,9 @@ const CLAUDE_BOOT: Duration = Duration::from_secs(30);
 const PROMPT_VAR: &str = "HYPRSPACE_PROMPT";
 // Enter goes a beat after the text so the TUI settles the typed prompt first
 const ENTER_AFTER: Duration = Duration::from_millis(300);
+// Codex saves its rollout on the first turn, which can be a while after the pane opens
+const CODEX_POLL: Duration = Duration::from_secs(2);
+const CODEX_WATCH: Duration = Duration::from_secs(15 * 60);
 
 /// Model ids and efforts come from the catalog, but a custom one could hold anything, so
 /// anything past a plain token is quoted (and loses its own quotes).
@@ -274,11 +277,47 @@ impl Terminals {
             }
             spawn.input = Some(command(run, settings.as_deref(), has_transcript, as_arg));
         }
+        let new_codex = run
+            .as_ref()
+            .is_some_and(|r| r.agent == Agent::Codex && r.resume.is_none());
+        // the conversations already in this folder, so the new one stands out once Codex saves it
+        let before = new_codex.then(|| {
+            sessions::list("codex", &cwd)
+                .into_iter()
+                .map(|s| s.id)
+                .collect()
+        });
         self.ptys.create(id, spawn, self.tx.clone())?;
+        if let Some(before) = before {
+            self.find_codex_conversation(id, cwd, before);
+        }
         if run.is_some_and(|r| r.agent == Agent::Claude) && prompt.is_some() {
             self.give_up_on_prompt(id);
         }
         Ok(())
+    }
+
+    /// Codex can't be handed a conversation id the way Claude can, so watch its rollouts for the
+    /// one this session starts and report it. Gives up when the session ends or after a while.
+    fn find_codex_conversation(&self, id: SessionId, cwd: PathBuf, known: HashSet<String>) {
+        let tx = self.tx.clone();
+        let ptys = self.ptys.clone();
+        thread::spawn(move || {
+            for _ in 0..(CODEX_WATCH.as_secs() / CODEX_POLL.as_secs()) {
+                thread::sleep(CODEX_POLL);
+                if !ptys.contains(id) {
+                    return;
+                }
+                let fresh = sessions::list("codex", &cwd)
+                    .into_iter()
+                    .filter(|s| !known.contains(&s.id))
+                    .max_by_key(|s| s.modified);
+                if let Some(s) = fresh {
+                    let _ = tx.unbounded_send(Event::TerminalConversation { id, resume: s.id });
+                    return;
+                }
+            }
+        });
     }
 
     /// A Claude that never comes up keeps its prompt untyped, and says so.

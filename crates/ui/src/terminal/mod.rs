@@ -73,6 +73,8 @@ pub struct TerminalView {
     /// Take focus back on the next frame (after the find bar closes).
     refocus: bool,
     blink_on: bool,
+    /// When the user last typed. The cursor holds solid while they type, like xterm.
+    typed: Instant,
     _blink: Task<()>,
 }
 
@@ -104,7 +106,10 @@ impl TerminalView {
             loop {
                 cx.background_executor().timer(BLINK).await;
                 let alive = this.update(cx, |v, cx| {
-                    if v.focused && v.emu.cursor().is_some_and(|c| c.blink) {
+                    if v.focused
+                        && v.emu.cursor().is_some_and(|c| c.blink)
+                        && v.typed.elapsed() >= BLINK
+                    {
                         v.blink_on = !v.blink_on;
                         cx.notify();
                     }
@@ -135,6 +140,7 @@ impl TerminalView {
             focused: false,
             refocus: false,
             blink_on: true,
+            typed: Instant::now(),
             _blink: blinker,
         }
     }
@@ -148,6 +154,7 @@ impl TerminalView {
     fn input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
         self.emu.scroll_to_bottom();
         self.blink_on = true;
+        self.typed = Instant::now();
         self.write(bytes);
         cx.notify();
     }

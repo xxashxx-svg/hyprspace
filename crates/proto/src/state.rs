@@ -228,7 +228,10 @@ pub struct ComposerPrefs {
     pub agent: Option<Agent>,
     pub permission: Permission,
     pub picks: Vec<Pick>,
-    /// Start agents in a terminal session instead of a structured one.
+    /// Structured sessions are switched on (Settings, General). Off, every thread runs in a
+    /// terminal session. Off by default: structured sessions are still in progress.
+    pub structured: bool,
+    /// With structured sessions on, start agents in a terminal session anyway.
     pub terminal: bool,
 }
 

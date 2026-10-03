@@ -58,6 +58,18 @@ impl Root {
         };
 
         let terminal = prefs.terminal;
+        let structured = prefs.structured;
+        let switch = widgets::segments().children(
+            [(false, "Off"), (true, "On")]
+                .into_iter()
+                .enumerate()
+                .map(|(i, (value, name))| {
+                    widgets::segment(("structured", i), None, name, structured == value, false)
+                        .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
+                            r.update_prefs(|p| p.structured = value, cx)
+                        }))
+                }),
+        );
         let kinds = [
             (false, "Structured", "sparkles"),
             (true, "Terminal", "terminal"),
@@ -103,23 +115,36 @@ impl Root {
             .gap(px(28.))
             .child(group(
                 "New threads",
-                vec![
-                    row(
+                [
+                    Some(row(
                         "Agent",
                         "New threads start with it. The composer changes it too.",
                         agent_control,
-                    ),
-                    row(
-                        "Start as",
-                        if terminal {
-                            "The agent's own CLI runs in a terminal."
-                        } else {
-                            "The agent's work shows as a transcript you can read and steer."
-                        },
-                        start,
-                    ),
-                    permission,
-                ],
+                    )),
+                    structured.then(|| {
+                        row(
+                            "Start as",
+                            if terminal {
+                                "The agent's own CLI runs in a terminal."
+                            } else {
+                                "The agent's work shows as a transcript you can read and steer."
+                            },
+                            start,
+                        )
+                    }),
+                    Some(permission),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            ))
+            .child(group(
+                "Experimental",
+                vec![row(
+                    "Structured sessions",
+                    "Lets Claude and Codex run as a transcript you read and steer, instead of in a terminal. Still being built.",
+                    switch,
+                )],
             ))
             .child(group(
                 "Folders",

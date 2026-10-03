@@ -131,6 +131,12 @@ pub enum Event {
         id: SessionId,
         code: i32,
     },
+    /// The conversation an agent in a terminal session is on, once it's known, so the thread
+    /// can resume it after a restart. Claude's is claimed up front; Codex's is found on disk.
+    TerminalConversation {
+        id: SessionId,
+        resume: String,
+    },
     /// What the agent in a terminal session is doing, from its hooks.
     AgentState {
         id: SessionId,
@@ -306,6 +312,10 @@ mod tests {
             Event::TerminalExit {
                 id: SessionId(2),
                 code: 0,
+            },
+            Event::TerminalConversation {
+                id: SessionId(2),
+                resume: "019a-rollout".into(),
             },
             Event::AgentState {
                 id: SessionId(2),

@@ -70,7 +70,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     // on: the agent runs interactively in a terminal session, on the plan's terminal limits
     let forced = c.agent().is_some_and(|a| !a.agent.structured());
     let on = c.terminal();
-    let terminal_chip = pick.is_some().then(|| {
+    let terminal_chip = (pick.is_some() && c.prefs.structured).then(|| {
         widgets::chip("composer-terminal")
             .child(icon(
                 "terminal",
