@@ -46,7 +46,23 @@ fn take_ctrl_c() {}
 // would pass them on. Claude then treats each one as a sub-session of the one that launched us:
 // it turns transcript saving off (so nothing can be resumed, and [Image #N] can't be read back),
 // and each gets that session's id and messaging token. Sessions are independent, so drop them.
+//
+// Claude's tool shells also set a few variables for themselves, not for whoever runs in them:
+// NO_COLOR took every color out of the agents in our terminals. They go too, but only when we
+// were started from such a shell, so a NO_COLOR someone set on purpose stays.
+const TOOL_SHELL_ENV: &[&str] = &[
+    "NO_COLOR",
+    "GIT_TERMINAL_PROMPT",
+    "CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT",
+];
+
 unsafe fn drop_claude_session_env() {
+    if std::env::var_os("CLAUDECODE").is_some() {
+        for k in TOOL_SHELL_ENV {
+            // SAFETY: see `prepare`.
+            unsafe { std::env::remove_var(k) };
+        }
+    }
     for k in SESSION_ENV {
         // SAFETY: see `prepare`.
         unsafe { std::env::remove_var(k) };
