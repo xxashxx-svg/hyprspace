@@ -30,7 +30,20 @@ the files are byte for byte unchanged.
   widths; what the Open button opens; whether the intro was seen;
 - `lastSeenVersion`, so What's new shows after the update (ADR 0011).
 
-**What doesn't:** panes don't become threads. The composer's resume list already offers every
-conversation Claude and Codex saved for the folder, which covers the panes and more, without
-importing dead session ids that would fail to resume. Terminal look, fonts and the settings the
-GPUI app has no place for stay behind.
+- each agent pane as a terminal thread in its folder's space (see the amendment below).
+
+**What doesn't:** viewer tabs, unsent drafts and automation runs. Terminal look, fonts and the
+settings the GPUI app has no place for stay behind.
+
+## Amendment, 2026-10-03: panes come over as threads
+
+This first said panes don't become threads, since the composer's resume list offers every saved
+conversation. In practice someone switching apps lost their sidebar: the threads they had open,
+by name, were gone. So each Claude, Codex or Gemini pane now becomes a terminal thread with its
+title, model, effort and permission (read off its launch command). A Claude thread resumes the
+conversation the pane was on: its `claudeSessionId`, else the id its command resumed, else its
+own id, whichever has a transcript on disk first, and the transcript's last write dates the
+thread. Codex panes never knew their conversation, so theirs start fresh.
+
+Grids start empty, so nothing launches until a thread is opened. That keeps a Tauri app that is
+still running from sharing a live conversation with this one.

@@ -101,7 +101,8 @@ drop(session)                    // kills the CLI
 - **The Tauri app's state** (`~/.hyprspace/v2`) is imported once, read only, when
   `native/state.json` doesn't exist (`legacy.rs`, ADR 0012): projects become spaces, open spaces'
   folders become spaces of their own, theme, agent picks, permission, widths and
-  `lastSeenVersion` come along. Panes don't become threads; the resume list covers them.
+  `lastSeenVersion` come along. Each agent pane becomes a terminal thread on the conversation it
+  was on, with nothing launched until it is opened.
 
 ## Terminal sessions (`engine/src/pty.rs`, `terminal.rs`, `hooks.rs`, `ui/src/terminal/`)
 

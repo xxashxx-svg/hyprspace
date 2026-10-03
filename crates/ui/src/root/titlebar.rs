@@ -10,7 +10,6 @@ use gpui::{
 };
 
 use super::{Root, Screen};
-use crate::palette::TogglePalette;
 use crate::panes::ToggleSidebar;
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
 use crate::slide::slide;
@@ -113,33 +112,24 @@ impl Root {
 }
 
 impl Root {
-    /// The sidebar's buttons: hide or show it, search every thread in the palette, and start a
-    /// thread. They occlude the row so a click doesn't drag the window.
+    /// The logo and the button that hides or shows the sidebar, as the Tauri app had them. Search
+    /// and New thread live at the top of the sidebar itself. The button occludes the row so a
+    /// click doesn't drag the window.
     fn nav(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .id("sidebar-nav")
-            .occlude()
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(2.))
+            .gap(px(6.))
+            .pl(px(4.))
+            .child(crate::assets::logo(14.))
             .child(
-                widgets::icon_button("sidebar-toggle", "panel-left", 28.).on_click(cx.listener(
-                    |r, _: &ClickEvent, window, cx| r.toggle_sidebar(&ToggleSidebar, window, cx),
-                )),
-            )
-            .child(
-                widgets::icon_button("sidebar-search", "search", 28.).on_click(cx.listener(
-                    |r, _: &ClickEvent, window, cx| r.toggle_palette(&TogglePalette, window, cx),
-                )),
-            )
-            .child(
-                widgets::icon_button("new-thread", "plus", 28.).on_click(cx.listener(
-                    |r, _: &ClickEvent, window, cx| {
-                        r.menu = None;
-                        r.pick_thread_folder(window, cx);
-                    },
-                )),
+                widgets::icon_button("sidebar-toggle", "panel-left", 28.)
+                    .occlude()
+                    .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
+                        r.toggle_sidebar(&ToggleSidebar, window, cx)
+                    })),
             )
             .into_any_element()
     }

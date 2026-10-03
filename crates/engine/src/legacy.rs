@@ -8,14 +8,16 @@
 // their own (ADR 0008 dropped open spaces); theme and light or dark; each agent's model and
 // effort, the last agent used and its permission mode; the sidebar and dock widths; the Open
 // button's app; whether the intro was seen; and the last version that ran, for What's new.
-// Panes don't come over as threads: the composer's resume list already offers every
-// conversation the CLIs saved for a folder.
+// Each agent pane comes over as a terminal thread in its folder's space, on the conversation it
+// was on, so opening it picks up where the Tauri app left off. Nothing launches until a thread
+// is opened: the grids start empty, so a Tauri app still running never shares a live
+// conversation with this one.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use hyprspace_proto::state::{Appearance, Pick, Scheme};
-use hyprspace_proto::{Agent, AppState, Opener, Permission, Space};
+use hyprspace_proto::{Agent, AppState, Launch, Opener, Permission, Space, Thread, ThreadKind};
 use serde::Deserialize;
 
 #[derive(Deserialize, Default)]
@@ -36,9 +38,19 @@ struct Workspace {
 }
 
 #[derive(Deserialize, Default)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct Pane {
+    id: String,
+    title: String,
     cwd: Option<String>,
+    provider: String,
+    /// The launch command, which holds the permission flag and the effort.
+    command: Option<String>,
+    model: Option<String>,
+    /// The Claude conversation the pane is on. It follows a manual /resume, so it beats `id`.
+    claude_session_id: Option<String>,
+    draft: bool,
+    ephemeral: bool,
 }
 
 #[derive(Deserialize, Default)]
@@ -73,17 +85,30 @@ pub fn import(dir: &Path) -> Option<AppState> {
         return None;
     }
     let mut state = AppState::default();
+    let home = crate::util::home_dir();
 
     for w in workspaces.unwrap_or_default().workspaces {
         let archived = w.archived.unwrap_or(false);
-        if w.kind.as_deref() == Some("open") {
-            for pane in w.sessions {
-                let cwd = pane.cwd.unwrap_or_default();
-                add(&mut state, "", &cwd, archived);
-            }
-        } else {
+        let open = w.kind.as_deref() == Some("open");
+        if !open {
             add(&mut state, &w.name, &w.cwd, archived);
         }
+        for pane in w.sessions {
+            let cwd = pane
+                .cwd
+                .clone()
+                .filter(|c| !c.trim().is_empty())
+                .unwrap_or_else(|| w.cwd.clone());
+            if open {
+                add(&mut state, "", &cwd, archived);
+            }
+            thread(&mut state, &home, pane, &cwd);
+        }
+    }
+    for space in &mut state.spaces {
+        space.threads.sort_by_key(|t| std::cmp::Reverse(t.created));
+        // the Tauri sidebar opened a space that had threads
+        space.folded = space.threads.is_empty();
     }
 
     let s = settings.unwrap_or_default();
@@ -144,6 +169,16 @@ pub fn import(dir: &Path) -> Option<AppState> {
     Some(state)
 }
 
+/// A folder as a key: Windows paths don't care about case, and the Tauri app saved whatever the
+/// picker gave, with or without a trailing slash.
+fn key(p: &Path) -> String {
+    let s = p
+        .to_string_lossy()
+        .trim_end_matches(['/', '\\'])
+        .to_string();
+    if cfg!(windows) { s.to_lowercase() } else { s }
+}
+
 /// Adds a space for `cwd` unless one already has that folder. An empty name takes the folder's.
 fn add(state: &mut AppState, name: &str, cwd: &str, archived: bool) {
     let cwd = cwd.trim();
@@ -151,14 +186,6 @@ fn add(state: &mut AppState, name: &str, cwd: &str, archived: bool) {
         return;
     }
     let path = PathBuf::from(cwd);
-    let key = |p: &Path| {
-        let s = p
-            .to_string_lossy()
-            .trim_end_matches(['/', '\\'])
-            .to_string();
-        // Windows paths don't care about case, and the Tauri app saved whatever the picker gave
-        if cfg!(windows) { s.to_lowercase() } else { s }
-    };
     let have = state
         .spaces
         .iter()
@@ -182,6 +209,107 @@ fn add(state: &mut AppState, name: &str, cwd: &str, archived: bool) {
         // the Tauri sidebar showed one space open at a time
         folded: true,
         ..Default::default()
+    });
+}
+
+/// The value after `flag` in a launch command: `--effort high`, `--permission-mode plan`.
+fn flag<'a>(command: &'a str, flag: &str) -> Option<&'a str> {
+    let mut words = command.split_whitespace();
+    words.find(|w| *w == flag)?;
+    words.next().map(|w| w.trim_matches('"'))
+}
+
+/// The permission a pane ran with, read off its command.
+fn permission(command: &str) -> Permission {
+    if command.contains("--dangerously-skip-permissions") || command.contains("--yolo") {
+        return Permission::Bypass;
+    }
+    match flag(command, "--permission-mode") {
+        Some("plan") => Permission::Plan,
+        Some("acceptEdits") => Permission::Auto,
+        _ => Permission::Ask,
+    }
+}
+
+/// Adds an agent pane as a terminal thread in its folder's space. Viewer tabs, unsent drafts,
+/// automation runs and bare shells stay behind.
+fn thread(state: &mut AppState, home: &Path, pane: Pane, cwd: &str) {
+    let agent = match pane.provider.as_str() {
+        "claude" => Agent::Claude,
+        "codex" => Agent::Codex,
+        "gemini" => Agent::Gemini,
+        _ => return,
+    };
+    if pane.draft || pane.ephemeral || cwd.trim().is_empty() {
+        return;
+    }
+    let path = PathBuf::from(cwd.trim());
+    let command = pane.command.unwrap_or_default();
+    // Only Claude panes knew their conversation. It is the one the pane followed, or the one its
+    // command resumed (a pane opened from the resume list), or the one its own id started. The
+    // first with a transcript on disk wins; a pane that never started keeps its own id, which
+    // names the conversation it will start.
+    let transcript =
+        |id: &str| crate::sessions::claude_project_dir(home, &path).join(format!("{id}.jsonl"));
+    let candidates: Vec<String> = [
+        pane.claude_session_id.clone(),
+        flag(&command, "--resume").map(str::to_string),
+        Some(pane.id.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|id| !id.is_empty())
+    .collect();
+    let resume = (agent == Agent::Claude)
+        .then(|| {
+            candidates
+                .iter()
+                .find(|id| transcript(id).exists())
+                .or(candidates.first())
+                .cloned()
+        })
+        .flatten();
+    // the transcript's last write is when the thread last did anything
+    let created = resume
+        .as_ref()
+        .and_then(|id| {
+            std::fs::metadata(transcript(id))
+                .and_then(|m| m.modified())
+                .ok()
+        })
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis() as u64);
+    let launch = Launch {
+        model: pane
+            .model
+            .filter(|m| !m.is_empty())
+            .or_else(|| flag(&command, "--model").map(str::to_string)),
+        effort: flag(&command, "--effort").map(str::to_string),
+        permission: permission(&command),
+        resume,
+        ..Launch::new(agent, path.clone())
+    };
+    let Some(i) = state
+        .spaces
+        .iter()
+        .position(|s| s.cwd.as_deref().is_some_and(|c| key(c) == key(&path)))
+    else {
+        return;
+    };
+    let id = state.take_id();
+    let title = match pane.title.trim() {
+        "" => agent.name().to_string(),
+        t => t.to_string(),
+    };
+    state.spaces[i].threads.push(Thread {
+        id,
+        title,
+        kind: ThreadKind::Terminal {
+            cwd: path,
+            run: Some(launch),
+        },
+        archived: false,
+        created,
     });
 }
 
@@ -234,11 +362,52 @@ mod tests {
                 ("legacy", "/work/legacy".to_string(), false),
             ]
         );
-        // ids are unique and the counter moved past them
-        let ids: Vec<_> = s.spaces.iter().map(|sp| sp.id).collect();
-        assert_eq!(ids, vec![1, 2, 3, 4]);
-        assert_eq!(s.next_id, 5);
-        assert!(s.spaces.iter().all(|sp| sp.threads.is_empty()));
+        // ids are unique across spaces and threads, and the counter moved past them
+        let mut ids: Vec<_> = s
+            .spaces
+            .iter()
+            .flat_map(|sp| std::iter::once(sp.id).chain(sp.threads.iter().map(|t| t.id)))
+            .collect();
+        let n = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), n);
+        assert_eq!(s.next_id, n as u64 + 1);
+
+        // each agent pane is a terminal thread in its folder's space, on its own conversation,
+        // with the model and permission its command ran with
+        let runs = |sp: &Space| -> Vec<(String, Agent, Option<String>, Option<String>)> {
+            sp.threads
+                .iter()
+                .map(|t| match &t.kind {
+                    ThreadKind::Terminal { run: Some(l), .. } => {
+                        (t.title.clone(), l.agent, l.resume.clone(), l.model.clone())
+                    }
+                    other => panic!("not an agent thread: {other:?}"),
+                })
+                .collect()
+        };
+        assert_eq!(
+            runs(&s.spaces[0]),
+            vec![
+                (
+                    "api".into(),
+                    Agent::Claude,
+                    Some("s1".into()),
+                    Some("claude-opus-5-5".into())
+                ),
+                // from the open space, into the space that already had its folder
+                ("api".into(), Agent::Claude, Some("s3".into()), None),
+            ]
+        );
+        assert_eq!(
+            runs(&s.spaces[2]),
+            vec![("notes".into(), Agent::Codex, None, None)]
+        );
+        // a space with threads opens; one without stays folded, and nothing is on screen yet
+        assert!(!s.spaces[0].folded && s.spaces[3].folded);
+        assert!(s.spaces[1].threads.is_empty() && s.spaces[3].threads.is_empty());
+        assert!(s.spaces.iter().all(|sp| sp.grid == Default::default()));
 
         assert_eq!(s.appearance.theme, "iris");
         assert_eq!(s.appearance.scheme, Scheme::Light);
@@ -259,6 +428,19 @@ mod tests {
         assert_eq!(s.dock.width, 380.0);
         assert!(s.intro_seen);
         assert_eq!(s.seen_version, "0.21.1");
+    }
+
+    #[test]
+    fn a_command_tells_the_permission_and_the_effort() {
+        let cmd = r#"claude --resume x --dangerously-skip-permissions --model "claude-opus-5-5[1m]" --effort high"#;
+        assert_eq!(permission(cmd), Permission::Bypass);
+        assert_eq!(flag(cmd, "--effort"), Some("high"));
+        assert_eq!(flag(cmd, "--model"), Some("claude-opus-5-5[1m]"));
+        assert_eq!(
+            permission("claude --permission-mode plan"),
+            Permission::Plan
+        );
+        assert_eq!(permission("claude"), Permission::Ask);
     }
 
     #[test]

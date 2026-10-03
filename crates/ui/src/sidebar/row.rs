@@ -1,17 +1,18 @@
-// One thread in the sidebar, as a card like zeron's: the model in small grey type with the age
-// on the right (a running count while it works), and under it the status, the agent's mark and
-// the title. While the agent works, a line says what it does (the tool it runs, why it waits,
-// what it concluded), and each subagent it has running gets a line of its own with its count,
-// like the Tauri app's rows.
+// One thread in the sidebar, as the Tauri app's SessionRow drew it: the agent's mark (a ring turns
+// around it while it works) with the model and the age, or a running count, on the right; the
+// title; then what it is doing, or its branch or folder, with a dot when it waits on you and a
+// tick when it finished. Each subagent it has running gets a small card underneath. A working
+// row carries a slow sheen, a waiting one a tint. Hovering shows a button that archives it.
 // Click to open it, right-click for rename and archive.
 
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, ElementId, IntoElement, MouseButton,
-    SharedString, Transformation, div, percentage, prelude::*, px,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, ElementId, FontWeight, Hsla,
+    IntoElement, MouseButton, SharedString, Transformation, div, linear_color_stop,
+    linear_gradient, percentage, prelude::*, px, relative,
 };
-use hyprspace_proto::{Thread, ThreadKind};
+use hyprspace_proto::{Agent, Thread, ThreadKind};
 use hyprspace_theme::MONO;
 
 use super::row_hover;
@@ -31,84 +32,123 @@ fn elapsed(secs: u64) -> String {
     }
 }
 
-/// What sits in the row's status slot: a turning ring while it works, a pulsing dot when it
-/// needs you, a check when it finished and you have not looked yet, a red dot when it failed.
-fn glyph(status: Status, unseen: bool, id: u64) -> Option<AnyElement> {
-    match status {
-        Status::Working => Some(
-            icon("ring", 11., colors::busy())
-                .with_animation(
-                    ("ring", id),
-                    Animation::new(Duration::from_millis(900)).repeat(),
-                    |s, t| s.with_transformation(Transformation::rotate(percentage(t))),
-                )
-                .into_any_element(),
-        ),
-        Status::Waiting => Some(
-            widgets::status_dot(status)
-                .with_animation(
-                    ("waiting", id),
-                    Animation::new(Duration::from_millis(1000)).repeat(),
-                    |d, t| d.opacity(0.35 + 0.65 * (t * 2.0 - 1.0).abs()),
-                )
-                .into_any_element(),
-        ),
-        Status::Done if unseen => Some(icon("check", 13., colors::ok()).into_any_element()),
-        Status::Failed => Some(widgets::status_dot(status).into_any_element()),
-        Status::Done | Status::Idle => None,
-    }
+/// A ring turning around a mark `size` across, `inset` pixels outside it.
+fn ring(key: impl Into<ElementId>, size: f32, inset: f32) -> AnyElement {
+    div()
+        .absolute()
+        .top(px(-inset))
+        .left(px(-inset))
+        .child(
+            icon("ring", size + 2. * inset, colors::busy()).with_animation(
+                key,
+                Animation::new(Duration::from_millis(900)).repeat(),
+                |s, t| s.with_transformation(Transformation::rotate(percentage(t))),
+            ),
+        )
+        .into_any_element()
+}
+
+/// A band of light sweeping slowly across a working row.
+fn sheen(key: impl Into<ElementId>) -> AnyElement {
+    let glow = colors::busy().opacity(0.07);
+    let clear = colors::busy().opacity(0.);
+    let half = |from: Hsla, to: Hsla| {
+        div().flex_1().h_full().bg(linear_gradient(
+            90.,
+            linear_color_stop(from, 0.),
+            linear_color_stop(to, 1.),
+        ))
+    };
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .w(relative(0.6))
+        .flex()
+        .child(half(clear, glow))
+        .child(half(glow, clear))
+        .with_animation(
+            key,
+            Animation::new(Duration::from_millis(2600)).repeat(),
+            |d, t| d.left(relative(1.0 - 1.6 * t)),
+        )
+        .into_any_element()
 }
 
 /// Subagents shown before the rest fold into a count.
 const SUBS_SHOWN: usize = 4;
 
-/// The subagents under a row, on a guide line: each one's task and how long it has run. A new
-/// one fades in rather than popping.
-fn subagents(thread: u64, subs: &[(String, String, u64)]) -> AnyElement {
+/// The subagents under a row: a small card each with its task and how long it has run. A new one
+/// fades in rather than popping.
+fn subagents(thread: u64, agent: Option<Agent>, subs: &[(String, String, u64)]) -> AnyElement {
     let more = subs.len().saturating_sub(SUBS_SHOWN);
     div()
-        .mt(px(3.))
-        .ml(px(5.))
-        .pl(px(10.))
-        .border_l_1()
-        .border_color(colors::ink(0.1))
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .children(subs.iter().take(SUBS_SHOWN).map(|(key, label, secs)| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .h(px(18.))
-                .text_size(px(11.5))
-                .child(icon("bot", 11., colors::text3()))
-                .child(
+        .gap(px(3.))
+        .mt(px(6.))
+        .children(
+            subs.iter()
+                .take(SUBS_SHOWN)
+                .enumerate()
+                .map(|(i, (key, label, secs))| {
+                    let name = |what: &str| -> ElementId {
+                        ElementId::Name(SharedString::from(format!("{what}-{thread}-{key}")))
+                    };
+                    let badge = match agent {
+                        Some(a) => mark(a, 10., colors::brand(a).0).into_any_element(),
+                        None => icon("bot", 10., colors::text3()).into_any_element(),
+                    };
                     div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
+                        .relative()
+                        .overflow_hidden()
+                        .flex()
+                        .items_center()
+                        .gap(px(7.))
+                        .h(px(26.))
+                        .pl(px(5.))
+                        .pr(px(8.))
+                        .rounded(px(6.))
+                        .border_1()
+                        .border_color(colors::border1())
+                        .bg(colors::surface2().opacity(0.7))
+                        .text_size(px(11.))
                         .text_color(colors::text2())
-                        .child(label.clone()),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .font_family(MONO)
-                        .text_size(px(10.5))
-                        .text_color(colors::busy())
-                        .child(elapsed(*secs)),
-                )
-                .with_animation(
-                    ElementId::Name(SharedString::from(format!("sub-{thread}-{key}"))),
-                    Animation::new(Duration::from_millis(220)).with_easing(crate::slide::ease_out),
-                    |d, t| d.opacity(t),
-                )
-        }))
+                        .child(sheen(name("sub-sheen")))
+                        .child(
+                            div()
+                                .relative()
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .justify_center()
+                                .size(px(16.))
+                                .rounded_full()
+                                .bg(colors::surface3())
+                                .child(badge)
+                                .child(ring(("sub-ring", thread * 100 + i as u64), 16., 2.)),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                        .child(
+                            div()
+                                .flex_none()
+                                .font_family(MONO)
+                                .text_size(px(10.))
+                                .text_color(colors::text3())
+                                .child(elapsed(*secs)),
+                        )
+                        .with_animation(
+                            name("sub"),
+                            Animation::new(Duration::from_millis(220))
+                                .with_easing(crate::slide::ease_out),
+                            |d, t| d.opacity(t),
+                        )
+                }),
+        )
         .when(more > 0, |d| {
             d.child(
                 div()
-                    .h(px(16.))
+                    .pl(px(6.))
                     .text_size(px(11.))
                     .text_color(colors::text3())
                     .child(format!("{more} more")),
@@ -122,7 +162,9 @@ impl Root {
         let id = t.id;
         let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
         let selected = self.screen == Screen::Thread(id);
-        let busy = matches!(status, Status::Working | Status::Waiting);
+        let working = status == Status::Working;
+        let waiting = status == Status::Waiting;
+        let busy = working || waiting;
         // a terminal thread hears from its hooks; a structured one reads its own transcript
         let (running, doing, subs) = match self.views.get(&id) {
             Some(View::Structured(v)) => {
@@ -152,24 +194,39 @@ impl Root {
                 )
             }
         };
-        // what it concluded stays until the next turn, unless it was already seen
-        let doing = doing.filter(|_| busy || self.unseen.contains(&id));
-        let badge = match t.agent() {
-            Some(launch) => {
-                mark(launch.agent, 13., colors::brand(launch.agent).0).into_any_element()
-            }
+        // the line says what it does, or what it concluded until the next turn
+        let doing = doing.filter(|_| status != Status::Idle);
+        let agent = t.agent().map(|l| l.agent);
+        let badge = match agent {
+            Some(a) => mark(a, 13., colors::brand(a).0).into_any_element(),
             None => icon("terminal", 12., colors::text3()).into_any_element(),
         };
-        let detail = match &t.kind {
-            ThreadKind::Structured { launch } => self.model_label(launch),
-            ThreadKind::Terminal {
-                run: Some(launch), ..
-            } => self.model_label(launch),
-            ThreadKind::Terminal { run: None, .. } => "Terminal".into(),
+        let label = match t.agent() {
+            Some(launch) => {
+                let name = self.model_label(launch);
+                match launch.model.as_deref() {
+                    Some(m) if crate::models::is_long(m) => format!("{name} (1M context)"),
+                    _ => name,
+                }
+            }
+            None => "Terminal".into(),
+        };
+        let cwd = match &t.kind {
+            ThreadKind::Terminal { cwd, .. } => cwd.clone(),
+            ThreadKind::Structured { launch } => launch.cwd.clone(),
+        };
+        // a branch when the folder is a repo, otherwise the folder; the icon says which
+        let place = match self.git.get(&cwd).map(|g| &g.branch) {
+            Some(b) if b.is_repo && !b.branch.is_empty() => ("git-branch", b.branch.clone()),
+            _ => (
+                "folder",
+                cwd.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+            ),
         };
         let title: AnyElement = match &self.rename {
             Some((Rename::Thread(r), input, _)) if *r == id => div()
-                .flex_1()
                 .h(px(24.))
                 .flex()
                 .items_center()
@@ -182,23 +239,83 @@ impl Root {
                 .child(input.clone())
                 .into_any_element(),
             _ => div()
-                .flex_1()
                 .min_w_0()
                 .truncate()
+                .text_size(px(13.))
+                .font_weight(FontWeight::SEMIBOLD)
                 .text_color(colors::text1())
                 .child(t.title.clone())
                 .into_any_element(),
         };
+        let group: SharedString = format!("row-{id}").into();
         let right = match running {
-            Some(secs) => div()
-                .font_family(MONO)
-                .text_size(px(10.5))
-                .text_color(colors::busy())
-                .child(elapsed(secs)),
+            Some(secs) => Some(
+                div()
+                    .font_family(MONO)
+                    .text_size(px(10.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors::busy())
+                    .child(elapsed(secs)),
+            ),
+            None => (t.created > 0).then(|| {
+                div()
+                    .text_size(px(10.5))
+                    .text_color(colors::text3())
+                    .child(ago(t.created, now))
+            }),
+        }
+        .map(|d| d.flex_none().group_hover(group.clone(), |s| s.opacity(0.)));
+        let state = match status {
+            Status::Waiting => Some(
+                widgets::status_dot(status)
+                    .with_animation(
+                        ("waiting", id),
+                        Animation::new(Duration::from_millis(1000)).repeat(),
+                        |d, t| d.opacity(0.35 + 0.65 * (t * 2.0 - 1.0).abs()),
+                    )
+                    .into_any_element(),
+            ),
+            Status::Done => Some(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .size(px(12.))
+                    .rounded_full()
+                    .bg(colors::ok())
+                    .child(icon("check", 9., colors::on_accent()))
+                    .into_any_element(),
+            ),
+            Status::Failed => Some(widgets::status_dot(status).into_any_element()),
+            Status::Working | Status::Idle => None,
+        };
+        let foot = match doing {
+            Some(doing) => div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(if waiting {
+                    colors::waiting()
+                } else {
+                    colors::text2()
+                })
+                .child(doing),
             None => div()
-                .text_size(px(11.))
-                .text_color(colors::text3())
-                .child(ago(t.created, now)),
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .child(icon(place.0, 11., colors::text3()))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(MONO)
+                        .text_size(px(10.5))
+                        .child(place.1),
+                ),
         };
         let mut menu: MenuItems = Vec::new();
         // an archived thread can't be a pane
@@ -214,51 +331,99 @@ impl Root {
             },
             ("Remove".into(), Action::RemoveThread(id)),
         ]);
+        let archived = t.archived;
         div()
             .id(("thread", id))
+            .group(group.clone())
+            .relative()
+            .overflow_hidden()
             .flex()
             .flex_none()
             .flex_col()
-            .gap(px(2.))
-            .px(px(10.))
-            .py(px(8.))
-            .rounded(px(10.))
+            .gap(px(3.))
+            .pt(px(8.))
+            .px(px(8.))
+            .pb(px(9.))
+            .rounded(px(8.))
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
+            .when(!selected && waiting, |d| {
+                d.bg(colors::waiting().opacity(0.07))
+            })
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+            .when(working, |d| d.child(sheen(("row-sheen", id))))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .text_size(px(11.5))
-                    .text_color(colors::text3())
-                    .child(div().flex_1().min_w_0().truncate().child(detail))
-                    .child(div().flex_none().pl(px(8.)).child(right)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(7.))
-                    .h(px(20.))
-                    .text_size(px(13.5))
-                    .children(glyph(status, self.unseen.contains(&id), id))
-                    .child(badge)
-                    .child(title),
-            )
-            .children(doing.map(|doing| {
-                div()
+                    .gap(px(6.))
                     .min_w_0()
-                    .truncate()
-                    .text_size(px(11.5))
-                    .text_color(if status == Status::Waiting {
-                        colors::text2()
-                    } else {
-                        colors::text3()
-                    })
-                    .child(doing)
-            }))
-            .when(!subs.is_empty(), |d| d.child(subagents(id, &subs)))
+                    .text_size(px(11.))
+                    .text_color(colors::text3())
+                    .child(
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(16.))
+                            .child(badge)
+                            .when(working, |d| d.child(ring(("row-ring", id), 16., 3.))),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(MONO)
+                            .text_size(px(10.5))
+                            .child(label),
+                    )
+                    .children(right),
+            )
+            .child(title)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .min_w_0()
+                    .text_size(px(11.))
+                    .text_color(colors::text3())
+                    .child(foot)
+                    .children(state),
+            )
+            .when(!subs.is_empty(), |d| d.child(subagents(id, agent, &subs)))
+            .child(
+                div()
+                    .id(("row-archive", id))
+                    .absolute()
+                    .top(px(7.))
+                    .right(px(8.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(px(18.))
+                    .rounded(px(4.))
+                    .bg(colors::surface3())
+                    .opacity(0.)
+                    .group_hover(group, |s| s.opacity(1.))
+                    .child(icon(
+                        if archived {
+                            "archive-restore"
+                        } else {
+                            "archive"
+                        },
+                        11.,
+                        colors::text3(),
+                    ))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
+                        cx.stop_propagation();
+                        r.act(Action::ArchiveThread(id, !archived), window, cx)
+                    })),
+            )
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
                 r.open_thread(id, window, cx)

@@ -18,7 +18,7 @@ use hyprspace_proto::agents::AgentInfo;
 use hyprspace_proto::{AppState, Client, Command, Event, Events, SessionId, Thread, ThreadKind};
 
 use crate::composer::{Composer, ComposerEvent};
-use crate::input::TextInput;
+use crate::input::{InputEvent, TextInput};
 use crate::terminal::TerminalView;
 use crate::transcript::{Status, TranscriptView};
 
@@ -112,9 +112,14 @@ pub struct Root {
     pub(crate) activity: HashMap<u64, Activity>,
     /// When each terminal thread's current turn began, for the sidebar's running count.
     pub(crate) turns: HashMap<u64, Instant>,
+    /// The sidebar's search box, which narrows the spaces and threads to what matches.
+    pub(crate) search: Entity<TextInput>,
+    /// The last git status read for each folder the sidebar shows: its branch and changes.
+    pub(crate) git: HashMap<PathBuf, hyprspace_proto::folder::GitStatus>,
     /// A one-second tick runs while a thread works or a subagent runs, so their counts move.
     ticking: bool,
     _ticker: Option<Task<()>>,
+    _git_pump: Task<()>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -137,7 +142,7 @@ impl Root {
         client.send(Command::LoadState);
         client.send(Command::LoadAgents);
         let composer = cx.new(|cx| Composer::new(client.clone(), cx));
-        let subs = vec![
+        let mut subs = vec![
             cx.subscribe_in(&composer, window, Self::on_composer),
             cx.observe_window_appearance(window, |root, window, cx| {
                 root.apply_theme(window);
@@ -160,6 +165,25 @@ impl Root {
             }
         });
         let work = crate::panes::Work::new(client.clone(), window, cx);
+        let search = cx.new(|cx| TextInput::new("Search", false, cx));
+        subs.push(cx.subscribe(&search, |_, input, e: &InputEvent, cx| {
+            if let InputEvent::Cancel = e {
+                input.update(cx, |i, cx| i.set_text("", cx));
+            }
+            cx.notify();
+        }));
+        // the sidebar's branches and change counts, kept fresh while the app runs
+        subs.push(cx.observe_window_activation(window, |r, _, cx| r.git_poll(cx)));
+        let git_pump = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(15))
+                    .await;
+                if this.update(cx, |r, cx| r.git_poll(cx)).is_err() {
+                    break;
+                }
+            }
+        });
         let limits = cx.new(|cx| crate::usage::Limits::new(client.clone(), cx));
         let skills = cx.new(|_| crate::skills::Skills::new(client.clone()));
         let updater = cx.new(|cx| crate::update::Updater::new(client.clone(), cx));
@@ -191,8 +215,11 @@ impl Root {
             sidebar_flips: Default::default(),
             activity: HashMap::new(),
             turns: HashMap::new(),
+            search,
+            git: HashMap::new(),
             ticking: false,
             _ticker: None,
+            _git_pump: git_pump,
             _pump: pump,
             _subs: subs,
         }
@@ -307,6 +334,33 @@ impl Root {
         }
     }
 
+    /// Asks for the git status of every folder the sidebar shows open: each open space's, and a
+    /// thread's own when it runs somewhere else.
+    pub(crate) fn git_poll(&mut self, _cx: &mut Context<Self>) {
+        let mut folders: Vec<PathBuf> = Vec::new();
+        for s in self
+            .state
+            .spaces
+            .iter()
+            .filter(|s| !s.archived && !s.folded)
+        {
+            folders.extend(s.cwd.clone());
+            for t in s.threads.iter().filter(|t| !t.archived) {
+                if let hyprspace_proto::ThreadKind::Terminal { cwd, .. } = &t.kind {
+                    folders.push(cwd.clone());
+                }
+            }
+        }
+        folders.sort();
+        folders.dedup();
+        for cwd in folders {
+            self.client
+                .send(Command::Folder(hyprspace_proto::FolderCommand::GitStatus {
+                    cwd,
+                }));
+        }
+    }
+
     /// Whether anything in the sidebar is counting.
     fn live(&self) -> bool {
         self.status
@@ -349,6 +403,7 @@ impl Root {
     fn loaded(&mut self, state: AppState, window: &mut Window, cx: &mut Context<Self>) {
         self.state = state;
         self.loaded = true;
+        self.git_poll(cx);
         self.apply_theme(window);
         let prefs = self.state.composer.clone();
         self.composer.update(cx, |c, cx| c.set_prefs(prefs, cx));
