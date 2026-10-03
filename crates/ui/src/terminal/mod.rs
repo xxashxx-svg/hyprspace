@@ -79,6 +79,8 @@ pub struct TerminalView {
     /// Image previews, and the images pasted into Claude's prompt.
     images: images::Images,
     _blink: Task<()>,
+    /// Focus and blur redraw it: the view is cached, and its cursor shows focus.
+    _focus: Vec<gpui::Subscription>,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -147,6 +149,7 @@ impl TerminalView {
             typed: Instant::now(),
             images,
             _blink: blinker,
+            _focus: Vec::new(),
         }
     }
 
@@ -335,6 +338,12 @@ impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.refocus) {
             window.focus(&self.focus, cx);
+        }
+        if self._focus.is_empty() {
+            self._focus = vec![
+                cx.on_focus(&self.focus, window, |_, _, cx| cx.notify()),
+                cx.on_blur(&self.focus, window, |_, _, cx| cx.notify()),
+            ];
         }
         let focused = self.focus.is_focused(window);
         if focused != self.focused {

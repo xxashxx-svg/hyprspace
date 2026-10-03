@@ -2,8 +2,8 @@
 // composer, or settings. Context menus open from here so they float over everything.
 
 use gpui::{
-    AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, Window, div, prelude::*,
-    px,
+    AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, StyleRefinement, Window,
+    div, prelude::*, px,
 };
 use hyprspace_proto::Opener;
 
@@ -74,8 +74,15 @@ impl Render for Root {
         let open = !self.state.sidebar_hidden;
         let flips = self.sidebar_flips.count();
         let width = self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
-        let sidebar = (self.screen != Screen::Settings && (open || flips > 0))
-            .then(|| slide("sidebar", flips, open, (0., width), false, self.sidebar(cx)));
+        let sidebar = (self.screen != Screen::Settings && (open || flips > 0)).then(|| {
+            // its own cached view, so a frame that only changes a terminal reuses its layout;
+            // it keeps its width while the frame around it slides
+            let view = self
+                .sidebar_view
+                .clone()
+                .cached(StyleRefinement::default().w(px(width)).h_full().flex_none());
+            slide("sidebar", flips, open, (0., width), false, view)
+        });
         div()
             .id("root")
             .key_context("Root")

@@ -3,8 +3,8 @@
 // inner edges by half the 8px gap, as the Tauri app's grid gapped and padded by 8px.
 
 use gpui::{
-    AnyElement, Context, DragMoveEvent, IntoElement, MouseButton, Pixels, Point, Window, div,
-    prelude::*, px, relative,
+    AnyElement, Context, DragMoveEvent, IntoElement, MouseButton, Pixels, Point, StyleRefinement,
+    Window, div, prelude::*, px, relative,
 };
 use hyprspace_proto::Pane;
 use hyprspace_proto::grid::Tracks;
@@ -298,7 +298,12 @@ impl Root {
         let body: AnyElement = match pane {
             Pane::Thread { id } => match self.views.get(id) {
                 Some(View::Structured(v)) => v.clone().into_any_element(),
-                Some(View::Terminal(v)) => v.clone().into_any_element(),
+                // laid out again only when it changes: output, input, a resize. Redoing every
+                // terminal on every frame is what made scrolling anywhere slow
+                Some(View::Terminal(v)) => v
+                    .clone()
+                    .cached(StyleRefinement::default().size_full())
+                    .into_any_element(),
                 None => div().into_any_element(),
             },
             _ => {

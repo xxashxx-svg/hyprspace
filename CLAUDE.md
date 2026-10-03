@@ -219,6 +219,11 @@ Full design details: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** and
   request bucket Claude Code shares.
 - **The update feed and key are compile-time only** (`HYPRSPACE_UPDATE_FEED`,
   `HYPRSPACE_UPDATE_PUBKEY` through `option_env!`), so a shipped build can't be pointed elsewhere.
+- **GPUI lays out every uncached view on every frame.** One terminal's output used to redo the
+  whole sidebar's layout (18 ms of a 20 ms frame, at 179 Hz). Big views are embedded with
+  `.cached(style)` (terminals in `panes/grid.rs`, the sidebar in `root/render.rs`) and must
+  `cx.notify()` on anything that changes how they look, focus included. Long lists are a virtual
+  `gpui::list` (the sidebar), so only rows on screen are laid out.
 - **Persisted names** (state files, journals) are sanitized to a token so they can't leave their
   folder. Journals are never trimmed yet.
 

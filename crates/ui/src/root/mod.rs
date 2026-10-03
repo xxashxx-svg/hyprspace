@@ -112,6 +112,8 @@ pub struct Root {
     pub(crate) activity: HashMap<u64, Activity>,
     /// When each terminal thread's current turn began, for the sidebar's running count.
     pub(crate) turns: HashMap<u64, Instant>,
+    /// The sidebar, drawn through a cached view of its own (`crate::sidebar::SidebarView`).
+    pub(crate) sidebar_view: Entity<crate::sidebar::SidebarView>,
     /// The sidebar's search box, which narrows the spaces and threads to what matches.
     pub(crate) search: Entity<TextInput>,
     /// The last git status read for each folder the sidebar shows: its branch and changes.
@@ -166,6 +168,8 @@ impl Root {
         });
         let work = crate::panes::Work::new(client.clone(), window, cx);
         let search = cx.new(|cx| TextInput::new("Search", false, cx));
+        let root = cx.entity();
+        let sidebar_view = cx.new(|cx| crate::sidebar::SidebarView::new(&root, cx));
         subs.push(cx.subscribe(&search, |_, input, e: &InputEvent, cx| {
             if let InputEvent::Cancel = e {
                 input.update(cx, |i, cx| i.set_text("", cx));
@@ -216,6 +220,7 @@ impl Root {
             activity: HashMap::new(),
             turns: HashMap::new(),
             search,
+            sidebar_view,
             git: HashMap::new(),
             ticking: false,
             _ticker: None,
