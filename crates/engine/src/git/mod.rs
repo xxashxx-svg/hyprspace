@@ -12,15 +12,23 @@ use std::process::Command;
 
 pub use commit::{commit, create_pr, file_op, pr_defaults, push};
 pub use setup::{clone, create_project_dir, init, init_repo};
-pub use status::{branch_info, changes, diff, is_repo, root};
+pub use status::{branch_in_repo, branch_info, changes, changes_in_repo, diff, is_repo, root};
 pub use worktree::{create_worktree, remove_worktree};
 
 pub type Result<T> = std::result::Result<T, String>;
 
-/// A `git` Command. Windows apps launched from a shortcut or an installer can carry a stale PATH
-/// without git on it, and then every git call fails with a bare "program not found". So when
-/// PATH has no git, fall back to where Git for Windows installs itself.
+/// A `git` Command with optional locks off: reads like `status` would otherwise refresh the
+/// index, taking index.lock while they do and racing a commit for it.
 fn git_cmd() -> Command {
+    let mut cmd = find_git();
+    cmd.env("GIT_OPTIONAL_LOCKS", "0");
+    cmd
+}
+
+/// Windows apps launched from a shortcut or an installer can carry a stale PATH without git on
+/// it, and then every git call fails with a bare "program not found". So when PATH has no git,
+/// fall back to where Git for Windows installs itself.
+fn find_git() -> Command {
     #[cfg(windows)]
     {
         let on_path = std::env::var_os("PATH")

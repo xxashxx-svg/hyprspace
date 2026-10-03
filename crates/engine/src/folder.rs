@@ -1,6 +1,8 @@
 // Folder requests from the dock, the viewer and the Open button. Each one reads the disk or runs
-// git, so it goes to the blocking pool and answers with its own event. Git calls take one lock:
-// two ticks in quick succession would otherwise race for git's index.lock and one would fail.
+// git, so it goes to the blocking pool and answers with its own event. Git calls that write take
+// one lock: two ticks in quick succession would otherwise race for git's index.lock and one would
+// fail. Reads (status, a diff) skip it: git runs with optional locks off (`git::git_cmd`), so they
+// never take index.lock, and a diff the user clicked doesn't wait behind the sidebar's polls.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -43,10 +45,7 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
             vec![FolderEvent::File { path, text }]
         }
         FolderCommand::GitStatus { cwd } => {
-            let status = {
-                let _g = git_lock();
-                status(&cwd)
-            };
+            let status = status(&cwd);
             vec![FolderEvent::Git { cwd, status }]
         }
         FolderCommand::Stage { cwd, path, stage } => {
@@ -74,10 +73,7 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
             done(cwd, result)
         }
         FolderCommand::Diff { cwd, path } => {
-            let text = {
-                let _g = git_lock();
-                diff(&cwd, &path)
-            };
+            let text = diff(&cwd, &path);
             vec![FolderEvent::Diff { cwd, path, text }]
         }
         FolderCommand::Openers => vec![FolderEvent::Openers {
@@ -106,11 +102,12 @@ fn status(cwd: &Path) -> GitStatus {
     let Some(root) = git::root(cwd) else {
         return GitStatus::default();
     };
-    let mut changes = git::changes(cwd).unwrap_or_default();
+    // the root proves it is a repo, so skip the checks `changes` and `branch_info` make
+    let mut changes = git::changes_in_repo(cwd).unwrap_or_default();
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     GitStatus {
         root: Some(root),
-        branch: git::branch_info(cwd),
+        branch: git::branch_in_repo(cwd),
         changes,
     }
 }

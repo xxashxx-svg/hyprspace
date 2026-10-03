@@ -27,7 +27,11 @@ pub fn changes(cwd: &Path) -> Result<Vec<FileChange>> {
     if !is_repo(cwd) {
         return Ok(vec![]);
     }
+    changes_in_repo(cwd)
+}
 
+/// `changes` for a folder already known to be in a repo.
+pub fn changes_in_repo(cwd: &Path) -> Result<Vec<FileChange>> {
     // line counts from staged + unstaged numstat, summed per path
     let mut counts: HashMap<String, (u32, u32)> = HashMap::new();
     for args in [
@@ -119,11 +123,18 @@ pub fn diff(cwd: &Path, path: &str) -> Result<String> {
 
 /// The current branch and how far ahead or behind its upstream it is.
 pub fn branch_info(cwd: &Path) -> BranchInfo {
-    let mut bi = BranchInfo::default();
     if !is_repo(cwd) {
-        return bi;
+        return BranchInfo::default();
     }
-    bi.is_repo = true;
+    branch_in_repo(cwd)
+}
+
+/// `branch_info` for a folder already known to be in a repo.
+pub fn branch_in_repo(cwd: &Path) -> BranchInfo {
+    let mut bi = BranchInfo {
+        is_repo: true,
+        ..BranchInfo::default()
+    };
     bi.branch = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .unwrap_or_default()
         .trim()

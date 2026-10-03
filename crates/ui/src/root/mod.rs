@@ -137,6 +137,8 @@ pub struct Root {
     ticking: bool,
     _ticker: Option<Task<()>>,
     _git_pump: Task<()>,
+    /// When `git_poll` last read every open space, not just the one on screen.
+    git_polled: Option<Instant>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -192,14 +194,18 @@ impl Root {
             cx.notify();
         }));
         // the sidebar's branches and change counts, kept fresh while the app runs
-        subs.push(cx.observe_window_activation(window, |r, _, cx| r.git_poll(cx)));
+        subs.push(cx.observe_window_activation(window, |r, window, _| {
+            if window.is_window_active() {
+                r.git_poll(Duration::from_secs(5));
+            }
+        }));
         let git_pump = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
                     .timer(Duration::from_secs(15))
                     .await;
                 let alive = this.update(cx, |r, cx| {
-                    r.git_poll(cx);
+                    r.git_poll(Duration::from_secs(60));
                     r.tidy_threads(cx);
                 });
                 if alive.is_err() {
@@ -250,6 +256,7 @@ impl Root {
             ticking: false,
             _ticker: None,
             _git_pump: git_pump,
+            git_polled: None,
             _pump: pump,
             _subs: subs,
         }
@@ -369,15 +376,21 @@ impl Root {
         }
     }
 
-    /// Asks for the git status of every folder the sidebar shows open: each open space's, and a
-    /// thread's own when it runs somewhere else.
-    pub(crate) fn git_poll(&mut self, _cx: &mut Context<Self>) {
+    /// Asks for the git status of the folders the sidebar shows open: each open space's, and a
+    /// thread's own when it runs somewhere else. Each folder costs a handful of git processes,
+    /// so the space on screen is read every time and the rest once `every` has passed.
+    pub(crate) fn git_poll(&mut self, every: Duration) {
+        let all = self.git_polled.is_none_or(|t| t.elapsed() >= every);
+        if all {
+            self.git_polled = Some(Instant::now());
+        }
+        let here = self.current_space();
         let mut folders: Vec<PathBuf> = Vec::new();
         for s in self
             .state
             .spaces
             .iter()
-            .filter(|s| !s.archived && !s.folded)
+            .filter(|s| !s.archived && !s.folded && (all || Some(s.id) == here))
         {
             folders.extend(s.cwd.clone());
             for t in s.threads.iter().filter(|t| t.active()) {
@@ -438,7 +451,7 @@ impl Root {
     fn loaded(&mut self, state: AppState, window: &mut Window, cx: &mut Context<Self>) {
         self.state = state;
         self.loaded = true;
-        self.git_poll(cx);
+        self.git_poll(Duration::ZERO);
         self.apply_theme(window);
         let prefs = self.state.composer.clone();
         self.composer.update(cx, |c, cx| c.set_prefs(prefs, cx));

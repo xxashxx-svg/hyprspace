@@ -794,7 +794,7 @@ impl Root {
             None => self.compose(Some(id), window, cx),
         }
         self.save();
-        self.git_poll(cx);
+        self.git_poll(std::time::Duration::MAX);
     }
 
     /// Opens `items` as a menu where the right-click was.
