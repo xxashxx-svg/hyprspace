@@ -1,12 +1,14 @@
 // Settings, General: how a new thread starts (which agent, as a transcript or a terminal, and how
-// much it may do on its own) and which app the Open button opens a folder in. The first three are
+// much it may do on its own), when threads settle, every snoozed thread and when it wakes, and
+// which app the Open button opens a folder in. The first three are
 // the composer's saved picks, so changing one here or in the composer changes both.
 
 use gpui::{AnyElement, ClickEvent, Context, div, prelude::*, px};
-use hyprspace_proto::{Agent, Permission};
+use hyprspace_proto::{Agent, Permission, Snooze};
 
 use super::controls::{group, row, row_with, text};
 use super::{Picker, Root};
+use crate::time::{left, now_ms};
 use crate::{colors, widgets};
 
 /// Each mode, most careful first: its name and what picking it means.
@@ -43,6 +45,61 @@ impl Root {
             .find(|a| Some(a.agent) == self.state.composer.agent)
             .map(|a| a.agent)
             .or(first)
+    }
+
+    /// Every snoozed thread, soonest to wake first: its project, when it wakes and how long that
+    /// is, and a button to wake it now. One snoozed until its agent finishes comes last.
+    fn snoozed_group(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let now = now_ms();
+        let mut snoozed: Vec<(&hyprspace_proto::Space, &hyprspace_proto::Thread, Snooze)> = self
+            .state
+            .spaces
+            .iter()
+            .flat_map(|s| {
+                s.threads
+                    .iter()
+                    .filter_map(move |t| Some((s, t, t.snooze?)))
+            })
+            .collect();
+        snoozed.sort_by_key(|(_, _, snooze)| match snooze {
+            Snooze::Time { at } => *at,
+            Snooze::Done => u64::MAX,
+        });
+        let title = match snoozed.len() {
+            0 => "Snoozed".to_string(),
+            n => format!("Snoozed ({n})"),
+        };
+        let rows: Vec<AnyElement> = if snoozed.is_empty() {
+            vec![row(
+                "Nothing is snoozed",
+                "Snooze a thread from the clock on its row or its menu. It comes back to the top of the list when it wakes.",
+                div(),
+            )]
+        } else {
+            snoozed
+                .into_iter()
+                .map(|(space, t, snooze)| {
+                    let id = t.id;
+                    let when = match snooze {
+                        Snooze::Time { at } => format!(
+                            "{}, wakes {} ({})",
+                            space.name,
+                            self.wake_text(snooze),
+                            left(at, now)
+                        ),
+                        Snooze::Done => format!("{}, wakes when its agent finishes", space.name),
+                    };
+                    row(
+                        t.title.clone(),
+                        when,
+                        widgets::button(("wake-now", id), "Wake now").on_click(cx.listener(
+                            move |r, _: &ClickEvent, window, cx| r.snooze(id, None, window, cx),
+                        )),
+                    )
+                })
+                .collect()
+        };
+        group(&title, rows)
     }
 
     pub(super) fn general(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -168,6 +225,7 @@ impl Root {
                     settle,
                 )],
             ))
+            .child(self.snoozed_group(cx))
             .child(group(
                 "Experimental",
                 vec![row(

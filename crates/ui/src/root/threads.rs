@@ -288,6 +288,7 @@ impl Root {
             self.status.remove(&thread);
             self.activity.remove(&thread);
             self.turns.remove(&thread);
+            self.session_ended(thread);
             return;
         };
         let Some(Thread {

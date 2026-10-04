@@ -163,9 +163,9 @@ impl Root {
             self.remember(thread, "Snoozed", cx);
         }
         if let Some(t) = self.state.thread_mut(thread) {
-            t.snooze = until;
-            if until.is_none() {
-                t.touched = now_ms();
+            match until {
+                Some(_) => t.snooze = until,
+                None => t.wake(now_ms()),
             }
         }
         if until.is_none() {
@@ -200,7 +200,7 @@ impl Root {
             }
             // snoozed until it finishes: it has
             if ended && t.snooze == Some(Snooze::Done) {
-                t.snooze = None;
+                t.wake(now_ms());
             }
         }
         if ended
@@ -225,6 +225,18 @@ impl Root {
             self.free(thread);
         }
         if changed {
+            self.save();
+        }
+    }
+
+    /// A thread's session ended, its agent quit or its terminal closed: a snooze waiting for its
+    /// turn to finish will never see that, so it wakes now.
+    pub(crate) fn session_ended(&mut self, thread: u64) {
+        if let Some(t) = self.state.thread_mut(thread)
+            && t.snooze == Some(Snooze::Done)
+        {
+            t.wake(now_ms());
+            self.unseen.insert(thread);
             self.save();
         }
     }
@@ -259,15 +271,10 @@ impl Root {
                 _ => None,
             })
             .collect();
+        woke.extend(self.state.wake_due(now, false));
         for s in &mut self.state.spaces {
             for t in &mut s.threads {
-                if let Some(Snooze::Time { at }) = t.snooze
-                    && at <= now
-                {
-                    t.snooze = None;
-                    t.touched = now;
-                    woke.push(t.id);
-                } else if t.settles(now, after) && !busy.contains(&t.id) && !shown.contains(&t.id) {
+                if t.settles(now, after) && !busy.contains(&t.id) && !shown.contains(&t.id) {
                     t.settled = true;
                     settled.push(t.id);
                 }

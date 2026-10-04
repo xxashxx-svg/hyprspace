@@ -375,6 +375,7 @@ impl Root {
                     self.status.remove(&thread);
                     self.activity.remove(&thread);
                     self.turns.remove(&thread);
+                    self.session_ended(thread);
                     cx.notify();
                 }
             }
@@ -513,6 +514,12 @@ impl Root {
         self.state = state;
         self.loaded = true;
         if self.state.settle_archived() {
+            self.save();
+        }
+        // whatever came due while the app was shut wakes now, not at the first sweep
+        let woke = self.state.wake_due(crate::time::now_ms(), true);
+        if !woke.is_empty() {
+            self.unseen.extend(woke);
             self.save();
         }
         self.git_poll(Duration::ZERO);

@@ -106,6 +106,23 @@ pub fn wake_label(at: NaiveDateTime, now: NaiveDateTime) -> String {
 
 /// The menu's short form beside a choice: the clock for today and tomorrow, the day too further
 /// out.
+/// How long until `at`, from `now`, both unix ms: "in 45m", "in 3h", "in 2d 4h".
+pub fn left(at: u64, now: u64) -> String {
+    let mins = at.saturating_sub(now) / 60_000;
+    match mins {
+        0 => "in under a minute".into(),
+        1..60 => format!("in {mins}m"),
+        60..1440 => match mins % 60 {
+            0 => format!("in {}h", mins / 60),
+            m => format!("in {}h {m}m", mins / 60),
+        },
+        _ => match mins / 60 % 24 {
+            0 => format!("in {}d", mins / 1440),
+            h => format!("in {}d {h}h", mins / 1440),
+        },
+    }
+}
+
 pub fn wake_short(at: NaiveDateTime, now: NaiveDateTime) -> String {
     match (at.date() - now.date()).num_days() {
         ..=1 => clock(at),
@@ -189,5 +206,16 @@ mod tests {
         assert_eq!(wake_label(at(2026, 10, 5, 9, 0), now), "Mon 9:00 AM");
         assert_eq!(wake_label(at(2026, 10, 12, 0, 15), now), "Oct 12, 12:15 AM");
         assert_eq!(wake_short(at(2026, 10, 5, 9, 0), now), "Mon 9:00 AM");
+    }
+
+    #[test]
+    fn time_left_reads_short() {
+        let m = 60_000;
+        assert_eq!(left(0, 0), "in under a minute");
+        assert_eq!(left(45 * m, 0), "in 45m");
+        assert_eq!(left(180 * m, 0), "in 3h");
+        assert_eq!(left(135 * m, 0), "in 2h 15m");
+        assert_eq!(left((2 * 1440 + 240) * m, 0), "in 2d 4h");
+        assert_eq!(left(0, 5 * m), "in under a minute");
     }
 }

@@ -110,6 +110,25 @@ impl AppState {
             .find_map(|s| s.threads.iter_mut().find(|t| t.id == id))
     }
 
+    /// Wakes every snooze that is due at `now` and returns those threads. After a `restart` that
+    /// includes the ones snoozed until their agent finished: no turn outlives the app, so that
+    /// finish will never come.
+    pub fn wake_due(&mut self, now: u64, restart: bool) -> Vec<u64> {
+        let mut woke = Vec::new();
+        for t in self.spaces.iter_mut().flat_map(|s| s.threads.iter_mut()) {
+            let due = match t.snooze {
+                Some(Snooze::Time { at }) => at <= now,
+                Some(Snooze::Done) => restart,
+                None => false,
+            };
+            if due {
+                t.wake(now);
+                woke.push(t.id);
+            }
+        }
+        woke
+    }
+
     /// Settling replaced archiving: an archived space, saved before that or brought over from the
     /// Tauri app, comes back with its threads settled. Returns whether anything changed.
     pub fn settle_archived(&mut self) -> bool {
@@ -201,6 +220,14 @@ impl Thread {
     /// When it last did something.
     pub fn last_touch(&self) -> u64 {
         self.touched.max(self.created)
+    }
+
+    /// Brings a snoozed thread back: out of the shelf and on top of the list, where a reminder
+    /// belongs, counting as touched now.
+    pub fn wake(&mut self, now: u64) {
+        self.snooze = None;
+        self.touched = now;
+        self.order = Some(now as i64);
     }
 
     /// Its place in the sidebar's list: higher is nearer the top. New threads go on top, and a
@@ -533,5 +560,40 @@ mod tests {
         assert!(!st.spaces[1].threads[0].settled);
         // a second load finds nothing to do
         assert!(!st.settle_archived());
+    }
+
+    #[test]
+    fn snoozes_wake_when_due_and_come_back_on_top() {
+        let snoozed = |id, snooze| Thread {
+            id,
+            created: 100,
+            snooze: Some(snooze),
+            ..Thread::default()
+        };
+        let mut st = AppState {
+            spaces: vec![Space {
+                threads: vec![
+                    snoozed(1, Snooze::Time { at: 500 }),
+                    snoozed(2, Snooze::Time { at: 2000 }),
+                    snoozed(3, Snooze::Done),
+                    Thread {
+                        id: 4,
+                        created: 900,
+                        ..Thread::default()
+                    },
+                ],
+                ..Space::default()
+            }],
+            ..AppState::default()
+        };
+        // only the one whose time came; "until it finishes" waits for its turn
+        assert_eq!(st.wake_due(1000, false), [1]);
+        let woke = st.thread(1).unwrap().1;
+        assert!(woke.active());
+        assert!(woke.rank() > st.thread(4).unwrap().1.rank());
+        // after a restart no turn is left to finish, so that one wakes too
+        assert_eq!(st.wake_due(1000, true), [3]);
+        assert_eq!(st.wake_due(3000, false), [2]);
+        assert!(st.wake_due(4000, true).is_empty());
     }
 }
