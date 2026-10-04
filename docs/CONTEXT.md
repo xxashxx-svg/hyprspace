@@ -5,7 +5,8 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
 
 ## Where work happens
 
-- **Space**: one folder, shown as one section of the sidebar, with the threads that run in it.
+- **Space**: one folder, with the threads that run in it. The sidebar lists threads, each tagged
+  with its space's initials and name, rather than a section per space.
   The Tauri app calls the same thing a workspace in code; the GPUI app says space.
 - **Project**: the older word for a space. Code that adds a space may still say `add_project`.
   The Tauri app also had open spaces with no folder of their own; the GPUI app dropped them (see

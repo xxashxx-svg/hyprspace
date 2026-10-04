@@ -584,59 +584,36 @@ impl Root {
         cx.notify();
     }
 
-    pub(crate) fn toggle_fold(&mut self, space: u64, cx: &mut Context<Self>) {
-        if let Some(s) = self.state.space_mut(space) {
-            s.folded = !s.folded;
-        }
-        self.save();
-        cx.notify();
-    }
-
     fn start_rename(&mut self, target: Rename, window: &mut Window, cx: &mut Context<Self>) {
-        let current = match target {
-            Rename::Space(id) => self.state.space(id).map(|s| s.name.clone()),
-            Rename::Thread(id) => self.state.thread(id).map(|(_, t)| t.title.clone()),
-        }
-        .unwrap_or_default();
+        let Rename::Thread(thread) = target;
+        let current = self
+            .state
+            .thread(thread)
+            .map(|(_, t)| t.title.clone())
+            .unwrap_or_default();
         let input: Entity<TextInput> = cx.new(|cx| {
             let mut i = TextInput::new("Name", false, cx);
             i.set_text(current, cx);
             i.select_all_text(cx);
             i
         });
-        let sub = cx.subscribe_in(
-            &input,
-            window,
-            move |root, input, e: &InputEvent, window, cx| {
-                match e {
-                    InputEvent::Submit => {
-                        let name = input.read(cx).text().trim().to_string();
-                        if !name.is_empty() {
-                            match target {
-                                Rename::Space(id) => {
-                                    if let Some(s) = root.state.space_mut(id) {
-                                        s.name = name;
-                                    }
-                                    if root.screen == Screen::Compose(Some(id)) {
-                                        root.compose(Some(id), window, cx);
-                                    }
-                                }
-                                Rename::Thread(id) => {
-                                    if let Some(t) = root.state.thread_mut(id) {
-                                        t.title = name;
-                                    }
-                                }
-                            }
-                            root.save();
+        let sub = cx.subscribe_in(&input, window, move |root, input, e: &InputEvent, _, cx| {
+            match e {
+                InputEvent::Submit => {
+                    let name = input.read(cx).text().trim().to_string();
+                    if !name.is_empty() {
+                        if let Some(t) = root.state.thread_mut(thread) {
+                            t.title = name;
                         }
-                        root.rename = None;
+                        root.save();
                     }
-                    InputEvent::Cancel => root.rename = None,
-                    _ => {}
+                    root.rename = None;
                 }
-                cx.notify();
-            },
-        );
+                InputEvent::Cancel => root.rename = None,
+                _ => {}
+            }
+            cx.notify();
+        });
         let focus = input.focus_handle(cx);
         window.focus(&focus, cx);
         self.rename = Some((target, input, sub));
