@@ -41,7 +41,7 @@ fn line(glyph: AnyElement, text: SharedString) -> impl IntoElement {
                 .flex()
                 .flex_none()
                 .justify_center()
-                .w(px(14.))
+                .w(px(16.))
                 .child(glyph),
         )
         .child(div().min_w_0().truncate().child(text))
@@ -76,12 +76,12 @@ impl RowCard {
                     .child(self.title.clone()),
             )
             .child(line(
-                icon("folder", 12., colors::text3()).into_any_element(),
+                super::row::tag(&self.space, false),
                 self.space.clone(),
             ))
             .child(
                 div()
-                    .pl(px(21.))
+                    .pl(px(23.))
                     .truncate()
                     .font_family(MONO)
                     .text_size(px(10.5))

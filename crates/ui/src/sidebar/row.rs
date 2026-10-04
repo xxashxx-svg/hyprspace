@@ -1,8 +1,7 @@
-// One thread in the sidebar, after T3 Code's: its agent's mark (a ring turns around it while it
-// works) and its project's name, with the age or a running count; the title; then what it is
-// doing, or its branch or folder, with its model, a dot when it waits on you and a tick when it
-// finished. Each subagent it has running gets a small card
-// underneath. A working row carries a slow sheen, a waiting one a tint. Hovering shows snooze and
+// One thread in the sidebar, after T3 Code's: its project's tag and name, with the age or a
+// running count; the title; then what it is doing, or its branch or folder, a dot when it waits on
+// you or a tick when it finished, and its agent's mark, a ring turning around it while it works.
+// Each subagent it has running gets a small card underneath. A working row carries a slow sheen, a waiting one a tint. Hovering shows snooze and
 // Settle. On a shelf a thread is one quiet line. Click to open it, right-click for its menu.
 
 use std::time::Duration;
@@ -154,6 +153,54 @@ fn subagents(thread: u64, agent: Option<Agent>, subs: &[(String, String, u64)]) 
                     .child(format!("{more} more")),
             )
         })
+        .into_any_element()
+}
+
+/// A project's initials for its tag, the way T3 Code labels projects: two words give their first
+/// letters (Streamer Tycoon Lobby, ST), one word its first letter and then its first digit or else
+/// its last letter (vitanova279, V2; lualink, LK).
+fn initials(name: &str) -> String {
+    let words: Vec<&str> = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let first = |w: &str| w.chars().next();
+    let (a, b) = match words.as_slice() {
+        [] => (None, None),
+        [w] => {
+            let rest = || w.chars().skip(1);
+            (
+                first(w),
+                rest().find(char::is_ascii_digit).or_else(|| rest().last()),
+            )
+        }
+        [a, b, ..] => (first(a), first(b)),
+    };
+    [a, b]
+        .into_iter()
+        .flatten()
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+/// A project's tag: its initials on a small square in the project's own color. A `dim` one sits
+/// on a shelf.
+pub(crate) fn tag(name: &str, dim: bool) -> AnyElement {
+    let (fill, ink) = colors::tag(name);
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(16.))
+        .rounded(px(4.))
+        .bg(fill)
+        .text_color(ink)
+        .font_family(MONO)
+        .text_size(px(8.5))
+        .font_weight(FontWeight::BOLD)
+        .when(dim, |d| d.opacity(0.5))
+        .child(initials(name))
         .into_any_element()
 }
 
@@ -552,7 +599,7 @@ impl Root {
                     .items_center()
                     .gap(px(7.))
                     .min_w_0()
-                    .child(agent_mark(agent, working.then(|| ("row-ring", id).into())))
+                    .child(tag(&space, false))
                     .child(
                         div()
                             .flex_1()
@@ -574,7 +621,8 @@ impl Root {
                     .text_size(px(11.))
                     .text_color(colors::text3())
                     .child(foot)
-                    .children(state),
+                    .children(state)
+                    .child(agent_mark(agent, working.then(|| ("row-ring", id).into()))),
             )
             .when(!subs.is_empty(), |d| d.child(subagents(id, agent, &subs)))
             .child(
@@ -663,12 +711,17 @@ impl Root {
         row.into_any_element()
     }
 
-    /// A thread on the Snoozed or Settled shelf: one quiet line with its agent's mark, its title,
+    /// A thread on the Snoozed or Settled shelf: one quiet line with its project's tag, its title,
     /// and when it wakes or how old it is, which gives way to the button that brings it back.
     pub(crate) fn shelved_row(&self, t: &Thread, now: u64, cx: &mut Context<Self>) -> AnyElement {
         let id = t.id;
         let selected = self.screen == Screen::Thread(id);
         let group: SharedString = format!("shelved-{id}").into();
+        let space = self
+            .state
+            .thread(id)
+            .map(|(s, _)| s.name.clone())
+            .unwrap_or_default();
         let when = match t.snooze {
             Some(snooze) => Some(self.wake_text(snooze)),
             None => (t.last_touch() > 0).then(|| ago(t.last_touch(), now)),
@@ -686,11 +739,7 @@ impl Root {
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
-            .child(
-                div()
-                    .opacity(0.5)
-                    .child(agent_mark(t.agent().map(|l| l.agent), None)),
-            )
+            .child(tag(&space, true))
             .child(
                 div()
                     .flex_1()
@@ -741,6 +790,17 @@ impl Root {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn projects_are_tagged_by_their_initials() {
+        assert_eq!(initials("lualink"), "LK");
+        assert_eq!(initials("vitanova279"), "V2");
+        assert_eq!(initials("_corprust"), "CT");
+        assert_eq!(initials("Streamer Tycoon Lobby"), "ST");
+        assert_eq!(initials("777-actual"), "7A");
+        assert_eq!(initials("x"), "X");
+        assert_eq!(initials(""), "");
+    }
 
     #[test]
     fn counts_like_a_stopwatch() {
