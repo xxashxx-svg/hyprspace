@@ -293,11 +293,18 @@ pub fn next_activity(
     }
     // Claude's own list of what still runs rides along on Stop and SubagentStop. It beats
     // guessing from start and stop hooks: SubagentStop fires while a backgrounded subagent is
-    // still running. An empty list means nothing is.
+    // still running. An empty list means nothing is. The list holds every kind of background
+    // work, shells, monitors and artifact watches too; only subagents get a card. An entry with
+    // no type comes from a Claude that predates the field, and counts.
     if let Some(tasks) = payload.get("background_tasks").and_then(Value::as_array) {
         next = tasks
             .iter()
             .filter(|t| t.get("status").and_then(Value::as_str) == Some("running"))
+            .filter(|t| {
+                t.get("type")
+                    .and_then(Value::as_str)
+                    .is_none_or(|k| k == "subagent")
+            })
             .filter_map(|t| {
                 let id = t
                     .get("id")
@@ -836,8 +843,12 @@ mod tests {
         assert_eq!(doing.as_deref(), Some("Delegating Find the bug"));
         assert_eq!(subs.len(), 1);
         let listed = json!({ "hook_event_name": "SubagentStop", "background_tasks": [
-            { "id": "t1", "status": "running", "description": "Find the bug" },
-            { "id": "t2", "status": "completed", "description": "Old one" }
+            { "id": "t1", "type": "subagent", "status": "running", "description": "Find the bug" },
+            { "id": "t2", "status": "completed", "description": "Old one" },
+            // other background work is no subagent
+            { "id": "t3", "type": "shell", "status": "running", "description": "cargo build" },
+            { "id": "t4", "type": "monitor_ws", "status": "running",
+              "description": "live updates for artifact https://claude.ai/artifact/x" }
         ]});
         let (_, subs) = step(&doing, &subs, listed.clone(), 3);
         assert_eq!(subs.len(), 1);
