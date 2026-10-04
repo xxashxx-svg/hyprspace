@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.23.0 — 2026-10-04
+
+- The sidebar is one list of threads. Each row shows its project's tag, its branch and its agent's mark. Hover a row for its details.
+- Rows stay where they are. Drag a row to move it, and the list scrolls when you drag near its edge.
+- Snooze and Settle sit on each row. A snoozed thread always comes back, at the top of the list, and Settings lists what is snoozed with a Wake now button.
+- Opening a settled or snoozed thread no longer brings it back. Sending it a message does.
+- Right-click menus are redrawn, with submenus that open on hover.
+- The sidebar notices an agent you start by hand in a terminal, and follows a change of agent or model.
+- Threads from archived projects moved to the Settled shelf.
+
 ## 0.22.0 — 2026-10-04
 
 - HyprSpace is rebuilt as a native app: it starts faster, scrolls smoother and uses far less memory
