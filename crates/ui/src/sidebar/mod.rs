@@ -38,11 +38,12 @@ pub const MIN_WIDTH: f32 = 200.;
 pub const MAX_WIDTH: f32 = 480.;
 /// Rows laid out past each edge of the list, so a quick scroll doesn't show them arriving.
 const OVERDRAW: f32 = 240.;
-/// Rows sit this far in from the sidebar's edges, and a space's threads this much further.
+/// Rows sit this far in from the sidebar's edges, and a shelf's threads this much further.
 const EDGE: f32 = 8.;
-const INDENT: f32 = 18.;
-/// Where a group's guide line runs: under the middle of its header's chevron.
-const RAIL: f32 = EDGE + 12.;
+const INDENT: f32 = 12.;
+/// A space's card: its corners, and the room between its edge and its rows.
+const CARD_RADIUS: f32 = 10.;
+const CARD_PAD: f32 = 4.;
 /// How fast an eased scroll settles: each frame covers this share of what is left per second's
 /// worth of time constant. About 60 ms, the feel of a browser's smooth scrolling.
 const EASE: f32 = 0.06;
@@ -60,10 +61,14 @@ enum Item {
     },
     /// An open space's working tree line.
     Summary(u64),
-    /// A thread, under its space or under Archived.
+    /// A thread in its space's card.
     Thread(u64),
+    /// A thread on the Snoozed or Settled shelf.
+    Shelved(u64),
     /// An open space with no threads.
     Empty(u64),
+    /// The bottom of an open space's card.
+    CardEnd(u64),
     /// Room after an open section, or at the end.
     Gap(u8),
     /// The settled threads of every space, on a shelf near the bottom.
@@ -251,25 +256,37 @@ fn slot() -> gpui::Div {
     div().pl(px(EDGE)).pr(px(EDGE)).pt(px(2.))
 }
 
-/// A row inside a group (a space, or a shelf): further in, beside a thin guide line that runs
-/// down from the header's chevron. Each row draws its piece of the line over its full height, so
-/// the pieces meet into one line that ends with the group's last row. `strong` marks the row on
-/// screen.
-fn nested(strong: bool) -> gpui::Div {
+/// A row under a shelf's header: further in.
+fn nested() -> gpui::Div {
+    div().pl(px(EDGE + INDENT)).pr(px(EDGE)).pt(px(2.))
+}
+
+/// One row's slice of its space's card. Each row of a space draws the card's sides behind it, so
+/// the slices meet into one soft panel: the header brings the rounded top, and `Item::CardEnd`, or
+/// the header itself while folded, the rounded bottom. No row's height depends on its neighbours.
+fn card(top: bool, bottom: bool, content: impl IntoElement) -> AnyElement {
     div()
-        .relative()
-        .pl(px(EDGE + INDENT))
-        .pr(px(EDGE))
-        .pt(px(2.))
+        .px(px(EDGE))
         .child(
             div()
-                .absolute()
-                .left(px(RAIL - 0.5))
-                .top_0()
-                .bottom_0()
-                .w(px(1.))
-                .bg(colors::ink(if strong { 0.32 } else { 0.1 })),
+                .px(px(CARD_PAD))
+                .bg(colors::ink(0.025))
+                .border_l_1()
+                .border_r_1()
+                .border_color(colors::ink(0.06))
+                .map(|d| {
+                    if top {
+                        d.border_t_1().rounded_t(px(CARD_RADIUS)).pt(px(CARD_PAD))
+                    } else {
+                        d.pt(px(2.))
+                    }
+                })
+                .when(bottom, |d| {
+                    d.border_b_1().rounded_b(px(CARD_RADIUS)).pb(px(CARD_PAD))
+                })
+                .child(content),
         )
+        .into_any_element()
 }
 
 impl Root {
@@ -311,8 +328,9 @@ impl Root {
                 if space.threads.is_empty() {
                     items.push(Item::Empty(space.id));
                 }
-                items.push(Item::Gap(6));
+                items.push(Item::CardEnd(space.id));
             }
+            items.push(Item::Gap(6));
         }
         if shown == 0 {
             items.push(Item::Nothing {
@@ -336,7 +354,7 @@ impl Root {
                 open,
             });
             if open {
-                items.extend(snoozed.into_iter().map(Item::Thread));
+                items.extend(snoozed.into_iter().map(Item::Shelved));
             }
         }
         // settled threads leave their spaces for one shelf, most recently active first
@@ -357,7 +375,7 @@ impl Root {
                 open,
             });
             if open {
-                items.extend(settled.iter().map(|t| Item::Thread(t.id)));
+                items.extend(settled.iter().map(|t| Item::Shelved(t.id)));
             }
         }
         let spaces: Vec<&Space> = self.state.spaces.iter().filter(|s| s.archived).collect();
@@ -378,31 +396,36 @@ impl Root {
     fn sidebar_item(&self, item: &Item, now: u64, cx: &mut Context<Self>) -> AnyElement {
         match *item {
             Item::Space { id, open, active } => match self.state.space(id) {
-                Some(space) => slot()
-                    .child(self.space_header(space, open, active, cx))
-                    .into_any_element(),
+                Some(space) => card(true, !open, self.space_header(space, open, active, cx)),
                 None => div().into_any_element(),
             },
-            Item::Summary(id) => nested(false)
-                .children(self.state.space(id).and_then(|s| self.summary(s)))
-                .into_any_element(),
+            Item::Summary(id) => card(
+                false,
+                false,
+                div().children(self.state.space(id).and_then(|s| self.summary(s))),
+            ),
             Item::Thread(id) => match self.state.thread(id) {
-                Some((_, t)) => nested(self.screen == Screen::Thread(id))
+                Some((_, t)) => card(false, false, self.thread_row(t, now, cx)),
+                None => div().into_any_element(),
+            },
+            Item::Shelved(id) => match self.state.thread(id) {
+                Some((_, t)) => nested()
                     .child(self.thread_row(t, now, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
-            Item::Empty(_) => nested(false)
-                .child(
-                    div()
-                        .px(px(8.))
-                        .pt(px(2.))
-                        .pb(px(4.))
-                        .text_size(px(11.5))
-                        .text_color(colors::text3())
-                        .child("No threads yet"),
-                )
-                .into_any_element(),
+            Item::Empty(_) => card(
+                false,
+                false,
+                div()
+                    .px(px(8.))
+                    .pt(px(2.))
+                    .pb(px(4.))
+                    .text_size(px(11.5))
+                    .text_color(colors::text3())
+                    .child("No threads yet"),
+            ),
+            Item::CardEnd(_) => card(false, true, div()),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
             Item::Settled { count, open } => slot()
                 .pt(px(8.))
@@ -461,7 +484,7 @@ impl Root {
                 )
                 .into_any_element(),
             Item::ArchivedSpace(id) => match self.state.space(id) {
-                Some(space) => nested(false)
+                Some(space) => nested()
                     .child(self.archived_space(space, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
