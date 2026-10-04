@@ -185,6 +185,33 @@ impl Root {
             .into_any_element()
     }
 
+    /// The buttons that show on hover: snooze and settle, or the one that undoes either.
+    pub(crate) fn thread_buttons(&self, t: &Thread, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let id = t.id;
+        if t.snooze.is_some() {
+            vec![
+                self.row_button(id, "wake", "sun", cx, |r, id, _, window, cx| {
+                    r.snooze(id, None, window, cx)
+                }),
+            ]
+        } else if t.settled {
+            vec![
+                self.row_button(id, "unsettle", "rotate-ccw", cx, |r, id, _, window, cx| {
+                    r.settle(id, false, window, cx)
+                }),
+            ]
+        } else {
+            vec![
+                self.row_button(id, "snooze", "clock", cx, |r, id, e, _, cx| {
+                    r.open_snooze_menu(e.position(), id, cx)
+                }),
+                self.row_button(id, "settle", "circle-check", cx, |r, id, _, window, cx| {
+                    r.settle(id, true, window, cx)
+                }),
+            ]
+        }
+    }
+
     /// A thread's row. A `bare` one is the only thread of its space, and its card draws the
     /// selection and hover for both.
     pub(crate) fn thread_row(
@@ -324,7 +351,11 @@ impl Root {
                     .child(ago(t.last_touch(), now))
             }),
         }
-        .map(|d| d.flex_none().group_hover(group.clone(), |s| s.opacity(0.)));
+        // the buttons take its place on hover, unless they sit on the space's header
+        .map(|d| {
+            d.flex_none()
+                .when(!bare, |d| d.group_hover(group.clone(), |s| s.opacity(0.)))
+        });
         let state = match status {
             Status::Waiting => Some(
                 widgets::status_dot(status)
@@ -392,28 +423,11 @@ impl Root {
             ("Settle".into(), Action::Settle(id, true))
         });
         menu.push(("Remove".into(), Action::RemoveThread(id)));
-        // the buttons that show on hover: snooze and settle, or the one that undoes either
-        let buttons: Vec<AnyElement> = if t.snooze.is_some() {
-            vec![
-                self.row_button(id, "wake", "sun", cx, |r, id, _, window, cx| {
-                    r.snooze(id, None, window, cx)
-                }),
-            ]
-        } else if t.settled {
-            vec![
-                self.row_button(id, "unsettle", "rotate-ccw", cx, |r, id, _, window, cx| {
-                    r.settle(id, false, window, cx)
-                }),
-            ]
+        // a bare row's buttons are on its space's header
+        let buttons = if bare {
+            Vec::new()
         } else {
-            vec![
-                self.row_button(id, "snooze", "clock", cx, |r, id, e, _, cx| {
-                    r.open_snooze_menu(e.position(), id, cx)
-                }),
-                self.row_button(id, "settle", "circle-check", cx, |r, id, _, window, cx| {
-                    r.settle(id, true, window, cx)
-                }),
-            ]
+            self.thread_buttons(t, cx)
         };
         let row = div()
             .id(("thread", id))
@@ -478,20 +492,22 @@ impl Root {
                     .children(state),
             )
             .when(!subs.is_empty(), |d| d.child(subagents(id, agent, &subs)))
-            .child(
-                div()
-                    .absolute()
-                    .top(px(6.))
-                    .right(px(6.))
-                    .flex()
-                    .gap(px(2.))
-                    .p(px(1.))
-                    .rounded(px(6.))
-                    .bg(colors::surface3())
-                    .opacity(0.)
-                    .group_hover(group, |s| s.opacity(1.))
-                    .children(buttons),
-            )
+            .when(!buttons.is_empty(), |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(6.))
+                        .right(px(6.))
+                        .flex()
+                        .gap(px(2.))
+                        .p(px(1.))
+                        .rounded(px(6.))
+                        .bg(colors::surface3())
+                        .opacity(0.)
+                        .group_hover(group, |s| s.opacity(1.))
+                        .children(buttons),
+                )
+            })
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
                 r.open_thread(id, window, cx)

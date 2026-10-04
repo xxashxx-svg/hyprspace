@@ -264,14 +264,14 @@ fn nested() -> gpui::Div {
 /// One row's slice of its space's card. Each row of a space draws the card's sides behind it, so
 /// the slices meet into one soft panel: the header brings the rounded top, and `Item::CardEnd`, or
 /// the header itself while folded, the rounded bottom. No row's height depends on its neighbours.
-fn card(top: bool, bottom: bool, fill: gpui::Hsla, content: impl IntoElement) -> gpui::Div {
+fn card(top: bool, bottom: bool, strong: bool, content: impl IntoElement) -> gpui::Div {
     div().px(px(EDGE)).child(
         div()
             .px(px(CARD_PAD))
-            .bg(fill)
+            .bg(colors::ink(0.025))
             .border_l_1()
             .border_r_1()
-            .border_color(colors::ink(0.06))
+            .border_color(colors::ink(if strong { 0.16 } else { 0.06 }))
             .map(|d| {
                 if top {
                     d.border_t_1().rounded_t(px(CARD_RADIUS)).pt(px(CARD_PAD))
@@ -317,12 +317,9 @@ impl Root {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let sole = self.sole_thread(space);
-        let fill = match sole {
-            Some(t) if self.screen == Screen::Thread(t) => colors::surface3(),
-            Some(_) if self.card_hover.iter().any(|(s, _)| *s == space) => row_hover(),
-            _ => colors::ink(0.025),
-        };
-        let el = card(top, bottom, fill, content);
+        // every card keeps one fill; the one whose thread is on screen has a firmer edge
+        let on_screen = sole.is_some_and(|t| self.screen == Screen::Thread(t));
+        let el = card(top, bottom, on_screen, content);
         if sole.is_none() {
             return el.into_any_element();
         }
@@ -474,7 +471,7 @@ impl Root {
             Item::Empty(_) => card(
                 false,
                 false,
-                colors::ink(0.025),
+                false,
                 div()
                     .px(px(8.))
                     .pt(px(2.))
@@ -817,6 +814,20 @@ impl Root {
                     .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| r.toggle_fold(id, cx))),
             )
             .child(name)
+            // a one-thread card's snooze and settle sit on its header, shown while it is pointed at
+            .when_some(
+                sole.filter(|_| self.card_hover.iter().any(|(s, _)| *s == id))
+                    .and_then(|t| self.state.thread(t).map(|(_, t)| t.clone())),
+                |d, t| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .gap(px(2.))
+                            .children(self.thread_buttons(&t, cx)),
+                    )
+                },
+            )
             .children(hidden.map(|n| {
                 div()
                     .pr(px(4.))

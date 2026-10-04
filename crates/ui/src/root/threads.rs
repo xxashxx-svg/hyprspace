@@ -516,8 +516,18 @@ impl Root {
                 self.open_thread(next, window, cx);
                 return;
             }
+            // a settled or snoozed thread's own space stays, with its composer; a space that went
+            // away gives way to the first one left
+            let own = match self.screen {
+                Screen::Thread(gone) => self
+                    .state
+                    .thread(gone)
+                    .filter(|(s, _)| !s.archived)
+                    .map(|(s, _)| s.id),
+                _ => None,
+            };
             let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
-            self.compose(first, window, cx);
+            self.compose(own.or(first), window, cx);
         }
     }
 
