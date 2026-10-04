@@ -209,33 +209,33 @@ impl gpui::Render for SidebarView {
             }
             self.items = Rc::new(items);
         }
-        // a status, a line of activity or a subagent can change a row's height
-        if std::mem::take(&mut self.stale) {
-            self.list.remeasure();
-        }
-        // a thread just opened or made shows its row, even with the list scrolled past it
+        // a thread just opened or made shows its row, even with the list scrolled past it. This
+        // runs before the remeasure below, which forgets every row's height: a row clicked in
+        // plain view has to still read as shown, or each click would scroll the list
         if let Some(id) = root.update(cx, |r, _| r.reveal.take())
             && let Some(ix) = self
                 .items
                 .iter()
                 .position(|i| matches!(i, Item::Thread(t) | Item::Shelved(t) if *t == id))
         {
-            self.pending.set(0.);
             // by place in the list, not by height: rows far from view were never measured. A row
             // above the view, or not wholly in it, comes to the top with the one before it showing
-            let top = self.list.logical_scroll_top();
             let view = self.list.viewport_bounds();
-            let shown = ix > top.item_ix
-                && self
-                    .list
-                    .bounds_for_item(ix)
-                    .is_some_and(|b| b.bottom() <= view.bottom());
+            let shown = self
+                .list
+                .bounds_for_item(ix)
+                .is_some_and(|b| b.top() >= view.top() && b.bottom() <= view.bottom());
             if !shown {
+                self.pending.set(0.);
                 self.list.scroll_to(ListOffset {
                     item_ix: ix.saturating_sub(1),
                     offset_in_item: px(0.),
                 });
             }
+        }
+        // a status, a line of activity or a subagent can change a row's height
+        if std::mem::take(&mut self.stale) {
+            self.list.remeasure();
         }
         self.ease(window);
         // a row held near an edge keeps the list moving, frame after frame, until it moves away
