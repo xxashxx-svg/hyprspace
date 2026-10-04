@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.0 — 2026-10-04
+
+- One thread shows at a time. The + button starts a new thread in the same folder, and it takes over the main area instead of opening beside the one you had.
+- Files and diffs open in a card over the window. Esc or a click outside closes it.
+- Ctrl+click an image in a terminal to open it over the window. Scroll to zoom, drag to move, double-click to fit.
+- Subagents show in a thread's hover card. A thread stays working while its subagents run after its turn ends, and shells or artifact watches no longer count as subagents.
+- Ctrl+K opens the command palette inside a terminal too.
+- Clicking a thread you can see no longer scrolls the sidebar.
+- Image previews no longer flicker while an agent works.
+
 ## 0.23.0 — 2026-10-04
 
 - The sidebar is one list of threads. Each row shows its project's tag, its branch and its agent's mark. Hover a row for its details.
