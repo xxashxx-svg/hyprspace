@@ -172,13 +172,18 @@ impl Root {
     }
 
     /// The card for the row under the pointer, past the sidebar's edge and level with the row.
-    /// Not while a menu is open or something is being dragged.
-    pub(crate) fn hover_card(&self, _: &Window, cx: &App) -> Option<AnyElement> {
+    /// Not while a menu is open or something is being dragged, and only while the pointer is on
+    /// that row. On Windows the pointer can leave for another monitor without any element hearing
+    /// of it; GPUI only marks the window unhovered and redraws, so that is checked here.
+    pub(crate) fn hover_card(&self, window: &Window, cx: &App) -> Option<AnyElement> {
         let (thread, since) = self.hover_row?;
         if since.elapsed() < AFTER || self.menu.is_some() || cx.has_active_drag() {
             return None;
         }
         let bounds = *self.row_bounds.borrow().get(&thread)?;
+        if !window.is_window_hovered() || !bounds.contains(&window.mouse_position()) {
+            return None;
+        }
         let card = self.thread_card(thread, cx)?;
         Some(
             deferred(
