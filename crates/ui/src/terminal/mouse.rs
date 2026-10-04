@@ -259,7 +259,7 @@ impl TerminalView {
     }
 
     /// The link under a window position, if any. A path counts only if it exists.
-    fn link_at(&mut self, at: Point<Pixels>) -> Option<Hover> {
+    pub(super) fn link_at(&mut self, at: Point<Pixels>) -> Option<Hover> {
         let grid = self.grid?;
         let text_area = gpui::Bounds::new(
             grid.origin,

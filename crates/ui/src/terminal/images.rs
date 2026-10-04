@@ -21,6 +21,11 @@ use crate::colors;
 
 /// How long the pointer rests before the preview opens, so a sweep across output doesn't flash.
 const WAIT: Duration = Duration::from_millis(200);
+/// A preview whose image seems gone from under the pointer looks again after each of these
+/// waits, and closes only if it never finds it. An agent redrawing its screen blanks the line
+/// under a still pointer for a moment, on a beat; uneven waits keep the looks from falling in
+/// step with it and landing on a blank every time.
+const LOOKS: [u64; 7] = [35, 60, 45, 70, 40, 85, 55];
 /// A found image holds a minute. A miss is asked again after a few seconds, since Claude writes
 /// the transcript a beat after a message goes. After /clear the numbers restart, so even a hit
 /// doesn't hold for good.
@@ -44,6 +49,10 @@ pub(super) struct Images {
     tray: Vec<(PathBuf, Option<u32>)>,
     /// The image the pointer rests on, and where the pointer is.
     resting: Option<(PathBuf, Point<Pixels>)>,
+    /// Where the pointer last moved in the terminal.
+    pointer: Point<Pixels>,
+    /// A preview about to close, unless its image is under the pointer again by then.
+    closing: Option<Task<()>>,
     /// A marker under the pointer whose image the engine is still finding.
     waiting_on: Option<(u32, Point<Pixels>)>,
     /// A marker that was ctrl+clicked before its image was known.
@@ -223,8 +232,49 @@ impl TerminalView {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.images.pointer = at;
+        let image = self.image_in(open, at);
+        if image.is_none() && self.images.resting.is_some() {
+            self.linger(cx);
+            return;
+        }
+        self.rest_on(image.map(|p| (p, at)), cx);
+    }
+
+    /// A preview, open or about to open, whose image seems gone from under the pointer stays while
+    /// it looks again a few times. An image found under the pointer keeps it, or moves it to that
+    /// image; finding none every time closes it.
+    fn linger(&mut self, cx: &mut Context<Self>) {
+        if self.images.closing.is_some() {
+            return;
+        }
+        self.images.closing = Some(cx.spawn(async move |this, cx| {
+            for ms in LOOKS {
+                cx.background_executor()
+                    .timer(Duration::from_millis(ms))
+                    .await;
+                let back = this
+                    .update(cx, |v, cx| {
+                        let at = v.images.pointer;
+                        let found = v.link_at(at);
+                        let image = v.image_in(found.as_ref().map(|h| &h.open), at)?;
+                        v.rest_on(Some((image, at)), cx);
+                        Some(())
+                    })
+                    .map_or(true, |b| b.is_some());
+                if back {
+                    return;
+                }
+            }
+            let _ = this.update(cx, |v, cx| v.rest_on(None, cx));
+        }));
+    }
+
+    /// The image a link under the pointer stands for. A marker whose image isn't known yet is
+    /// asked for, and opens when the engine answers.
+    fn image_in(&mut self, open: Option<&Open>, at: Point<Pixels>) -> Option<PathBuf> {
         self.images.waiting_on = None;
-        let image = match open {
+        match open {
             Some(Open::File { path, .. }) if crate::attach::is_image(path) => Some(path.clone()),
             Some(Open::Marker(n)) => {
                 let known = self.images.marker(*n);
@@ -235,8 +285,7 @@ impl TerminalView {
                 known
             }
             _ => None,
-        };
-        self.rest_on(image.map(|p| (p, at)), cx);
+        }
     }
 
     /// The pointer came to rest on an image, or left one. Resting on the same image again keeps
@@ -246,6 +295,7 @@ impl TerminalView {
         image: Option<(PathBuf, Point<Pixels>)>,
         cx: &mut Context<Self>,
     ) {
+        self.images.closing = None;
         let same = match (&image, &self.images.resting) {
             (Some((a, _)), Some((b, _))) => a == b,
             (None, None) => true,
