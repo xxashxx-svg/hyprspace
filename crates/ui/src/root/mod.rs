@@ -133,6 +133,8 @@ pub struct Root {
     /// A settled or snoozed thread opened from its shelf, on screen while it stays there. A
     /// message sent to it brings it back to the list.
     pub(crate) peek: Option<u64>,
+    /// An image shown over the whole window, from a Ctrl+click on it in a terminal.
+    pub(crate) lightbox: Option<(Entity<crate::viewer::lightbox::Lightbox>, Subscription)>,
     /// While a row is dragged over the list: the row under the pointer, and whether the dragged
     /// one would land below it (the pointer on its lower half) rather than above.
     pub(crate) drop_at: Option<(u64, bool)>,
@@ -285,6 +287,7 @@ impl Root {
             menu_sub: None,
             reveal: None,
             peek: None,
+            lightbox: None,
             drop_at: None,
             settled_open: false,
             snoozed_open: false,

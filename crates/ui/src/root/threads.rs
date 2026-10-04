@@ -263,6 +263,10 @@ impl Root {
                 let prompt = first.as_ref().map(typed);
                 let v = cx.new(|cx| TerminalView::new(session, client, cwd, run, prompt, cx));
                 let sub = cx.subscribe(&v, |root, _, e: &TerminalEvent, cx| match e {
+                    // an image opens over the window, anything else in the viewer
+                    TerminalEvent::OpenFile {
+                        path, line: None, ..
+                    } if crate::attach::is_image(path) => root.show_image(path.clone(), cx),
                     TerminalEvent::OpenFile { path, line, col } => {
                         root.open_file(path.clone(), *line, *col, cx)
                     }
@@ -454,6 +458,17 @@ impl Root {
         self.make_view(&thread, None, false, cx);
         self.place_thread(thread.id, true);
         self.open_thread(thread.id, window, cx);
+    }
+
+    /// Shows an image over the whole window, zoomable and movable, until it is closed.
+    pub(crate) fn show_image(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let lightbox = cx.new(|cx| crate::viewer::lightbox::Lightbox::new(path, cx));
+        let sub = cx.subscribe(&lightbox, |r, _, _: &crate::viewer::lightbox::Close, cx| {
+            r.lightbox = None;
+            cx.notify();
+        });
+        self.lightbox = Some((lightbox, sub));
+        cx.notify();
     }
 
     pub(crate) fn open_thread(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {

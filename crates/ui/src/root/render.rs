@@ -4,7 +4,7 @@
 use crate::assets::icon;
 use gpui::{
     AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, StyleRefinement, Window,
-    div, prelude::*, px, relative,
+    anchored, deferred, div, point, prelude::*, px, relative,
 };
 
 use super::{Action, MenuEntry, MenuItems, Root, Screen, SidebarDrag};
@@ -204,6 +204,9 @@ impl Render for Root {
         let folders = self.folder_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
         let update = crate::update::overlay(&self.updater, cx);
+        let lightbox = self.lightbox.as_ref().map(|(l, _)| {
+            deferred(anchored().position(point(px(0.), px(0.))).child(l.clone())).with_priority(3)
+        });
         // Settings takes the whole window. A hidden sidebar comes back from the title row's
         // button; once it has slid away its column stays, zero wide
         let open = !self.state.sidebar_hidden;
@@ -253,5 +256,6 @@ impl Render for Root {
             .children(palette)
             .children(folders)
             .children(intro)
+            .children(lightbox)
     }
 }
