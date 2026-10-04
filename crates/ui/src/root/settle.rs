@@ -38,7 +38,7 @@ pub(crate) struct Undo {
 }
 
 impl Root {
-    fn busy(&self, thread: u64) -> bool {
+    pub(crate) fn busy(&self, thread: u64) -> bool {
         matches!(
             self.status.get(&thread),
             Some(Status::Working | Status::Waiting)

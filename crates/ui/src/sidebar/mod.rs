@@ -511,6 +511,7 @@ impl Root {
     ) -> impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static {
         cx.listener(move |r, e: &MouseDownEvent, _, cx| {
             r.menu = Some((e.position, items.clone()));
+            r.menu_sub = None;
             cx.stop_propagation();
             cx.notify();
         })

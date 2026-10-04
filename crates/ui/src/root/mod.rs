@@ -59,29 +59,53 @@ pub enum Action {
     SettleSpace(u64),
     /// Settles a thread, or brings it back.
     Settle(u64, bool),
-    /// Opens the snooze menu for a thread where the context menu was.
-    Snooze(u64),
+    /// Snoozes a thread until a time, in ms since the epoch.
+    SnoozeUntil(u64, u64),
+    /// Snoozes a thread until its agent finishes its turn.
+    SnoozeDone(u64),
     Wake(u64),
     RemoveThread(u64),
     /// Opens the thread as a new pane beside the ones on screen.
     OpenBeside(u64),
     /// Opens the space's folder in an editor or the file manager.
     OpenIn(hyprspace_proto::Opener, u64),
-    /// A rule between a menu's groups; does nothing.
-    Divider,
     /// Narrows the sidebar to a space's threads, by its name in the search box.
     Filter(u64),
-    /// The apps that can open a space's folder, as a menu of their own.
-    OpenInMenu(u64),
-    /// What can be copied from a thread, as a menu of its own.
-    CopyMenu(u64),
     CopyTitle(u64),
     CopyPath(u64),
     CopyConversation(u64),
 }
 
-/// A context menu's rows: what each says and does.
-pub type MenuItems = Vec<(SharedString, Action)>;
+/// One line of a right-click menu.
+#[derive(Clone)]
+pub enum MenuEntry {
+    /// A choice: its words, a note on the right (a snooze's wake time), and what it does.
+    Item {
+        label: SharedString,
+        hint: Option<SharedString>,
+        action: Action,
+    },
+    /// A rule between groups.
+    Divider,
+    /// A row that opens more choices beside it while the pointer is on it.
+    Sub {
+        label: SharedString,
+        entries: Vec<MenuEntry>,
+    },
+}
+
+impl MenuEntry {
+    pub fn item(label: impl Into<SharedString>, action: Action) -> Self {
+        MenuEntry::Item {
+            label: label.into(),
+            hint: None,
+            action,
+        }
+    }
+}
+
+/// A right-click menu's lines, top to bottom.
+pub type MenuItems = Vec<MenuEntry>;
 
 /// The sidebar's drag handle, carried while it is dragged.
 pub struct SidebarDrag;
@@ -101,6 +125,8 @@ pub struct Root {
     pub(crate) composer: Entity<Composer>,
     pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
+    /// The menu's line whose choices are open beside it.
+    pub(crate) menu_sub: Option<usize>,
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
@@ -247,6 +273,7 @@ impl Root {
             composer,
             rename: None,
             menu: None,
+            menu_sub: None,
             settled_open: false,
             snoozed_open: false,
             hover_row: None,

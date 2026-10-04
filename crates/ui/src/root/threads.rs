@@ -533,18 +533,13 @@ impl Root {
 
     pub(crate) fn act(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
         // a menu row that opens another menu opens it where this one was
-        let at = self.menu.take().map(|(at, _)| at);
+        self.menu = None;
         match action {
             Action::NewThread(space) => self.compose(Some(space), window, cx),
             Action::NewTerminal(space) => self.new_terminal(space, window, cx),
             Action::Rename(target) => self.start_rename(target, window, cx),
             Action::SettleSpace(id) => self.settle_space(id, window, cx),
             Action::Settle(id, on) => self.settle(id, on, window, cx),
-            Action::Snooze(id) => {
-                if let Some(at) = at {
-                    self.open_snooze_menu(at, id, cx);
-                }
-            }
             Action::Wake(id) => self.snooze(id, None, window, cx),
             Action::RemoveThread(id) => {
                 self.drop_view(id);
@@ -562,31 +557,16 @@ impl Root {
                     self.open_in(opener, &cwd, cx);
                 }
             }
-            Action::Divider => {}
+            Action::SnoozeUntil(id, at) => {
+                self.snooze(id, Some(hyprspace_proto::Snooze::Time { at }), window, cx)
+            }
+            Action::SnoozeDone(id) => {
+                self.snooze(id, Some(hyprspace_proto::Snooze::Done), window, cx)
+            }
             Action::Filter(space) => {
                 if let Some(name) = self.state.space(space).map(|s| s.name.clone()) {
                     self.search.update(cx, |i, cx| i.set_text(&name, cx));
                 }
-            }
-            // a menu row that leads on opens its choices where the menu was
-            Action::OpenInMenu(space) => {
-                let items = self
-                    .work
-                    .openers
-                    .iter()
-                    .map(|&o| (o.name().into(), Action::OpenIn(o, space)))
-                    .collect();
-                self.menu = at.map(|at| (at, items));
-            }
-            Action::CopyMenu(thread) => {
-                let mut items: super::MenuItems = vec![
-                    ("Title".into(), Action::CopyTitle(thread)),
-                    ("Folder path".into(), Action::CopyPath(thread)),
-                ];
-                if self.conversation(thread).is_some() {
-                    items.push(("Conversation id".into(), Action::CopyConversation(thread)));
-                }
-                self.menu = at.map(|at| (at, items));
             }
             Action::CopyTitle(thread) => {
                 if let Some((_, t)) = self.state.thread(thread) {

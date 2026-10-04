@@ -21,8 +21,8 @@ use hyprspace_theme::MONO;
 use super::row_hover;
 use crate::assets::{icon, mark};
 use crate::colors;
-use crate::root::{Action, MenuItems, Rename, Root, Screen, View};
-use crate::time::ago;
+use crate::root::{Action, MenuEntry, MenuItems, Rename, Root, Screen, View};
+use crate::time::{ago, local_now, presets, to_ms, wake_short};
 use crate::transcript::Status;
 use crate::widgets;
 
@@ -279,47 +279,89 @@ impl Root {
 
     /// A thread's right-click menu, grouped as T3 Code's: where to open it; settling and
     /// snoozing; naming and finding; its project's apps and copying; and the ones that clear away.
+    /// Snooze, Open in and Copy open their choices beside them.
     fn thread_menu(&self, t: &Thread) -> MenuItems {
         let id = t.id;
         let space = self.state.thread(id).map(|(s, _)| s);
-        let rule = || ("".into(), Action::Divider);
-        let mut menu: MenuItems = vec![("Open beside".into(), Action::OpenBeside(id))];
+        let mut menu = vec![MenuEntry::item("Open beside", Action::OpenBeside(id))];
         if let Some(s) = space {
-            menu.push((
-                format!("New thread in {}", s.name).into(),
+            menu.push(MenuEntry::item(
+                format!("New thread in {}", s.name),
                 Action::NewThread(s.id),
             ));
         }
-        menu.push(rule());
+        menu.push(MenuEntry::Divider);
         if t.snooze.is_some() {
-            menu.push(("Wake now".into(), Action::Wake(id)));
+            menu.push(MenuEntry::item("Wake now", Action::Wake(id)));
         } else if t.settled {
-            menu.push(("Un-settle thread".into(), Action::Settle(id, false)));
+            menu.push(MenuEntry::item(
+                "Un-settle thread",
+                Action::Settle(id, false),
+            ));
         } else {
-            menu.push(("Settle thread".into(), Action::Settle(id, true)));
-            menu.push(("Snooze".into(), Action::Snooze(id)));
+            menu.push(MenuEntry::item("Settle thread", Action::Settle(id, true)));
+            let now = local_now();
+            let mut times: Vec<MenuEntry> = presets(now)
+                .into_iter()
+                .map(|p| MenuEntry::Item {
+                    label: p.label.into(),
+                    hint: Some(wake_short(p.at, now).into()),
+                    action: Action::SnoozeUntil(id, to_ms(p.at)),
+                })
+                .collect();
+            if self.busy(id) {
+                times.push(MenuEntry::item("Until it finishes", Action::SnoozeDone(id)));
+            }
+            menu.push(MenuEntry::Sub {
+                label: "Snooze".into(),
+                entries: times,
+            });
         }
-        menu.push(rule());
-        menu.push(("Rename thread".into(), Action::Rename(Rename::Thread(id))));
+        menu.push(MenuEntry::Divider);
+        menu.push(MenuEntry::item(
+            "Rename thread",
+            Action::Rename(Rename::Thread(id)),
+        ));
         if let Some(s) = space {
-            menu.push((format!("Filter by {}", s.name).into(), Action::Filter(s.id)));
-        }
-        menu.push(rule());
-        if let Some(s) = space.filter(|s| s.cwd.is_some() && !self.work.openers.is_empty()) {
-            menu.push((
-                format!("Open {} in", s.name).into(),
-                Action::OpenInMenu(s.id),
+            menu.push(MenuEntry::item(
+                format!("Filter by {}", s.name),
+                Action::Filter(s.id),
             ));
         }
-        menu.push(("Copy".into(), Action::CopyMenu(id)));
-        menu.push(rule());
+        menu.push(MenuEntry::Divider);
+        if let Some(s) = space.filter(|s| s.cwd.is_some() && !self.work.openers.is_empty()) {
+            menu.push(MenuEntry::Sub {
+                label: format!("Open {} in", s.name).into(),
+                entries: self
+                    .work
+                    .openers
+                    .iter()
+                    .map(|&o| MenuEntry::item(o.name(), Action::OpenIn(o, s.id)))
+                    .collect(),
+            });
+        }
+        let mut copy = vec![
+            MenuEntry::item("Title", Action::CopyTitle(id)),
+            MenuEntry::item("Folder path", Action::CopyPath(id)),
+        ];
+        if t.agent().is_some_and(|l| l.resume.is_some()) {
+            copy.push(MenuEntry::item(
+                "Conversation id",
+                Action::CopyConversation(id),
+            ));
+        }
+        menu.push(MenuEntry::Sub {
+            label: "Copy".into(),
+            entries: copy,
+        });
+        menu.push(MenuEntry::Divider);
         if let Some(s) = space {
-            menu.push((
-                format!("Settle all in {}", s.name).into(),
+            menu.push(MenuEntry::item(
+                format!("Settle all in {}", s.name),
                 Action::SettleSpace(s.id),
             ));
         }
-        menu.push(("Delete thread".into(), Action::RemoveThread(id)));
+        menu.push(MenuEntry::item("Delete thread", Action::RemoveThread(id)));
         menu
     }
 

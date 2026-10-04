@@ -276,35 +276,6 @@ pub fn dropdown(
     )
 }
 
-/// One row of a context menu. A `danger` row turns red on hover.
-pub fn menu_row(
-    id: impl Into<ElementId>,
-    icon_name: Option<&str>,
-    label: impl Into<SharedString>,
-    danger: bool,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .gap_2()
-        .h(px(26.))
-        .px(px(8.))
-        .rounded(px(6.))
-        .cursor_pointer()
-        .when(!danger, |d| {
-            d.hover(|s| s.bg(colors::surface3()).text_color(colors::text1()))
-        })
-        .when(danger, |d| {
-            d.hover(|s| {
-                s.bg(colors::error().opacity(0.14))
-                    .text_color(colors::error())
-            })
-        })
-        .children(icon_name.map(|n| icon(n, 13., colors::text3())))
-        .child(div().flex_1().min_w_0().truncate().child(label.into()))
-}
-
 /// A picker row: a name, a note under it, and a check on the current one.
 pub fn menu_item(
     id: impl Into<ElementId>,
