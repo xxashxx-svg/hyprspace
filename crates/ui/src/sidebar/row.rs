@@ -274,8 +274,8 @@ impl Root {
                 }));
             }
             menu.push((
-                format!("Archive {}", space.name).into(),
-                Action::ArchiveSpace(space.id, true),
+                format!("Settle all in {}", space.name).into(),
+                Action::SettleSpace(space.id),
             ));
         }
         menu

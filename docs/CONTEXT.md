@@ -17,10 +17,10 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
 ## What the user works with
 
 - **Thread**: one conversation in a space, shown as one sidebar row with its live status. A
-  thread is what the user names, archives, reopens and resumes.
+  thread is what the user names, settles, reopens and resumes.
 - **Settled**: a thread moved out of its space onto the Settled shelf at the bottom of the
   sidebar, by hand or after sitting untouched (Settings, General). Its conversation is kept; opening it
-  brings it back. Replaced archiving threads; spaces are still archived.
+  brings it back. Replaced archiving, for threads and spaces both.
 - **Snoozed**: a thread hidden until a time, or until its agent finishes its turn, then back in
   the active list marked new. Snoozed threads wait on the shelf near the bottom of the sidebar.
 - **Session**: the live process behind a thread, identified by a `SessionId`. There are two

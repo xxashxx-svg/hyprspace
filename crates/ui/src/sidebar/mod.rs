@@ -21,17 +21,17 @@ use std::time::Instant;
 use gpui::{
     AnyElement, ClickEvent, Context, DispatchPhase, Entity, ExternalPaths, Focusable, FontWeight,
     HitboxBehavior, IntoElement, ListAlignment, ListState, MouseButton, MouseDownEvent,
-    ScrollWheelEvent, SharedString, Subscription, Transformation, WeakEntity, Window, canvas, div,
-    list, percentage, prelude::*, px,
+    ScrollWheelEvent, Subscription, Transformation, WeakEntity, Window, canvas, div, list,
+    percentage, prelude::*, px,
 };
-use hyprspace_proto::{Pane, Space, Thread};
+use hyprspace_proto::{Space, Thread};
 use hyprspace_theme::MONO;
 
 use crate::assets::icon;
 use crate::colors;
 use crate::palette::TogglePalette;
 use crate::panes::PaneDrag;
-use crate::root::{Action, MenuItems, Root, Screen, SidebarDrag};
+use crate::root::{MenuItems, Root, Screen, SidebarDrag};
 use crate::time::now_ms;
 
 pub const MIN_WIDTH: f32 = 200.;
@@ -56,25 +56,11 @@ enum Item {
     /// Room above the list, between shelves, or at the end.
     Gap(u8),
     /// The snoozed threads of every space.
-    Snoozed {
-        count: usize,
-        open: bool,
-    },
+    Snoozed { count: usize, open: bool },
     /// The settled threads of every space.
-    Settled {
-        count: usize,
-        open: bool,
-    },
-    /// The archived spaces.
-    Archived {
-        count: usize,
-        open: bool,
-    },
-    ArchivedSpace(u64),
+    Settled { count: usize, open: bool },
     /// Nothing to list: no threads yet, or a search with no hits.
-    Nothing {
-        searching: bool,
-    },
+    Nothing { searching: bool },
 }
 
 impl Item {
@@ -82,7 +68,6 @@ impl Item {
     /// the rows that come or go are spliced.
     fn same(&self, other: &Item) -> bool {
         match (self, other) {
-            (Item::Archived { .. }, Item::Archived { .. }) => true,
             (Item::Snoozed { .. }, Item::Snoozed { .. }) => true,
             (Item::Settled { .. }, Item::Settled { .. }) => true,
             (Item::Nothing { .. }, Item::Nothing { .. }) => true,
@@ -292,17 +277,6 @@ impl Root {
                 items.extend(settled.iter().map(|t| Item::Shelved(t.id)));
             }
         }
-        let spaces: Vec<&Space> = self.state.spaces.iter().filter(|s| s.archived).collect();
-        if !spaces.is_empty() {
-            let open = self.archived_open;
-            items.push(Item::Archived {
-                count: spaces.len(),
-                open,
-            });
-            if open {
-                items.extend(spaces.iter().map(|s| Item::ArchivedSpace(s.id)));
-            }
-        }
         items.push(Item::Gap(4));
         items
     }
@@ -355,16 +329,6 @@ impl Root {
                         )),
                 )
                 .into_any_element(),
-            Item::Archived { count, open } => slot()
-                .pt(px(10.))
-                .child(self.archived_header(count, open, cx))
-                .into_any_element(),
-            Item::ArchivedSpace(id) => match self.state.space(id) {
-                Some(space) => slot()
-                    .child(self.archived_space(space, cx))
-                    .into_any_element(),
-                None => div().into_any_element(),
-            },
             Item::Nothing { searching } => div()
                 .px(px(EDGE + 10.))
                 .py(px(6.))
@@ -538,23 +502,6 @@ impl Root {
             .into_any_element()
     }
 
-    /// Opens a space: the thread its grid shows first, or its composer when the grid is empty.
-    pub(crate) fn open_space(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(s) = self.state.space_mut(id) {
-            s.folded = false;
-        }
-        let first = self.live_panes(id).into_iter().find_map(|p| match p {
-            Pane::Thread { id } => Some(id),
-            _ => None,
-        });
-        match first {
-            Some(thread) => self.open_thread(thread, window, cx),
-            None => self.compose(Some(id), window, cx),
-        }
-        self.save();
-        self.git_poll(std::time::Duration::MAX);
-    }
-
     /// Opens `items` as a menu where the right-click was.
     pub(crate) fn context_menu(
         &self,
@@ -566,20 +513,6 @@ impl Root {
             cx.stop_propagation();
             cx.notify();
         })
-    }
-
-    /// The Archived heading over archived spaces.
-    fn archived_header(&self, count: usize, open: bool, cx: &mut Context<Self>) -> AnyElement {
-        self.shelf_header(
-            "archived",
-            "Archived",
-            count,
-            open,
-            cx.listener(|r, _: &ClickEvent, _, cx| {
-                r.archived_open = !r.archived_open;
-                cx.notify();
-            }),
-        )
     }
 
     /// A shelf's heading, after T3 Code's: its name and count, a rule, and the arrow.
@@ -614,71 +547,6 @@ impl Root {
             .child(div().flex_1().h(px(1.)).bg(colors::ink(0.08)))
             .child(twist(open))
             .on_click(toggle)
-            .into_any_element()
-    }
-
-    /// An archived space: its name and thread count, which give way to Restore on hover.
-    fn archived_space(&self, s: &Space, cx: &mut Context<Self>) -> AnyElement {
-        let id = s.id;
-        let group: SharedString = format!("arch-{id}").into();
-        let menu: MenuItems = vec![
-            ("Restore".into(), Action::ArchiveSpace(id, false)),
-            ("Remove from the sidebar".into(), Action::RemoveSpace(id)),
-        ];
-        let n = s.threads.len();
-        div()
-            .id(("archived-space", id))
-            .group(group.clone())
-            .relative()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .h(px(30.))
-            .pl(px(8.))
-            .pr(px(6.))
-            .rounded(px(7.))
-            .text_size(px(13.))
-            .text_color(colors::text3())
-            .cursor_pointer()
-            .hover(|d| d.bg(row_hover()).text_color(colors::text1()))
-            .child(div().flex_1().min_w_0().truncate().child(s.name.clone()))
-            .when(n > 0, |d| {
-                d.child(
-                    div()
-                        .flex_none()
-                        .font_family(MONO)
-                        .text_size(px(10.5))
-                        .group_hover(group.clone(), |s| s.opacity(0.))
-                        .child(format!("{n} {}", if n == 1 { "thread" } else { "threads" })),
-                )
-            })
-            .child(
-                div()
-                    .id(("restore", id))
-                    .absolute()
-                    .right(px(6.))
-                    .flex()
-                    .items_center()
-                    .gap(px(5.))
-                    .h(px(20.))
-                    .px(px(7.))
-                    .rounded(px(5.))
-                    .bg(colors::surface3())
-                    .text_size(px(11.))
-                    .text_color(colors::text1())
-                    .opacity(0.)
-                    .group_hover(group, |s| s.opacity(1.))
-                    .child(icon("archive-restore", 11., colors::text1()))
-                    .child("Restore")
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                        r.act(Action::ArchiveSpace(id, false), window, cx)
-                    })),
-            )
-            .on_click(
-                cx.listener(move |r, _: &ClickEvent, window, cx| r.open_space(id, window, cx)),
-            )
-            .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
             .into_any_element()
     }
 

@@ -538,12 +538,7 @@ impl Root {
             Action::NewThread(space) => self.compose(Some(space), window, cx),
             Action::NewTerminal(space) => self.new_terminal(space, window, cx),
             Action::Rename(target) => self.start_rename(target, window, cx),
-            Action::ArchiveSpace(id, on) => {
-                if let Some(s) = self.state.space_mut(id) {
-                    s.archived = on;
-                }
-                self.leave(window, cx);
-            }
+            Action::SettleSpace(id) => self.settle_space(id, window, cx),
             Action::Settle(id, on) => self.settle(id, on, window, cx),
             Action::Snooze(id) => {
                 if let Some(at) = at {
@@ -551,18 +546,6 @@ impl Root {
                 }
             }
             Action::Wake(id) => self.snooze(id, None, window, cx),
-            Action::RemoveSpace(id) => {
-                let threads: Vec<u64> = self
-                    .state
-                    .space(id)
-                    .map(|s| s.threads.iter().map(|t| t.id).collect())
-                    .unwrap_or_default();
-                for t in threads {
-                    self.drop_view(t);
-                }
-                self.state.spaces.retain(|s| s.id != id);
-                self.leave(window, cx);
-            }
             Action::RemoveThread(id) => {
                 self.drop_view(id);
                 for s in &mut self.state.spaces {

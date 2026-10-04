@@ -109,6 +109,21 @@ impl AppState {
             .iter_mut()
             .find_map(|s| s.threads.iter_mut().find(|t| t.id == id))
     }
+
+    /// Settling replaced archiving: an archived space, saved before that or brought over from the
+    /// Tauri app, comes back with its threads settled. Returns whether anything changed.
+    pub fn settle_archived(&mut self) -> bool {
+        let mut changed = false;
+        for s in self.spaces.iter_mut().filter(|s| s.archived) {
+            s.archived = false;
+            for t in &mut s.threads {
+                t.settled = true;
+                t.snooze = None;
+            }
+            changed = true;
+        }
+        changed
+    }
 }
 
 /// A project (one folder) or an open space (`cwd` is None), as docs/CONTEXT.md defines them.
@@ -477,5 +492,36 @@ mod tests {
         });
         assert_eq!(p.picks.len(), 1);
         assert_eq!(p.pick(Agent::Claude).model, "n");
+    }
+
+    #[test]
+    fn archived_spaces_come_back_with_their_threads_settled() {
+        let thread = |id| Thread {
+            id,
+            created: 5,
+            ..Thread::default()
+        };
+        let mut st = AppState {
+            spaces: vec![
+                Space {
+                    id: 1,
+                    archived: true,
+                    threads: vec![thread(10), thread(11)],
+                    ..Space::default()
+                },
+                Space {
+                    id: 2,
+                    threads: vec![thread(20)],
+                    ..Space::default()
+                },
+            ],
+            ..AppState::default()
+        };
+        assert!(st.settle_archived());
+        assert!(!st.spaces[0].archived);
+        assert!(st.spaces[0].threads.iter().all(|t| t.settled));
+        assert!(!st.spaces[1].threads[0].settled);
+        // a second load finds nothing to do
+        assert!(!st.settle_archived());
     }
 }

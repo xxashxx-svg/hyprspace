@@ -28,4 +28,6 @@ settle, auto-settle and snooze, and Ash asked for that.
   active list marked new, and waits on a shelf near the bottom of the sidebar meanwhile.
 - **Opening** a settled or snoozed thread brings it back. Settling and snoozing show a toast with
   Undo for five seconds.
-- Spaces are still archived, as before.
+- **Spaces aren't archived any more.** An archived space, saved earlier or brought over from
+  the Tauri app, loads with its threads settled. A thread's menu settles every thread of its
+  space at once.

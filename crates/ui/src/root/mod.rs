@@ -55,13 +55,13 @@ pub enum Action {
     NewThread(u64),
     NewTerminal(u64),
     Rename(Rename),
-    ArchiveSpace(u64, bool),
+    /// Settle every thread at work in a space.
+    SettleSpace(u64),
     /// Settles a thread, or brings it back.
     Settle(u64, bool),
     /// Opens the snooze menu for a thread where the context menu was.
     Snooze(u64),
     Wake(u64),
-    RemoveSpace(u64),
     RemoveThread(u64),
     /// Opens the thread as a new pane beside the ones on screen.
     OpenBeside(u64),
@@ -90,7 +90,6 @@ pub struct Root {
     pub(crate) composer: Entity<Composer>,
     pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
-    pub(crate) archived_open: bool,
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
@@ -231,7 +230,6 @@ impl Root {
             composer,
             rename: None,
             menu: None,
-            archived_open: false,
             settled_open: false,
             snoozed_open: false,
             snooze_menu: None,
@@ -459,6 +457,9 @@ impl Root {
     fn loaded(&mut self, state: AppState, window: &mut Window, cx: &mut Context<Self>) {
         self.state = state;
         self.loaded = true;
+        if self.state.settle_archived() {
+            self.save();
+        }
         self.git_poll(Duration::ZERO);
         self.apply_theme(window);
         let prefs = self.state.composer.clone();

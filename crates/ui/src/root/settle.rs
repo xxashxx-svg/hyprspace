@@ -125,6 +125,31 @@ impl Root {
         cx.notify();
     }
 
+    /// Settles every thread at work in a space, for a project that is done for now.
+    pub(crate) fn settle_space(&mut self, space: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let threads: Vec<u64> = self
+            .state
+            .space(space)
+            .map(|s| {
+                s.threads
+                    .iter()
+                    .filter(|t| t.active())
+                    .map(|t| t.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for id in threads {
+            if let Some(t) = self.state.thread_mut(id) {
+                t.settled = true;
+                t.snooze = None;
+            }
+            self.free(id);
+        }
+        self.leave(window, cx);
+        self.save();
+        cx.notify();
+    }
+
     /// Snoozes a thread, or wakes it with `None`.
     pub(crate) fn snooze(
         &mut self,
