@@ -8,8 +8,8 @@
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, ElementId, FontWeight, Hsla,
-    IntoElement, MouseButton, SharedString, Transformation, canvas, div, linear_color_stop,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, DragMoveEvent, ElementId, FontWeight,
+    Hsla, IntoElement, MouseButton, SharedString, Transformation, canvas, div, linear_color_stop,
     linear_gradient, percentage, prelude::*, px, relative,
 };
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
@@ -618,8 +618,41 @@ impl Root {
                 },
                 |d, offset, _, cx| cx.new(|_| d.ghost(offset, true)),
             )
-            .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
-            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| r.drop_on_thread(d, id, cx)));
+            // while a row is dragged: which half of this one the pointer is on
+            .on_drag_move(cx.listener(move |r, e: &DragMoveEvent<PaneDrag>, _, cx| {
+                let (p, b) = (e.event.position, e.bounds);
+                let next = if b.contains(&p) {
+                    Some((id, p.y > b.center().y))
+                } else if r.drop_at.is_some_and(|(t, _)| t == id) {
+                    None
+                } else {
+                    return;
+                };
+                if r.drop_at != next {
+                    r.drop_at = next;
+                    cx.notify();
+                }
+            }))
+            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| {
+                let below = r.drop_at.is_some_and(|(t, below)| t == id && below);
+                r.drop_at = None;
+                r.drop_on_thread(d, id, below, cx)
+            }))
+            // the line where a dragged row would land
+            .children(
+                self.drop_at
+                    .filter(|(t, _)| *t == id && cx.has_active_drag())
+                    .map(|(_, below)| {
+                        div()
+                            .absolute()
+                            .left(px(6.))
+                            .right(px(6.))
+                            .h(px(2.))
+                            .rounded_full()
+                            .bg(colors::accent())
+                            .map(|l| if below { l.bottom_0() } else { l.top_0() })
+                    }),
+            );
         // a thread made a moment ago fades in, rising into its slot; the age check keeps rows
         // the list draws again later, like after a scroll, from fading in a second time
         if now.saturating_sub(t.created) < 1000 {

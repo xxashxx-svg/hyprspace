@@ -130,6 +130,9 @@ pub struct Root {
     /// A thread whose row the sidebar should scroll into view: one just opened or made, which
     /// may sit above a list scrolled down.
     pub(crate) reveal: Option<u64>,
+    /// While a row is dragged over the list: the row under the pointer, and whether the dragged
+    /// one would land below it (the pointer on its lower half) rather than above.
+    pub(crate) drop_at: Option<(u64, bool)>,
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
@@ -278,6 +281,7 @@ impl Root {
             menu: None,
             menu_sub: None,
             reveal: None,
+            drop_at: None,
             settled_open: false,
             snoozed_open: false,
             hover_row: None,

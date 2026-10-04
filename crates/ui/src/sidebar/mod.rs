@@ -20,10 +20,10 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, DispatchPhase, Entity, ExternalPaths, Focusable, FontWeight,
-    HitboxBehavior, IntoElement, ListAlignment, ListState, MouseButton, MouseDownEvent,
-    ScrollWheelEvent, Subscription, Transformation, WeakEntity, Window, canvas, div, list,
-    percentage, prelude::*, px,
+    AnyElement, ClickEvent, Context, DispatchPhase, DragMoveEvent, Entity, ExternalPaths,
+    Focusable, FontWeight, HitboxBehavior, IntoElement, ListAlignment, ListOffset, ListState,
+    MouseButton, MouseDownEvent, ScrollWheelEvent, Subscription, Transformation, WeakEntity,
+    Window, canvas, div, list, percentage, prelude::*, px,
 };
 use hyprspace_proto::{Space, Thread};
 use hyprspace_theme::MONO;
@@ -46,6 +46,22 @@ const EDGE: f32 = 8.;
 const EASE: f32 = 0.06;
 /// A wheel line's worth of travel.
 const LINE: f32 = 20.;
+/// While a row is dragged, the list scrolls when the pointer is this close to its top or bottom,
+/// up to this many pixels a frame, faster nearer the edge.
+const EDGE_ZONE: f32 = 56.;
+const EDGE_SPEED: f32 = 14.;
+
+/// How far the list scrolls this frame for a drag at `y` in a list spanning `top..bottom`:
+/// negative up, positive down, nothing away from the edges.
+fn edge_scroll(y: f32, top: f32, bottom: f32) -> f32 {
+    if y < top + EDGE_ZONE {
+        -EDGE_SPEED * (1. - ((y - top) / EDGE_ZONE).clamp(0., 1.))
+    } else if y > bottom - EDGE_ZONE {
+        EDGE_SPEED * (1. - ((bottom - y) / EDGE_ZONE).clamp(0., 1.))
+    } else {
+        0.
+    }
+}
 
 /// One line of the sidebar's list.
 #[derive(Debug, Clone, PartialEq)]
@@ -101,6 +117,8 @@ pub struct SidebarView {
     /// Wheel travel not scrolled yet, positive toward the end, and when the last step went.
     pending: Rc<Cell<f32>>,
     stepped: Option<Instant>,
+    /// While a row is dragged near the list's top or bottom, how far to scroll each frame.
+    edge: f32,
     _watch: Subscription,
 }
 
@@ -113,6 +131,7 @@ impl SidebarView {
             stale: true,
             pending: Rc::default(),
             stepped: None,
+            edge: 0.,
             _watch: cx.observe(root, |v: &mut Self, _, cx| {
                 v.stale = true;
                 cx.notify();
@@ -178,7 +197,15 @@ impl gpui::Render for SidebarView {
         if items != *self.items {
             let (range, count) = changed(&self.items, &items);
             if !range.is_empty() || count > 0 {
+                // the view stays on the row it showed at the top: a splice over that row would reset
+                // it, and a row moved from above would shift every index under it by one
+                let top = self.list.logical_scroll_top();
+                let anchor = self.items.get(top.item_ix).cloned();
                 self.list.splice(range, count);
+                let item_ix = anchor
+                    .and_then(|a| items.iter().position(|i| i.same(&a)))
+                    .unwrap_or(top.item_ix);
+                self.list.scroll_to(ListOffset { item_ix, ..top });
             }
             self.items = Rc::new(items);
         }
@@ -194,9 +221,34 @@ impl gpui::Render for SidebarView {
                 .position(|i| matches!(i, Item::Thread(t) | Item::Shelved(t) if *t == id))
         {
             self.pending.set(0.);
-            self.list.scroll_to_reveal_item(ix);
+            // by place in the list, not by height: rows far from view were never measured. A row
+            // above the view, or not wholly in it, comes to the top with the one before it showing
+            let top = self.list.logical_scroll_top();
+            let view = self.list.viewport_bounds();
+            let shown = ix > top.item_ix
+                && self
+                    .list
+                    .bounds_for_item(ix)
+                    .is_some_and(|b| b.bottom() <= view.bottom());
+            if !shown {
+                self.list.scroll_to(ListOffset {
+                    item_ix: ix.saturating_sub(1),
+                    offset_in_item: px(0.),
+                });
+            }
         }
         self.ease(window);
+        // a row held near an edge keeps the list moving, frame after frame, until it moves away
+        if self.edge != 0. {
+            if cx.has_active_drag() {
+                self.list.scroll_by(px(self.edge));
+                window.request_animation_frame();
+                // rows slide under a still pointer, so no line is right until it moves again
+                root.update(cx, |r, _| r.drop_at = None);
+            } else {
+                self.edge = 0.;
+            }
+        }
         let wheel = self.wheel(cx);
         let (items, weak, now) = (self.items.clone(), self.root.clone(), now_ms());
         let rows = list(self.list.clone(), move |ix, _, cx| {
@@ -209,8 +261,22 @@ impl gpui::Render for SidebarView {
         })
         .size_full();
         let rows = div()
+            .id("sidebar-list")
             .relative()
             .size_full()
+            .on_drag_move(cx.listener(|v, e: &DragMoveEvent<PaneDrag>, _, cx| {
+                let (p, b) = (e.event.position, e.bounds);
+                let inside = p.x >= b.left() && p.x <= b.right();
+                let edge = if inside {
+                    edge_scroll(f32::from(p.y), f32::from(b.top()), f32::from(b.bottom()))
+                } else {
+                    0.
+                };
+                if edge != v.edge {
+                    v.edge = edge;
+                    cx.notify();
+                }
+            }))
             .child(rows)
             .child(wheel)
             .into_any_element();
@@ -644,5 +710,17 @@ mod tests {
             Item::Gap(4),
         ];
         assert_eq!(changed(&shut, &open), (1..1, 2));
+    }
+
+    #[test]
+    fn a_dragged_row_near_an_edge_scrolls_the_list() {
+        // nothing in the middle, faster nearer each edge, the right way
+        assert_eq!(edge_scroll(300., 0., 600.), 0.);
+        assert!(edge_scroll(10., 0., 600.) < edge_scroll(40., 0., 600.));
+        assert!(edge_scroll(40., 0., 600.) < 0.);
+        assert!(edge_scroll(590., 0., 600.) > edge_scroll(560., 0., 600.));
+        assert!(edge_scroll(560., 0., 600.) > 0.);
+        // past the edge is full speed, not more
+        assert_eq!(edge_scroll(-20., 0., 600.), -EDGE_SPEED);
     }
 }
