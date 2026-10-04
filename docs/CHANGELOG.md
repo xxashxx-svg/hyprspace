@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.22.0 — 2026-10-04
+
+- HyprSpace is rebuilt as a native app: it starts faster, scrolls smoother and uses far less memory
+- Your spaces, threads, theme and settings come over from the previous version
+- Settle threads you're done with onto a shelf at the bottom of the sidebar, and threads untouched for 3 days settle by themselves
+- Snooze a thread until later today, tomorrow, next week, or until its agent finishes
+- New folders open through an in-app browser, with File Explorer or Finder one click away
+- Drag threads onto panes, between rows and onto spaces, and drop files on a terminal to type their paths
+- Appearance has theme previews, an interface font, diff colors, terminal line height and an animations switch
+
 ## 0.21.1 — 2026-09-28
 
 - Cloning a repository lets you pick the folder, clone straight into an empty one, and open it in this thread or a new one
