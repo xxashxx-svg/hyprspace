@@ -104,6 +104,12 @@ pub struct Root {
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
+    /// The sidebar row under the pointer and since when, for its hover card.
+    pub(crate) hover_row: Option<(u64, Instant)>,
+    pub(crate) _hover_timer: Option<Task<()>>,
+    /// Where each thread's row was last drawn, for the card that shows beside it.
+    pub(crate) row_bounds:
+        std::rc::Rc<std::cell::RefCell<HashMap<u64, gpui::Bounds<gpui::Pixels>>>>,
     /// The snooze menu: where it opened, for which thread.
     pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
     /// The last settle or snooze, which the toast can undo for a few seconds.
@@ -243,6 +249,9 @@ impl Root {
             menu: None,
             settled_open: false,
             snoozed_open: false,
+            hover_row: None,
+            _hover_timer: None,
+            row_bounds: Default::default(),
             snooze_menu: None,
             undo: None,
             _undo_timer: None,

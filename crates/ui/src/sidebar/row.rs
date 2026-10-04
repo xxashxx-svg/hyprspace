@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, ElementId, FontWeight, Hsla,
-    IntoElement, MouseButton, SharedString, Transformation, div, linear_color_stop,
+    IntoElement, MouseButton, SharedString, Transformation, canvas, div, linear_color_stop,
     linear_gradient, percentage, prelude::*, px, relative,
 };
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
@@ -242,6 +242,41 @@ impl Root {
         }
     }
 
+    /// What a thread's hover card says: its title, project and folder, and the agent with its
+    /// model and effort in words.
+    pub(crate) fn thread_card(&self, id: u64) -> Option<RowCard> {
+        let (space, t) = self.state.thread(id)?;
+        let model = match t.agent() {
+            Some(launch) => {
+                let mut s = format!("{} {}", launch.agent.name(), self.model_label(launch));
+                if launch.model.as_deref().is_some_and(crate::models::is_long) {
+                    s.push_str(" 1M");
+                }
+                if let Some(e) = launch.effort.as_deref().filter(|e| !e.is_empty()) {
+                    let mut c = e.chars();
+                    let e: String = c
+                        .next()
+                        .map(|f| f.to_uppercase().chain(c).collect())
+                        .unwrap_or_default();
+                    s.push_str(&format!(" \u{b7} {e}"));
+                }
+                s
+            }
+            None => "Terminal".into(),
+        };
+        let cwd = match &t.kind {
+            ThreadKind::Terminal { cwd, .. } => cwd.clone(),
+            ThreadKind::Structured { launch } => launch.cwd.clone(),
+        };
+        Some(RowCard {
+            title: t.title.clone().into(),
+            space: space.name.clone().into(),
+            path: cwd.display().to_string().into(),
+            agent: t.agent().map(|l| l.agent),
+            model: model.into(),
+        })
+    }
+
     /// A thread's right-click menu, grouped as T3 Code's: where to open it; settling and
     /// snoozing; naming and finding; its project's apps and copying; and the ones that clear away.
     fn thread_menu(&self, t: &Thread) -> MenuItems {
@@ -330,25 +365,6 @@ impl Root {
         // the line says what it does, or what it concluded until the next turn
         let doing = doing.filter(|_| status != Status::Idle);
         let agent = t.agent().map(|l| l.agent);
-        // the agent, model and effort in words, for the card the row shows on hover
-        let model = match t.agent() {
-            Some(launch) => {
-                let mut s = format!("{} {}", launch.agent.name(), self.model_label(launch));
-                if launch.model.as_deref().is_some_and(crate::models::is_long) {
-                    s.push_str(" 1M");
-                }
-                if let Some(e) = launch.effort.as_deref().filter(|e| !e.is_empty()) {
-                    let mut c = e.chars();
-                    let e: String = c
-                        .next()
-                        .map(|f| f.to_uppercase().chain(c).collect())
-                        .unwrap_or_default();
-                    s.push_str(&format!(" \u{b7} {e}"));
-                }
-                s
-            }
-            None => "Terminal".into(),
-        };
         let space = self
             .state
             .thread(id)
@@ -464,13 +480,6 @@ impl Root {
         };
         let menu = self.thread_menu(t);
         let buttons = self.thread_buttons(t, cx);
-        let card = RowCard {
-            title: t.title.clone().into(),
-            space: space.clone().into(),
-            path: cwd.display().to_string().into(),
-            agent,
-            model: model.into(),
-        };
         let row = div()
             .id(("thread", id))
             .group(group.clone())
@@ -541,7 +550,19 @@ impl Root {
                 r.open_thread(id, window, cx)
             }))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
-            .tooltip(move |_, cx| cx.new(|_| card.clone()).into())
+            .on_hover(cx.listener(move |r, on: &bool, _, cx| r.row_hovered(id, *on, cx)))
+            // where the row is drawn, for the card that shows beside it
+            .child({
+                let bounds = self.row_bounds.clone();
+                canvas(
+                    |_, _, _| (),
+                    move |b, _, _, _| {
+                        bounds.borrow_mut().insert(id, b);
+                    },
+                )
+                .absolute()
+                .size_full()
+            })
             .on_drag(
                 PaneDrag {
                     space: self.state.thread(id).map_or(0, |(s, _)| s.id),

@@ -79,6 +79,7 @@ impl Render for Root {
         }
         let titlebar = self.titlebar(window, cx);
         let menu = self.menu(window, cx);
+        let card = self.hover_card(window, cx);
         let snooze = self.snooze_popup(window, cx);
         let toast = self.undo_toast(cx);
         let palette = self.palette_overlay(window, cx);
@@ -128,6 +129,7 @@ impl Render for Root {
             )
             .children(update)
             .children(menu)
+            .children(card)
             .children(snooze)
             .children(toast)
             .children(palette)
