@@ -236,8 +236,9 @@ fn slot() -> gpui::Div {
 }
 
 impl Root {
-    /// The sidebar's rows, top to bottom: every thread at work, most recently active first; then
-    /// the Snoozed, Settled and Archived shelves. A search keeps the threads whose title or project
+    /// The sidebar's rows, top to bottom: every thread at work in its place (new ones on top,
+    /// moved ones where they were dropped, and none moved by activity); then the Snoozed and
+    /// Settled shelves, most recently active first. A search keeps the threads whose title or project
     /// matches, and opens the shelves that hold one.
     fn sidebar_items(&self, cx: &mut Context<Self>) -> Vec<Item> {
         let q = self.search.read(cx).text().trim().to_lowercase();
@@ -246,7 +247,7 @@ impl Root {
                 || t.title.to_lowercase().contains(&q)
                 || s.name.to_lowercase().contains(&q)
         };
-        let threads = |keep: fn(&Thread) -> bool| -> Vec<&Thread> {
+        let threads = |keep: fn(&Thread) -> bool, key: fn(&Thread) -> i64| -> Vec<&Thread> {
             let mut all: Vec<&Thread> = self
                 .state
                 .spaces
@@ -254,11 +255,12 @@ impl Root {
                 .filter(|s| !s.archived)
                 .flat_map(|s| s.threads.iter().filter(move |t| keep(t) && hit(s, t)))
                 .collect();
-            all.sort_by_key(|t| std::cmp::Reverse(t.last_touch()));
+            all.sort_by_key(|t| std::cmp::Reverse(key(t)));
             all
         };
+        let recent = |t: &Thread| t.last_touch() as i64;
         let mut items = vec![Item::Gap(2)];
-        let active = threads(Thread::active);
+        let active = threads(Thread::active, Thread::rank);
         if active.is_empty() {
             items.push(Item::Nothing {
                 searching: !q.is_empty(),
@@ -266,7 +268,7 @@ impl Root {
         }
         items.extend(active.iter().map(|t| Item::Thread(t.id)));
         let searching = !q.is_empty();
-        let snoozed = threads(|t| t.snooze.is_some());
+        let snoozed = threads(|t| t.snooze.is_some(), recent);
         if !snoozed.is_empty() {
             let open = self.snoozed_open || searching;
             items.push(Item::Snoozed {
@@ -277,7 +279,7 @@ impl Root {
                 items.extend(snoozed.iter().map(|t| Item::Shelved(t.id)));
             }
         }
-        let settled = threads(|t| t.settled);
+        let settled = threads(|t| t.settled, recent);
         if !settled.is_empty() {
             let open = self.settled_open || searching;
             items.push(Item::Settled {

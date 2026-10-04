@@ -159,6 +159,9 @@ pub struct Thread {
     pub touched: u64,
     /// Hidden from the active list until it wakes.
     pub snooze: Option<Snooze>,
+    /// Its place in the sidebar's list, higher nearer the top, once it was dragged there; until
+    /// then, when it was made. Activity never changes it, so a row stays where it is.
+    pub order: Option<i64>,
 }
 
 /// When a snoozed thread comes back.
@@ -184,6 +187,7 @@ impl Default for Thread {
             created: 0,
             touched: 0,
             snooze: None,
+            order: None,
         }
     }
 }
@@ -197,6 +201,12 @@ impl Thread {
     /// When it last did something.
     pub fn last_touch(&self) -> u64 {
         self.touched.max(self.created)
+    }
+
+    /// Its place in the sidebar's list: higher is nearer the top. New threads go on top, and a
+    /// thread keeps its place until it is dragged elsewhere.
+    pub fn rank(&self) -> i64 {
+        self.order.unwrap_or(self.created as i64)
     }
 
     /// Due to settle by itself at `now` after `after`. The caller rules out threads that are on
