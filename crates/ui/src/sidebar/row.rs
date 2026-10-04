@@ -185,7 +185,15 @@ impl Root {
             .into_any_element()
     }
 
-    pub(crate) fn thread_row(&self, t: &Thread, now: u64, cx: &mut Context<Self>) -> AnyElement {
+    /// A thread's row. A `bare` one is the only thread of its space, and its card draws the
+    /// selection and hover for both.
+    pub(crate) fn thread_row(
+        &self,
+        t: &Thread,
+        now: u64,
+        bare: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let id = t.id;
         let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
         let selected = self.screen == Screen::Thread(id);
@@ -421,11 +429,11 @@ impl Root {
             .pb(px(9.))
             .rounded(px(8.))
             .cursor_pointer()
-            .when(selected, |d| d.bg(colors::surface3()))
+            .when(selected && !bare, |d| d.bg(colors::surface3()))
             .when(!selected && waiting, |d| {
                 d.bg(colors::waiting().opacity(0.07))
             })
-            .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+            .when(!selected && !bare, |d| d.hover(|s| s.bg(row_hover())))
             .when(working, |d| d.child(sheen(("row-sheen", id))))
             .child(
                 div()

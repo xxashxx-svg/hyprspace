@@ -95,6 +95,9 @@ pub struct Root {
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
+    /// The slices of one-thread spaces' cards under the pointer, by space and slice, so such a
+    /// card lights as one whichever slice the pointer is on.
+    pub(crate) card_hover: HashSet<(u64, u8)>,
     /// The snooze menu: where it opened, for which thread.
     pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
     /// The last settle or snooze, which the toast can undo for a few seconds.
@@ -235,6 +238,7 @@ impl Root {
             archived_open: false,
             settled_open: false,
             snoozed_open: false,
+            card_hover: HashSet::new(),
             snooze_menu: None,
             undo: None,
             _undo_timer: None,

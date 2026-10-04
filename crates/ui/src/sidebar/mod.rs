@@ -264,32 +264,82 @@ fn nested() -> gpui::Div {
 /// One row's slice of its space's card. Each row of a space draws the card's sides behind it, so
 /// the slices meet into one soft panel: the header brings the rounded top, and `Item::CardEnd`, or
 /// the header itself while folded, the rounded bottom. No row's height depends on its neighbours.
-fn card(top: bool, bottom: bool, content: impl IntoElement) -> AnyElement {
-    div()
-        .px(px(EDGE))
-        .child(
-            div()
-                .px(px(CARD_PAD))
-                .bg(colors::ink(0.025))
-                .border_l_1()
-                .border_r_1()
-                .border_color(colors::ink(0.06))
-                .map(|d| {
-                    if top {
-                        d.border_t_1().rounded_t(px(CARD_RADIUS)).pt(px(CARD_PAD))
-                    } else {
-                        d.pt(px(2.))
-                    }
-                })
-                .when(bottom, |d| {
-                    d.border_b_1().rounded_b(px(CARD_RADIUS)).pb(px(CARD_PAD))
-                })
-                .child(content),
-        )
-        .into_any_element()
+fn card(top: bool, bottom: bool, fill: gpui::Hsla, content: impl IntoElement) -> gpui::Div {
+    div().px(px(EDGE)).child(
+        div()
+            .px(px(CARD_PAD))
+            .bg(fill)
+            .border_l_1()
+            .border_r_1()
+            .border_color(colors::ink(0.06))
+            .map(|d| {
+                if top {
+                    d.border_t_1().rounded_t(px(CARD_RADIUS)).pt(px(CARD_PAD))
+                } else {
+                    d.pt(px(2.))
+                }
+            })
+            .when(bottom, |d| {
+                d.border_b_1().rounded_b(px(CARD_RADIUS)).pb(px(CARD_PAD))
+            })
+            .child(content),
+    )
 }
 
+/// Which slice of a card a row is, for `Root::card_hover`.
+const HEADER: u8 = 0;
+const SUMMARY: u8 = 1;
+const THREAD: u8 = 2;
+const END: u8 = 3;
+
 impl Root {
+    /// The one thread of a space that has exactly one. Such a space and its thread are one item:
+    /// the whole card lights and opens that thread, whichever part is pointed at.
+    pub(crate) fn sole_thread(&self, space: u64) -> Option<u64> {
+        let mut active = self
+            .state
+            .space(space)?
+            .threads
+            .iter()
+            .filter(|t| t.active());
+        let first = active.next()?;
+        active.next().is_none().then_some(first.id)
+    }
+
+    /// A slice of `space`'s card. A one-thread space's card is lit as a whole: selected while its
+    /// thread is on screen, hovered while the pointer is on any slice of it.
+    fn card_slice(
+        &self,
+        space: u64,
+        slice: u8,
+        (top, bottom): (bool, bool),
+        content: impl IntoElement,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let sole = self.sole_thread(space);
+        let fill = match sole {
+            Some(t) if self.screen == Screen::Thread(t) => colors::surface3(),
+            Some(_) if self.card_hover.iter().any(|(s, _)| *s == space) => row_hover(),
+            _ => colors::ink(0.025),
+        };
+        let el = card(top, bottom, fill, content);
+        if sole.is_none() {
+            return el.into_any_element();
+        }
+        el.id(gpui::ElementId::Name(
+            format!("card-{space}-{slice}").into(),
+        ))
+        .on_hover(cx.listener(move |r, on: &bool, _, cx| {
+            if *on {
+                r.card_hover.insert((space, slice));
+            } else {
+                r.card_hover.remove(&(space, slice));
+            }
+            cx.notify();
+        }))
+        .into_any_element()
+    }
+
     /// The sidebar's rows, top to bottom: each space, and while it is open its summary and
     /// threads; then Archived. A search keeps only what matches and opens every space with a hit.
     fn sidebar_items(&self, cx: &mut Context<Self>) -> Vec<Item> {
@@ -396,27 +446,35 @@ impl Root {
     fn sidebar_item(&self, item: &Item, now: u64, cx: &mut Context<Self>) -> AnyElement {
         match *item {
             Item::Space { id, open, active } => match self.state.space(id) {
-                Some(space) => card(true, !open, self.space_header(space, open, active, cx)),
+                Some(space) => {
+                    let header = self.space_header(space, open, active, cx);
+                    self.card_slice(id, HEADER, (true, !open), header, cx)
+                }
                 None => div().into_any_element(),
             },
-            Item::Summary(id) => card(
-                false,
-                false,
-                div().children(self.state.space(id).and_then(|s| self.summary(s))),
-            ),
+            Item::Summary(id) => {
+                let line = div().children(self.state.space(id).and_then(|s| self.summary(s)));
+                self.card_slice(id, SUMMARY, (false, false), line, cx)
+            }
             Item::Thread(id) => match self.state.thread(id) {
-                Some((_, t)) => card(false, false, self.thread_row(t, now, cx)),
+                Some((s, t)) => {
+                    let space = s.id;
+                    let bare = self.sole_thread(space).is_some();
+                    let row = self.thread_row(t, now, bare, cx);
+                    self.card_slice(space, THREAD, (false, false), row, cx)
+                }
                 None => div().into_any_element(),
             },
             Item::Shelved(id) => match self.state.thread(id) {
                 Some((_, t)) => nested()
-                    .child(self.thread_row(t, now, cx))
+                    .child(self.thread_row(t, now, false, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
             Item::Empty(_) => card(
                 false,
                 false,
+                colors::ink(0.025),
                 div()
                     .px(px(8.))
                     .pt(px(2.))
@@ -424,8 +482,9 @@ impl Root {
                     .text_size(px(11.5))
                     .text_color(colors::text3())
                     .child("No threads yet"),
-            ),
-            Item::CardEnd(_) => card(false, true, div()),
+            )
+            .into_any_element(),
+            Item::CardEnd(id) => self.card_slice(id, END, (false, true), div(), cx),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
             Item::Settled { count, open } => slot()
                 .pt(px(8.))
@@ -671,6 +730,7 @@ impl Root {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = space.id;
+        let sole = self.sole_thread(id);
         // folded, the header says how many threads it hides
         let hidden = (!open)
             .then(|| space.threads.iter().filter(|t| t.active()).count())
@@ -737,7 +797,11 @@ impl Root {
                 colors::text2()
             })
             .cursor_pointer()
-            .hover(|s| s.bg(row_hover()).text_color(colors::text1()))
+            // a one-thread space's card lights as a whole instead of its header
+            .hover(move |s| {
+                let s = s.text_color(colors::text1());
+                if sole.is_none() { s.bg(row_hover()) } else { s }
+            })
             .child(
                 div()
                     .id(("space-fold", id))
@@ -764,7 +828,10 @@ impl Root {
             }))
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
-                r.open_space(id, window, cx)
+                match sole {
+                    Some(thread) => r.open_thread(thread, window, cx),
+                    None => r.open_space(id, window, cx),
+                }
             }))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
             .on_drag(
