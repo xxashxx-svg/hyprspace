@@ -12,7 +12,6 @@ mod intro;
 mod markdown;
 mod models;
 mod palette;
-mod panes;
 mod root;
 mod settings;
 mod sidebar;
@@ -26,6 +25,7 @@ mod update;
 mod usage;
 mod viewer;
 mod widgets;
+mod workbench;
 
 pub use assets::Assets;
 pub use root::Root;
@@ -34,7 +34,7 @@ pub use root::Root;
 pub fn init(cx: &mut gpui::App) {
     assets::load_fonts(cx);
     input::bind_keys(cx);
-    panes::bind_keys(cx);
+    workbench::bind_keys(cx);
     palette::bind_keys(cx);
     folders::bind_keys(cx);
 }

@@ -1,5 +1,5 @@
 // Settings, Shortcuts: the keys and clicks the app answers to, read only. Each row matches a real
-// binding: the palette's and the dock's in `palette/` and `panes/`, the prompt box's in `input/`,
+// binding: the palette's and the dock's in `palette/` and `workbench/`, the prompt box's in `input/`,
 // and the terminal's in `terminal/` (its keys and its link click). Change one there, change it
 // here.
 
@@ -52,7 +52,7 @@ pub(super) fn page() -> AnyElement {
             vec![
                 line(
                     "Command palette",
-                    "Threads, layouts, themes and settings. Works inside a terminal too.",
+                    "Threads, themes and settings. Works inside a terminal too.",
                     &[chord(&[MOD, "K"])],
                 ),
                 line(
@@ -78,22 +78,22 @@ pub(super) fn page() -> AnyElement {
             ],
         ))
         .child(group(
-            "Threads and panes",
+            "Files and images",
             vec![
                 line(
-                    "Open a thread beside the others",
-                    "On a thread in the sidebar. A plain click replaces the focused pane.",
+                    "Open a path from a terminal",
+                    "A file opens over the thread. An image opens so you can zoom it.",
                     &[chord(&[MOD, "Click"])],
                 ),
                 line(
-                    "Maximize or restore a pane",
-                    "On the pane's header.",
-                    &["Double-click".into()],
+                    "Zoom an image",
+                    "Around the pointer. Drag to move it, double-click to fit it again.",
+                    &["Wheel".into()],
                 ),
                 line(
-                    "Swap two panes",
-                    "Drag a pane's header onto another pane.",
-                    &["Drag".into()],
+                    "Close a file or an image",
+                    "A click outside it closes it too.",
+                    &["Esc".into()],
                 ),
             ],
         ))

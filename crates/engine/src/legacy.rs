@@ -10,8 +10,7 @@
 // button's app; whether the intro was seen; and the last version that ran, for What's new.
 // Each agent pane comes over as a terminal thread in its folder's space, on the conversation it
 // was on, so opening it picks up where the Tauri app left off. Nothing launches until a thread
-// is opened: the grids start empty, so a Tauri app still running never shares a live
-// conversation with this one.
+// is opened, so a Tauri app still running never shares a live conversation with this one.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -408,7 +407,6 @@ mod tests {
         // a space with threads opens; one without stays folded, and nothing is on screen yet
         assert!(!s.spaces[0].folded && s.spaces[3].folded);
         assert!(s.spaces[1].threads.is_empty() && s.spaces[3].threads.is_empty());
-        assert!(s.spaces.iter().all(|sp| sp.grid == Default::default()));
 
         assert_eq!(s.appearance.theme, "iris");
         assert_eq!(s.appearance.scheme, Scheme::Light);

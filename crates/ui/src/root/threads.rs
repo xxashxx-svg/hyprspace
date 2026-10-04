@@ -370,7 +370,7 @@ impl Root {
         cx.notify();
     }
 
-    /// Opens a file a terminal pointed at, in the space's viewer pane at its line. The event
+    /// Opens a file a terminal pointed at, in the viewer card at its line. The event
     /// comes without the window, so the workbench picks it up on its next draw.
     pub(crate) fn open_file(
         &mut self,
@@ -423,7 +423,6 @@ impl Root {
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, prompt, false, cx);
-        self.place_thread(thread.id, true);
         if resumed && let Some(View::Structured(v)) = self.views.get(&thread.id) {
             v.update(cx, |v, cx| {
                 v.note(
@@ -456,7 +455,6 @@ impl Root {
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, None, false, cx);
-        self.place_thread(thread.id, true);
         self.open_thread(thread.id, window, cx);
     }
 
@@ -483,8 +481,6 @@ impl Root {
         if !self.views.contains_key(&id) {
             self.make_view(&thread, None, true, cx);
         }
-        // ctrl+click (cmd on macOS) opens it beside the panes on screen instead of in place
-        self.place_thread(id, window.modifiers().secondary());
         self.screen = Screen::Thread(id);
         self.unseen.remove(&id);
         self.state.active = Some(id);
@@ -526,12 +522,6 @@ impl Root {
             Screen::Compose(None) | Screen::Settings => true,
         };
         if !still_there {
-            if let Screen::Thread(gone) = self.screen
-                && let Some(next) = self.next_pane_after(gone)
-            {
-                self.open_thread(next, window, cx);
-                return;
-            }
             // a settled or snoozed thread's own space stays, with its composer; a space that went
             // away gives way to the first one left
             let own = match self.screen {
@@ -563,10 +553,6 @@ impl Root {
                     s.threads.retain(|t| t.id != id);
                 }
                 self.leave(window, cx);
-            }
-            Action::OpenBeside(id) => {
-                self.place_thread(id, true);
-                self.open_thread(id, window, cx);
             }
             Action::OpenIn(opener, space) => {
                 if let Some(cwd) = self.state.space(space).and_then(|s| s.cwd.clone()) {

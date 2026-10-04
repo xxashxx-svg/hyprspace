@@ -1,5 +1,5 @@
 // An image over the whole window, after T3 Code's: Ctrl+click on an image in a terminal opens it
-// here rather than in a pane. The wheel zooms around the pointer, easing into each step; dragging
+// here rather than in the viewer card. The wheel zooms around the pointer, easing into each step; dragging
 // moves the image; a double-click fits it again. Esc, the close button or a click outside closes
 // it. It is its own view, so a frame of zoom or drag redraws only this, and it holds the keyboard
 // while it is open, so nothing typed reaches the terminal under it.

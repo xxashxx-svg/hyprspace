@@ -11,8 +11,9 @@ HyprSpace is a **native desktop workspace for coding agents**, written in Rust o
 UI framework). Each folder is a **space** in the sidebar, and each conversation in it is a
 **thread**. A thread runs as a **structured session** (Claude or Codex driven over its machine
 protocol and drawn as a transcript with tool calls, approvals and diffs) or as a **terminal
-session** (a real PTY running a shell, or an agent CLI interactively). Threads tile in a grid of
-panes, with a files and git dock, a read-only file viewer, a usage meter and a command palette.
+session** (a real PTY running a shell, or an agent CLI interactively). One thread shows at a
+time, with a files and git dock, a read-only file viewer that opens over it, a usage meter and a
+command palette.
 The words are defined once in [`docs/CONTEXT.md`](./docs/CONTEXT.md); use exactly those.
 
 - **Stack:** Rust 1.98.1 (edition 2024) · GPUI and `gpui_platform` pinned to one upstream Zed
@@ -53,8 +54,8 @@ Rule 1's wording predates structured sessions and still names Tauri-era files; A
    primary action. Match the existing neutral, low-contrast look.
 4. **Terminal stability.** PTYs must be killed on exit (they are: `Engine::shutdown` runs the PTY
    manager's `kill_all`) or ConPTY hosts (`OpenConsole.exe`) orphan and burn CPU. `Root` keeps one
-   view per thread (`views`); don't rebuild a terminal view and its emulator when the grid or the
-   layout changes.
+   view per thread (`views`); don't rebuild a terminal view and its emulator when the thread on
+   screen changes.
 5. **Version numbers are managed by `deploy.ps1` only.** Never hand-edit the `version` in the root
    `Cargo.toml`'s `[workspace.package]` (every crate inherits it) or the workspace entries in
    `Cargo.lock`. See [docs/VERSIONING.md](./docs/VERSIONING.md).
@@ -126,7 +127,7 @@ apps/hyprspace/              the binary: starts the engine, opens the window, `a
                              `status-line` subcommands for Claude's hooks; assets/ (icons),
                              package/ (NSIS script, macOS Info.plist)
 crates/
-  proto/                     the channel: Command, Event, RunEvent, Launch, AppState, Grid, folder,
+  proto/                     the channel: Command, Event, RunEvent, Launch, AppState, Pane, folder,
                              usage, skills and update messages. No GPUI
   harness/                   Harness trait + claude/ (stream-json) and codex/ (app-server)
                              adapters, catalog.rs (models and efforts), fixtures/fake_cli (tests)
@@ -137,7 +138,7 @@ crates/
                              sessions.rs, skills.rs, persist.rs, legacy.rs (Tauri state import),
                              update.rs, env.rs (PATH rebuild, Ctrl+C, Claude session markers)
   ui/                        the GPUI app: root/, sidebar/, composer/, transcript/, terminal/,
-                             panes/, dock/, viewer/, palette/, settings/, skills/, usage/,
+                             workbench/, dock/, viewer/, palette/, settings/, skills/, usage/,
                              update/, intro/, markdown/, input/ (text box with IME), widgets.rs
   theme/                     tokens and the six themes, light and dark, as plain data
   syntax/                    tree-sitter highlighting for the viewer. No GPUI
@@ -162,8 +163,8 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
   loop handles one command at a time, so keystrokes reach a PTY in order; slow work (git, clones,
   `--version` checks) goes to the blocking pool.
 - **Spaces and threads.** `proto::state::AppState` holds the spaces (one folder each, no open
-  spaces since ADR 0008), their threads (each with the `Launch` it resumes with), each space's
-  `Grid`, the composer's picks and the appearance. The UI owns its shape; the engine saves it
+  spaces since ADR 0008), their threads (each with the `Launch` it resumes with), the composer's
+  picks and the appearance. The UI owns its shape; the engine saves it
   whole to `~/.hyprspace/native/state.json`. On a first run the engine imports the Tauri app's
   `~/.hyprspace/v2`, read only (ADR 0012).
 - **Structured sessions.** `harness::Harness::start` returns a `Session` that owns the CLI process:
@@ -181,11 +182,10 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
 - **Composer.** Agent, model, effort, permission (`Plan`, `Ask`, `Auto`, `Bypass`, mapped per CLI
   in ADR 0004), structured or terminal, the resume list (the CLI's saved conversations for the
   folder), and a clone card when the text starts with a repository link.
-- **Panes, dock and viewer.** Each space's `Grid` tiles the threads on screen with grid.ts's
-  presets, draggable boundaries, drag-to-swap and double-click to maximize. Clicking a sidebar row
-  replaces the focused pane; ctrl+click adds one. The dock (Ctrl+Shift+G) has the file tree and the
-  git tab; one read-only viewer pane per space shows a file or a diff. Folder work rides
-  `Command::Folder` behind one git lock (ADR 0007).
+- **Main area, dock and viewer.** One thread on screen at a time; clicking a sidebar row shows
+  it (ADR 0015). The dock (Ctrl+Shift+G) has the file tree and the git tab; a file or a diff opens
+  in a read-only card over the window, and a Ctrl+clicked image in a zoomable lightbox. Folder
+  work rides `Command::Folder` behind one git lock (ADR 0007).
 - **Usage.** `engine/src/usage/live.rs` reads each provider's usage endpoint (rule 1) and answers
   inside the floor (180s Claude, 60s Codex) from its last reading, backing off on 429 and 5xx. One
   `ui::usage::Limits` entity holds every reading for the ring and Settings, and falls back to
@@ -221,7 +221,7 @@ Full design details: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** and
   `HYPRSPACE_UPDATE_PUBKEY` through `option_env!`), so a shipped build can't be pointed elsewhere.
 - **GPUI lays out every uncached view on every frame.** One terminal's output used to redo the
   whole sidebar's layout (18 ms of a 20 ms frame, at 179 Hz). Big views are embedded with
-  `.cached(style)` (terminals in `panes/grid.rs`, the sidebar in `root/render.rs`) and must
+  `.cached(style)` (terminals in `workbench/frame.rs`, the sidebar in `root/render.rs`) and must
   `cx.notify()` on anything that changes how they look, focus included. Long lists are a virtual
   `gpui::list` (the sidebar), so only rows on screen are laid out.
 - **Persisted names** (state files, journals) are sanitized to a token so they can't leave their

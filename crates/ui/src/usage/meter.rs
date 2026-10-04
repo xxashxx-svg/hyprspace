@@ -1,4 +1,4 @@
-// The ring in the bar above the panes and the popover under it (the Tauri app's UsageMeter.tsx
+// The ring in the top bar and the popover under it (the Tauri app's UsageMeter.tsx
 // and usage.css). The ring follows the most urgent window across every provider; the popover
 // shows each provider's windows, with tabs when Claude and Codex both report.
 

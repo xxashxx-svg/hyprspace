@@ -1,4 +1,4 @@
-// Plan limits and usage: the ring in the bar above the panes (`meter.rs`) and Settings' Usage
+// Plan limits and usage: the ring in the top bar (`meter.rs`) and Settings' Usage
 // view (`page.rs`). One `Limits` entity holds every reading for both, so opening Settings never
 // fetches anything the meter didn't.
 //

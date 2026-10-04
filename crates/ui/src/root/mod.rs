@@ -65,8 +65,6 @@ pub enum Action {
     SnoozeDone(u64),
     Wake(u64),
     RemoveThread(u64),
-    /// Opens the thread as a new pane beside the ones on screen.
-    OpenBeside(u64),
     /// Opens the space's folder in an editor or the file manager.
     OpenIn(hyprspace_proto::Opener, u64),
     /// Narrows the sidebar to a space's threads, by its name in the search box.
@@ -157,8 +155,8 @@ pub struct Root {
     pub(crate) settings: crate::settings::Settings,
     /// A folder named on the command line, opened once the state has loaded.
     pub(crate) open_arg: Option<PathBuf>,
-    /// Panes, the dock and the viewers (`crate::panes`).
-    pub(crate) work: crate::panes::Work,
+    /// The main area, the dock and the viewer (`crate::workbench`).
+    pub(crate) work: crate::workbench::Work,
     /// Plan limits for the ring and Settings' Usage (`crate::usage`).
     pub(crate) limits: Entity<crate::usage::Limits>,
     /// Settings' Skills view (`crate::skills`).
@@ -237,7 +235,7 @@ impl Root {
                 }
             }
         });
-        let work = crate::panes::Work::new(client.clone(), window, cx);
+        let work = crate::workbench::Work::new(client.clone(), window, cx);
         let search = cx.new(|cx| TextInput::new("Search", false, cx));
         let root = cx.entity();
         let sidebar_view = cx.new(|cx| crate::sidebar::SidebarView::new(&root, cx));

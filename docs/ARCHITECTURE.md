@@ -146,37 +146,34 @@ drop(session)                    // kills the CLI
   a canvas with block and line characters drawn as rectangles, and reads text through GPUI's input
   handler, so IME, dead keys and AltGr work. Keys with a meaning are encoded in `keys.rs`; links
   and `path:line:col` open on ctrl+click; pasted bitmaps are saved as PNGs and pasted as paths.
-  `Root` keeps one view per thread, so moving a pane never rebuilds an emulator.
+  `Root` keeps one view per thread, so switching threads never rebuilds an emulator.
 - **Image previews.** Resting the pointer on an image path or on Claude's `[Image #N]` opens a
-  preview beside it, and ctrl+click shows the image in the viewer (`terminal/images.rs`). A
+  preview beside it, and ctrl+click opens it in a lightbox over the window, zoomable and movable
+  (`terminal/images.rs`, `viewer/lightbox.rs`). A
   marker for an image pasted but not sent comes from the paste itself: the view reads Claude's
   input box as it redraws to learn which number the paste became. Anything else is asked of the
   engine (`FindImage`), whose `images.rs` looks in Claude's old `~/.claude/image-cache`, then
   decodes the image out of the conversation's transcript into `~/.hyprspace/image-cache`, ported
   from the Tauri app.
 
-## Panes, dock and viewer (`ui/src/panes/`, `dock/`, `viewer/`, `engine/src/folder.rs`)
+## Main area, dock and viewer (`ui/src/workbench/`, `dock/`, `viewer/`, `engine/src/folder.rs`)
 
-- **Tiles, not tabs.** Each space's `Grid` (saved in `AppState`) holds the panes on screen in
-  layout order, the focused and maximized one, the preset per pane count, and dragged track sizes
-  per layout. Presets are the Tauri app's grid.ts, as data in `layout.rs`. Panes sit on fractions
-  of the frame, so a dragged boundary needs no measuring; a boundary a pane spans stays fixed.
-- **The grid is a view over the threads.** Clicking a sidebar row puts that thread in the focused
-  pane; ctrl+click adds a pane. Closing a pane leaves the thread running and in the sidebar. A
-  removed or archived thread drops out of the grid when it is drawn, so saved grids never need
-  tidying (ADR 0007).
-- **Frames tell panes apart.** Tiled panes each get a header and the focused one an accent
-  border. A pane alone has no accent border. A structured thread alone has no frame or header at
-  all: it fills the main area, and the bar above shows its agent, title, folder and model.
+- **One thread on screen** (ADR 0015). Clicking a sidebar row shows that thread; a new thread
+  takes the main area. Other threads keep running off screen, one view each in `Root.views`.
+- **A terminal sits in a frame** with its header: the agent's mark, the title, a tag for a model
+  picked on purpose, and close, which shows the space's composer. A structured thread has no
+  frame or header: it fills the main area, and the bar above shows its agent, title, folder and
+  model.
 - **One title row.** The window has no system title bar (`appears_transparent`). The UI draws
   one 40px row (`ui/src/root/titlebar.rs`): the sidebar's search over the sidebar, the space's
   bar over the main area, and the caption buttons on Windows. Its empty stretch is a
   `WindowControlArea::Drag`, which Windows hit-tests to move and snap the window; macOS gets
   `start_window_move` and keeps its traffic lights. Anything clickable in the row must
   `.occlude()`, or the press drags the window instead.
-- **One viewer pane per space** shows a file or one file's diff, read only, colored by
-  `crates/syntax` (tree-sitter) with the theme's terminal palette. Reads are capped at 2 MB; past
-  that, or for media, the file goes to the user's editor.
+- **The viewer card** (`workbench/card.rs`) shows a file or one file's diff over the window,
+  read only, colored by `crates/syntax` (tree-sitter) with the theme's terminal palette. Esc or a
+  click outside closes it and gives the keyboard back. Reads are capped at 2 MB; past that, or for
+  media, the file goes to the user's editor.
 - **Folder requests** ride `Command::Folder` / `Event::Folder`: listings, reads, git status, stage,
   commit, push, diffs, the installed openers, and open-in. Git calls take one lock, because two
   quick ticks would otherwise race for git's `index.lock`. Change paths are relative to the repo
@@ -197,7 +194,7 @@ drop(session)                    // kills the CLI
   are read only while its live reading has no windows. `local.rs` aggregates each CLI's own files
   for Settings' activity view, display only.
 - **One entity** (`ui::usage::Limits`) asks on a 30-second tick when each provider is due and holds
-  every reading, so the ring above the panes and Settings never disagree (ADR 0009).
+  every reading, so the ring in the top bar and Settings never disagree (ADR 0009).
 
 ## Updates and installers (`crates/update`, `engine/src/update.rs`, `scripts/package-*`)
 
@@ -237,7 +234,7 @@ drop(session)                    // kills the CLI
 - **The terminal font is read where it paints.** `Appearance.terminal_font` and
   `terminal_font_size` are copied into a thread local whenever the theme applies, and
   `ui/src/terminal/paint.rs` reads it every frame, so open terminals reflow on the next frame.
-- **Shortcuts is a read-only list.** It mirrors the real bindings in `palette/`, `panes/`,
+- **Shortcuts is a read-only list.** It mirrors the real bindings in `palette/`, `workbench/`,
   `input/` and `terminal/`; a changed binding changes there and in `settings/shortcuts.rs`.
 
 ## Provider status (`engine/src/providers.rs`)

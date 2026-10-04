@@ -1,6 +1,6 @@
 # ADR 0007: A tiled grid per space, one viewer pane, and folder requests on the channel
 
-- Status: Accepted
+- Status: Accepted; the grid and the viewer pane superseded by ADR 0015
 - Date: 2026-10-02
 
 ## Context

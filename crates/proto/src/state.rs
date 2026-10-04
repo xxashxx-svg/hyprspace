@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::Agent;
 use crate::folder::Opener;
-use crate::grid::Grid;
 use crate::run::{Launch, Permission, Prompt, RunEvent};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,8 +156,6 @@ pub struct Space {
     pub folded: bool,
     /// Newest first.
     pub threads: Vec<Thread>,
-    /// The panes on screen and how they are laid out.
-    pub grid: Grid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -595,5 +592,13 @@ mod tests {
         assert_eq!(st.wake_due(1000, true), [3]);
         assert_eq!(st.wake_due(3000, false), [2]);
         assert!(st.wake_due(4000, true).is_empty());
+    }
+
+    #[test]
+    fn a_state_saved_with_a_grid_still_loads() {
+        // spaces used to keep a grid of panes; it is skipped now
+        let json = r#"{"spaces":[{"id":1,"name":"a","grid":{"panes":[{"type":"thread","id":2}],"layouts":{"2":"cols"}}}]}"#;
+        let s: AppState = serde_json::from_str(json).unwrap();
+        assert_eq!(s.spaces[0].name, "a");
     }
 }

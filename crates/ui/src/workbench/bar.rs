@@ -1,7 +1,7 @@
-// The space's half of the title row (`crate::root::titlebar`): a new thread, the layout picker,
-// the Open button (the folder in an editor, Explorer or Finder), and the dock toggle. The space's
-// name and folder sit on the left, or the thread's agent, title and model when a structured
-// thread is the only pane and has no header of its own.
+// The space's half of the title row (`crate::root::titlebar`): a new thread, the Open button (the
+// folder in an editor, Explorer or Finder), and the dock toggle. The space's name and folder sit
+// on the left, or the thread's agent, title and model when a structured thread is on screen, as it
+// has no header of its own.
 
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, MouseButton, Window, div, prelude::*,
@@ -10,9 +10,8 @@ use gpui::{
 use hyprspace_proto::{Opener, ThreadKind};
 use hyprspace_theme::MONO;
 
+use super::ToggleDock;
 use super::header::{opener_logo, short};
-use super::layout::{self, Layout};
-use super::{Popup, ToggleDock};
 use crate::assets::{icon, mark};
 use crate::colors;
 use crate::root::{Action, Root};
@@ -39,13 +38,13 @@ fn bar_button(id: &'static str, name: &str, on: bool) -> gpui::Stateful<gpui::Di
 }
 
 impl Root {
-    pub(crate) fn bar(&self, space: u64, panes: usize, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn bar(&self, space: u64, cx: &mut Context<Self>) -> AnyElement {
         let Some(s) = self.state.space(space) else {
             return div().into_any_element();
         };
         let folder = s.cwd.clone();
         let open_with = self.state.open_with;
-        let popup = self.work.popup.map(|(_, p)| p);
+        let menu_open = self.work.popup.is_some();
         let open_button = folder.clone().map(|dir| {
             div()
                 .flex()
@@ -87,17 +86,14 @@ impl Root {
                         .border_l_1()
                         .border_color(colors::border1())
                         .cursor_pointer()
-                        .when(popup == Some(Popup::Open), |d| d.bg(colors::surface2()))
+                        .when(menu_open, |d| d.bg(colors::surface2()))
                         .hover(|s| s.bg(colors::surface2()))
                         .child(icon("chevron-down", 13., colors::text3()))
-                        .on_click(cx.listener(|r, e: &ClickEvent, _, cx| {
-                            r.toggle_popup(Popup::Open, e, cx)
-                        })),
+                        .on_click(cx.listener(|r, e: &ClickEvent, _, cx| r.toggle_popup(e, cx))),
                 )
         });
-        let thread = (panes == 1)
-            .then(|| self.lone_structured(space))
-            .flatten()
+        let thread = self
+            .structured_on_screen()
             .and_then(|id| self.state.thread(id))
             .and_then(|(_, t)| match &t.kind {
                 ThreadKind::Structured { launch } => Some((t.title.clone(), launch.clone())),
@@ -170,14 +166,6 @@ impl Root {
                             r.act(Action::NewThread(space), window, cx)
                         },
                     )))
-                    .when(panes >= 2 && !layout::presets(panes).is_empty(), |d| {
-                        d.child(
-                            bar_button("bar-layout", "layout-grid", popup == Some(Popup::Layout))
-                                .on_click(cx.listener(|r, e: &ClickEvent, _, cx| {
-                                    r.toggle_popup(Popup::Layout, e, cx)
-                                })),
-                        )
-                    })
                     .children(open_button)
                     .child(div().w(px(1.)).h(px(16.)).mx(px(8.)).bg(colors::border2()))
                     .child(self.limits.clone())
@@ -192,32 +180,36 @@ impl Root {
             .into_any_element()
     }
 
-    fn toggle_popup(&mut self, which: Popup, e: &ClickEvent, cx: &mut Context<Self>) {
+    /// The structured thread on screen, which has no header and runs up to the title row.
+    pub(crate) fn structured_on_screen(&self) -> Option<u64> {
+        let crate::root::Screen::Thread(id) = self.screen else {
+            return None;
+        };
+        let (_, t) = self.state.thread(id)?;
+        matches!(t.kind, ThreadKind::Structured { .. }).then_some(id)
+    }
+
+    fn toggle_popup(&mut self, e: &ClickEvent, cx: &mut Context<Self>) {
         self.work.popup = match self.work.popup {
-            Some((_, p)) if p == which => None,
-            _ => Some((e.position(), which)),
+            Some(_) => None,
+            None => Some(e.position()),
         };
         cx.notify();
     }
 
     pub(crate) fn bar_popup(
         &self,
-        space: u64,
-        panes: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let (at, which) = self.work.popup?;
+        let at = self.work.popup?;
         let close = cx.listener(|r, _: &(), _, cx| {
             r.work.popup = None;
             cx.notify();
         });
         // open below the button, centered under the click
         let at = gpui::point(at.x - px(110.), at.y + px(18.));
-        let content = match which {
-            Popup::Layout => self.layout_menu(space, panes, cx),
-            Popup::Open => self.open_menu(cx),
-        };
+        let content = self.open_menu(cx);
         Some(widgets::layer(
             at,
             widgets::Open::Down,
@@ -225,79 +217,6 @@ impl Root {
             move |w, cx| close(&(), w, cx),
             content,
         ))
-    }
-
-    /// Thumbnails of the layouts for this many panes, drawn from the same data the grid uses.
-    fn layout_menu(&self, space: u64, panes: usize, cx: &mut Context<Self>) -> AnyElement {
-        let picked = self
-            .state
-            .space(space)
-            .and_then(|s| s.grid.layouts.get(&panes).cloned());
-        let current = layout::resolve(panes, picked.as_deref()).id;
-        let options = layout::presets(panes).into_iter().map(|l| {
-            let id = l.id;
-            let on = id == current;
-            div()
-                .id(id)
-                .group(id)
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(px(6.))
-                .pt(px(8.))
-                .px(px(6.))
-                .pb(px(6.))
-                .rounded(px(6.))
-                .border_1()
-                .border_color(if on {
-                    colors::accent().opacity(0.55)
-                } else {
-                    colors::border1().opacity(0.)
-                })
-                .when(on, |d| d.bg(colors::accent().opacity(0.12)))
-                .text_color(if on { colors::text1() } else { colors::text3() })
-                .cursor_pointer()
-                .hover(|s| s.bg(colors::surface3()).text_color(colors::text1()))
-                .child(thumb(&l, on, id))
-                .child(
-                    div()
-                        .text_size(px(10.5))
-                        .text_center()
-                        .line_height(px(13.))
-                        .child(l.label),
-                )
-                .on_click(
-                    cx.listener(move |r, _: &ClickEvent, _, cx| r.set_layout(space, panes, id, cx)),
-                )
-        });
-        div()
-            .w(px(224.))
-            .p(px(8.))
-            .rounded(px(10.))
-            .border_1()
-            .border_color(colors::border2())
-            .bg(colors::surface2())
-            .shadow(colors::shadow())
-            .child(
-                div()
-                    .px(px(4.))
-                    .pt(px(2.))
-                    .pb(px(8.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(colors::text3())
-                    .child(format!("LAYOUT · {panes} PANES")),
-            )
-            .child(div().grid().grid_cols(2).gap(px(6.)).children(options))
-            .child(
-                div()
-                    .px(px(4.))
-                    .pt(px(8.))
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child("Ctrl+click a thread in the sidebar to open it beside these."),
-            )
-            .into_any_element()
     }
 
     /// The Open button's menu: which app the button opens the folder in.
@@ -351,36 +270,4 @@ impl Root {
             .child(row(Opener::Files, cx))
             .into_any_element()
     }
-}
-
-/// A layout drawn small: its cells as rounded blocks on the same grid.
-fn thumb(l: &Layout, on: bool, group: &'static str) -> AnyElement {
-    let (w, h, gap) = (90., 40., 3.);
-    let cw = (w - gap * (l.cols as f32 - 1.)) / l.cols as f32;
-    let rh = (h - gap * (l.rows as f32 - 1.)) / l.rows as f32;
-    let cells = l.cells.iter().map(|c| {
-        let x = c.cols.start as f32 * (cw + gap);
-        let y = c.rows.start as f32 * (rh + gap);
-        let cw_span = c.cols.len() as f32 * (cw + gap) - gap;
-        let rh_span = c.rows.len() as f32 * (rh + gap) - gap;
-        div()
-            .absolute()
-            .left(px(x))
-            .top(px(y))
-            .w(px(cw_span))
-            .h(px(rh_span))
-            .rounded(px(2.))
-            .bg(if on {
-                colors::accent().opacity(0.9)
-            } else {
-                colors::text3().opacity(0.5)
-            })
-            .group_hover(group, |s| s.bg(colors::accent().opacity(0.9)))
-    });
-    div()
-        .relative()
-        .w(px(w))
-        .h(px(h))
-        .children(cells)
-        .into_any_element()
 }

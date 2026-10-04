@@ -1,7 +1,7 @@
 // The read-only viewer: a file with its syntax colored and its line numbers, scrolled to the line
-// a terminal pointed at, an image fitted to the pane, or one file's working tree diff. A space has one viewer pane; showing
-// another file replaces what it shows. Editing stays in the user's editor, one click away in the
-// pane header.
+// a terminal pointed at, an image fitted to the card, or one file's working tree diff. It shows in
+// a card over the window (`crate::workbench`); showing another file replaces what it shows.
+// Editing stays in the user's editor, one click away in the card's header.
 
 mod code;
 mod diff;
@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{
-    App, Context, EventEmitter, FocusHandle, Focusable, IntoElement, MouseButton, ObjectFit,
-    Render, ScrollStrategy, SharedString, StyledImage, Task, UniformListScrollHandle, Window, div,
-    img, prelude::*, px,
+    App, Context, FocusHandle, Focusable, IntoElement, MouseButton, ObjectFit, Render,
+    ScrollStrategy, SharedString, StyledImage, Task, UniformListScrollHandle, Window, div, img,
+    prelude::*, px,
 };
 use hyprspace_proto::{Client, Command, FolderCommand, FolderEvent, Pane};
 
@@ -29,11 +29,6 @@ pub fn is_media(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| MEDIA.contains(&e.to_ascii_lowercase().as_str()))
-}
-
-pub enum ViewerEvent {
-    /// Clicked: the root makes this the space's focused pane.
-    Focused,
 }
 
 enum Body {
@@ -56,8 +51,6 @@ pub struct Viewer {
     _work: Option<Task<()>>,
 }
 
-impl EventEmitter<ViewerEvent> for Viewer {}
-
 impl Focusable for Viewer {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus.clone()
@@ -75,10 +68,6 @@ impl Viewer {
             root: None,
             _work: None,
         }
-    }
-
-    pub fn pane(&self) -> Option<&Pane> {
-        self.pane.as_ref()
     }
 
     /// The repo root a diff's path is relative to, once known.
@@ -280,10 +269,7 @@ impl Render for Viewer {
             .bg(colors::bg())
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|v, _, window, cx| {
-                    window.focus(&v.focus, cx);
-                    cx.emit(ViewerEvent::Focused);
-                }),
+                cx.listener(|v, _, window, cx| window.focus(&v.focus, cx)),
             )
             .child(body)
     }

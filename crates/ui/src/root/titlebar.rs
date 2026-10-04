@@ -10,9 +10,9 @@ use gpui::{
 };
 
 use super::{Root, Screen};
-use crate::panes::ToggleSidebar;
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
 use crate::slide::slide;
+use crate::workbench::ToggleSidebar;
 use crate::{colors, widgets};
 
 pub const HEIGHT: f32 = 40.;
@@ -25,7 +25,7 @@ const NAV: f32 = 8. + 3. * 28. + 2. * 2. + 4.;
 const LIGHTS: f32 = if cfg!(target_os = "macos") { 78. } else { 0. };
 
 impl Root {
-    /// Called after the main area is drawn, so the bar sees the panes the workbench settled.
+    /// Called after the main area is drawn, so the bar sees what the workbench settled.
     pub(crate) fn titlebar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         // Settings takes the whole window, without the sidebar or its buttons
         let sidebar = self.screen != Screen::Settings;
@@ -56,15 +56,11 @@ impl Root {
             Screen::Compose(space) => space.filter(|s| self.state.space(*s).is_some()),
             Screen::Settings => None,
         };
-        let panes = match (self.screen, space) {
-            (Screen::Thread(_), Some(s)) => self.live_panes(s).len(),
-            _ => 0,
-        };
-        // a lone structured thread runs edge to edge up to the row, the way zeron's does
-        let line = matches!(self.screen, Screen::Thread(_))
-            && space.is_some_and(|s| self.lone_structured(s).is_none());
+        // a structured thread runs edge to edge up to the row, the way zeron's does
+        let line =
+            matches!(self.screen, Screen::Thread(_)) && self.structured_on_screen().is_none();
         let bar = match space {
-            Some(s) => self.bar(s, panes, cx),
+            Some(s) => self.bar(s, cx),
             None => div().flex_1().into_any_element(),
         };
         div()

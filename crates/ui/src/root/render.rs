@@ -1,4 +1,4 @@
-// The window's layout: sidebar, then the space on screen (its panes, see `crate::panes`), the
+// The window's layout: sidebar, then the space on screen (its thread, see `crate::workbench`), the
 // composer, or settings. Context menus open from here so they float over everything.
 
 use crate::assets::icon;
@@ -198,6 +198,7 @@ impl Render for Root {
         let titlebar = self.titlebar(window, cx);
         let menu = self.menu(window, cx);
         let card = self.hover_card(window, cx);
+        let viewer = self.viewer_card(window, cx);
         let snooze = self.snooze_popup(window, cx);
         let toast = self.undo_toast(cx);
         let palette = self.palette_overlay(window, cx);
@@ -256,6 +257,7 @@ impl Render for Root {
             .children(palette)
             .children(folders)
             .children(intro)
+            .children(viewer)
             .children(lightbox)
     }
 }

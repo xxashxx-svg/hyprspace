@@ -351,7 +351,7 @@ impl Dock {
                             .font_family(MONO)
                             .text_size(px(10.5))
                             .text_color(colors::text3())
-                            .child(crate::panes::short(&root)),
+                            .child(crate::workbench::short(&root)),
                     )
                     .child(
                         div()

@@ -1,11 +1,11 @@
-// Dropping things on the sidebar. A thread row drags like a pane does: dropped on another row it
-// takes that row's place, dropped on a pane it opens there (panes/grid.rs), dropped on the
-// Settled shelf it settles. Folders dropped from File Explorer or Finder open as spaces.
+// Dropping things on the sidebar. A thread row dropped on another row takes that row's place, and
+// dropped on the Settled shelf it settles. Folders dropped from File Explorer or Finder open as
+// spaces.
 
 use gpui::{Context, ExternalPaths, Window};
 
-use crate::panes::PaneDrag;
 use crate::root::Root;
+use crate::workbench::PaneDrag;
 
 /// How far apart neighbouring rows' places are after a move, so later moves have room between.
 const STEP: i64 = 1000;

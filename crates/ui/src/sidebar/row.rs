@@ -15,7 +15,7 @@ use gpui::{
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
 
 use super::card::RowCard;
-use crate::panes::PaneDrag;
+use crate::workbench::PaneDrag;
 use hyprspace_theme::MONO;
 
 use super::row_hover;
@@ -286,7 +286,7 @@ impl Root {
     fn thread_menu(&self, t: &Thread) -> MenuItems {
         let id = t.id;
         let space = self.state.thread(id).map(|(s, _)| s);
-        let mut menu = vec![MenuEntry::item("Open beside", Action::OpenBeside(id))];
+        let mut menu = Vec::new();
         if let Some(s) = space {
             menu.push(MenuEntry::item(
                 format!("New thread in {}", s.name),
@@ -610,12 +610,11 @@ impl Root {
             })
             .on_drag(
                 PaneDrag {
-                    space: self.state.thread(id).map_or(0, |(s, _)| s.id),
                     pane: Pane::Thread { id },
                     title: t.title.clone().into(),
                     agent,
                 },
-                |d, offset, _, cx| cx.new(|_| d.ghost(offset, true)),
+                |d, offset, _, cx| cx.new(|_| d.ghost(offset)),
             )
             // while a row is dragged: which half of this one the pointer is on
             .on_drag_move(cx.listener(move |r, e: &DragMoveEvent<PaneDrag>, _, cx| {
@@ -727,12 +726,11 @@ impl Root {
             )
             .on_drag(
                 PaneDrag {
-                    space: self.state.thread(id).map_or(0, |(s, _)| s.id),
                     pane: Pane::Thread { id },
                     title: t.title.clone().into(),
                     agent: t.agent().map(|l| l.agent),
                 },
-                |d, offset, _, cx| cx.new(|_| d.ghost(offset, true)),
+                |d, offset, _, cx| cx.new(|_| d.ghost(offset)),
             )
             .into_any_element()
     }

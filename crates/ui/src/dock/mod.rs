@@ -1,7 +1,7 @@
-// The right dock (Ctrl+Shift+G), after the Tauri app's Dock: the focused thread's folder as a
+// The right dock (Ctrl+Shift+G), after the Tauri app's Dock: the folder of the thread on screen as a
 // lazy file tree, and its git working tree with a commit box. It follows whatever the root tells
 // it to, polls git every few seconds while it is out, and hands files and diffs back to the root
-// to show in the viewer pane.
+// to show in the viewer card.
 
 mod files;
 mod git;

@@ -1,4 +1,4 @@
-// One file's working tree diff, drawn like zeron's: git's file lines dropped (the pane header
+// One file's working tree diff, drawn like zeron's: git's file lines dropped (the card's header
 // names the file and counts its lines), quiet hunk headers, and additions and deletions washed
 // in the theme's diff colors with a bar on the left edge and the sign in its own column. Each
 // line also gets its old and new line numbers, read from the hunk headers.

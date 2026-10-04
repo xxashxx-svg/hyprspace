@@ -426,3 +426,27 @@ pub fn keycap(label: impl Into<SharedString>) -> Div {
         .text_color(colors::text3())
         .child(label.into())
 }
+
+/// A short label beside a button while the pointer rests on it, in the app's own font.
+pub fn tip(text: &'static str) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView {
+    move |_, cx| cx.new(|_| Tip(text.into())).into()
+}
+
+struct Tip(SharedString);
+
+impl gpui::Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+        div()
+            .font_family(crate::settings::ui_font())
+            .px(px(8.))
+            .py(px(4.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(colors::border2())
+            .bg(colors::surface3())
+            .shadow(colors::shadow())
+            .text_size(px(12.))
+            .text_color(colors::text1())
+            .child(self.0.clone())
+    }
+}

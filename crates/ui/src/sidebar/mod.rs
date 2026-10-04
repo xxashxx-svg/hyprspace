@@ -31,9 +31,9 @@ use hyprspace_theme::MONO;
 use crate::assets::icon;
 use crate::colors;
 use crate::palette::TogglePalette;
-use crate::panes::PaneDrag;
 use crate::root::{MenuItems, Root, Screen, SidebarDrag};
 use crate::time::now_ms;
+use crate::workbench::PaneDrag;
 
 pub const MIN_WIDTH: f32 = 200.;
 pub const MAX_WIDTH: f32 = 480.;

@@ -6,12 +6,11 @@ use gpui::{
     AnyElement, AppContext, Context, Entity, Focusable, IntoElement, Window, anchored, deferred,
     div, point, prelude::*, px,
 };
+use hyprspace_proto::Opener;
 use hyprspace_proto::state::{DockTab, Scheme};
-use hyprspace_proto::{Opener, Pane};
 use hyprspace_theme::THEMES;
 
 use super::{Glyph, IN_TERMINALS, Item, Palette, PaletteEvent, TogglePalette};
-use crate::panes::layout;
 use crate::root::{Action, Root, Screen, View};
 use crate::settings::{TABS, Tab};
 
@@ -21,9 +20,6 @@ pub enum Cmd {
     NewTerminal,
     OpenFolder,
     Thread(u64),
-    ClosePane,
-    MaxPane,
-    Layout(&'static str),
     ToggleDock,
     ToggleSidebar,
     GitPanel,
@@ -36,21 +32,6 @@ pub enum Cmd {
 }
 
 impl Root {
-    /// The focused pane of the space on screen, when a thread is on screen.
-    fn focused_pane(&self) -> Option<(u64, Pane)> {
-        let Screen::Thread(id) = self.screen else {
-            return None;
-        };
-        let space = self.state.thread(id)?.0;
-        let pane = space
-            .grid
-            .focus
-            .clone()
-            .filter(|p| space.grid.has(p))
-            .unwrap_or(Pane::Thread { id });
-        Some((space.id, pane))
-    }
-
     fn palette_items(&self, window: &Window) -> Vec<Item> {
         let space = self.current_space();
         let mut out = vec![
@@ -96,39 +77,6 @@ impl Root {
                     s.name.clone()
                 };
                 out.push(Item::new("Threads", title, glyph, Cmd::Thread(t.id)).sub(sub));
-            }
-        }
-        if let Some((space, _)) = self.focused_pane() {
-            out.push(Item::new(
-                "Panes",
-                "Close the focused pane",
-                Glyph::Icon("x"),
-                Cmd::ClosePane,
-            ));
-            out.push(Item::new(
-                "Panes",
-                "Maximize or restore the focused pane",
-                Glyph::Icon("maximize-2"),
-                Cmd::MaxPane,
-            ));
-            let n = self.live_panes(space).len();
-            let picked = self
-                .state
-                .space(space)
-                .and_then(|s| s.grid.layouts.get(&n).cloned());
-            let now = layout::resolve(n, picked.as_deref()).id;
-            for l in layout::presets(n) {
-                let item = Item::new(
-                    "Layout",
-                    format!("Layout: {}", l.label),
-                    Glyph::Icon("layout-grid"),
-                    Cmd::Layout(l.id),
-                );
-                out.push(if l.id == now {
-                    item.sub("Current")
-                } else {
-                    item
-                });
             }
         }
         let dark = crate::colors::dark(self.state.appearance.scheme, window.appearance());
@@ -194,7 +142,7 @@ impl Root {
                         Glyph::Icon("external-link"),
                         Cmd::OpenIn(*o),
                     )
-                    .sub(crate::panes::short(&folder)),
+                    .sub(crate::workbench::short(&folder)),
                 );
             }
         }
@@ -318,24 +266,8 @@ impl Root {
             },
             Cmd::OpenFolder => self.pick_thread_folder(window, cx),
             Cmd::Thread(id) => self.open_thread(id, window, cx),
-            Cmd::ClosePane => {
-                if let Some((space, pane)) = self.focused_pane() {
-                    self.close_pane(space, pane, window, cx);
-                }
-            }
-            Cmd::MaxPane => {
-                if let Some((space, pane)) = self.focused_pane() {
-                    self.toggle_max(space, pane, cx);
-                }
-            }
-            Cmd::Layout(id) => {
-                if let Some((space, _)) = self.focused_pane() {
-                    let n = self.live_panes(space).len();
-                    self.set_layout(space, n, id, cx);
-                }
-            }
-            Cmd::ToggleDock => self.toggle_dock(&crate::panes::ToggleDock, window, cx),
-            Cmd::ToggleSidebar => self.toggle_sidebar(&crate::panes::ToggleSidebar, window, cx),
+            Cmd::ToggleDock => self.toggle_dock(&crate::workbench::ToggleDock, window, cx),
+            Cmd::ToggleSidebar => self.toggle_sidebar(&crate::workbench::ToggleSidebar, window, cx),
             Cmd::GitPanel => {
                 self.state.dock.open = true;
                 self.state.dock.tab = DockTab::Git;

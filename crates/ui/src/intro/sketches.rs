@@ -234,7 +234,7 @@ pub fn composer() -> AnyElement {
         .into_any_element()
 }
 
-fn mini_pane(agent: Agent, name: &str, focused: bool, widths: [f32; 3]) -> Div {
+fn mini_pane(agent: Agent, name: &str, widths: [f32; 3]) -> Div {
     div()
         .flex()
         .flex_col()
@@ -242,11 +242,7 @@ fn mini_pane(agent: Agent, name: &str, focused: bool, widths: [f32; 3]) -> Div {
         .p(px(8.))
         .rounded(px(6.))
         .border_1()
-        .border_color(if focused {
-            colors::accent()
-        } else {
-            colors::border1()
-        })
+        .border_color(colors::border1())
         .bg(colors::bg())
         .child(
             div()
@@ -265,33 +261,62 @@ fn mini_pane(agent: Agent, name: &str, focused: bool, widths: [f32; 3]) -> Div {
         .child(line(widths[2], 0.06))
 }
 
-pub fn panes() -> AnyElement {
+/// A file's card over the thread it was opened from.
+pub fn files() -> AnyElement {
+    let code = |w: f32, a: f32| line(w, a).h(px(4.));
     div()
+        .relative()
         .w(px(380.))
         .h(px(200.))
-        .grid()
-        .grid_cols(2)
-        .grid_rows(2)
-        .gap(px(6.))
-        .child(mini_pane(
-            Agent::Claude,
-            "Login test",
-            true,
-            [0.7, 0.45, 0.55],
-        ))
-        .child(mini_pane(
-            Agent::Codex,
-            "Rate limits",
-            false,
-            [0.6, 0.55, 0.5],
-        ))
-        .child(mini_pane(
-            Agent::Gemini,
-            "Pricing page",
-            false,
-            [0.5, 0.65, 0.45],
-        ))
-        .child(mini_pane(Agent::Claude, "Docs", false, [0.45, 0.7, 0.4]))
+        .child(
+            mini_pane(Agent::Claude, "Login test", [0.7, 0.45, 0.55])
+                .size_full()
+                .opacity(0.5),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(px(44.))
+                .top(px(34.))
+                .w(px(292.))
+                .h(px(146.))
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .rounded(px(8.))
+                .border_1()
+                .border_color(colors::border2())
+                .bg(colors::surface2())
+                .shadow(colors::shadow())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .h(px(26.))
+                        .px(px(8.))
+                        .border_b_1()
+                        .border_color(colors::border1())
+                        .text_size(px(10.5))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors::text1())
+                        .child(icon("file-code", 11., colors::text3()))
+                        .child(div().flex_1().child("auth.rs"))
+                        .child(icon("x", 11., colors::text3())),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(7.))
+                        .p(px(10.))
+                        .child(code(0.55, 0.14))
+                        .child(code(0.8, 0.1))
+                        .child(code(0.7, 0.1))
+                        .child(code(0.4, 0.14))
+                        .child(code(0.65, 0.1)),
+                ),
+        )
         .into_any_element()
 }
 

@@ -60,7 +60,7 @@ const SHORTCUTS: [(&str, &str); 6] = [
     ("Ctrl+Shift+P", "Command palette, too"),
     ("Ctrl+Shift+G", "Files and git"),
     ("Ctrl+F", "Find in a terminal"),
-    ("Ctrl+click", "Open a thread beside the others"),
+    ("Ctrl+click", "Open a path from a terminal"),
     ("Esc", "Leave Settings"),
 ];
 
@@ -81,7 +81,7 @@ const BASICS: [Topic; 4] = [
     Topic {
         title: "Threads",
         sub: "One agent, one task",
-        hint: "Press the square button and pick a folder. The + above the panes uses the folder you're in.",
+        hint: "Press the square button and pick a folder. The + in the top bar uses the folder you're in.",
         sketch: sketches::threads,
     },
     Topic {
@@ -91,10 +91,10 @@ const BASICS: [Topic; 4] = [
         sketch: sketches::composer,
     },
     Topic {
-        title: "Panes",
-        sub: "Threads tile into a grid",
-        hint: "Drag a header onto another pane to swap them. Double-click a header to maximize, again to restore.",
-        sketch: sketches::panes,
+        title: "Files and diffs",
+        sub: "They open over the thread",
+        hint: "Click a file in the dock or a change in git. Esc or a click outside closes it.",
+        sketch: sketches::files,
     },
 ];
 
@@ -119,7 +119,7 @@ const TOOLS: [Topic; 4] = [
     },
     Topic {
         title: "Usage",
-        sub: "Above the panes",
+        sub: "In the top bar",
         hint: "How much of each plan's limits is left, and when they reset.",
         sketch: sketches::usage,
     },
@@ -435,7 +435,7 @@ impl Root {
             );
         let (title, text) = if basics {
             (
-                "Folders, threads and panes",
+                "Folders, threads and files",
                 "Four ideas cover most of the app.",
             )
         } else {

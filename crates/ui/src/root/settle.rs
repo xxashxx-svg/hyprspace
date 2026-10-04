@@ -13,7 +13,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window, div,
     prelude::*, px,
 };
-use hyprspace_proto::{Pane, Snooze, ThreadKind};
+use hyprspace_proto::{Snooze, ThreadKind};
 
 use super::{Root, Screen};
 use crate::assets::icon;
@@ -49,14 +49,9 @@ impl Root {
             .is_some_and(|a| !a.subs.is_empty())
     }
 
-    /// On screen in any space's grid, which auto-settle leaves alone.
+    /// On screen, which auto-settle leaves alone.
     fn on_screen(&self, thread: u64) -> bool {
         self.screen == Screen::Thread(thread)
-            || self
-                .state
-                .spaces
-                .iter()
-                .any(|s| s.grid.panes.contains(&Pane::Thread { id: thread }))
     }
 
     /// Gives up an idle thread's session when its conversation can resume; a busy one keeps it
@@ -285,20 +280,10 @@ impl Root {
             .copied()
             .filter(|t| self.busy(*t))
             .collect();
-        let shown: Vec<u64> = self
-            .state
-            .spaces
-            .iter()
-            .flat_map(|s| s.grid.panes.iter())
-            .filter_map(|p| match p {
-                Pane::Thread { id } => Some(*id),
-                _ => None,
-            })
-            .chain(match self.screen {
-                Screen::Thread(id) => Some(id),
-                _ => None,
-            })
-            .collect();
+        let shown = match self.screen {
+            Screen::Thread(id) => Some(id),
+            _ => None,
+        };
         // a shelved thread opened for a look gives its session back once it is off screen
         let looked: Vec<u64> = self
             .views
@@ -314,7 +299,7 @@ impl Root {
         woke.extend(self.state.wake_due(now, false));
         for s in &mut self.state.spaces {
             for t in &mut s.threads {
-                if t.settles(now, after) && !busy.contains(&t.id) && !shown.contains(&t.id) {
+                if t.settles(now, after) && !busy.contains(&t.id) && shown != Some(t.id) {
                     t.settled = true;
                     settled.push(t.id);
                 }

@@ -52,8 +52,7 @@ const FILES: &[(&str, &[u8])] = files!(
     "brand/claude.svg",
     "brand/openai.svg",
     "brand/gemini.svg",
-    // panes, the dock, the viewer and the Open button
-    "icons/grip-vertical.svg",
+    // the main area, the dock, the viewer and the Open button
     "icons/layout-grid.svg",
     "icons/panel-left.svg",
     "icons/panel-right.svg",
@@ -70,7 +69,6 @@ const FILES: &[(&str, &[u8])] = files!(
     // the usage meter, the command palette, Settings' Usage and Skills, and the intro
     "icons/gauge.svg",
     "icons/zap.svg",
-    "icons/maximize-2.svg",
     "icons/square-terminal.svg",
     "icons/text-search.svg",
     "icons/rotate-cw.svg",

@@ -524,16 +524,11 @@ fn caret(h: f32) -> AnyElement {
 }
 
 /// The app in miniature, painted by the live tokens, so whatever is picked is what this shows:
-/// the sidebar with three agent threads and two panes side by side, one of them focused.
+/// the sidebar with three agent threads and the one on screen, a terminal with Claude in it.
 fn shell_preview() -> AnyElement {
     let t = colors::theme();
     let term_fg = colors::hsla(t.term_fg);
-    let (ok, busy, wait, dim) = (
-        colors::ok(),
-        colors::busy(),
-        colors::waiting(),
-        colors::text3(),
-    );
+    let (ok, busy, dim) = (colors::ok(), colors::busy(), colors::text3());
     let line = |w: f32, strong: bool| {
         div()
             .h(px(5.))
@@ -591,7 +586,7 @@ fn shell_preview() -> AnyElement {
                 .child(div().flex_none().size(px(6.)).rounded_full().bg(state))
         }));
     let (family, _) = super::terminal_font();
-    let pane = |focus: bool, agent: Option<Agent>, head_w: f32, body: Vec<Div>, cursor: bool| {
+    let pane = |agent: Option<Agent>, head_w: f32, body: Vec<Div>, cursor: bool| {
         div()
             .flex_1()
             .min_w_0()
@@ -601,11 +596,7 @@ fn shell_preview() -> AnyElement {
             .overflow_hidden()
             .bg(colors::hsla(t.term_bg))
             .border_1()
-            .border_color(if focus {
-                colors::accent()
-            } else {
-                colors::border1()
-            })
+            .border_color(colors::border1())
             .child(
                 div()
                     .flex()
@@ -651,8 +642,7 @@ fn shell_preview() -> AnyElement {
                     }),
             )
     };
-    let left = pane(
-        true,
+    let thread = pane(
         Some(Agent::Claude),
         46.,
         vec![
@@ -661,17 +651,6 @@ fn shell_preview() -> AnyElement {
             spans(&[("\u{2713} ", ok), ("3 files changed", term_fg)]),
         ],
         true,
-    );
-    let right = pane(
-        false,
-        None,
-        34.,
-        vec![
-            spans(&[("\u{276f} ", ok), ("npm run dev", term_fg)]),
-            spans(&[("VITE", wait), (" ready in ", term_fg), ("312 ms", busy)]),
-            spans(&[("\u{279c} http://localhost:1420", dim)]),
-        ],
-        false,
     );
     let dot = || div().size(px(6.)).rounded_full().bg(colors::ink(0.16));
     div()
@@ -721,8 +700,7 @@ fn shell_preview() -> AnyElement {
                     .flex()
                     .gap(px(8.))
                     .p(px(10.))
-                    .child(left)
-                    .child(right),
+                    .child(thread),
             ),
         )
         .into_any_element()
