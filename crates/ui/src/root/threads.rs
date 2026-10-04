@@ -324,6 +324,10 @@ impl Root {
             self.unseen.remove(&thread);
         }
         let before = self.status.insert(thread, status);
+        // a turn starting from rest is a message sent to it, which brings a shelved thread back
+        if status == Status::Working && !matches!(before, Some(Status::Working | Status::Waiting)) {
+            self.bring_back(thread);
+        }
         // a real change, not the status a view reports when it is made
         if before.is_some_and(|b| b != status) || (before.is_none() && status == Status::Working) {
             self.touched(thread, status);
@@ -454,17 +458,12 @@ impl Root {
 
     pub(crate) fn open_thread(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.reveal = Some(id);
-        // opening a settled or snoozed thread brings it back to the active list
-        if let Some(t) = self.state.thread_mut(id)
-            && !t.active()
-        {
-            t.settled = false;
-            t.snooze = None;
-            t.touched = now_ms();
-        }
         let Some((_, thread)) = self.state.thread(id) else {
             return;
         };
+        // a settled or snoozed thread opens where it is, on its shelf; a message sent to it brings
+        // it back (bring_back)
+        self.peek = (!thread.active()).then_some(id);
         let thread = thread.clone();
         if !self.views.contains_key(&id) {
             self.make_view(&thread, None, true, cx);
@@ -507,7 +506,7 @@ impl Root {
             Screen::Thread(id) => self
                 .state
                 .thread(id)
-                .is_some_and(|(s, t)| t.active() && !s.archived),
+                .is_some_and(|(s, t)| (t.active() || self.peek == Some(id)) && !s.archived),
             Screen::Compose(Some(id)) => self.state.space(id).is_some_and(|s| !s.archived),
             Screen::Compose(None) | Screen::Settings => true,
         };

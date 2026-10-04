@@ -107,6 +107,7 @@ impl Root {
     ) {
         if on {
             self.remember(thread, "Settled", cx);
+            self.unpeek(thread);
         }
         if let Some(t) = self.state.thread_mut(thread) {
             t.settled = on;
@@ -161,6 +162,7 @@ impl Root {
         self.snooze_menu = None;
         if until.is_some() {
             self.remember(thread, "Snoozed", cx);
+            self.unpeek(thread);
         }
         if let Some(t) = self.state.thread_mut(thread) {
             match until {
@@ -187,6 +189,27 @@ impl Root {
         self.leave(window, cx);
         self.save();
         cx.notify();
+    }
+
+    /// Settling or snoozing the shelved thread on screen sends it away like any other.
+    fn unpeek(&mut self, thread: u64) {
+        if self.peek == Some(thread) {
+            self.peek = None;
+        }
+    }
+
+    /// A settled or snoozed thread that starts a turn, because a message was sent to it, comes
+    /// back to the top of the list.
+    pub(crate) fn bring_back(&mut self, thread: u64) {
+        if let Some(t) = self.state.thread_mut(thread)
+            && !t.active()
+        {
+            t.settled = false;
+            t.wake(now_ms());
+            self.unpeek(thread);
+            self.reveal = Some(thread);
+            self.save();
+        }
     }
 
     /// A thread did something: a turn started, ended, or stopped to ask. Called with each status.
@@ -271,6 +294,18 @@ impl Root {
                 _ => None,
             })
             .collect();
+        // a shelved thread opened for a look gives its session back once it is off screen
+        let looked: Vec<u64> = self
+            .views
+            .keys()
+            .copied()
+            .filter(|id| {
+                !self.on_screen(*id) && self.state.thread(*id).is_some_and(|(_, t)| !t.active())
+            })
+            .collect();
+        for id in looked {
+            self.free(id);
+        }
         woke.extend(self.state.wake_due(now, false));
         for s in &mut self.state.spaces {
             for t in &mut s.threads {
