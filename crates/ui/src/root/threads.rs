@@ -452,6 +452,7 @@ impl Root {
     }
 
     pub(crate) fn open_thread(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.reveal = Some(id);
         // opening a settled or snoozed thread brings it back to the active list
         if let Some(t) = self.state.thread_mut(id)
             && !t.active()

@@ -289,6 +289,10 @@ impl Root {
                 format!("New thread in {}", s.name),
                 Action::NewThread(s.id),
             ));
+            menu.push(MenuEntry::item(
+                format!("New terminal in {}", s.name),
+                Action::NewTerminal(s.id),
+            ));
         }
         menu.push(MenuEntry::Divider);
         if t.snooze.is_some() {

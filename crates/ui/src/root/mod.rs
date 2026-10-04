@@ -127,6 +127,9 @@ pub struct Root {
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     /// The menu's line whose choices are open beside it.
     pub(crate) menu_sub: Option<usize>,
+    /// A thread whose row the sidebar should scroll into view: one just opened or made, which
+    /// may sit above a list scrolled down.
+    pub(crate) reveal: Option<u64>,
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
@@ -274,6 +277,7 @@ impl Root {
             rename: None,
             menu: None,
             menu_sub: None,
+            reveal: None,
             settled_open: false,
             snoozed_open: false,
             hover_row: None,

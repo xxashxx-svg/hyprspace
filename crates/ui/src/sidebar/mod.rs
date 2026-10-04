@@ -186,6 +186,16 @@ impl gpui::Render for SidebarView {
         if std::mem::take(&mut self.stale) {
             self.list.remeasure();
         }
+        // a thread just opened or made shows its row, even with the list scrolled past it
+        if let Some(id) = root.update(cx, |r, _| r.reveal.take())
+            && let Some(ix) = self
+                .items
+                .iter()
+                .position(|i| matches!(i, Item::Thread(t) | Item::Shelved(t) if *t == id))
+        {
+            self.pending.set(0.);
+            self.list.scroll_to_reveal_item(ix);
+        }
         self.ease(window);
         let wheel = self.wheel(cx);
         let (items, weak, now) = (self.items.clone(), self.root.clone(), now_ms());
