@@ -1,15 +1,16 @@
 // One thread in the sidebar, after T3 Code's: its project's tag and name, with the age or a
 // running count; the title; then what it is doing, or its branch or folder, a dot when it waits on
 // you or a tick when it finished, and its agent's mark, a ring turning around it while it works.
-// Each subagent it has running gets a small card underneath. A working row carries a slow sheen, a waiting one a tint. Hovering shows snooze and
-// Settle. On a shelf a thread is one quiet line. Click to open it, right-click for its menu.
+// Its subagents show in the card beside it on hover. A working row carries a slow sheen, a
+// waiting one a tint. Hovering shows snooze and Settle. On a shelf a thread is one quiet line.
+// Click to open it, right-click for its menu.
 
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, DragMoveEvent, ElementId, FontWeight,
-    Hsla, IntoElement, MouseButton, SharedString, Transformation, canvas, div, linear_color_stop,
-    linear_gradient, percentage, prelude::*, px, relative,
+    Animation, AnimationExt, AnyElement, App, ClickEvent, Context, DragMoveEvent, ElementId,
+    FontWeight, Hsla, IntoElement, MouseButton, SharedString, Transformation, canvas, div,
+    linear_color_stop, linear_gradient, percentage, prelude::*, px, relative,
 };
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
 
@@ -21,7 +22,7 @@ use super::row_hover;
 use crate::assets::{icon, mark};
 use crate::colors;
 use crate::root::{Action, MenuEntry, MenuItems, Rename, Root, Screen, View};
-use crate::time::{ago, local_now, presets, to_ms, wake_short};
+use crate::time::{ago, local_now, now_ms, presets, to_ms, wake_short};
 use crate::transcript::Status;
 use crate::widgets;
 
@@ -74,85 +75,6 @@ fn sheen(key: impl Into<ElementId>) -> AnyElement {
             Animation::new(Duration::from_millis(2600)).repeat(),
             |d, t| d.left(relative(1.0 - 1.6 * t)),
         )
-        .into_any_element()
-}
-
-/// Subagents shown before the rest fold into a count.
-const SUBS_SHOWN: usize = 4;
-
-/// The subagents under a row: a small card each with its task and how long it has run. A new one
-/// fades in rather than popping.
-fn subagents(thread: u64, agent: Option<Agent>, subs: &[(String, String, u64)]) -> AnyElement {
-    let more = subs.len().saturating_sub(SUBS_SHOWN);
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(3.))
-        .mt(px(6.))
-        .children(
-            subs.iter()
-                .take(SUBS_SHOWN)
-                .enumerate()
-                .map(|(i, (key, label, secs))| {
-                    let name = |what: &str| -> ElementId {
-                        ElementId::Name(SharedString::from(format!("{what}-{thread}-{key}")))
-                    };
-                    let badge = match agent {
-                        Some(a) => mark(a, 10., colors::brand(a).0).into_any_element(),
-                        None => icon("bot", 10., colors::text3()).into_any_element(),
-                    };
-                    div()
-                        .relative()
-                        .overflow_hidden()
-                        .flex()
-                        .items_center()
-                        .gap(px(7.))
-                        .h(px(26.))
-                        .pl(px(5.))
-                        .pr(px(8.))
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(colors::border1())
-                        .bg(colors::surface2().opacity(0.7))
-                        .text_size(px(11.))
-                        .text_color(colors::text2())
-                        .child(sheen(name("sub-sheen")))
-                        .child(
-                            div()
-                                .relative()
-                                .flex()
-                                .flex_none()
-                                .items_center()
-                                .justify_center()
-                                .size(px(16.))
-                                .rounded_full()
-                                .bg(colors::surface3())
-                                .child(badge)
-                                .child(ring(("sub-ring", thread * 100 + i as u64), 16., 2.)),
-                        )
-                        .child(div().flex_1().min_w_0().truncate().child(label.clone()))
-                        .child(
-                            div()
-                                .flex_none()
-                                .font_family(MONO)
-                                .text_size(px(10.))
-                                .text_color(colors::text3())
-                                .child(elapsed(*secs)),
-                        )
-                        .map(|card| {
-                            crate::slide::ease_in(card, name("sub"), 220, |d, t| d.opacity(t))
-                        })
-                }),
-        )
-        .when(more > 0, |d| {
-            d.child(
-                div()
-                    .pl(px(6.))
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(format!("{more} more")),
-            )
-        })
         .into_any_element()
 }
 
@@ -291,11 +213,40 @@ impl Root {
 
     /// What a thread's hover card says: its title, project and folder, and the agent with its
     /// model and effort in words.
-    pub(crate) fn thread_card(&self, id: u64) -> Option<RowCard> {
+    /// The subagents a thread has running: what each was asked, and seconds since it started. A
+    /// terminal thread hears of them from its hooks; a structured one reads its own transcript.
+    fn subagents(&self, id: u64, cx: &App) -> Vec<(String, u64)> {
+        match self.views.get(&id) {
+            Some(View::Structured(v)) => v
+                .read(cx)
+                .subagents()
+                .into_iter()
+                .map(|(_, label, secs)| (label, secs))
+                .collect(),
+            _ => {
+                let now = now_ms();
+                self.activity
+                    .get(&id)
+                    .map(|a| {
+                        a.subs
+                            .iter()
+                            .map(|s| (s.label.clone(), now.saturating_sub(s.started) / 1000))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
+        }
+    }
+
+    pub(crate) fn thread_card(&self, id: u64, cx: &App) -> Option<RowCard> {
         let (space, t) = self.state.thread(id)?;
         let model = match t.agent() {
             Some(launch) => {
-                let mut s = format!("{} {}", launch.agent.name(), self.model_label(launch));
+                // with no model picked the label is the agent's own name, which needn't repeat
+                let mut s = match launch.model {
+                    Some(_) => format!("{} {}", launch.agent.name(), self.model_label(launch)),
+                    None => launch.agent.name().to_string(),
+                };
                 if launch.model.as_deref().is_some_and(crate::models::is_long) {
                     s.push_str(" 1M");
                 }
@@ -321,6 +272,11 @@ impl Root {
             path: cwd.display().to_string().into(),
             agent: t.agent().map(|l| l.agent),
             model: model.into(),
+            subagents: self
+                .subagents(id, cx)
+                .into_iter()
+                .map(|(label, secs)| (label.into(), elapsed(secs).into()))
+                .collect(),
         })
     }
 
@@ -427,33 +383,18 @@ impl Root {
         let waiting = status == Status::Waiting;
         let busy = working || waiting;
         // a terminal thread hears from its hooks; a structured one reads its own transcript
-        let (running, doing, subs) = match self.views.get(&id) {
+        let (running, doing) = match self.views.get(&id) {
             Some(View::Structured(v)) => {
                 let v = v.read(cx);
-                (v.elapsed(), v.doing(), v.subagents())
+                (v.elapsed(), v.doing())
             }
-            _ => {
-                let a = self.activity.get(&id);
-                let subs = a
-                    .map(|a| {
-                        a.subs
-                            .iter()
-                            .map(|s| {
-                                let secs = now.saturating_sub(s.started) / 1000;
-                                (s.id.clone(), s.label.clone(), secs)
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                (
-                    self.turns
-                        .get(&id)
-                        .filter(|_| busy)
-                        .map(|t| t.elapsed().as_secs()),
-                    a.and_then(|a| a.doing.clone()),
-                    subs,
-                )
-            }
+            _ => (
+                self.turns
+                    .get(&id)
+                    .filter(|_| busy)
+                    .map(|t| t.elapsed().as_secs()),
+                self.activity.get(&id).and_then(|a| a.doing.clone()),
+            ),
         };
         // the line says what it does, or what it concluded until the next turn
         let doing = doing.filter(|_| status != Status::Idle);
@@ -624,7 +565,6 @@ impl Root {
                     .children(state)
                     .child(agent_mark(agent, working.then(|| ("row-ring", id).into()))),
             )
-            .when(!subs.is_empty(), |d| d.child(subagents(id, agent, &subs)))
             .child(
                 div()
                     .absolute()

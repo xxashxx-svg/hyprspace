@@ -1,6 +1,6 @@
 // The card that shows beside a thread's row when the pointer rests on it, after T3 Code's: the
-// title, the project and its folder, and the agent with its model and effort. The row itself only
-// has room for the agent's mark. It floats just past the sidebar's edge, level with the row, the
+// title, the project and its folder, the agent with its model and effort, and the subagents it has
+// running. The row itself only has room for the agent's mark. It floats just past the sidebar's edge, level with the row, the
 // way T3 Code's does, so the list under the pointer stays in view.
 
 use std::time::{Duration, Instant};
@@ -27,7 +27,12 @@ pub struct RowCard {
     pub agent: Option<Agent>,
     /// The agent with its model and effort, "Claude Opus 5.5 · High", or "Terminal".
     pub model: SharedString,
+    /// Each subagent running: what it was asked, and how long it has run.
+    pub subagents: Vec<(SharedString, SharedString)>,
 }
+
+/// Subagents listed before the rest fold into a count.
+const SUBS_SHOWN: usize = 6;
 
 /// One line of the card: a glyph in a fixed column, then its text.
 fn line(glyph: AnyElement, text: SharedString) -> impl IntoElement {
@@ -89,6 +94,53 @@ impl RowCard {
                     .child(self.path.clone()),
             )
             .child(line(agent, self.model.clone()))
+            .when(!self.subagents.is_empty(), |d| {
+                let more = self.subagents.len().saturating_sub(SUBS_SHOWN);
+                d.child(div().my(px(2.)).h(px(1.)).bg(colors::border1()))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors::text3())
+                            .child(match self.subagents.len() {
+                                1 => "1 subagent".to_string(),
+                                n => format!("{n} subagents"),
+                            }),
+                    )
+                    .children(self.subagents.iter().take(SUBS_SHOWN).map(|(label, took)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(7.))
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_none()
+                                    .justify_center()
+                                    .w(px(16.))
+                                    .child(div().size(px(6.)).rounded_full().bg(colors::busy())),
+                            )
+                            .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .font_family(MONO)
+                                    .text_size(px(10.5))
+                                    .text_color(colors::text3())
+                                    .child(took.clone()),
+                            )
+                    }))
+                    .when(more > 0, |d| {
+                        d.child(
+                            div()
+                                .pl(px(23.))
+                                .text_size(px(11.))
+                                .text_color(colors::text3())
+                                .child(format!("{more} more")),
+                        )
+                    })
+            })
             .into_any_element()
     }
 }
@@ -117,7 +169,7 @@ impl Root {
             return None;
         }
         let bounds = *self.row_bounds.borrow().get(&thread)?;
-        let card = self.thread_card(thread)?;
+        let card = self.thread_card(thread, cx)?;
         Some(
             deferred(
                 anchored()
