@@ -152,7 +152,6 @@ impl Limits {
                 .map(|b| {
                     let on = b.agent == tab;
                     let agent = b.agent;
-                    let dot = tone_color(b.worst(now));
                     div()
                         .id(("usage-tab", agent as usize))
                         .flex_1()
@@ -175,9 +174,6 @@ impl Limits {
                             brand(agent.cli()),
                         )))
                         .child(agent.name())
-                        .children(
-                            dot.map(|c| div().size(px(6.)).rounded_full().bg(c).into_any_element()),
-                        )
                         .on_click(cx.listener(move |l, _: &ClickEvent, _, cx| {
                             l.tab = agent;
                             cx.notify();

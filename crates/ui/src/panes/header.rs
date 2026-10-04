@@ -14,8 +14,6 @@ use hyprspace_theme::MONO;
 use crate::assets::{icon, mark};
 use crate::colors;
 use crate::root::Root;
-use crate::transcript::Status;
-use crate::widgets;
 
 /// The last two parts of a folder, which is what tells them apart in practice.
 pub fn short(path: &Path) -> String {
@@ -251,9 +249,6 @@ impl Root {
     ) -> AnyElement {
         let (badge, title, detail, agent) = self.pane_title(space, pane, cx);
         let is_thread = matches!(pane, Pane::Thread { .. });
-        let status = pane
-            .thread()
-            .map(|id| self.status.get(&id).copied().unwrap_or(Status::Idle));
         let actions = self.viewer_actions(space, pane, cx);
         let drag = PaneDrag {
             space,
@@ -310,7 +305,6 @@ impl Root {
                     })
                     .child(title),
             )
-            .children(status.map(|s| div().ml(px(2.)).child(widgets::status_dot(s))))
             .child(
                 div()
                     .flex_1()

@@ -129,17 +129,6 @@ pub struct Block {
     pub extra: Option<LiveExtra>,
 }
 
-impl Block {
-    /// The most urgent tone among its live windows, for the dot on its tab.
-    pub fn worst(&self, now: i64) -> Tone {
-        self.windows
-            .iter()
-            .map(|w| w.tone(now))
-            .max()
-            .unwrap_or(Tone::Calm)
-    }
-}
-
 /// A live reading as a block. None when it carries no windows.
 pub fn live_block(agent: Agent, u: &LiveUsage) -> Option<Block> {
     if u.bars.is_empty() {
