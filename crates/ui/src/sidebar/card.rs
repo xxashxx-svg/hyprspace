@@ -107,30 +107,40 @@ impl RowCard {
                                 n => format!("{n} subagents"),
                             }),
                     )
-                    .children(self.subagents.iter().take(SUBS_SHOWN).map(|(label, took)| {
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(7.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_none()
-                                    .justify_center()
-                                    .w(px(16.))
-                                    .child(div().size(px(6.)).rounded_full().bg(colors::busy())),
-                            )
-                            .child(div().flex_1().min_w_0().truncate().child(label.clone()))
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .font_family(MONO)
-                                    .text_size(px(10.5))
-                                    .text_color(colors::text3())
-                                    .child(took.clone()),
-                            )
-                    }))
+                    .children(self.subagents.iter().take(SUBS_SHOWN).enumerate().map(
+                        |(i, (label, took))| {
+                            // the agent's mark with the ring the rows turn while they work
+                            let badge = match self.agent {
+                                Some(a) => mark(a, 10., colors::brand(a).0).into_any_element(),
+                                None => icon("bot", 10., colors::text3()).into_any_element(),
+                            };
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(7.))
+                                .min_w_0()
+                                .child(
+                                    div()
+                                        .relative()
+                                        .flex()
+                                        .flex_none()
+                                        .items_center()
+                                        .justify_center()
+                                        .size(px(16.))
+                                        .child(badge)
+                                        .child(super::row::ring(("card-sub-ring", i), 16., 2.)),
+                                )
+                                .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .font_family(MONO)
+                                        .text_size(px(10.5))
+                                        .text_color(colors::text3())
+                                        .child(took.clone()),
+                                )
+                        },
+                    ))
                     .when(more > 0, |d| {
                         d.child(
                             div()

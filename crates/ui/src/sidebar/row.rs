@@ -36,7 +36,7 @@ fn elapsed(secs: u64) -> String {
 }
 
 /// A ring turning around a mark `size` across, `inset` pixels outside it.
-fn ring(key: impl Into<ElementId>, size: f32, inset: f32) -> AnyElement {
+pub(super) fn ring(key: impl Into<ElementId>, size: f32, inset: f32) -> AnyElement {
     div()
         .absolute()
         .top(px(-inset))
@@ -379,9 +379,16 @@ impl Root {
         let id = t.id;
         let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
         let selected = self.screen == Screen::Thread(id);
-        let working = status == Status::Working;
         let waiting = status == Status::Waiting;
-        let busy = working || waiting;
+        let busy = status == Status::Working || waiting;
+        // the agent can end its turn with subagents still at work in the background; the thread
+        // is working until they are done
+        let background = if busy {
+            0
+        } else {
+            self.subagents(id, cx).len()
+        };
+        let working = status == Status::Working || background > 0;
         // a terminal thread hears from its hooks; a structured one reads its own transcript
         let (running, doing) = match self.views.get(&id) {
             Some(View::Structured(v)) => {
@@ -397,7 +404,11 @@ impl Root {
             ),
         };
         // the line says what it does, or what it concluded until the next turn
-        let doing = doing.filter(|_| status != Status::Idle);
+        let doing = match background {
+            0 => doing.filter(|_| status != Status::Idle),
+            1 => Some("1 subagent running".into()),
+            n => Some(format!("{n} subagents running")),
+        };
         let agent = t.agent().map(|l| l.agent);
         let space = self
             .state
@@ -470,7 +481,7 @@ impl Root {
                     )
                     .into_any_element(),
             ),
-            Status::Done => Some(
+            Status::Done if background == 0 => Some(
                 div()
                     .flex()
                     .flex_none()
@@ -483,7 +494,7 @@ impl Root {
                     .into_any_element(),
             ),
             Status::Failed => Some(widgets::status_dot(status).into_any_element()),
-            Status::Working | Status::Idle => None,
+            Status::Done | Status::Working | Status::Idle => None,
         };
         let foot = match doing {
             Some(doing) => div()

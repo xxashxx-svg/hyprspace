@@ -38,11 +38,15 @@ pub(crate) struct Undo {
 }
 
 impl Root {
+    /// At work: in a turn, waiting on you, or with subagents still running after its turn ended.
     pub(crate) fn busy(&self, thread: u64) -> bool {
         matches!(
             self.status.get(&thread),
             Some(Status::Working | Status::Waiting)
-        )
+        ) || self
+            .activity
+            .get(&thread)
+            .is_some_and(|a| !a.subs.is_empty())
     }
 
     /// On screen in any space's grid, which auto-settle leaves alone.
@@ -276,9 +280,10 @@ impl Root {
         let mut settled = Vec::new();
         let busy: Vec<u64> = self
             .status
-            .iter()
-            .filter(|(_, s)| matches!(s, Status::Working | Status::Waiting))
-            .map(|(t, _)| *t)
+            .keys()
+            .chain(self.activity.keys())
+            .copied()
+            .filter(|t| self.busy(*t))
             .collect();
         let shown: Vec<u64> = self
             .state
