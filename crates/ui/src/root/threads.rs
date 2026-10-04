@@ -562,9 +562,62 @@ impl Root {
                     self.open_in(opener, &cwd, cx);
                 }
             }
+            Action::Divider => {}
+            Action::Filter(space) => {
+                if let Some(name) = self.state.space(space).map(|s| s.name.clone()) {
+                    self.search.update(cx, |i, cx| i.set_text(&name, cx));
+                }
+            }
+            // a menu row that leads on opens its choices where the menu was
+            Action::OpenInMenu(space) => {
+                let items = self
+                    .work
+                    .openers
+                    .iter()
+                    .map(|&o| (o.name().into(), Action::OpenIn(o, space)))
+                    .collect();
+                self.menu = at.map(|at| (at, items));
+            }
+            Action::CopyMenu(thread) => {
+                let mut items: super::MenuItems = vec![
+                    ("Title".into(), Action::CopyTitle(thread)),
+                    ("Folder path".into(), Action::CopyPath(thread)),
+                ];
+                if self.conversation(thread).is_some() {
+                    items.push(("Conversation id".into(), Action::CopyConversation(thread)));
+                }
+                self.menu = at.map(|at| (at, items));
+            }
+            Action::CopyTitle(thread) => {
+                if let Some((_, t)) = self.state.thread(thread) {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(t.title.clone()));
+                }
+            }
+            Action::CopyPath(thread) => {
+                if let Some((_, t)) = self.state.thread(thread) {
+                    let cwd = match &t.kind {
+                        ThreadKind::Terminal { cwd, .. } => cwd.clone(),
+                        ThreadKind::Structured { launch } => launch.cwd.clone(),
+                    };
+                    let text = cwd.display().to_string();
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                }
+            }
+            Action::CopyConversation(thread) => {
+                if let Some(id) = self.conversation(thread) {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(id));
+                }
+            }
         }
         self.save();
         cx.notify();
+    }
+
+    /// The conversation a thread's agent is on, which `--resume` takes.
+    fn conversation(&self, thread: u64) -> Option<String> {
+        self.state
+            .thread(thread)
+            .and_then(|(_, t)| t.agent()?.resume.clone())
     }
 
     fn start_rename(&mut self, target: Rename, window: &mut Window, cx: &mut Context<Self>) {

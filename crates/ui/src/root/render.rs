@@ -1,11 +1,11 @@
 // The window's layout: sidebar, then the space on screen (its panes, see `crate::panes`), the
 // composer, or settings. Context menus open from here so they float over everything.
 
+use crate::assets::icon;
 use gpui::{
     AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, StyleRefinement, Window,
     div, prelude::*, px,
 };
-use hyprspace_proto::Opener;
 
 use super::{Action, Root, Screen, SidebarDrag};
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
@@ -13,26 +13,40 @@ use crate::slide::slide;
 use crate::{colors, widgets};
 
 impl Root {
+    /// A right-click menu, after T3 Code's: plain words in groups split by a rule, with an arrow on
+    /// the rows that open more choices.
     fn menu(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (at, items) = self.menu.clone()?;
         let rows = items.into_iter().enumerate().map(|(i, (label, action))| {
-            let (glyph, danger) = match action {
-                Action::NewThread(_) => (Some("square-pen"), false),
-                Action::NewTerminal(_) => (Some("terminal"), false),
-                Action::Rename(_) => (Some("pencil"), false),
-                Action::SettleSpace(_) => (Some("circle-check"), false),
-                Action::Settle(_, true) => (Some("circle-check"), false),
-                Action::Settle(_, false) => (Some("rotate-ccw"), false),
-                Action::Snooze(_) => (Some("clock"), false),
-                Action::Wake(_) => (Some("sun"), false),
-                Action::RemoveThread(_) => (Some("trash-2"), true),
-                Action::OpenBeside(_) => (Some("panel-right"), false),
-                Action::OpenIn(Opener::Files, _) => (Some("folder-open"), false),
-                Action::OpenIn(..) => (Some("external-link"), false),
-            };
-            widgets::menu_row(("menu", i), glyph, label, danger).on_click(
-                cx.listener(move |r, _: &ClickEvent, window, cx| r.act(action, window, cx)),
-            )
+            if matches!(action, Action::Divider) {
+                return div()
+                    .h(px(1.))
+                    .mx(px(6.))
+                    .my(px(4.))
+                    .bg(colors::ink(0.08))
+                    .into_any_element();
+            }
+            let more = matches!(
+                action,
+                Action::Snooze(_) | Action::OpenInMenu(_) | Action::CopyMenu(_)
+            );
+            let danger = matches!(action, Action::RemoveThread(_));
+            widgets::menu_row(("menu", i), None, label, danger)
+                .h(px(28.))
+                .px(px(10.))
+                .text_size(px(12.5))
+                .text_color(if danger {
+                    colors::text2()
+                } else {
+                    colors::text1()
+                })
+                .when(more, |d| {
+                    d.child(icon("chevron-right", 12., colors::text3()))
+                })
+                .on_click(
+                    cx.listener(move |r, _: &ClickEvent, window, cx| r.act(action, window, cx)),
+                )
+                .into_any_element()
         });
         let close = cx.listener(|r, _: &(), _, cx| {
             r.menu = None;

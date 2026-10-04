@@ -14,6 +14,7 @@ use gpui::{
 };
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
 
+use super::card::RowCard;
 use crate::panes::PaneDrag;
 use hyprspace_theme::MONO;
 
@@ -241,43 +242,49 @@ impl Root {
         }
     }
 
-    /// A thread's right-click menu: the thread, then its project.
+    /// A thread's right-click menu, grouped as T3 Code's: where to open it; settling and
+    /// snoozing; naming and finding; its project's apps and copying; and the ones that clear away.
     fn thread_menu(&self, t: &Thread) -> MenuItems {
         let id = t.id;
-        let mut menu: MenuItems = vec![
-            ("Open beside".into(), Action::OpenBeside(id)),
-            ("Rename".into(), Action::Rename(Rename::Thread(id))),
-        ];
+        let space = self.state.thread(id).map(|(s, _)| s);
+        let rule = || ("".into(), Action::Divider);
+        let mut menu: MenuItems = vec![("Open beside".into(), Action::OpenBeside(id))];
+        if let Some(s) = space {
+            menu.push((
+                format!("New thread in {}", s.name).into(),
+                Action::NewThread(s.id),
+            ));
+        }
+        menu.push(rule());
         if t.snooze.is_some() {
             menu.push(("Wake now".into(), Action::Wake(id)));
-        } else if !t.settled {
+        } else if t.settled {
+            menu.push(("Un-settle thread".into(), Action::Settle(id, false)));
+        } else {
+            menu.push(("Settle thread".into(), Action::Settle(id, true)));
             menu.push(("Snooze".into(), Action::Snooze(id)));
         }
-        menu.push(if t.settled {
-            ("Un-settle".into(), Action::Settle(id, false))
-        } else {
-            ("Settle".into(), Action::Settle(id, true))
-        });
-        menu.push(("Remove".into(), Action::RemoveThread(id)));
-        if let Some((space, _)) = self.state.thread(id) {
+        menu.push(rule());
+        menu.push(("Rename thread".into(), Action::Rename(Rename::Thread(id))));
+        if let Some(s) = space {
+            menu.push((format!("Filter by {}", s.name).into(), Action::Filter(s.id)));
+        }
+        menu.push(rule());
+        if let Some(s) = space.filter(|s| s.cwd.is_some() && !self.work.openers.is_empty()) {
             menu.push((
-                format!("New thread in {}", space.name).into(),
-                Action::NewThread(space.id),
-            ));
-            // the same apps, in the same order, as the Open button's menu
-            if space.cwd.is_some() {
-                menu.extend(self.work.openers.iter().map(|&o| {
-                    (
-                        format!("Open {} in {}", space.name, o.name()).into(),
-                        Action::OpenIn(o, space.id),
-                    )
-                }));
-            }
-            menu.push((
-                format!("Settle all in {}", space.name).into(),
-                Action::SettleSpace(space.id),
+                format!("Open {} in", s.name).into(),
+                Action::OpenInMenu(s.id),
             ));
         }
+        menu.push(("Copy".into(), Action::CopyMenu(id)));
+        menu.push(rule());
+        if let Some(s) = space {
+            menu.push((
+                format!("Settle all in {}", s.name).into(),
+                Action::SettleSpace(s.id),
+            ));
+        }
+        menu.push(("Delete thread".into(), Action::RemoveThread(id)));
         menu
     }
 
@@ -323,13 +330,25 @@ impl Root {
         // the line says what it does, or what it concluded until the next turn
         let doing = doing.filter(|_| status != Status::Idle);
         let agent = t.agent().map(|l| l.agent);
-        let model = t.agent().map(|launch| {
-            let name = self.model_label(launch);
-            match launch.model.as_deref() {
-                Some(m) if crate::models::is_long(m) => format!("{name} 1M"),
-                _ => name,
+        // the agent, model and effort in words, for the card the row shows on hover
+        let model = match t.agent() {
+            Some(launch) => {
+                let mut s = format!("{} {}", launch.agent.name(), self.model_label(launch));
+                if launch.model.as_deref().is_some_and(crate::models::is_long) {
+                    s.push_str(" 1M");
+                }
+                if let Some(e) = launch.effort.as_deref().filter(|e| !e.is_empty()) {
+                    let mut c = e.chars();
+                    let e: String = c
+                        .next()
+                        .map(|f| f.to_uppercase().chain(c).collect())
+                        .unwrap_or_default();
+                    s.push_str(&format!(" \u{b7} {e}"));
+                }
+                s
             }
-        });
+            None => "Terminal".into(),
+        };
         let space = self
             .state
             .thread(id)
@@ -445,6 +464,13 @@ impl Root {
         };
         let menu = self.thread_menu(t);
         let buttons = self.thread_buttons(t, cx);
+        let card = RowCard {
+            title: t.title.clone().into(),
+            space: space.clone().into(),
+            path: cwd.display().to_string().into(),
+            agent,
+            model: model.into(),
+        };
         let row = div()
             .id(("thread", id))
             .group(group.clone())
@@ -493,14 +519,7 @@ impl Root {
                     .text_size(px(11.))
                     .text_color(colors::text3())
                     .child(foot)
-                    .children(state)
-                    .children(model.map(|m| {
-                        div()
-                            .flex_none()
-                            .font_family(MONO)
-                            .text_size(px(10.5))
-                            .child(m)
-                    })),
+                    .children(state),
             )
             .when(!subs.is_empty(), |d| d.child(subagents(id, agent, &subs)))
             .child(
@@ -522,6 +541,7 @@ impl Root {
                 r.open_thread(id, window, cx)
             }))
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
+            .tooltip(move |_, cx| cx.new(|_| card.clone()).into())
             .on_drag(
                 PaneDrag {
                     space: self.state.thread(id).map_or(0, |(s, _)| s.id),

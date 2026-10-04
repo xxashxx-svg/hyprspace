@@ -67,6 +67,17 @@ pub enum Action {
     OpenBeside(u64),
     /// Opens the space's folder in an editor or the file manager.
     OpenIn(hyprspace_proto::Opener, u64),
+    /// A rule between a menu's groups; does nothing.
+    Divider,
+    /// Narrows the sidebar to a space's threads, by its name in the search box.
+    Filter(u64),
+    /// The apps that can open a space's folder, as a menu of their own.
+    OpenInMenu(u64),
+    /// What can be copied from a thread, as a menu of its own.
+    CopyMenu(u64),
+    CopyTitle(u64),
+    CopyPath(u64),
+    CopyConversation(u64),
 }
 
 /// A context menu's rows: what each says and does.

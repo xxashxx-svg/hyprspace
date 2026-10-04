@@ -10,6 +10,7 @@
 // smooth with dozens of threads. The wheel eases the list along instead of jumping a notch at a
 // time, the way the Tauri app's webview scrolled.
 
+mod card;
 mod drag;
 mod row;
 
