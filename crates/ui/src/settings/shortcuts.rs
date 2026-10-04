@@ -52,12 +52,12 @@ pub(super) fn page() -> AnyElement {
             vec![
                 line(
                     "Command palette",
-                    "Threads, layouts, themes and settings. Not inside a terminal, where it is a shell key.",
+                    "Threads, layouts, themes and settings. Works inside a terminal too.",
                     &[chord(&[MOD, "K"])],
                 ),
                 line(
-                    "Command palette from anywhere",
-                    "Works inside a terminal too.",
+                    "Command palette, the other way",
+                    "Opens the same palette.",
                     &[chord(&[MOD, "Shift", "P"])],
                 ),
                 line(
@@ -105,7 +105,11 @@ pub(super) fn page() -> AnyElement {
                     "While a run is going, the prompt joins it.",
                     &["Enter".into()],
                 ),
-                line("New line", "Adds a line instead of sending.", &[chord(&["Shift", "Enter"])]),
+                line(
+                    "New line",
+                    "Adds a line instead of sending.",
+                    &[chord(&["Shift", "Enter"])],
+                ),
                 line(
                     "Interrupt the run",
                     "In a structured thread. The agent stops where it is.",
@@ -122,7 +126,11 @@ pub(super) fn page() -> AnyElement {
             "Terminal",
             vec![
                 line("Copy", copy_desc, &copy),
-                line("Paste", "Pastes the clipboard's text.", &[chord(&[MOD, "V"])]),
+                line(
+                    "Paste",
+                    "Pastes the clipboard's text.",
+                    &[chord(&[MOD, "V"])],
+                ),
                 line(
                     "Paste an image",
                     "Saves the clipboard's image and types its path, for agents that read images.",

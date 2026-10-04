@@ -1,4 +1,4 @@
-// The command palette (Ctrl+K outside a terminal, or Ctrl+Shift+P anywhere): commands grouped
+// The command palette (Ctrl+K, or Ctrl+Shift+P, anywhere, terminals too): commands grouped
 // into sections, every open thread, and with two letters or more, the text in every terminal.
 // Follows the Tauri app's CommandPalette.tsx and command-palette.css. The root builds the items
 // and runs the one picked (`commands.rs`); this file filters, moves the highlight and draws.
@@ -28,8 +28,9 @@ pub const IN_TERMINALS: &str = "In terminal output";
 /// palette's own text box.
 pub fn bind_keys(cx: &mut gpui::App) {
     cx.bind_keys([
-        // a terminal keeps Ctrl+K: it is kill-to-end-of-line there
-        KeyBinding::new("secondary-k", TogglePalette, Some("!Terminal")),
+        // a terminal gives up Ctrl+K, a shell's kill-to-end-of-line, so the palette opens from
+        // anywhere (Ash's call)
+        KeyBinding::new("secondary-k", TogglePalette, None),
         KeyBinding::new("secondary-shift-p", TogglePalette, None),
         KeyBinding::new("up", SelectPrev, Some("Palette > TextInput")),
         KeyBinding::new("down", SelectNext, Some("Palette > TextInput")),

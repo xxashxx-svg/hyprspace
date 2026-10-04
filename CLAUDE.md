@@ -213,7 +213,7 @@ Full design details: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** and
 - **Ctrl+C can arrive ignored.** A parent that started us with Ctrl+C ignored passes that on to
   every shell; `env.rs` takes it back at startup.
 - **`secondary` in a key binding** is Ctrl on Windows and Cmd on macOS. The palette's Ctrl+K is
-  bound outside the `Terminal` context only, because Ctrl+K is kill-line in a shell.
+  bound everywhere, terminals included, so a shell never sees its kill-line Ctrl+K.
 - **Checks without side effects.** `HYPRSPACE_OPEN_LOG` logs editor and Explorer launches instead
   of running them, and `HYPRSPACE_USAGE_FIXTURES` reads usage from files instead of spending the
   request bucket Claude Code shares.
