@@ -18,6 +18,10 @@ portable-pty.workspace = true
 reqwest.workspace = true
 base64.workspace = true
 
+# the processes under each terminal's shell, to see which agent runs there (running.rs); gpui's
+# screen capture already builds this crate
+sysinfo = { version = "0.31", default-features = false, features = ["system"] }
+
 [target.'cfg(windows)'.dependencies]
 # read the machine and user PATH back from the registry (env.rs)
 winreg = "0.55"

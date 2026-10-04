@@ -2,6 +2,10 @@
 // (the Tauri app's actions.ts and TerminalPane), Claude's hooks wired back to the session for the
 // sidebar's live state, and the composer's prompt typed in once the CLI is ready for it.
 //
+// What runs in a terminal can change under us: Claude stopped with Ctrl+C and started again by
+// hand, or Codex started in its place. Every shell gets its session's hooks file and a `claude`
+// that brings it along (ADR 0014), and a watcher reads which agent runs under each shell.
+//
 // The command is built from fixed flags and catalog ids only. User text never goes into it; the
 // prompt goes in as keystrokes after the CLI is up.
 
@@ -19,6 +23,7 @@ use serde_json::Value;
 
 use crate::hooks::{self, Hook};
 use crate::pty::{PtyManager, Spawn};
+use crate::running::{Processes, Seen};
 use crate::sessions::{self, Resume};
 
 // Claude reports through its status line once its TUI is on screen, and its prompt is typed in
@@ -33,6 +38,36 @@ const ENTER_AFTER: Duration = Duration::from_millis(300);
 // Codex saves its rollout on the first turn, which can be a while after the pane opens
 const CODEX_POLL: Duration = Duration::from_secs(2);
 const CODEX_WATCH: Duration = Duration::from_secs(15 * 60);
+/// How often the processes under each shell are read for the agent running there.
+const WATCH_EVERY: Duration = Duration::from_secs(2);
+/// This session's hooks file, for the `claude` wrapper in its shell.
+const SETTINGS_VAR: &str = "HYPRSPACE_CLAUDE_SETTINGS";
+
+/// PowerShell's `claude` in every terminal: the real one, with this session's hooks unless the
+/// command already names a settings file. Defined after the user's profile, so it is the one
+/// that runs. Single quotes only, so it survives being one argument on the command line.
+#[cfg(windows)]
+const PS_CLAUDE: &str = "function global:claude { $c = Get-Command claude -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $c) { Write-Error 'claude is not installed, or is not on PATH.'; return }; if ($env:HYPRSPACE_CLAUDE_SETTINGS -and $args -notcontains '--settings') { & $c.Source --settings $env:HYPRSPACE_CLAUDE_SETTINGS @args } else { & $c.Source @args } }";
+
+/// Puts the hooks-adding `claude` in front of the real one for this session's shell.
+#[cfg(windows)]
+fn wrap_claude(spawn: &mut Spawn) {
+    if spawn.shell.is_none() {
+        spawn
+            .args
+            .extend(["-NoExit", "-Command", PS_CLAUDE].map(String::from));
+    }
+}
+
+#[cfg(not(windows))]
+fn wrap_claude(spawn: &mut Spawn) {
+    if let Some(bin) = hooks::claude_shim(&hooks::hooks_dir()) {
+        let path = std::env::var("PATH").unwrap_or_default();
+        spawn
+            .env
+            .push(("PATH".into(), format!("{}:{path}", bin.display())));
+    }
+}
 
 /// Model ids and efforts come from the catalog, but a custom one could hold anything, so
 /// anything past a plain token is quoted (and loses its own quotes).
@@ -331,8 +366,10 @@ pub struct Terminals {
     /// Hook token to session. Tokens carry the process id so two app instances sharing the
     /// hooks folder never clean up each other's files.
     tracked: Arc<Mutex<HashMap<String, Tracked>>>,
-    /// Started with the first Claude terminal, so a run of the app without one opens no port.
+    /// Started with the first terminal, so a run of the app without one opens no port.
     listener: Arc<Mutex<Option<Listener>>>,
+    /// The agent last seen in each session, from its processes or its hooks.
+    seen: Arc<Mutex<HashMap<SessionId, Seen>>>,
 }
 
 fn token(id: SessionId) -> String {
@@ -352,11 +389,112 @@ fn type_prompt(ptys: &PtyManager, id: SessionId, prompt: &str) {
 
 impl Terminals {
     pub fn new(ptys: PtyManager, tx: UnboundedSender<Event>) -> Self {
-        Self {
+        let this = Self {
             ptys,
             tx,
             tracked: Arc::default(),
             listener: Arc::default(),
+            seen: Arc::default(),
+        };
+        let watcher = this.clone();
+        thread::spawn(move || watcher.watch());
+        this
+    }
+
+    /// Reads which agent runs under each shell, for as long as the app runs. Nothing is read
+    /// while there are no terminals.
+    fn watch(&self) {
+        let mut procs = Processes::new();
+        loop {
+            thread::sleep(WATCH_EVERY);
+            let shells = self.ptys.pids();
+            lock(&self.seen).retain(|id, _| shells.iter().any(|(s, _)| s == id));
+            if shells.is_empty() {
+                continue;
+            }
+            for (id, seen) in procs.agents(&shells) {
+                self.saw(id, seen);
+            }
+        }
+    }
+
+    /// Reports the agent under a shell when it is not the one seen there last.
+    fn saw(&self, id: SessionId, now: Option<Seen>) {
+        {
+            let mut seen = lock(&self.seen);
+            if seen.get(&id).map(|s| s.agent) == now.as_ref().map(|s| s.agent) {
+                return;
+            }
+            match &now {
+                Some(s) => seen.insert(id, s.clone()),
+                None => seen.remove(&id),
+            };
+        }
+        if now.is_none() {
+            // the agent quit, perhaps mid-turn: whatever it was doing is over
+            if let Some(t) = lock(&self.tracked).get_mut(&token(id)) {
+                t.state = AgentState::Idle;
+                t.doing = None;
+                t.subs.clear();
+            }
+        }
+        let _ = self.tx.unbounded_send(Event::TerminalAgent {
+            id,
+            agent: now.as_ref().map(|s| s.agent),
+            model: now.as_ref().and_then(|s| s.model.clone()),
+        });
+        if let Some(resume) = now.and_then(|s| s.resume) {
+            let _ = self
+                .tx
+                .unbounded_send(Event::TerminalConversation { id, resume });
+        }
+    }
+
+    /// Claude's hooks say Claude runs in this session, on which conversation and, from its
+    /// status line, which model: news when it was started by hand, or switched with /model.
+    fn heard(&self, id: SessionId, conversation: Option<&str>, model: Option<&str>) {
+        let (agent_news, resume) = {
+            let mut seen = lock(&self.seen);
+            let mut news = false;
+            let s = seen.entry(id).or_insert_with(|| {
+                news = true;
+                Seen {
+                    agent: Agent::Claude,
+                    model: None,
+                    resume: None,
+                }
+            });
+            if s.agent != Agent::Claude {
+                *s = Seen {
+                    agent: Agent::Claude,
+                    model: None,
+                    resume: None,
+                };
+                news = true;
+            }
+            if let Some(m) = model.filter(|m| s.model.as_deref() != Some(*m)) {
+                s.model = Some(m.to_string());
+                news = true;
+            }
+            let resume = conversation
+                .filter(|c| s.resume.as_deref() != Some(*c))
+                .map(String::from);
+            if let Some(c) = &resume {
+                s.resume = Some(c.clone());
+            }
+            (news.then(|| s.model.clone()), resume)
+        };
+        if let Some(model) = agent_news {
+            let _ = self.tx.unbounded_send(Event::TerminalAgent {
+                id,
+                agent: Some(Agent::Claude),
+                model,
+            });
+        }
+        if let Some(resume) = resume {
+            let _ = self
+                .tx
+                .unbounded_send(Event::TerminalConversation { id, resume });
         }
     }
 
@@ -391,28 +529,37 @@ impl Terminals {
             ..Default::default()
         };
         let prompt = prompt.filter(|p| !p.trim().is_empty());
+        let claude = run.as_ref().is_some_and(|r| r.agent == Agent::Claude);
+        // every shell gets this session's hooks, so a claude started in it by hand reports too
+        let settings = self.listener().and_then(|(port, exe)| {
+            hooks::write_settings(&hooks::hooks_dir(), port, &exe, &token(id))
+        });
+        if let Some(path) = &settings {
+            spawn
+                .env
+                .push((SETTINGS_VAR.into(), path.display().to_string()));
+            wrap_claude(&mut spawn);
+        }
+        // a full repaint every frame keeps a resize from leaving stale rows behind; claude only
+        // turns it on by itself for background sessions on Windows
+        spawn
+            .env
+            .push(("CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT".into(), "1".into()));
+        lock(&self.tracked).insert(
+            token(id),
+            Tracked::new(id, prompt.clone().filter(|_| claude)),
+        );
         if let Some(run) = &run {
-            let mut settings = None;
             let mut has_transcript = false;
-            if run.agent == Agent::Claude {
-                if let Some((port, exe)) = self.listener() {
-                    settings = hooks::write_settings(&hooks::hooks_dir(), port, &exe, &token(id));
-                }
-                if let Some(rid) = run.resume.as_deref() {
-                    has_transcript = sessions::resume_mode(&cwd, rid) == Resume::Resume;
-                }
-                // a full repaint every frame keeps a resize from leaving stale rows behind;
-                // claude only turns it on by itself for background sessions on Windows
-                spawn
-                    .env
-                    .push(("CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT".into(), "1".into()));
-                lock(&self.tracked).insert(token(id), Tracked::new(id, prompt.clone()));
+            if claude && let Some(rid) = run.resume.as_deref() {
+                has_transcript = sessions::resume_mode(&cwd, rid) == Resume::Resume;
             }
-            let as_arg = run.agent != Agent::Claude && prompt.is_some();
+            let as_arg = !claude && prompt.is_some();
             if let Some(p) = prompt.as_ref().filter(|_| as_arg) {
                 spawn.env.push((PROMPT_VAR.into(), p.clone()));
             }
-            spawn.input = Some(command(run, settings.as_deref(), has_transcript, as_arg));
+            let settings = settings.as_deref().filter(|_| claude);
+            spawn.input = Some(command(run, settings, has_transcript, as_arg));
         }
         let new_codex = run
             .as_ref()
@@ -484,6 +631,15 @@ impl Terminals {
         let Some(key) = body.get("session").and_then(Value::as_str) else {
             return;
         };
+        let conversation = payload
+            .and_then(|p| p.get("session_id"))
+            .or_else(|| body.pointer("/statusLine/session_id"))
+            .and_then(Value::as_str)
+            .map(String::from);
+        let model = body
+            .pointer("/statusLine/model/id")
+            .and_then(Value::as_str)
+            .map(String::from);
         let (id, changed, activity, prompt) = {
             let mut tracked = lock(&self.tracked);
             let Some(t) = tracked.get_mut(key) else {
@@ -511,6 +667,7 @@ impl Terminals {
                 if ready { t.prompt.take() } else { None },
             )
         };
+        self.heard(id, conversation.as_deref(), model.as_deref());
         if let Some(state) = changed {
             let _ = self.tx.unbounded_send(Event::AgentState { id, state });
         }
@@ -712,8 +869,24 @@ mod tests {
         lock(&terms.tracked).insert(token(id), Tracked::new(id, Some("hi".into())));
         terms.on_hook(Hook::Agent(json!({
             "session": token(id),
-            "payload": { "hook_event_name": "UserPromptSubmit" }
+            "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "c1" }
         })));
+        // a hook means claude runs here, on that conversation, even one started by hand
+        assert_eq!(
+            rx.try_recv().ok(),
+            Some(Event::TerminalAgent {
+                id,
+                agent: Some(Agent::Claude),
+                model: None
+            })
+        );
+        assert_eq!(
+            rx.try_recv().ok(),
+            Some(Event::TerminalConversation {
+                id,
+                resume: "c1".into()
+            })
+        );
         assert_eq!(
             rx.try_recv().ok(),
             Some(Event::AgentState {
@@ -744,6 +917,20 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+        // /model shows in the status line
+        terms.on_hook(Hook::StatusLine(json!({
+            "session": token(id),
+            "statusLine": { "session_id": "c1", "model": { "id": "claude-sonnet-5-5" } }
+        })));
+        assert_eq!(
+            rx.try_recv().ok(),
+            Some(Event::TerminalAgent {
+                id,
+                agent: Some(Agent::Claude),
+                model: Some("claude-sonnet-5-5".into())
+            })
+        );
+        while rx.try_recv().is_ok() {}
         // a hook for someone else's session changes nothing
         terms.on_hook(Hook::StatusLine(json!({ "session": "other" })));
         assert!(rx.try_recv().is_err());

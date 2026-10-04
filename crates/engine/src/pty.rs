@@ -47,6 +47,8 @@ struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: SharedWriter,
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// The shell's process id, where the processes it starts hang from.
+    pid: Option<u32>,
 }
 
 #[derive(Default, Clone)]
@@ -109,6 +111,7 @@ impl PtyManager {
         let mut reader = pair.master.try_clone_reader()?;
         let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer()?));
         let killer = child.clone_killer();
+        let pid = child.process_id();
 
         // reader thread -> bounded channel (blocking = real backpressure, no byte drops) -> coalescer
         let (tx, rx) = sync_channel::<Vec<u8>>(256);
@@ -152,6 +155,7 @@ impl PtyManager {
                 master: pair.master,
                 writer,
                 killer,
+                pid,
             },
         );
         Ok(())
@@ -191,6 +195,14 @@ impl PtyManager {
         for (_, mut s) in self.sessions().drain() {
             let _ = s.killer.kill();
         }
+    }
+
+    /// Each live session's shell process.
+    pub fn pids(&self) -> Vec<(SessionId, u32)> {
+        self.sessions()
+            .iter()
+            .filter_map(|(id, s)| Some((*id, s.pid?)))
+            .collect()
     }
 
     pub fn contains(&self, id: SessionId) -> bool {

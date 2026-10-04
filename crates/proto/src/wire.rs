@@ -145,6 +145,14 @@ pub enum Event {
         id: SessionId,
         resume: String,
     },
+    /// The agent CLI running in a terminal session changed: one was started by hand, or swapped
+    /// for another, or quit back to the shell (`None`). `model` is what its command line or its
+    /// status line names, when either does.
+    TerminalAgent {
+        id: SessionId,
+        agent: Option<Agent>,
+        model: Option<String>,
+    },
     /// What the agent in a terminal session is doing, from its hooks.
     AgentState {
         id: SessionId,
@@ -343,6 +351,11 @@ mod tests {
             Event::TerminalConversation {
                 id: SessionId(2),
                 resume: "019a-rollout".into(),
+            },
+            Event::TerminalAgent {
+                id: SessionId(2),
+                agent: Some(Agent::Codex),
+                model: Some("gpt-5.5".into()),
             },
             Event::AgentState {
                 id: SessionId(2),

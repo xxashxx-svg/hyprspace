@@ -274,6 +274,48 @@ impl Root {
         self.views.insert(id, view);
     }
 
+    /// The agent running in a terminal thread changed under us: started by hand, swapped for
+    /// another, or quit back to the shell. The thread takes on the new agent, so its row shows
+    /// that agent's mark and model and a restart brings that agent back. When the agent quits
+    /// the thread keeps the last one, and whatever it was doing is over.
+    pub(crate) fn terminal_agent(
+        &mut self,
+        thread: u64,
+        agent: Option<Agent>,
+        model: Option<String>,
+    ) {
+        let Some(agent) = agent else {
+            self.status.remove(&thread);
+            self.activity.remove(&thread);
+            self.turns.remove(&thread);
+            return;
+        };
+        let Some(Thread {
+            kind: ThreadKind::Terminal { cwd, run },
+            ..
+        }) = self.state.thread_mut(thread)
+        else {
+            return;
+        };
+        match run {
+            Some(r) if r.agent == agent => {
+                if model.is_none() || r.model == model {
+                    return;
+                }
+                r.model = model;
+            }
+            _ => {
+                let mut launch = hyprspace_proto::Launch::new(agent, cwd.clone());
+                launch.model = model;
+                *run = Some(launch);
+                self.status.remove(&thread);
+                self.activity.remove(&thread);
+                self.turns.remove(&thread);
+            }
+        }
+        self.save();
+    }
+
     pub(crate) fn set_status(&mut self, thread: u64, status: Status) {
         if status == Status::Done && self.screen != Screen::Thread(thread) {
             self.unseen.insert(thread);

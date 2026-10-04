@@ -183,6 +183,33 @@ pub fn write_settings(dir: &Path, port: u16, exe: &Path, session: &str) -> Optio
 }
 
 /// Drop a session's settings file when the session goes away.
+/// A `claude` script that runs the real one with the session's hooks (`HYPRSPACE_CLAUDE_SETTINGS`)
+/// unless the command names its own settings. It takes itself off PATH first, so it finds the
+/// real `claude` and never itself. Returns the folder to put in front of PATH.
+#[cfg(not(windows))]
+pub fn claude_shim(dir: &Path) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    const SCRIPT: &str = r#"#!/bin/sh
+# HyprSpace: claude with this terminal's hooks, so the sidebar follows a claude started by hand.
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$here" | paste -sd: -)
+export PATH
+for a in "$@"; do
+  [ "$a" = "--settings" ] && exec claude "$@"
+done
+[ -n "$HYPRSPACE_CLAUDE_SETTINGS" ] && exec claude --settings "$HYPRSPACE_CLAUDE_SETTINGS" "$@"
+exec claude "$@"
+"#;
+    let bin = dir.join("bin");
+    let path = bin.join("claude");
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(SCRIPT) {
+        std::fs::create_dir_all(&bin).ok()?;
+        std::fs::write(&path, SCRIPT).ok()?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok()?;
+    }
+    Some(bin)
+}
+
 pub fn cleanup(dir: &Path, session: &str) {
     if valid_session(session) {
         let _ = std::fs::remove_file(dir.join(format!("{session}.json")));

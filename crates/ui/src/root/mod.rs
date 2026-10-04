@@ -344,6 +344,12 @@ impl Root {
                     self.save();
                 }
             }
+            Event::TerminalAgent { id, agent, model } => {
+                if let Some(&thread) = self.sessions.get(&id) {
+                    self.terminal_agent(thread, agent, model);
+                    cx.notify();
+                }
+            }
             Event::Folder(e) => self.folder_event(e, cx),
             Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
             Event::Skills(e) => self.skills.update(cx, |s, cx| s.event(e, window, cx)),
