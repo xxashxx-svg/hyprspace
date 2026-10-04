@@ -40,7 +40,9 @@ pub const MAX_WIDTH: f32 = 480.;
 const OVERDRAW: f32 = 240.;
 /// Rows sit this far in from the sidebar's edges, and a space's threads this much further.
 const EDGE: f32 = 8.;
-const INDENT: f32 = 12.;
+const INDENT: f32 = 18.;
+/// Where a group's guide line runs: under the middle of its header's chevron.
+const RAIL: f32 = EDGE + 12.;
 /// How fast an eased scroll settles: each frame covers this share of what is left per second's
 /// worth of time constant. About 60 ms, the feel of a browser's smooth scrolling.
 const EASE: f32 = 0.06;
@@ -244,37 +246,30 @@ fn twist(open: bool) -> impl IntoElement {
     ))
 }
 
-/// A 22px button in a space's header that only shows on hover, or always on the active space.
-fn header_button(
-    id: (&'static str, u64),
-    glyph: &str,
-    shown: bool,
-    group: SharedString,
-) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(22.))
-        .rounded(px(5.))
-        .cursor_pointer()
-        .hover(|s| s.bg(colors::surface3()))
-        .when(!shown, |d| {
-            d.opacity(0.).group_hover(group, |s| s.opacity(1.))
-        })
-        .child(icon(glyph, 13., colors::text3()))
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+/// A header's place in the list: in from the edges, with a little air above.
+fn slot() -> gpui::Div {
+    div().pl(px(EDGE)).pr(px(EDGE)).pt(px(2.))
 }
 
-/// A row's place in the list: in from the edges, threads further under their space, and a little
-/// air above.
-fn slot(indent: bool) -> gpui::Div {
+/// A row inside a group (a space, or a shelf): further in, beside a thin guide line that runs
+/// down from the header's chevron. Each row draws its piece of the line over its full height, so
+/// the pieces meet into one line that ends with the group's last row. `strong` marks the row on
+/// screen.
+fn nested(strong: bool) -> gpui::Div {
     div()
-        .pl(px(if indent { EDGE + INDENT } else { EDGE }))
+        .relative()
+        .pl(px(EDGE + INDENT))
         .pr(px(EDGE))
         .pt(px(2.))
+        .child(
+            div()
+                .absolute()
+                .left(px(RAIL - 0.5))
+                .top_0()
+                .bottom_0()
+                .w(px(1.))
+                .bg(colors::ink(if strong { 0.32 } else { 0.1 })),
+        )
 }
 
 impl Root {
@@ -383,21 +378,21 @@ impl Root {
     fn sidebar_item(&self, item: &Item, now: u64, cx: &mut Context<Self>) -> AnyElement {
         match *item {
             Item::Space { id, open, active } => match self.state.space(id) {
-                Some(space) => slot(false)
+                Some(space) => slot()
                     .child(self.space_header(space, open, active, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
-            Item::Summary(id) => slot(true)
+            Item::Summary(id) => nested(false)
                 .children(self.state.space(id).and_then(|s| self.summary(s)))
                 .into_any_element(),
             Item::Thread(id) => match self.state.thread(id) {
-                Some((_, t)) => slot(true)
+                Some((_, t)) => nested(self.screen == Screen::Thread(id))
                     .child(self.thread_row(t, now, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
-            Item::Empty(_) => slot(true)
+            Item::Empty(_) => nested(false)
                 .child(
                     div()
                         .px(px(8.))
@@ -409,7 +404,7 @@ impl Root {
                 )
                 .into_any_element(),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
-            Item::Settled { count, open } => slot(false)
+            Item::Settled { count, open } => slot()
                 .pt(px(8.))
                 .child(
                     div()
@@ -435,7 +430,7 @@ impl Root {
                         )),
                 )
                 .into_any_element(),
-            Item::Snoozed { count, open } => slot(false)
+            Item::Snoozed { count, open } => slot()
                 .pt(px(8.))
                 .child(
                     div()
@@ -455,7 +450,7 @@ impl Root {
                         )),
                 )
                 .into_any_element(),
-            Item::Archived { count, open } => slot(false)
+            Item::Archived { count, open } => slot()
                 .pt(px(8.))
                 .child(
                     div()
@@ -466,7 +461,7 @@ impl Root {
                 )
                 .into_any_element(),
             Item::ArchivedSpace(id) => match self.state.space(id) {
-                Some(space) => slot(true)
+                Some(space) => nested(false)
                     .child(self.archived_space(space, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
@@ -653,7 +648,10 @@ impl Root {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = space.id;
-        let group: SharedString = format!("space-{id}").into();
+        // folded, the header says how many threads it hides
+        let hidden = (!open)
+            .then(|| space.threads.iter().filter(|t| t.active()).count())
+            .filter(|n| *n > 0);
         let name: AnyElement = match &self.rename {
             Some((Rename::Space(r), input, _)) if *r == id => div()
                 .flex_1()
@@ -697,7 +695,6 @@ impl Root {
         ]);
         div()
             .id(("space", id))
-            .group(group.clone())
             .flex()
             .items_center()
             .gap(px(4.))
@@ -733,20 +730,15 @@ impl Root {
                     .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| r.toggle_fold(id, cx))),
             )
             .child(name)
-            .child(
-                header_button(("space-new", id), "plus", active, group.clone()).on_click(
-                    cx.listener(move |r, _: &ClickEvent, window, cx| {
-                        r.act(Action::NewThread(id), window, cx)
-                    }),
-                ),
-            )
-            .child(
-                header_button(("space-archive", id), "archive", active, group).on_click(
-                    cx.listener(move |r, _: &ClickEvent, window, cx| {
-                        r.act(Action::ArchiveSpace(id, true), window, cx)
-                    }),
-                ),
-            )
+            .children(hidden.map(|n| {
+                div()
+                    .pr(px(4.))
+                    .font_family(MONO)
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(colors::text3())
+                    .child(n.to_string())
+            }))
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                 r.menu = None;
                 r.open_space(id, window, cx)

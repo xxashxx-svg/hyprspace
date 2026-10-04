@@ -171,11 +171,11 @@ impl Root {
             .flex()
             .items_center()
             .justify_center()
-            .size(px(20.))
-            .rounded(px(5.))
+            .size(px(22.))
+            .rounded(px(6.))
             .cursor_pointer()
             .hover(|s| s.bg(colors::ink(0.1)))
-            .child(icon(glyph, 12., colors::text2()))
+            .child(icon(glyph, 13., colors::text2()))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |r, e: &ClickEvent, window, cx| {
                 cx.stop_propagation();
