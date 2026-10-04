@@ -84,12 +84,6 @@ pub fn ink(a: f32) -> Hsla {
     hsla(theme().ink(a))
 }
 
-/// A project's tag colors, fill and lettering, on the side showing now.
-pub fn tag(name: &str) -> (Hsla, Hsla) {
-    let (fill, ink) = hyprspace_theme::tag(name, theme().dark);
-    (hsla(fill), hsla(ink))
-}
-
 /// An agent's signature color and its gradient's second stop.
 pub fn brand(agent: Agent) -> (Hsla, Hsla) {
     let (a, b) = hyprspace_theme::brand(agent.cli());
