@@ -1,8 +1,8 @@
 // One thread in the sidebar, after T3 Code's: its project's tag and name, with the age or a
 // running count; the title; then what it is doing, or its branch or folder, a dot when it waits on
 // you or a tick when it finished, and its agent's mark, a ring turning around it while it works.
-// Its subagents show in the card beside it on hover. A working row carries a slow sheen, a
-// waiting one a tint. Hovering shows snooze and Settle. On a shelf a thread is one quiet line.
+// Its subagents show in the card beside it on hover. A working row carries a slow sheen and,
+// off screen, fades back; a waiting one a tint. Hovering shows snooze and Settle. On a shelf a thread is one quiet line.
 // Click to open it, right-click for its menu.
 
 use std::time::Duration;
@@ -389,6 +389,9 @@ impl Root {
             self.subagents(id, cx).len()
         };
         let working = status == Status::Working || background > 0;
+        // background work takes less attention than a thread that needs you, after T3 Code's: a
+        // working row off screen fades as a whole, and comes back up under the pointer
+        let recede = working && !selected && !waiting;
         // a terminal thread hears from its hooks; a structured one reads its own transcript
         let (running, doing) = match self.views.get(&id) {
             Some(View::Structured(v)) => {
@@ -450,7 +453,11 @@ impl Root {
                 .min_w_0()
                 .truncate()
                 .text_size(px(13.5))
-                .font_weight(FontWeight::MEDIUM)
+                .font_weight(if recede {
+                    FontWeight::NORMAL
+                } else {
+                    FontWeight::MEDIUM
+                })
                 .text_color(colors::text1())
                 .child(t.title.clone())
                 .into_any_element(),
@@ -543,7 +550,13 @@ impl Root {
             .when(!selected && waiting, |d| {
                 d.bg(colors::waiting().opacity(0.07))
             })
-            .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+            .when(recede, |d| d.opacity(0.7))
+            .when(!selected, |d| {
+                d.hover(move |s| {
+                    let s = s.bg(row_hover());
+                    if recede { s.opacity(1.) } else { s }
+                })
+            })
             .when(working, |d| d.child(sheen(("row-sheen", id))))
             .child(
                 div()
