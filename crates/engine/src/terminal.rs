@@ -23,7 +23,7 @@ use serde_json::Value;
 
 use crate::hooks::{self, Hook};
 use crate::pty::{PtyManager, Spawn};
-use crate::running::{Processes, Seen};
+use crate::running::{self, Processes, Seen};
 use crate::sessions::{self, Resume};
 
 // Claude reports through its status line once its TUI is on screen, and its prompt is typed in
@@ -238,6 +238,20 @@ fn trim(s: &str, n: usize) -> String {
     }
 }
 
+/// The state after Claude's status file changed to `status`, if it changes ours. Its idle ends a
+/// turn or a wait; its waiting is a dialog in the middle of a turn (one opened at rest, like
+/// /model, is not waiting on anyone); its busy starts a turn, like one a background task's
+/// result started with no prompt.
+fn told_state(cur: AgentState, status: AgentState) -> Option<AgentState> {
+    use AgentState::{Idle, Waiting, Working};
+    match status {
+        Idle if matches!(cur, Working | Waiting) => Some(Idle),
+        Waiting if cur == Working => Some(Waiting),
+        Working if cur != Working => Some(Working),
+        _ => None,
+    }
+}
+
 /// What the agent is doing and which subagents run after one hook, following the Tauri app's
 /// stores/agentStatus.ts. `now` is in ms since the epoch.
 pub fn next_activity(
@@ -347,6 +361,8 @@ struct Tracked {
     prompt: Option<String>,
     doing: Option<String>,
     subs: Vec<SubAgent>,
+    /// What Claude's own status file said at the last look (`running::claude_status`).
+    told: Option<AgentState>,
 }
 
 impl Tracked {
@@ -357,6 +373,7 @@ impl Tracked {
             prompt,
             doing: None,
             subs: Vec::new(),
+            told: None,
         }
     }
 }
@@ -408,10 +425,11 @@ impl Terminals {
         this
     }
 
-    /// Reads which agent runs under each shell, for as long as the app runs. Nothing is read
-    /// while there are no terminals.
+    /// Reads which agent runs under each shell, and what Claude says it is doing, for as long as
+    /// the app runs. Nothing is read while there are no terminals.
     fn watch(&self) {
         let mut procs = Processes::new();
+        let home = crate::util::home_dir();
         loop {
             thread::sleep(WATCH_EVERY);
             let shells = self.ptys.pids();
@@ -419,9 +437,46 @@ impl Terminals {
             if shells.is_empty() {
                 continue;
             }
-            for (id, seen) in procs.agents(&shells) {
-                self.saw(id, seen);
+            for (id, found) in procs.agents(&shells) {
+                if let Some((seen, pid)) = &found
+                    && seen.agent == Agent::Claude
+                    && let Some(status) = running::claude_status(&home, *pid)
+                {
+                    self.told(id, status);
+                }
+                self.saw(id, found.map(|(seen, _)| seen));
             }
+        }
+    }
+
+    /// Claude's own status changed. Hooks say most of it first; this catches what no hook says,
+    /// above all a turn interrupted with Esc or Ctrl+C, which fires no Stop. Only a change counts,
+    /// so a status a beat behind the hooks can't undo them, and the first look only notes it.
+    fn told(&self, id: SessionId, status: AgentState) {
+        let (state, subs) = {
+            let mut tracked = lock(&self.tracked);
+            let Some(t) = tracked.get_mut(&token(id)) else {
+                return;
+            };
+            let before = t.told.replace(status);
+            if before.is_none() || before == Some(status) {
+                return;
+            }
+            let Some(next) = told_state(t.state, status) else {
+                return;
+            };
+            t.state = next;
+            // what it was doing is over; subagents still running keep their cards
+            let cleared = next == AgentState::Idle && t.doing.take().is_some();
+            (next, cleared.then(|| t.subs.clone()))
+        };
+        let _ = self.tx.unbounded_send(Event::AgentState { id, state });
+        if let Some(subs) = subs {
+            let _ = self.tx.unbounded_send(Event::AgentActivity {
+                id,
+                doing: None,
+                subs,
+            });
         }
     }
 
@@ -809,6 +864,23 @@ mod tests {
         assert_eq!(next_state(s, &nudge), AgentState::Done);
         assert_eq!(next_state(s, &hook("SessionStart")), AgentState::Idle);
         assert_eq!(next_state(s, &hook("SubagentStop")), AgentState::Done);
+    }
+
+    #[test]
+    fn claudes_own_status_catches_what_no_hook_says() {
+        use AgentState::{Done, Idle, Waiting, Working};
+        // an interrupt: no Stop, but Claude goes idle
+        assert_eq!(told_state(Working, Idle), Some(Idle));
+        assert_eq!(told_state(Waiting, Idle), Some(Idle));
+        // a finished turn keeps its tick
+        assert_eq!(told_state(Done, Idle), None);
+        // a dialog mid-turn waits on you; one opened at rest does not
+        assert_eq!(told_state(Working, Waiting), Some(Waiting));
+        assert_eq!(told_state(Idle, Waiting), None);
+        // a turn that started with no prompt, and an answered dialog
+        assert_eq!(told_state(Done, Working), Some(Working));
+        assert_eq!(told_state(Waiting, Working), Some(Working));
+        assert_eq!(told_state(Working, Working), None);
     }
 
     #[test]

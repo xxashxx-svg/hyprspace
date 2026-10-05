@@ -1,11 +1,14 @@
 // Which agent CLI runs inside each terminal session, read from the processes under its shell.
 // A thread started as Claude can have Claude stopped with Ctrl+C and Codex started by hand in the
 // same shell; this is how the sidebar learns that. The command line also names the model and,
-// for Claude, the conversation.
+// for Claude, the conversation. Claude also says what it is doing, in a file it keeps for each
+// running session.
 
 use std::collections::HashMap;
+use std::path::Path;
 
-use hyprspace_proto::{Agent, SessionId};
+use hyprspace_proto::{Agent, AgentState, SessionId};
+use serde_json::Value;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 /// An agent seen running in a terminal, with what its command line says.
@@ -74,6 +77,29 @@ pub fn read(cmd: &[String]) -> Option<Seen> {
     })
 }
 
+/// What Claude says it is doing, from the file it keeps for each running session:
+/// `~/.claude/sessions/<pid>.json`, whose `status` is `busy` in a turn, `waiting` while a dialog
+/// blocks it (a permission, a question), and `idle` or `shell` (idle, with a background shell)
+/// otherwise. It is Claude's own account, so it knows a turn ended even when no hook said so, as
+/// after an interrupt.
+pub fn claude_status(home: &Path, pid: u32) -> Option<AgentState> {
+    let path = home
+        .join(".claude")
+        .join("sessions")
+        .join(format!("{pid}.json"));
+    status_of(&std::fs::read_to_string(path).ok()?)
+}
+
+fn status_of(json: &str) -> Option<AgentState> {
+    let v: Value = serde_json::from_str(json).ok()?;
+    match v.get("status")?.as_str()? {
+        "busy" => Some(AgentState::Working),
+        "waiting" => Some(AgentState::Waiting),
+        "idle" | "shell" => Some(AgentState::Idle),
+        _ => None,
+    }
+}
+
 /// A view of the machine's processes, refreshed on each look.
 pub struct Processes {
     sys: System,
@@ -86,7 +112,7 @@ impl Processes {
 
     /// The agent under each shell, the one nearest to it: an agent's own children (a tool it runs
     /// that happens to start another agent) don't count.
-    pub fn agents(&mut self, shells: &[(SessionId, u32)]) -> Vec<(SessionId, Option<Seen>)> {
+    pub fn agents(&mut self, shells: &[(SessionId, u32)]) -> Vec<(SessionId, Option<(Seen, u32)>)> {
         // the command line is read once per process, the first time it is seen
         self.sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
@@ -122,7 +148,11 @@ impl Processes {
                         .iter()
                         .flat_map(|p| children.get(p).into_iter().flatten().copied())
                         .collect();
-                    if let Some(seen) = next.iter().find_map(|p| read(&cmd_of(p))) {
+                    // with its process id, which names Claude's status file
+                    if let Some(seen) = next
+                        .iter()
+                        .find_map(|p| read(&cmd_of(p)).map(|s| (s, p.as_u32())))
+                    {
                         return (id, Some(seen));
                     }
                     level = next;
@@ -181,5 +211,17 @@ mod tests {
         );
         let seen = read(&cmd("claude --model=opus")).unwrap();
         assert_eq!((seen.model.as_deref(), seen.resume), (Some("opus"), None));
+    }
+
+    #[test]
+    fn claudes_status_file_says_what_it_does() {
+        let file = |status: &str| format!(r#"{{"pid":1,"sessionId":"s","status":"{status}"}}"#);
+        assert_eq!(status_of(&file("busy")), Some(AgentState::Working));
+        assert_eq!(status_of(&file("waiting")), Some(AgentState::Waiting));
+        assert_eq!(status_of(&file("idle")), Some(AgentState::Idle));
+        assert_eq!(status_of(&file("shell")), Some(AgentState::Idle));
+        assert_eq!(status_of(&file("something new")), None);
+        assert_eq!(status_of(r#"{"pid":1}"#), None);
+        assert_eq!(status_of("not json"), None);
     }
 }

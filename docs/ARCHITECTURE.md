@@ -141,6 +141,12 @@ drop(session)                    // kills the CLI
   hook of its own, which is why `PostToolUse` is wired: it's what ends a "needs your answer" state.
   `HYPRSPACE_DEBUG_HOOKS=1` logs payloads; it's off by default because they hold prompts. Codex and
   Gemini rows show no live state (no hooks).
+- **Claude's own status.** No hook fires when a turn is interrupted with Esc or Ctrl+C. Claude
+  keeps a file per running session, `~/.claude/sessions/<pid>.json`, whose `status` is `busy`,
+  `waiting` (a dialog blocks the turn), or `idle`. The watcher already finds Claude's process
+  under each shell every two seconds and reads that file (`running::claude_status`). A change in
+  it corrects the hooks' state: busy to idle mid-turn is an interrupt. Only changes count, so a
+  status a beat behind the hooks can't undo a Done.
 - **The emulator lives in the UI.** `ui/src/terminal/` folds bytes through `alacritty_terminal`
   (selection, scrollback, find, modes, cursor), answers terminal queries itself, paints the grid on
   a canvas with block and line characters drawn as rectangles, and reads text through GPUI's input
