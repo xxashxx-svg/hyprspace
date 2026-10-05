@@ -39,9 +39,18 @@ fn list_in(home: &Path, provider: &str, cwd: &Path) -> Vec<AgentSession> {
 /// Verified against ~/.claude/projects: all 131 dirs are [A-Za-z0-9-] only, and
 /// C:\Users\x\.hyprspace\... lands at C--Users-x--hyprspace-... (the dot becomes a dash too).
 /// Getting this wrong silently breaks resume for any path with a dot or space, i.e. every worktree.
+/// A trailing separator is dropped first, as Claude never sees one in its own working folder:
+/// `...\santiarr\` must find `...-santiarr`, or a saved conversation looks new and Claude refuses
+/// to start it again. A drive's root keeps its own.
 pub fn claude_project_dir(home: &Path, cwd: &Path) -> PathBuf {
-    let enc: String = cwd
-        .to_string_lossy()
+    let full = cwd.to_string_lossy();
+    let trimmed = full.trim_end_matches(['\\', '/']);
+    let path = if trimmed.is_empty() || trimmed.ends_with(':') {
+        &full
+    } else {
+        trimmed
+    };
+    let enc: String = path
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
@@ -242,6 +251,22 @@ mod tests {
     fn project_dir_encodes_every_non_alphanumeric() {
         let dir = claude_project_dir(Path::new("/h"), Path::new(r"C:\Users\x\.hyprspace\wt one"));
         assert!(dir.ends_with("C--Users-x--hyprspace-wt-one"), "{dir:?}");
+    }
+
+    #[test]
+    fn a_trailing_separator_finds_the_same_project() {
+        let home = Path::new("/h");
+        let plain = claude_project_dir(home, Path::new(r"C:\work\santiarr"));
+        assert_eq!(
+            claude_project_dir(home, Path::new(r"C:\work\santiarr\")),
+            plain
+        );
+        assert_eq!(
+            claude_project_dir(home, Path::new("C:/work/santiarr/")),
+            plain
+        );
+        // a drive's root is itself
+        assert!(claude_project_dir(home, Path::new(r"C:\")).ends_with("C--"));
     }
 
     #[test]

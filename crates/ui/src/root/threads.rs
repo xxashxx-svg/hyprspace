@@ -48,6 +48,17 @@ fn typed(prompt: &Prompt) -> String {
         .join(" ")
 }
 
+/// `path` without a trailing separator, the way the folder's own tools name it. A drive's root
+/// keeps its own.
+fn trim_separator(path: PathBuf) -> PathBuf {
+    let full = path.to_string_lossy();
+    let trimmed = full.trim_end_matches(['/', '\\']);
+    if trimmed.len() == full.len() || trimmed.is_empty() || trimmed.ends_with(':') {
+        return path;
+    }
+    PathBuf::from(trimmed)
+}
+
 pub(crate) fn folder_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -57,6 +68,7 @@ pub(crate) fn folder_name(path: &Path) -> String {
 impl Root {
     /// The space for `path`, made if the sidebar has none yet.
     pub(crate) fn add_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> u64 {
+        let path = trim_separator(path);
         if let Some(s) = self
             .state
             .spaces
