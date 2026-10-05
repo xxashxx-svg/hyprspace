@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ClickEvent, Context, DragMoveEvent, ElementId,
-    FontWeight, Hsla, IntoElement, MouseButton, SharedString, Transformation, canvas, div,
+    FontWeight, Hsla, IntoElement, MouseButton, Pixels, SharedString, Transformation, canvas, div,
     linear_color_stop, linear_gradient, percentage, prelude::*, px, relative,
 };
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
@@ -146,6 +146,36 @@ fn agent_mark(agent: Option<Agent>, ring_key: Option<ElementId>) -> AnyElement {
 }
 
 impl Root {
+    /// The box over a row's title while that thread is renamed, in the title's own size and
+    /// weight so nothing jumps. It is drawn over the title's line, its text where the title's
+    /// was, so the rows below stay put. Clicks in it stay in it: placing the cursor or selecting
+    /// text neither opens nor drags the row.
+    fn rename_box(&self, id: u64, size: Pixels, weight: FontWeight) -> Option<AnyElement> {
+        let (Rename::Thread(r), input, _) = self.rename.as_ref()?;
+        (*r == id).then(|| {
+            div()
+                .id(("rename", id))
+                .h(px(24.))
+                .my(px(-2.))
+                .mx(px(-7.))
+                .flex()
+                .items_center()
+                .px(px(6.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(colors::accent())
+                .bg(colors::bg())
+                .text_size(size)
+                .font_weight(weight)
+                .text_color(colors::text1())
+                .cursor_text()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                .child(input.clone())
+                .into_any_element()
+        })
+    }
+
     /// A small icon button on a row's hover strip.
     fn row_button(
         &self,
@@ -432,24 +462,9 @@ impl Root {
                     .unwrap_or_default(),
             ),
         };
-        let title: AnyElement = match &self.rename {
-            Some((Rename::Thread(r), input, _)) if *r == id => div()
-                .h(px(24.))
-                // drawn over the title's own line, its text where the title's was, so the rows
-                // below don't jump while it is open
-                .my(px(-2.))
-                .mx(px(-7.))
-                .flex()
-                .items_center()
-                .px(px(6.))
-                .rounded(px(6.))
-                .border_1()
-                .border_color(colors::accent())
-                .bg(colors::bg())
-                .text_color(colors::text1())
-                .child(input.clone())
-                .into_any_element(),
-            _ => div()
+        let title: AnyElement = match self.rename_box(id, px(13.5), FontWeight::MEDIUM) {
+            Some(rename) => rename,
+            None => div()
                 .min_w_0()
                 .truncate()
                 .text_size(px(13.5))
@@ -703,15 +718,16 @@ impl Root {
             .when(selected, |d| d.bg(colors::surface3()))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
             .child(tag(&space, true))
-            .child(
-                div()
+            .child(match self.rename_box(id, px(12.5), FontWeight::NORMAL) {
+                Some(rename) => div().flex_1().min_w_0().child(rename),
+                None => div()
                     .flex_1()
                     .min_w_0()
                     .truncate()
                     .text_size(px(12.5))
                     .text_color(colors::text3())
                     .child(t.title.clone()),
-            )
+            })
             .children(when.map(|w| {
                 div()
                     .flex_none()

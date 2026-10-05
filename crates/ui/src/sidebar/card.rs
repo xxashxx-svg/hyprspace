@@ -14,7 +14,7 @@ use hyprspace_theme::MONO;
 
 use crate::assets::{icon, mark};
 use crate::colors;
-use crate::root::Root;
+use crate::root::{Rename, Root};
 
 /// How long the pointer rests on a row before its card shows.
 const AFTER: Duration = Duration::from_millis(450);
@@ -178,6 +178,10 @@ impl Root {
     pub(crate) fn hover_card(&self, window: &Window, cx: &App) -> Option<AnyElement> {
         let (thread, since) = self.hover_row?;
         if since.elapsed() < AFTER || self.menu.is_some() || cx.has_active_drag() {
+            return None;
+        }
+        // not over a title being typed
+        if matches!(&self.rename, Some((Rename::Thread(r), ..)) if *r == thread) {
             return None;
         }
         let bounds = *self.row_bounds.borrow().get(&thread)?;

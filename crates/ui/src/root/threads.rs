@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui::{AppContext, Context, Entity, Focusable, PathPromptOptions, Window};
+use gpui::{AppContext, Context, Entity, FocusHandle, Focusable, PathPromptOptions, Window};
 use hyprspace_proto::{Agent, Command, Prompt, SessionId, Space, Thread, ThreadKind};
 
 use super::{Action, Rename, Root, Screen, Start, View};
@@ -614,6 +614,9 @@ impl Root {
             .and_then(|(_, t)| t.agent()?.resume.clone())
     }
 
+    /// Renames a thread in place, after T3 Code's: Enter saves, Esc cancels, and clicking
+    /// anywhere else saves too. Enter and Esc give the keyboard back to what had it; a click
+    /// away leaves it where the click put it.
     fn start_rename(&mut self, target: Rename, window: &mut Window, cx: &mut Context<Self>) {
         let Rename::Thread(thread) = target;
         let current = self
@@ -627,26 +630,54 @@ impl Root {
             i.select_all_text(cx);
             i
         });
-        let sub = cx.subscribe_in(&input, window, move |root, input, e: &InputEvent, _, cx| {
-            match e {
-                InputEvent::Submit => {
-                    let name = input.read(cx).text().trim().to_string();
-                    if !name.is_empty() {
-                        if let Some(t) = root.state.thread_mut(thread) {
-                            t.title = name;
-                        }
-                        root.save();
-                    }
-                    root.rename = None;
-                }
-                InputEvent::Cancel => root.rename = None,
+        let back = window.focused(cx);
+        let keys = cx.subscribe_in(
+            &input,
+            window,
+            move |root, input, e: &InputEvent, window, cx| match e {
+                InputEvent::Submit => root.end_rename(input, true, back.clone(), window, cx),
+                InputEvent::Cancel => root.end_rename(input, false, back.clone(), window, cx),
                 _ => {}
-            }
-            cx.notify();
-        });
+            },
+        );
         let focus = input.focus_handle(cx);
+        let this = input.clone();
+        let blur = cx.on_focus_out(&focus, window, move |root, _, window, cx| {
+            root.end_rename(&this, true, None, window, cx)
+        });
         window.focus(&focus, cx);
-        self.rename = Some((target, input, sub));
+        self.rename = Some((target, input, [keys, blur]));
+        cx.notify();
+    }
+
+    /// Ends the rename `input` belongs to, saving the name when `save` and it isn't blank, and
+    /// gives the keyboard to `back`. A rename that already gave way to another is left alone.
+    fn end_rename(
+        &mut self,
+        input: &Entity<TextInput>,
+        save: bool,
+        back: Option<FocusHandle>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let thread = match &self.rename {
+            Some((Rename::Thread(thread), current, _)) if current == input => *thread,
+            _ => return,
+        };
+        let name = input.read(cx).text().trim().to_string();
+        if save
+            && !name.is_empty()
+            && let Some(t) = self.state.thread_mut(thread)
+            && t.title != name
+        {
+            t.title = name;
+            self.save();
+        }
+        self.rename = None;
+        // after the key that ended it has finished with the box
+        if let Some(back) = back {
+            window.defer(cx, move |window, cx| window.focus(&back, cx));
+        }
         cx.notify();
     }
 }

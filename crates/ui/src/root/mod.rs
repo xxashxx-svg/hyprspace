@@ -121,7 +121,9 @@ pub struct Root {
     pub(crate) unseen: HashSet<u64>,
     pub(crate) screen: Screen,
     pub(crate) composer: Entity<Composer>,
-    pub(crate) rename: Option<(Rename, Entity<TextInput>, Subscription)>,
+    /// A thread being renamed: its box, and what ends the rename (Enter or Esc, and focus
+    /// leaving the box).
+    pub(crate) rename: Option<(Rename, Entity<TextInput>, [Subscription; 2])>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     /// The menu's line whose choices are open beside it.
     pub(crate) menu_sub: Option<usize>,
