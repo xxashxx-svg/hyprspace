@@ -1,6 +1,7 @@
 // The ring in the top bar and the popover under it (the Tauri app's UsageMeter.tsx
 // and usage.css). The ring follows the most urgent window across every provider; the popover
-// shows each provider's windows, with tabs when Claude and Codex both report.
+// shows each provider's windows, under a strip drawn like the dock's tabs: one tab per provider
+// when Claude and Codex both report, and the plan on its right.
 
 use std::f32::consts::{PI, TAU};
 
@@ -106,7 +107,7 @@ impl Render for Limits {
                 cx.notify();
             });
             // right-aligned under the ring
-            let at = point(at.x - px(262.), at.y + px(18.));
+            let at = point(at.x - px(WIDTH - 10.), at.y + px(18.));
             widgets::layer(
                 at,
                 widgets::Open::Down,
@@ -134,128 +135,111 @@ impl Limits {
         } else {
             self.tab
         };
-        let mut body = div()
-            .id("usage-pop")
-            .w(px(272.))
-            .py(px(4.))
-            .flex()
-            .flex_col()
-            .rounded(px(11.))
-            .border_1()
-            .border_color(colors::border2())
-            .bg(colors::surface2())
-            .shadow(colors::shadow());
-        if both {
-            let tabs = [pic.claude.as_ref(), pic.codex.as_ref()]
-                .into_iter()
-                .flatten()
-                .map(|b| {
-                    let on = b.agent == tab;
-                    let agent = b.agent;
-                    div()
-                        .id(("usage-tab", agent as usize))
-                        .flex_1()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .gap(px(6.))
-                        .h(px(26.))
-                        .rounded(px(6.))
-                        .text_size(px(12.))
-                        .cursor_pointer()
-                        .when(on, |d| d.bg(colors::surface3()).text_color(colors::text1()))
-                        .when(!on, |d| {
-                            d.text_color(colors::text3())
-                                .hover(|s| s.text_color(colors::text1()))
-                        })
-                        .child(div().when(!on, |d| d.opacity(0.6)).child(mark(
-                            agent,
-                            12.,
-                            brand(agent.cli()),
-                        )))
-                        .child(agent.name())
-                        .on_click(cx.listener(move |l, _: &ClickEvent, _, cx| {
-                            l.tab = agent;
-                            cx.notify();
-                        }))
-                });
-            body = body.child(
-                div()
-                    .flex()
-                    .gap(px(3.))
-                    .mx(px(8.))
-                    .mt(px(6.))
-                    .mb(px(4.))
-                    .p(px(3.))
-                    .rounded(px(8.))
-                    .bg(colors::ink(0.05))
-                    .children(tabs),
-            );
-        }
         let shown = if tab == Agent::Claude {
             pic.claude.as_ref()
         } else {
             pic.codex.as_ref()
         };
-        if let Some(b) = shown {
-            body = body.child(section(b, both, now));
-            if b.agent == Agent::Claude && pic.claude_stale {
-                body = body.child(
+        // the strip: a tab per provider, as the dock's Files and Git, or the one provider's name
+        let tabs: Vec<AnyElement> = [pic.claude.as_ref(), pic.codex.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|b| {
+                let on = b.agent == tab || !both;
+                let agent = b.agent;
+                div()
+                    .id(("usage-tab", agent as usize))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(10.))
+                    .py(px(6.))
+                    .rounded(px(6.))
+                    .text_size(px(12.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(if on { colors::text1() } else { colors::text3() })
+                    .when(on && both, |d| d.bg(colors::surface3()))
+                    .when(!on, |d| {
+                        d.cursor_pointer()
+                            .hover(|s| s.bg(colors::ink(0.05)).text_color(colors::text1()))
+                            .on_click(cx.listener(move |l, _: &ClickEvent, _, cx| {
+                                l.tab = agent;
+                                cx.notify();
+                            }))
+                    })
+                    .child(div().when(!on, |d| d.opacity(0.6)).child(mark(
+                        agent,
+                        13.,
+                        brand(agent.cli()),
+                    )))
+                    .child(agent.name())
+                    .into_any_element()
+            })
+            .filter(|_| shown.is_some())
+            .collect();
+        let plan = shown.and_then(|b| b.plan.clone()).map(|p| {
+            div()
+                .flex_none()
+                .max_w(px(120.))
+                .truncate()
+                .px(px(7.))
+                .py(px(1.))
+                .rounded_full()
+                .bg(colors::ink(0.06))
+                .text_size(px(10.5))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text2())
+                .child(p)
+        });
+        let strip = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(2.))
+            .h(px(40.))
+            .px(px(6.))
+            .pr(px(10.))
+            .border_b_1()
+            .border_color(colors::border1())
+            .children(tabs)
+            .child(div().flex_1())
+            .children(plan);
+        let stale = shown.is_some_and(|b| b.agent == Agent::Claude) && pic.claude_stale;
+        div()
+            .id("usage-pop")
+            .w(px(WIDTH))
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .rounded(px(12.))
+            .border_1()
+            .border_color(colors::border2())
+            .bg(colors::surface2())
+            .shadow(colors::shadow())
+            .child(strip)
+            .children(shown.map(|b| section(b, now)))
+            .when(stale, |d| {
+                d.child(
                     div()
-                        .px(px(12.))
-                        .pb(px(8.))
-                        .text_size(px(11.))
+                        .px(px(14.))
+                        .py(px(10.))
+                        .border_t_1()
+                        .border_color(colors::border1())
+                        .text_size(px(11.5))
                         .text_color(colors::text3())
                         .child("No agent has reported in a while."),
-                );
-            }
-        }
-        body.into_any_element()
+                )
+            })
+            .into_any_element()
     }
 }
 
-/// One provider: a header, then a row per window. Under a tab the tab names it, so the header
-/// keeps only the plan.
-fn section(b: &Block, tabbed: bool, now: i64) -> AnyElement {
-    let plan = b.plan.clone().map(|p| {
-        div()
-            .when(!tabbed, |d| d.ml_auto())
-            .max_w(px(150.))
-            .truncate()
-            .font_family(MONO)
-            .text_size(px(10.))
-            .text_color(colors::text3())
-            .child(p)
-    });
-    let head = if tabbed {
-        plan.map(|p| div().flex().items_center().h(px(18.)).mb(px(8.)).child(p))
-    } else {
-        Some(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .h(px(24.))
-                .mb(px(10.))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .size(px(18.))
-                        .child(mark(b.agent, 14., brand(b.agent.cli()))),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(colors::text1())
-                        .child(b.agent.name()),
-                )
-                .children(plan),
-        )
-    };
-    let mut rows = div().flex().flex_col().gap(px(13.));
+/// The popover's width.
+const WIDTH: f32 = 300.;
+
+/// One provider's windows, a row each. The strip above names the provider and its plan.
+fn section(b: &Block, now: i64) -> AnyElement {
+    let mut rows = div().flex().flex_col().gap(px(16.));
     for w in &b.windows {
         rows = rows.child(window_row(w, brand(b.agent.cli()), now));
     }
@@ -271,19 +255,13 @@ fn section(b: &Block, tabbed: bool, now: i64) -> AnyElement {
             None,
             x.percent as f32,
             brand(b.agent.cli()),
-            format!("{cur}{:.2} of {cur}{:.2} this month", x.used, x.limit),
+            format!("{cur}{:.2} of {cur}{:.2} this month.", x.used, x.limit),
         ));
     }
     if let Some(note) = &b.note {
         rows = rows.child(foot(note.clone()));
     }
-    div()
-        .pt(px(8.))
-        .px(px(12.))
-        .pb(px(12.))
-        .children(head)
-        .child(rows)
-        .into_any_element()
+    div().p(px(14.)).child(rows).into_any_element()
 }
 
 fn window_row(w: &Win, brand: Hsla, now: i64) -> AnyElement {
@@ -300,9 +278,9 @@ fn window_row(w: &Win, brand: Hsla, now: i64) -> AnyElement {
         tone_color(tone)
     };
     let foot = if gone {
-        "window reset, updates next turn".to_string()
+        "Window reset. Updates next turn.".to_string()
     } else if w.resets_at.is_some() {
-        format!("resets in {}", w.reset_label(now))
+        format!("Resets in {}", w.reset_label(now))
     } else {
         String::new()
     };
@@ -328,7 +306,7 @@ fn row(
     div()
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(px(7.))
         .child(
             div()
                 .flex()
@@ -339,8 +317,9 @@ fn row(
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.))
-                        .text_color(colors::text2())
+                        .text_size(px(12.5))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(colors::text1())
                         .child(label.to_string()),
                 )
                 .child(
@@ -355,7 +334,7 @@ fn row(
                 ),
         )
         .child(
-            div().h(px(5.)).rounded_full().bg(colors::ink(0.07)).child(
+            div().h(px(6.)).rounded_full().bg(colors::ink(0.07)).child(
                 div()
                     .h_full()
                     .w(gpui::relative(pct.clamp(0.0, 100.0) / 100.0))
@@ -369,8 +348,7 @@ fn row(
 
 fn foot(text: String) -> impl IntoElement {
     div()
-        .font_family(MONO)
-        .text_size(px(10.))
+        .text_size(px(11.5))
         .text_color(colors::text3())
         .child(text)
 }
