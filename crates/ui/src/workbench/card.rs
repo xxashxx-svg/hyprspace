@@ -1,6 +1,7 @@
 // The viewer card: a file or a diff over the window, on a dimmed backdrop. Its header names the
-// file and its folder, and carries the diff's line counts, a button to view the whole file from a
-// diff, one to open it in the user's editor, and close. Esc or a click outside closes it too.
+// file and its folder, marks unsaved edits, and carries the diff's line counts, a button to view
+// the whole file from a diff, one to open it in the user's editor, and close. Esc or a click
+// outside closes it too, asking first about unsaved edits.
 
 use std::path::{Path, PathBuf};
 
@@ -73,6 +74,7 @@ impl Root {
         let (name, dir) = self.file_title(space, &path);
         let diff = matches!(pane, Pane::Diff { .. });
         let counts = diff.then(|| viewer.read(cx).counts()).flatten();
+        let unsaved = viewer.read(cx).dirty(cx);
         let size = window.viewport_size();
         let (vw, vh) = (f32::from(size.width), f32::from(size.height));
         let scrim = colors::hsla(colors::theme().shadow);
@@ -164,6 +166,22 @@ impl Root {
                     .text_color(colors::text1())
                     .child(name),
             )
+            // unsaved edits, as editors mark a tab
+            .when(unsaved, |d| {
+                d.child(
+                    div()
+                        .id("card-unsaved")
+                        .tooltip(tip(if cfg!(target_os = "macos") {
+                            "Unsaved changes. Cmd+S saves them."
+                        } else {
+                            "Unsaved changes. Ctrl+S saves them."
+                        }))
+                        .flex_none()
+                        .size(px(7.))
+                        .rounded_full()
+                        .bg(colors::text2()),
+                )
+            })
             .child(
                 div()
                     .flex_1()

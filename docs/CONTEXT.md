@@ -44,7 +44,8 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
 - **Journal**: the engine's file of a thread's prompts, answers and run events
   (`journals/thread-<id>.jsonl`), replayed to rebuild its transcript after a restart.
 - **Main area**: where the one thread on screen shows, or a space's composer.
-- **Viewer**: the read-only card that shows a file or one file's diff over the window.
+- **Viewer**: the card that shows a file or one file's diff over the window. A text file in it
+  can be edited and saved.
 - **Lightbox**: an image shown over the window, zoomable and movable, from a Ctrl+click in a
   terminal.
 - **Dock**: the right panel (Ctrl+Shift+G) with the file tree and the git tab for the folder

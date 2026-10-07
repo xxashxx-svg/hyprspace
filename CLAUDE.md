@@ -12,8 +12,8 @@ UI framework). Each folder is a **space** in the sidebar, and each conversation 
 **thread**. A thread runs as a **structured session** (Claude or Codex driven over its machine
 protocol and drawn as a transcript with tool calls, approvals and diffs) or as a **terminal
 session** (a real PTY running a shell, or an agent CLI interactively). One thread shows at a
-time, with a files and git dock, a read-only file viewer that opens over it, a usage meter and a
-command palette.
+time, with a files and git dock, a file viewer that opens over it and edits text, a usage meter
+and a command palette.
 The words are defined once in [`docs/CONTEXT.md`](./docs/CONTEXT.md); use exactly those.
 
 - **Stack:** Rust 1.98.1 (edition 2024) · GPUI and `gpui_platform` pinned to one upstream Zed
@@ -184,8 +184,9 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
   folder), and a clone card when the text starts with a repository link.
 - **Main area, dock and viewer.** One thread on screen at a time; clicking a sidebar row shows
   it (ADR 0015). The dock (Ctrl+Shift+G) has the file tree and the git tab; a file or a diff opens
-  in a read-only card over the window, and a Ctrl+clicked image in a zoomable lightbox. Folder
-  work rides `Command::Folder` behind one git lock (ADR 0007).
+  in a card over the window, and a Ctrl+clicked image in a zoomable lightbox. A text file there is
+  editable and saves only over what it read (ADR 0016). Folder work rides `Command::Folder`
+  behind one git lock (ADR 0007).
 - **Usage.** `engine/src/usage/live.rs` reads each provider's usage endpoint (rule 1) and answers
   inside the floor (180s Claude, 60s Codex) from its last reading, backing off on 429 and 5xx. One
   `ui::usage::Limits` entity holds every reading for the ring and Settings, and falls back to

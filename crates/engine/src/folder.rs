@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use futures::channel::mpsc::UnboundedSender;
 use hyprspace_proto::Event;
-use hyprspace_proto::folder::{DirEntry, FolderCommand, FolderEvent, GitStatus};
+use hyprspace_proto::folder::{DirEntry, FolderCommand, FolderEvent, GitStatus, SaveError};
 use hyprspace_proto::git::FileOp;
 
 use crate::{git, open};
@@ -43,6 +43,10 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
         FolderCommand::ReadFile { path } => {
             let text = read_file(&path);
             vec![FolderEvent::File { path, text }]
+        }
+        FolderCommand::WriteFile { path, text, expect } => {
+            let result = write_file(&path, &text, expect.as_deref());
+            vec![FolderEvent::Saved { path, result }]
         }
         FolderCommand::GitStatus { cwd } => {
             let status = status(&cwd);
@@ -156,6 +160,21 @@ fn read_file(path: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// Writes `text` over `path` if the file still holds `expect`. The viewer reads files lossily,
+/// so a file that isn't UTF-8 is refused: writing its text back would change bytes the user
+/// never touched.
+fn write_file(path: &Path, text: &str, expect: Option<&str>) -> Result<(), SaveError> {
+    let failed = |e: std::io::Error| SaveError::Failed(e.to_string());
+    let now = std::fs::read(path).map_err(failed)?;
+    let now = String::from_utf8(now).map_err(|_| {
+        SaveError::Failed("This file isn't UTF-8 text, so it can't be saved here.".into())
+    })?;
+    if expect.is_some_and(|e| e != now) {
+        return Err(SaveError::Changed);
+    }
+    std::fs::write(path, text).map_err(failed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +217,31 @@ mod tests {
         assert_eq!(read_file(&text).unwrap(), "fn main() {}\n");
         assert!(read_file(&bin).unwrap_err().contains("binary"));
         assert!(read_file(dir.path()).is_err());
+    }
+
+    #[test]
+    fn saves_only_over_what_it_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.md");
+        std::fs::write(&file, "one\n").unwrap();
+        assert_eq!(write_file(&file, "two\n", Some("one\n")), Ok(()));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "two\n");
+        // changed outside since it was read: left alone, unless told to write anyway
+        assert_eq!(
+            write_file(&file, "three\n", Some("one\n")),
+            Err(SaveError::Changed)
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "two\n");
+        assert_eq!(write_file(&file, "three\n", None), Ok(()));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "three\n");
+        // bytes that aren't UTF-8 would not survive the round trip
+        let latin = dir.path().join("b.txt");
+        std::fs::write(&latin, [b'a', 0xE9, b'\n']).unwrap();
+        assert!(matches!(
+            write_file(&latin, "a\n", None),
+            Err(SaveError::Failed(_))
+        ));
+        assert_eq!(std::fs::read(&latin).unwrap(), [b'a', 0xE9, b'\n']);
     }
 
     #[test]

@@ -19,6 +19,14 @@ pub enum FolderCommand {
     ReadFile {
         path: PathBuf,
     },
+    /// The viewer's edits to a file, written only while the file still holds `expect` (what the
+    /// viewer read or last saved), so a change made outside in the meantime is never written
+    /// over. `expect: None` writes whatever is there. Answered with `Saved`.
+    WriteFile {
+        path: PathBuf,
+        text: String,
+        expect: Option<String>,
+    },
     /// The branch and changed files of the repo holding `cwd`. Answered with `Git`.
     GitStatus {
         cwd: PathBuf,
@@ -63,6 +71,10 @@ pub enum FolderEvent {
         path: PathBuf,
         text: Result<String, String>,
     },
+    Saved {
+        path: PathBuf,
+        result: Result<(), SaveError>,
+    },
     Git {
         cwd: PathBuf,
         status: GitStatus,
@@ -84,6 +96,16 @@ pub enum FolderEvent {
     OpenFailed {
         message: String,
     },
+}
+
+/// Why a save didn't happen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "why", content = "message", rename_all = "camelCase")]
+pub enum SaveError {
+    /// The file no longer holds what the viewer read: something else changed it.
+    Changed,
+    /// The disk refused, or the file isn't text the viewer can write back unchanged.
+    Failed(String),
 }
 
 /// One entry of a folder listing.

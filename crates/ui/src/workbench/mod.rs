@@ -22,7 +22,7 @@ use hyprspace_proto::{Command, FolderCommand, FolderEvent, Opener, Pane};
 
 use crate::dock::{Dock, DockEvent};
 use crate::root::{Root, Screen};
-use crate::viewer::Viewer;
+use crate::viewer::{Viewer, ViewerEvent};
 
 actions!(hyprspace, [ToggleDock, ToggleSidebar]);
 
@@ -106,7 +106,13 @@ impl Root {
         let Some(space) = self.current_space() else {
             return;
         };
-        let viewer = self.viewer(cx);
+        let viewer = self.viewer(window, cx);
+        // another file over unsaved edits: the edits come first
+        let other = self.work.viewing.as_ref().is_some_and(|v| v.pane != pane);
+        if other && viewer.read(cx).dirty(cx) {
+            viewer.update(cx, |v, cx| v.may_close(cx));
+            return;
+        }
         viewer.update(cx, |v, cx| v.show(pane.clone(), cx));
         // a card already open hands on the focus it was keeping
         let back = match self.work.viewing.take() {
@@ -119,8 +125,23 @@ impl Root {
         cx.notify();
     }
 
-    /// Closes the viewer card and gives the keyboard back to what had it.
+    /// Closes the viewer card. A file with unsaved edits asks first, and closes the card itself
+    /// once the user has answered (`ViewerEvent::Close`).
     pub(crate) fn close_viewer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(v) = self.work.viewer.clone()
+            && self.work.viewing.is_some()
+            && !v.update(cx, |v, cx| v.may_close(cx))
+        {
+            return;
+        }
+        self.close_viewer_now(window, cx);
+    }
+
+    /// Closes the viewer card and gives the keyboard back to what had it.
+    fn close_viewer_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(v) = &self.work.viewer {
+            v.update(cx, |v, _| v.forget());
+        }
         // after the click that closed it, which would otherwise keep the focus where it landed
         if let Some(back) = self.work.viewing.take().and_then(|v| v.back) {
             window.defer(cx, move |window, cx| window.focus(&back, cx));
@@ -129,12 +150,18 @@ impl Root {
     }
 
     /// The viewer, made on first use.
-    pub(crate) fn viewer(&mut self, cx: &mut Context<Self>) -> Entity<Viewer> {
+    pub(crate) fn viewer(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<Viewer> {
         if let Some(v) = &self.work.viewer {
             return v.clone();
         }
         let client = self.client.clone();
         let v = cx.new(|cx| Viewer::new(client, cx));
+        cx.subscribe_in(&v, window, |root, _, e: &ViewerEvent, window, cx| match e {
+            ViewerEvent::Close => root.close_viewer_now(window, cx),
+            // the card's title marks unsaved edits
+            ViewerEvent::Dirty => cx.notify(),
+        })
+        .detach();
         self.work.viewer = Some(v.clone());
         v
     }
@@ -242,7 +269,10 @@ impl Root {
                 }
             }
             FolderEvent::OpenFailed { message } => self.notify(message.clone(), cx),
-            FolderEvent::File { .. } | FolderEvent::Diff { .. } | FolderEvent::Git { .. } => {
+            FolderEvent::File { .. }
+            | FolderEvent::Saved { .. }
+            | FolderEvent::Diff { .. }
+            | FolderEvent::Git { .. } => {
                 if let Some(v) = &self.work.viewer {
                     v.update(cx, |v, cx| v.event(&e, cx));
                 }
