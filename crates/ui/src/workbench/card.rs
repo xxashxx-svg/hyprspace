@@ -200,7 +200,7 @@ impl Root {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded(px(12.))
+            .rounded(px(8.))
             .border_1()
             .border_color(colors::border2())
             .bg(colors::bg())
