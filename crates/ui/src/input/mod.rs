@@ -26,6 +26,8 @@ actions!(
     [
         Backspace,
         Delete,
+        DeleteWordLeft,
+        DeleteWordRight,
         Left,
         Right,
         Up,
@@ -34,6 +36,8 @@ actions!(
         WordRight,
         SelectLeft,
         SelectRight,
+        SelectWordLeft,
+        SelectWordRight,
         SelectUp,
         SelectDown,
         SelectAll,
@@ -63,6 +67,8 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, c),
         KeyBinding::new("delete", Delete, c),
+        KeyBinding::new(&format!("{word}-backspace"), DeleteWordLeft, c),
+        KeyBinding::new(&format!("{word}-delete"), DeleteWordRight, c),
         KeyBinding::new("left", Left, c),
         KeyBinding::new("right", Right, c),
         KeyBinding::new("up", Up, c),
@@ -71,6 +77,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new(&format!("{word}-right"), WordRight, c),
         KeyBinding::new("shift-left", SelectLeft, c),
         KeyBinding::new("shift-right", SelectRight, c),
+        KeyBinding::new(&format!("{word}-shift-left"), SelectWordLeft, c),
+        KeyBinding::new(&format!("{word}-shift-right"), SelectWordRight, c),
         KeyBinding::new("shift-up", SelectUp, c),
         KeyBinding::new("shift-down", SelectDown, c),
         KeyBinding::new("secondary-a", SelectAll, c),
@@ -327,6 +335,14 @@ impl TextInput {
         self.select_to(self.next_boundary(self.cursor()), cx);
     }
 
+    fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.word_left(self.cursor()), cx);
+    }
+
+    fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.word_right(self.cursor()), cx);
+    }
+
     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(self.vertical(-1).unwrap_or(0), cx);
     }
@@ -382,6 +398,25 @@ impl TextInput {
     fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
         let range = if self.selected.is_empty() {
             self.cursor()..self.next_boundary(self.cursor())
+        } else {
+            self.selected.clone()
+        };
+        self.replace(range, "", cx);
+    }
+
+    /// Ctrl+Backspace (Option on macOS): the word before the cursor, or the selection.
+    fn delete_word_left(&mut self, _: &DeleteWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        let range = if self.selected.is_empty() {
+            self.word_left(self.cursor())..self.cursor()
+        } else {
+            self.selected.clone()
+        };
+        self.replace(range, "", cx);
+    }
+
+    fn delete_word_right(&mut self, _: &DeleteWordRight, _: &mut Window, cx: &mut Context<Self>) {
+        let range = if self.selected.is_empty() {
+            self.cursor()..self.word_right(self.cursor())
         } else {
             self.selected.clone()
         };
@@ -502,6 +537,8 @@ impl Render for TextInput {
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
+            .on_action(cx.listener(Self::delete_word_left))
+            .on_action(cx.listener(Self::delete_word_right))
             .on_action(cx.listener(Self::left))
             .on_action(cx.listener(Self::right))
             .on_action(cx.listener(Self::up))
@@ -510,6 +547,8 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::word_right_action))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::select_word_left))
+            .on_action(cx.listener(Self::select_word_right))
             .on_action(cx.listener(Self::select_up))
             .on_action(cx.listener(Self::select_down))
             .on_action(cx.listener(Self::select_all))
