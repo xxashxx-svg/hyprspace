@@ -1,6 +1,7 @@
 // The dock's Git tab, in the shape of the Tauri app's GitPanel (and GitHub Desktop): the branch
 // with a push button once it is ahead, the changed files with a tick to stage each, and a commit
-// box with a summary and a description. A click on a file opens its diff in the viewer.
+// card with a summary and a description. Each file reads name first, its folder dim after it and
+// its state at the far end, as in VS Code. A click on a file opens its diff in the viewer.
 
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Focusable, FontWeight, IntoElement, Subscription,
@@ -12,6 +13,7 @@ use hyprspace_proto::{Command, FolderCommand, Pane};
 use hyprspace_theme::MONO;
 
 use super::files::Deco;
+use super::kinds::file_icon;
 use super::{Dock, DockEvent, empty};
 use crate::assets::icon;
 use crate::colors;
@@ -88,6 +90,22 @@ fn checkbox(state: Tick, enabled: bool) -> gpui::Div {
         })
 }
 
+/// The commit button while there is nothing it can do yet: flat, not a faded accent.
+fn idle_button(id: &'static str, label: String) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .h(px(26.))
+        .px(px(10.))
+        .rounded(px(6.))
+        .bg(colors::ink(0.05))
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors::text3())
+        .child(label)
+}
+
 impl GitTab {
     pub fn new(cx: &mut Context<Dock>) -> Self {
         let summary = cx.new(|cx| TextInput::new("Summary (required)", false, cx));
@@ -114,6 +132,11 @@ impl GitTab {
         self.status = None;
         self.busy = None;
         self.note = None;
+    }
+
+    /// How many files have changes, as of the last look.
+    pub fn changes(&self) -> usize {
+        self.status.as_ref().map_or(0, |s| s.changes.len())
     }
 
     pub fn status(&mut self, status: GitStatus) {
@@ -280,6 +303,8 @@ impl Dock {
         let staged = c.staged();
         let busy = self.git.busy.is_some();
         let (tick_path, diff_path) = (c.path.clone(), c.path.clone());
+        let (glyph, tint) = file_icon(&name);
+        let deleted = deco == Deco::Deleted;
         div()
             .id(("git-file", ix))
             .flex()
@@ -306,43 +331,32 @@ impl Dock {
                     .min_w_0()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(px(7.))
                     .h_full()
                     .cursor_pointer()
-                    .text_size(px(12.))
-                    .text_color(colors::text2())
-                    .hover(|s| s.text_color(colors::text1()))
-                    .child(
-                        div()
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(17.))
-                            .rounded(px(4.))
-                            .bg(deco.color().opacity(0.14))
-                            .font_family(MONO)
-                            .text_size(px(10.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(deco.color())
-                            .child(deco.letter(&c.status)),
-                    )
+                    .child(icon(glyph, 14., tint).when(deleted, |i| i.opacity(0.6)))
+                    // the folder gives way first, then the name truncates
                     .child(
                         div()
                             .min_w_0()
-                            .flex()
-                            .whitespace_nowrap()
-                            .when(!dir.is_empty(), |d| {
-                                d.child(
-                                    div()
-                                        .min_w_0()
-                                        .flex_shrink(1.)
-                                        .truncate()
-                                        .text_color(colors::text3())
-                                        .child(dir),
-                                )
+                            .truncate()
+                            .text_size(px(12.5))
+                            .text_color(if deleted {
+                                colors::text3()
+                            } else {
+                                colors::text1()
                             })
-                            .child(div().flex_none().child(name)),
+                            .when(deleted, |d| d.line_through())
+                            .child(name),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.))
+                            .text_color(colors::text3())
+                            .child(dir.trim_end_matches('/').to_string()),
                     )
                     .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
                         if let Some(cwd) = d.folder.clone() {
@@ -375,32 +389,18 @@ impl Dock {
                         )
                     }),
             )
-            .into_any_element()
-    }
-
-    fn input_box(
-        &self,
-        input: &Entity<TextInput>,
-        min_h: f32,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let focused = input.focus_handle(cx).is_focused(window);
-        div()
-            .w_full()
-            .min_h(px(min_h))
-            .px(px(9.))
-            .py(px(7.))
-            .rounded(px(6.))
-            .border_1()
-            .border_color(if focused {
-                colors::accent()
-            } else {
-                colors::border1()
-            })
-            .bg(colors::surface2())
-            .text_size(px(12.5))
-            .child(input.clone())
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(12.))
+                    .flex()
+                    .justify_center()
+                    .font_family(MONO)
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(deco.color())
+                    .child(deco.letter(&c.status)),
+            )
             .into_any_element()
     }
 
@@ -453,64 +453,81 @@ impl Dock {
         } else {
             format!("Commit to {branch}")
         };
+        let typing = self.git.summary.focus_handle(cx).is_focused(window)
+            || self.git.body.focus_handle(cx).is_focused(window);
+        let commit = if can_commit {
+            widgets::primary("git-commit", commit_label)
+                .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.commit(false, cx)))
+        } else {
+            idle_button("git-commit", commit_label)
+        };
+        let commit_push = if can_commit {
+            widgets::button("git-commit-push", "Commit and push")
+                .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.commit(true, cx)))
+        } else {
+            idle_button("git-commit-push", "Commit and push".into())
+        };
         div()
             .size_full()
             .flex()
             .flex_col()
             .child(self.branch_row(&s, cx))
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .h(px(32.))
-                    .px(px(12.))
-                    .border_b_1()
-                    .border_color(colors::border1())
-                    .child(
-                        div()
-                            .id("git-all")
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .text_size(px(12.))
-                            .text_color(colors::text2())
-                            .when(n > 0 && !busy, |d| {
-                                d.cursor_pointer().on_click(cx.listener(
-                                    move |d, _: &ClickEvent, _, cx| {
-                                        d.stage(String::new(), ticked != Tick::All, cx)
-                                    },
-                                ))
-                            })
-                            .child(checkbox(ticked, n > 0 && !busy))
-                            .child(format!(
-                                "{n} changed {}",
-                                if n == 1 { "file" } else { "files" }
-                            )),
-                    )
-                    .child(div().flex_1())
-                    // the whole tree's lines, like zeron's "80 changed files +9341 -3630"
-                    .when(added > 0, |d| {
-                        d.child(
+            // nothing changed: the note below says so
+            .when(n > 0, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .h(px(32.))
+                        .px(px(12.))
+                        .border_b_1()
+                        .border_color(colors::border1())
+                        .child(
                             div()
-                                .ml(px(6.))
-                                .font_family(MONO)
-                                .text_size(px(11.))
-                                .text_color(colors::diff_add())
-                                .child(format!("+{added}")),
+                                .id("git-all")
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .text_size(px(12.))
+                                .text_color(colors::text2())
+                                .when(n > 0 && !busy, |d| {
+                                    d.cursor_pointer().on_click(cx.listener(
+                                        move |d, _: &ClickEvent, _, cx| {
+                                            d.stage(String::new(), ticked != Tick::All, cx)
+                                        },
+                                    ))
+                                })
+                                .child(checkbox(ticked, n > 0 && !busy))
+                                .child(format!(
+                                    "{n} changed {}",
+                                    if n == 1 { "file" } else { "files" }
+                                )),
                         )
-                    })
-                    .when(removed > 0, |d| {
-                        d.child(
-                            div()
-                                .ml(px(6.))
-                                .font_family(MONO)
-                                .text_size(px(11.))
-                                .text_color(colors::diff_del())
-                                .child(format!("-{removed}")),
-                        )
-                    }),
-            )
+                        .child(div().flex_1())
+                        // the whole tree's lines, like zeron's "80 changed files +9341 -3630"
+                        .when(added > 0, |d| {
+                            d.child(
+                                div()
+                                    .ml(px(6.))
+                                    .font_family(MONO)
+                                    .text_size(px(11.))
+                                    .text_color(colors::diff_add())
+                                    .child(format!("+{added}")),
+                            )
+                        })
+                        .when(removed > 0, |d| {
+                            d.child(
+                                div()
+                                    .ml(px(6.))
+                                    .font_family(MONO)
+                                    .text_size(px(11.))
+                                    .text_color(colors::diff_del())
+                                    .child(format!("-{removed}")),
+                            )
+                        }),
+                )
+            })
             .child(
                 div()
                     .id("git-files")
@@ -522,11 +539,27 @@ impl Dock {
                     .when(n == 0, |d| {
                         d.child(
                             div()
-                                .px(px(8.))
-                                .py(px(14.))
-                                .text_size(px(12.))
-                                .text_color(colors::text3())
-                                .child("Nothing to commit. The working tree is clean."),
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap(px(6.))
+                                .pt(px(40.))
+                                .px(px(16.))
+                                .child(icon("circle-check", 22., colors::text3()))
+                                .child(
+                                    div()
+                                        .mt(px(2.))
+                                        .text_size(px(13.))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(colors::text2())
+                                        .child("No changes"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(colors::text3())
+                                        .child("The working tree is clean."),
+                                ),
                         )
                     })
                     .children(files),
@@ -536,41 +569,49 @@ impl Dock {
                     .flex_none()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
-                    .pt(px(10.))
+                    .gap(px(8.))
+                    .pt(px(12.))
                     .px(px(12.))
                     .pb(px(12.))
                     .border_t_1()
                     .border_color(colors::border1())
                     .bg(colors::surface1())
-                    .child(self.input_box(&self.git.summary.clone(), 0., window, cx))
-                    .child(self.input_box(&self.git.body.clone(), 52., window, cx))
+                    // the message as one card: its summary, a hairline, its description
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .rounded(px(8.))
+                            .border_1()
+                            .border_color(if typing {
+                                colors::accent()
+                            } else {
+                                colors::border2()
+                            })
+                            .bg(colors::surface2())
+                            .text_size(px(12.5))
+                            .child(
+                                div()
+                                    .px(px(10.))
+                                    .py(px(8.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(self.git.summary.clone()),
+                            )
+                            .child(div().h(px(1.)).bg(colors::ink(0.06)))
+                            .child(
+                                div()
+                                    .min_h(px(56.))
+                                    .px(px(10.))
+                                    .py(px(8.))
+                                    .child(self.git.body.clone()),
+                            ),
+                    )
                     .child(
                         div()
                             .flex()
                             .gap(px(6.))
-                            .child(
-                                widgets::primary("git-commit", commit_label)
-                                    .flex_1()
-                                    .justify_center()
-                                    .when(!can_commit, |d| d.opacity(0.5).cursor_default())
-                                    .when(can_commit, |d| {
-                                        d.on_click(cx.listener(|d, _: &ClickEvent, _, cx| {
-                                            d.commit(false, cx)
-                                        }))
-                                    }),
-                            )
-                            .child(
-                                widgets::button("git-commit-push", "Commit and push")
-                                    .flex_1()
-                                    .justify_center()
-                                    .when(!can_commit, |d| d.opacity(0.5).cursor_default())
-                                    .when(can_commit, |d| {
-                                        d.on_click(cx.listener(|d, _: &ClickEvent, _, cx| {
-                                            d.commit(true, cx)
-                                        }))
-                                    }),
-                            ),
+                            .child(commit.flex_1().justify_center())
+                            .child(commit_push.flex_1().justify_center()),
                     )
                     .child(
                         div()

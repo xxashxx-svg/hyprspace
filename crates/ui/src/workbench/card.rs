@@ -148,11 +148,12 @@ impl Root {
             .border_b_1()
             .border_color(colors::border1())
             .bg(colors::surface1())
-            .child(icon(
-                if diff { "file-diff" } else { "file-code" },
-                13.,
-                colors::text3(),
-            ))
+            .child(if diff {
+                icon("file-diff", 13., colors::text3())
+            } else {
+                let (glyph, tint) = crate::dock::kinds::file_icon(&name);
+                icon(glyph, 13., tint)
+            })
             .child(
                 div()
                     .min_w_0()

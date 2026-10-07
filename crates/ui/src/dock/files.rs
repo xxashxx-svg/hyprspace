@@ -1,6 +1,7 @@
-// The dock's Files tab, after the Tauri app's FilesPanel: a quiet tree that lists a folder only
-// when it is opened, colors changed files by their git state (and the folders holding them), and
-// marks the file the viewer has open. A click on a file opens it in the viewer.
+// The dock's Files tab, after the Tauri app's FilesPanel and T3 Code's tree: a quiet tree that
+// lists a folder only when it is opened, gives each file a glyph tinted by its kind, colors
+// changed files by their git state (a dot marks the folders holding them), and marks the file
+// the viewer has open. A click on a file opens it in the viewer.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -14,9 +15,11 @@ use hyprspace_proto::folder::{DirEntry, GitStatus};
 use hyprspace_proto::{Client, Command, FolderCommand, Pane};
 use hyprspace_theme::MONO;
 
+use super::kinds::file_icon;
 use super::{Dock, DockEvent, empty};
 use crate::assets::icon;
 use crate::colors;
+use crate::widgets::{self, tip};
 
 const ROW: f32 = 26.;
 const INDENT: f32 = 12.;
@@ -146,6 +149,10 @@ impl Tree {
         }
     }
 
+    fn collapse(&mut self) {
+        self.open.clear();
+    }
+
     fn toggle(&mut self, client: &Client, dir: PathBuf) {
         if !self.open.remove(&dir) {
             if !self.kids.contains_key(&dir) {
@@ -189,12 +196,10 @@ impl Tree {
         let dirty = r.dir && self.dirty.contains(&k);
         let viewing = !r.dir && self.viewing.as_deref().is_some_and(|v| key(v) == k);
         let pad = r.depth as f32 * INDENT + 8.;
-        let name_color = match (git, dirty, r.dir) {
-            (Some((d, _)), _, _) => d.color(),
-            (None, true, _) => Deco::Modified.color().opacity(0.85),
-            (None, false, true) => colors::text2(),
-            _ if viewing => colors::text1(),
-            _ => colors::text3(),
+        let name_color = match git {
+            Some((d, _)) => d.color(),
+            None if viewing => colors::text1(),
+            None => colors::text2(),
         };
         let guides = (1..=r.depth).map(|d| {
             div()
@@ -203,8 +208,18 @@ impl Tree {
                 .bottom_0()
                 .left(px((d - 1) as f32 * INDENT + 14.))
                 .w(px(1.))
-                .bg(colors::border1())
+                .bg(colors::ink(0.07))
         });
+        let glyph = if r.dir {
+            icon(
+                if r.open { "folder-open" } else { "folder" },
+                14.,
+                colors::text3(),
+            )
+        } else {
+            let (glyph, tint) = file_icon(&r.name);
+            icon(glyph, 14., tint)
+        };
         let path = r.path.clone();
         let dir = r.dir;
         div()
@@ -241,21 +256,29 @@ impl Tree {
             } else {
                 div().w(px(12.)).flex_none().into_any_element()
             })
-            .when(!r.dir, |d| {
-                d.child(icon("file", 13., colors::text3().opacity(0.7)))
-            })
+            .child(glyph)
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .truncate()
                     .text_color(name_color)
-                    .when(r.dir, |d| d.font_weight(FontWeight::MEDIUM))
                     .when(matches!(git, Some((Deco::Deleted, _))), |d| {
                         d.line_through()
                     })
                     .child(r.name.clone()),
             )
+            // a folder holding changes, without shouting its name
+            .when(dirty, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .mr(px(3.))
+                        .size(px(5.))
+                        .rounded_full()
+                        .bg(Deco::Modified.color().opacity(0.8)),
+                )
+            })
             .children(git.map(|(d, letter)| {
                 div()
                     .flex_none()
@@ -322,6 +345,7 @@ impl Dock {
             .track_scroll(&self.tree.scroll)
             .into_any_element(),
         };
+        // the title row names the folder's path already, so this keeps to its name and tools
         div()
             .size_full()
             .flex()
@@ -331,39 +355,31 @@ impl Dock {
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(px(2.))
                     .h(px(36.))
                     .pl(px(14.))
                     .pr(px(8.))
                     .child(
                         div()
-                            .flex_none()
-                            .text_size(px(12.5))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(colors::text1())
-                            .child(name),
-                    )
-                    .child(
-                        div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(MONO)
-                            .text_size(px(10.5))
-                            .text_color(colors::text3())
-                            .child(crate::workbench::short(&root)),
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors::text2())
+                            .child(name),
                     )
                     .child(
-                        div()
-                            .id("files-refresh")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(24.))
-                            .rounded(px(6.))
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors::surface3()))
-                            .child(icon("refresh-cw", 13., colors::text3()))
+                        widgets::icon_button("files-collapse", "chevrons-down-up", 24.)
+                            .tooltip(tip("Collapse folders"))
+                            .on_click(cx.listener(|d, _: &ClickEvent, _, cx| {
+                                d.tree.collapse();
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        widgets::icon_button("files-refresh", "refresh-cw", 24.)
+                            .tooltip(tip("Refresh"))
                             .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.refresh(cx))),
                     ),
             )

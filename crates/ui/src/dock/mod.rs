@@ -5,6 +5,7 @@
 
 mod files;
 mod git;
+pub(crate) mod kinds;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -131,8 +132,20 @@ impl Dock {
     }
 
     fn tabs(&self, cx: &mut Context<Self>) -> AnyElement {
+        // the Git tab carries how many files changed, so it shows from the Files tab too
+        let changed = self.git.changes();
         let tab = |id: &'static str, glyph: &str, label: &'static str, which: DockTab| {
             let on = self.tab == which;
+            let count = (which == DockTab::Git && changed > 0).then(|| {
+                div()
+                    .px(px(5.))
+                    .rounded(px(4.))
+                    .bg(colors::ink(0.08))
+                    .font_family(hyprspace_theme::MONO)
+                    .text_size(px(10.5))
+                    .text_color(colors::text2())
+                    .child(changed.to_string())
+            });
             div()
                 .id(id)
                 .flex()
@@ -159,6 +172,7 @@ impl Dock {
                     if on { colors::text1() } else { colors::text3() },
                 ))
                 .child(label)
+                .children(count)
                 .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| d.set_tab(which, cx)))
         };
         div()
