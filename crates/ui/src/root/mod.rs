@@ -177,6 +177,8 @@ pub struct Root {
     pub(crate) moving: bool,
     /// The sidebar's slide (`crate::slide`), shared by its column and its part of the title row.
     pub(crate) sidebar_flips: crate::slide::Flips,
+    /// The pointer was outside the window at the last draw.
+    pub(crate) away: bool,
     /// What each terminal thread's agent is doing, from its hooks.
     pub(crate) activity: HashMap<u64, Activity>,
     /// When each terminal thread's current turn began, for the sidebar's running count.
@@ -310,6 +312,7 @@ impl Root {
             updater,
             moving: false,
             sidebar_flips: Default::default(),
+            away: false,
             activity: HashMap::new(),
             turns: HashMap::new(),
             search,

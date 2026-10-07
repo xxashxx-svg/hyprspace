@@ -222,6 +222,26 @@ impl Render for Root {
                 .cached(StyleRefinement::default().w(px(width)).h_full().flex_none());
             slide("sidebar", flips, open, (0., width), false, view)
         });
+        // Windows tells GPUI the pointer left the window but moves nothing, so the row last under
+        // it kept its hover and its buttons, above all after a quick exit off the left edge onto
+        // another screen. Covered while the pointer is away, nothing in the sidebar is hovered.
+        // Hover styles read the last frame's hits, so the cover takes one more draw of the
+        // sidebar, a cached view, to clear them.
+        let away = !window.is_window_hovered();
+        if away && !self.away {
+            let view = self.sidebar_view.clone();
+            cx.defer(move |cx| view.update(cx, |_, cx| cx.notify()));
+        }
+        self.away = away;
+        let cover = (away && sidebar.is_some()).then(|| {
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .bottom_0()
+                .w(px(width))
+                .occlude()
+        });
         div()
             .id("root")
             .relative()
@@ -243,11 +263,13 @@ impl Render for Root {
             .child(titlebar)
             .child(
                 div()
+                    .relative()
                     .flex_1()
                     .min_h_0()
                     .flex()
                     .children(sidebar)
-                    .child(div().flex_1().min_w_0().h_full().child(main)),
+                    .child(div().flex_1().min_w_0().h_full().child(main))
+                    .children(cover),
             )
             .children(update)
             .children(menu)
