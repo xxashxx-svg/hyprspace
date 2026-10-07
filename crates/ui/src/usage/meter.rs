@@ -1,7 +1,7 @@
 // The ring in the top bar and the popover under it (the Tauri app's UsageMeter.tsx
 // and usage.css). The ring follows the most urgent window across every provider; the popover
-// shows each provider's windows, under a strip drawn like the dock's tabs: one tab per provider
-// when Claude and Codex both report, and the plan on its right.
+// shows each provider's windows as Settings draws them, under a strip drawn like the dock's
+// tabs: one tab per provider when Claude and Codex both report, and the plan on its right.
 
 use std::f32::consts::{PI, TAU};
 
@@ -10,9 +10,10 @@ use gpui::{
     canvas, div, fill, point, prelude::*, px, size,
 };
 use hyprspace_proto::Agent;
-use hyprspace_theme::MONO;
 
-use super::model::{Block, Tone, Win};
+use super::limits::{extra_row, limit_row};
+use super::model::{Block, Tone};
+use super::page::{note, rows};
 use super::{Limits, brand};
 use crate::assets::mark;
 use crate::time::now_ms;
@@ -220,138 +221,33 @@ impl Limits {
             .bg(colors::surface2())
             .shadow(colors::shadow())
             .child(strip)
-            .children(shown.map(|b| section(b, now)))
-            .when(stale, |d| {
-                d.child(
-                    div()
-                        .px(px(14.))
-                        .py(px(10.))
-                        .border_t_1()
-                        .border_color(colors::border1())
-                        .text_size(px(11.5))
-                        .text_color(colors::text3())
-                        .child("No agent has reported in a while."),
-                )
-            })
+            .children(shown.map(|b| section(b, stale, now)))
             .into_any_element()
     }
 }
 
 /// The popover's width.
-const WIDTH: f32 = 300.;
+const WIDTH: f32 = 320.;
 
 /// One provider's windows, a row each. The strip above names the provider and its plan.
-fn section(b: &Block, now: i64) -> AnyElement {
-    let mut rows = div().flex().flex_col().gap(px(16.));
-    for w in &b.windows {
-        rows = rows.child(window_row(w, brand(b.agent.cli()), now));
-    }
+fn section(b: &Block, stale: bool, now: i64) -> AnyElement {
+    let tint = brand(b.agent.cli());
+    let mut items: Vec<AnyElement> = b
+        .windows
+        .iter()
+        .map(|w| limit_row(w, tint, now, false))
+        .collect();
     if let Some(x) = &b.extra {
-        let cur = if x.currency.as_deref() == Some("USD") {
-            "$"
-        } else {
-            ""
-        };
-        rows = rows.child(row(
-            "Extra usage",
-            format!("{}%", x.percent.round()),
-            None,
-            x.percent as f32,
-            brand(b.agent.cli()),
-            format!("{cur}{:.2} of {cur}{:.2} this month.", x.used, x.limit),
-        ));
+        items.push(extra_row(x, tint, false));
     }
-    if let Some(note) = &b.note {
-        rows = rows.child(foot(note.clone()));
-    }
-    div().p(px(14.)).child(rows).into_any_element()
-}
-
-fn window_row(w: &Win, brand: Hsla, now: i64) -> AnyElement {
-    let gone = w.expired(now);
-    let tone = w.tone(now);
-    let value = if gone {
-        "-".to_string()
-    } else {
-        format!("{}%", w.pct.round())
-    };
-    let value_color = if gone {
-        Some(colors::text3())
-    } else {
-        tone_color(tone)
-    };
-    let foot = if gone {
-        "Window reset. Updates next turn.".to_string()
-    } else if w.resets_at.is_some() {
-        format!("Resets in {}", w.reset_label(now))
-    } else {
-        String::new()
-    };
-    let bar = tone_color(tone).unwrap_or(brand);
-    row(
-        &w.label,
-        value,
-        value_color,
-        if gone { 0.0 } else { w.pct as f32 },
-        bar,
-        foot,
-    )
-}
-
-fn row(
-    label: &str,
-    value: String,
-    value_color: Option<Hsla>,
-    pct: f32,
-    bar: Hsla,
-    note: String,
-) -> AnyElement {
+    let said = b
+        .note
+        .clone()
+        .or_else(|| stale.then(|| "No agent has reported in a while.".to_string()));
     div()
         .flex()
         .flex_col()
-        .gap(px(7.))
-        .child(
-            div()
-                .flex()
-                .items_end()
-                .justify_between()
-                .gap(px(8.))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(12.5))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(colors::text1())
-                        .child(label.to_string()),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .font_family(MONO)
-                        .text_size(px(16.))
-                        .line_height(px(16.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(value_color.unwrap_or_else(colors::text1))
-                        .child(value),
-                ),
-        )
-        .child(
-            div().h(px(6.)).rounded_full().bg(colors::ink(0.07)).child(
-                div()
-                    .h_full()
-                    .w(gpui::relative(pct.clamp(0.0, 100.0) / 100.0))
-                    .rounded_full()
-                    .bg(bar),
-            ),
-        )
-        .when(!note.is_empty(), |d| d.child(foot(note)))
+        .child(rows(items))
+        .children(said.map(note))
         .into_any_element()
-}
-
-fn foot(text: String) -> impl IntoElement {
-    div()
-        .text_size(px(11.5))
-        .text_color(colors::text3())
-        .child(text)
 }

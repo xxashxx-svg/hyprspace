@@ -1,4 +1,5 @@
-// Settings, Usage, Limits: each plan's windows as how much is left, with when they reset.
+// Settings, Usage, Limits: each plan's windows as how much is left, with when they reset. The
+// popover under the ring draws the same rows, stacked to fit its width.
 
 use chrono::{Local, TimeZone};
 use gpui::{AnyElement, Div, FontWeight, Hsla, IntoElement, div, prelude::*, px, relative};
@@ -30,7 +31,6 @@ fn track(left: f32, tint: Hsla, used: Option<String>, chip: Option<String>) -> D
     let edge = left > 0.0 && left < 100.0;
     div()
         .relative()
-        .flex_1()
         .h(px(34.))
         .rounded(px(9.))
         .bg(colors::ink(0.05))
@@ -87,8 +87,57 @@ fn track(left: f32, tint: Hsla, used: Option<String>, chip: Option<String>) -> D
         }))
 }
 
-/// A limit window: the numbers on the left, the bar on the right.
-fn limit_row(w: &Win, tint: Hsla, now: i64) -> AnyElement {
+/// Settings puts the numbers beside the bar; the narrow popover stacks the bar under them.
+fn lay(label: &str, number: Div, sub: String, bar: Div, wide: bool) -> AnyElement {
+    let label = div()
+        .text_size(px(12.5))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(colors::text2())
+        .child(label.to_string());
+    let sub = div()
+        .text_size(px(11.5))
+        .text_color(colors::text3())
+        .child(sub);
+    if !wide {
+        return div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .p(px(14.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .child(label)
+                    .child(number),
+            )
+            .child(bar)
+            .child(sub)
+            .into_any_element();
+    }
+    div()
+        .flex()
+        .items_center()
+        .gap(px(20.))
+        .p(px(16.))
+        .child(
+            div()
+                .flex_none()
+                .w(px(170.))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(label)
+                .child(number)
+                .child(sub),
+        )
+        .child(bar.flex_1())
+        .into_any_element()
+}
+
+/// A limit window: how much is left, the bar, and when it comes back.
+pub(super) fn limit_row(w: &Win, tint: Hsla, now: i64, wide: bool) -> AnyElement {
     let gone = w.expired(now);
     let used = w.pct.round() as i64;
     let left = 100 - used;
@@ -115,82 +164,33 @@ fn limit_row(w: &Win, tint: Hsla, now: i64) -> AnyElement {
     } else {
         big(format!("{left}%"), "left", figure)
     };
-    div()
-        .flex()
-        .items_center()
-        .gap(px(20.))
-        .p(px(16.))
-        .child(
-            div()
-                .flex_none()
-                .w(px(170.))
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .text_size(px(12.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(colors::text2())
-                        .child(w.label.clone()),
-                )
-                .child(number)
-                .child(
-                    div()
-                        .text_size(px(11.5))
-                        .text_color(colors::text3())
-                        .child(sub),
-                ),
-        )
-        .child(track(
-            if gone { 0.0 } else { left as f32 },
-            fill,
-            (!gone).then(|| format!("{used}% used")),
-            w.resets_at.filter(|_| !gone).map(|r| clock(r, now)),
-        ))
-        .into_any_element()
+    let bar = track(
+        if gone { 0.0 } else { left as f32 },
+        fill,
+        (!gone).then(|| format!("{used}% used")),
+        w.resets_at.filter(|_| !gone).map(|r| clock(r, now)),
+    );
+    lay(&w.label, number, sub, bar, wide)
 }
 
-fn extra_row(x: &LiveExtra, tint: Hsla) -> AnyElement {
+pub(super) fn extra_row(x: &LiveExtra, tint: Hsla, wide: bool) -> AnyElement {
     let cur = if x.currency.as_deref() == Some("USD") {
         "$"
     } else {
         ""
     };
     let pct = x.percent.round() as i64;
-    div()
-        .flex()
-        .items_center()
-        .gap(px(20.))
-        .p(px(16.))
-        .child(
-            div()
-                .flex_none()
-                .w(px(170.))
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .text_size(px(12.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(colors::text2())
-                        .child("Extra usage"),
-                )
-                .child(big(
-                    format!("{cur}{:.2}", x.used),
-                    &format!("of {cur}{:.2}", x.limit),
-                    colors::text1(),
-                ))
-                .child(
-                    div()
-                        .text_size(px(11.5))
-                        .text_color(colors::text3())
-                        .child("This month"),
-                ),
-        )
-        .child(track(pct as f32, tint, Some(format!("{pct}% used")), None))
-        .into_any_element()
+    lay(
+        "Extra usage",
+        big(
+            format!("{cur}{:.2}", x.used),
+            &format!("of {cur}{:.2}", x.limit),
+            colors::text1(),
+        ),
+        "This month".to_string(),
+        track(pct as f32, tint, Some(format!("{pct}% used")), None),
+        wide,
+    )
 }
 
 fn limit_card(b: &Block, note_text: Option<String>, now: i64) -> AnyElement {
@@ -202,9 +202,13 @@ fn limit_card(b: &Block, note_text: Option<String>, now: i64) -> AnyElement {
             "now" => "Updated just now".to_string(),
             a => format!("Updated {a} ago"),
         });
-    let mut items: Vec<AnyElement> = b.windows.iter().map(|w| limit_row(w, tint, now)).collect();
+    let mut items: Vec<AnyElement> = b
+        .windows
+        .iter()
+        .map(|w| limit_row(w, tint, now, true))
+        .collect();
     if let Some(x) = &b.extra {
-        items.push(extra_row(x, tint));
+        items.push(extra_row(x, tint, true));
     }
     card(id, b.agent.name(), b.plan.clone(), age)
         .child(rows(items))
