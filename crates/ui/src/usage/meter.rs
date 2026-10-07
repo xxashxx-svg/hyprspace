@@ -106,8 +106,11 @@ impl Render for Limits {
                 l.open = None;
                 cx.notify();
             });
-            // right-aligned under the ring
-            let at = point(at.x - px(WIDTH - 10.), at.y + px(18.));
+            // right-aligned under the ring, clear of the title row it sits in
+            let at = point(
+                at.x - px(WIDTH - 10.),
+                px(crate::root::titlebar::HEIGHT + 6.),
+            );
             widgets::layer(
                 at,
                 widgets::Open::Down,
