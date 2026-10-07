@@ -159,10 +159,17 @@ impl Poll {
                 } else {
                     LiveProblem::Error
                 }),
-                note: Some(if auth {
-                    sign_in.to_string()
-                } else {
-                    err.message
+                note: Some(match (&self.last, auth) {
+                    (_, true) => sign_in.to_string(),
+                    // the bars below are the last good ones, so say how old they are
+                    (Some(last), false) => {
+                        format!(
+                            "{}. These are from {} ago",
+                            err.message,
+                            soon(now - last.at)
+                        )
+                    }
+                    (None, false) => err.message,
                 }),
                 bars: self.last.clone().map(|l| l.bars).unwrap_or_default(),
                 plan: self.plan.clone(),
@@ -327,7 +334,12 @@ async fn get_json(url: &str, headers: &[(&str, &str)]) -> Result<Value, HttpErr>
     for (k, v) in headers {
         req = req.header(*k, *v);
     }
-    let res = req.send().await.map_err(HttpErr::other)?;
+    // reqwest's own text ("error sending request for url ...") means nothing to a user, and the
+    // cause (offline, DNS, a timeout, a waking laptop) isn't ours to fix
+    let res = req
+        .send()
+        .await
+        .map_err(|_| HttpErr::other("Couldn't reach the usage server"))?;
     let status = res.status();
     if !status.is_success() {
         let retry_after_ms = res
@@ -347,7 +359,9 @@ async fn get_json(url: &str, headers: &[(&str, &str)]) -> Result<Value, HttpErr>
             ),
         });
     }
-    res.json::<Value>().await.map_err(HttpErr::other)
+    res.json::<Value>()
+        .await
+        .map_err(|_| HttpErr::other("The usage server sent an answer we couldn't read"))
 }
 
 fn missing(msg: &str) -> LiveUsage {
@@ -686,6 +700,17 @@ mod tests {
         let u = q.failed(err(0, 0), "", 0);
         assert_eq!(u.problem, Some(LiveProblem::Error));
         assert!(q.cooling(1).is_none());
+        // and says how old the bars it keeps are
+        good(&mut q, 0);
+        let u = q.failed(
+            HttpErr::other("Couldn't reach the usage server"),
+            "",
+            240_000,
+        );
+        assert_eq!(
+            u.note.as_deref(),
+            Some("Couldn't reach the usage server. These are from 4m ago")
+        );
     }
 
     #[test]
