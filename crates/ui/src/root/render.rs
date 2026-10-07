@@ -220,7 +220,7 @@ impl Render for Root {
                 .sidebar_view
                 .clone()
                 .cached(StyleRefinement::default().w(px(width)).h_full().flex_none());
-            slide("sidebar", flips, open, (0., width), false, view)
+            slide("sidebar", flips, open, (0., width), true, view)
         });
         // Windows tells GPUI the pointer left the window but moves nothing, so the row last under
         // it kept its hover and its buttons, above all after a quick exit off the left edge onto

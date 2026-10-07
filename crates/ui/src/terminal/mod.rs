@@ -57,6 +57,8 @@ pub struct TerminalView {
     /// The geometry the last frame painted with, for mapping the pointer onto cells.
     grid: Option<Grid>,
     resize: Option<Task<()>>,
+    /// A refit once a side panel's slide is over (`crate::slide::sliding`).
+    after_slide: Option<Task<()>>,
     drag: Option<Drag>,
     /// Where on the scrollbar thumb the pointer holds it.
     bar_grab: Option<Pixels>,
@@ -137,6 +139,7 @@ impl TerminalView {
             status: None,
             grid: None,
             resize: None,
+            after_slide: None,
             drag: None,
             bar_grab: None,
             bar_hot: false,
@@ -250,6 +253,20 @@ impl TerminalView {
     fn fit(&mut self, grid: Grid, cx: &mut Context<Self>) {
         self.grid = Some(grid);
         if self.emu.size() == (grid.cols, grid.rows) {
+            return;
+        }
+        // the pane's width changes every frame while a side panel slides, so the screen keeps
+        // its size, clipped or with room to spare, and reflows once the slide is over
+        if let Some(left) = crate::slide::sliding() {
+            if self.after_slide.is_none() {
+                self.after_slide = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(left).await;
+                    let _ = this.update(cx, |v, cx| {
+                        v.after_slide = None;
+                        cx.notify();
+                    });
+                }));
+            }
             return;
         }
         self.emu.resize(grid.cols, grid.rows);

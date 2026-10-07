@@ -1,6 +1,7 @@
-// Side panels slide open and shut along their width instead of popping. The panel keeps its own
-// width inside a clipping frame, so its contents don't squash while the frame moves. `Glide` does
-// the same for anything that moves between spots, like a menu's highlight or a slider's knob.
+// Side panels slide open and shut along their width instead of popping, after T3 Code's: the
+// panel keeps its own width inside a clipping frame and rides the frame's moving edge, so it
+// slides in and out past the window's edge rather than being wiped. `Glide` eases anything that
+// moves between spots, like a menu's highlight or a slider's knob.
 
 use std::cell::Cell;
 use std::time::{Duration, Instant};
@@ -14,6 +15,16 @@ const LENGTH: Duration = Duration::from_millis(180);
 thread_local! {
     /// Settings, Appearance, Animations. Off, panels, menus and rows snap into place.
     static ANIMATIONS: Cell<bool> = const { Cell::new(true) };
+    /// When the last panel slide ends.
+    static SLIDE_END: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+
+/// How much is left of a panel sliding open or shut, if one is. A terminal holds its size until
+/// then and reflows once, instead of rewrapping its text on every frame of the slide.
+pub fn sliding() -> Option<Duration> {
+    let end = SLIDE_END.with(Cell::get)?;
+    end.checked_duration_since(Instant::now())
+        .filter(|left| !left.is_zero())
 }
 
 pub fn set_animations(on: bool) {
@@ -81,8 +92,12 @@ impl Flips {
     /// no change, so a panel saved shut stays shut at launch instead of sliding away.
     pub fn see(&mut self, open: bool) -> usize {
         if self.open.is_some_and(|o| o != open) {
+            let now = Instant::now();
             self.count += 1;
-            self.at = Some(Instant::now());
+            self.at = Some(now);
+            if animations() {
+                SLIDE_END.with(|e| e.set(Some(now + LENGTH)));
+            }
         }
         self.open = Some(open);
         self.count()
@@ -101,7 +116,10 @@ impl Flips {
 }
 
 /// `body` in a frame that is `full` wide when open and `shut` wide when not, sliding between the
-/// two after a change. `end` pins the body to the frame's right edge, for a panel on the right.
+/// two after a change. `end` pins the body to the frame's right edge: a panel on the left rides
+/// that edge out of the window, and one on the right, pinned to its left edge, does the same the
+/// other way. Unpinned, a left panel stays put and the frame closes over it, as for buttons that
+/// stay on screen.
 pub fn slide(
     id: &'static str,
     flips: usize,
