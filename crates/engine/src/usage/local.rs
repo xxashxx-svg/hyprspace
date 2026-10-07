@@ -7,13 +7,15 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use hyprspace_proto::usage::{ModelDay, ModelUsage, ProviderUsage, UsageWindow};
+use hyprspace_proto::usage::{DayCount, ModelDay, ModelUsage, ProviderUsage, UsageWindow};
 use serde_json::Value;
 
 use crate::util::{decode_jwt, home_dir, read_json, title_case};
 
 const RECENT_DAYS: u64 = 30; // token scans only look at recent files, so a settings tab stays snappy
-const MAX_FILES: usize = 160; // hard cap on files scanned per provider
+const MAX_FILES: usize = 600; // hard cap on files scanned per provider
+/// Codex rollouts are small and read from the tail, so a year of them is cheap.
+const CODEX_DAYS: u64 = 365;
 const MAX_FILE_BYTES: u64 = 80 * 1024 * 1024; // skip pathologically huge transcripts
 
 /// One provider at a time, so a panel can render each card as its scan finishes (claude's
@@ -43,7 +45,11 @@ fn mtime_secs(p: &Path) -> u64 {
 
 // *.jsonl under `root` (recursively), newest first, filtered to the recent window and capped
 fn recent_jsonl(root: &Path, now: u64) -> Vec<PathBuf> {
-    let cutoff = now.saturating_sub(RECENT_DAYS * 86_400);
+    jsonl_within(root, now, RECENT_DAYS)
+}
+
+fn jsonl_within(root: &Path, now: u64, days: u64) -> Vec<PathBuf> {
+    let cutoff = now.saturating_sub(days * 86_400);
     let mut files: Vec<(u64, PathBuf)> = vec![];
     collect_jsonl(root, &mut files, 0);
     files.retain(|(m, _)| *m >= cutoff);
@@ -109,43 +115,113 @@ fn claude_usage(home: &Path, now: u64) -> ProviderUsage {
     }
     u.signed_in = u.signed_in || u.account.is_some();
 
-    if let Some(v) = read_json(&cdir.join("stats-cache.json")) {
-        apply_stats_cache(&mut u, &v);
+    let stats = read_json(&cdir.join("stats-cache.json"));
+    if let Some(v) = &stats {
+        apply_stats_cache(&mut u, v);
     }
 
-    // tokens aren't rolled up anywhere, so sum recent transcripts (bounded)
-    let (i, o, c, days) = sum_claude_tokens(&cdir.join("projects"), now);
-    u.input_tokens = i;
-    u.output_tokens = o;
-    u.cache_tokens = c;
-    u.total_tokens = i.saturating_add(o).saturating_add(c);
+    // tokens aren't rolled up anywhere fresh, so read the recent transcripts (bounded)
+    let projects = cdir.join("projects");
+    let start = window_start(now);
+    let scan = scan_claude(&projects, recent_jsonl(&projects, now), &start);
+    u.input_tokens = scan.total.input;
+    u.output_tokens = scan.total.output;
+    u.cache_tokens = scan.total.cache_read.saturating_add(scan.total.cache_write);
+    u.total_tokens = scan.total.total;
     if u.total_tokens > 0 {
         u.tokens_window = Some(format!("last {RECENT_DAYS} days"));
     }
-    by_model_and_day(&mut u, days);
+    let (mut days, mut sessions) = (scan.days, scan.sessions);
+    if let Some(v) = &stats {
+        stats_days(v, &mut days, &mut sessions);
+    }
+    by_model_and_day(&mut u, days, sessions);
     u
 }
 
-/// Fills the per-model, per-day figures from `days`, keyed by (day, model) with tokens in and
-/// out. A provider with no model split of its own takes it from here.
-fn by_model_and_day(u: &mut ProviderUsage, mut days: BTreeMap<(String, String), (u64, u64)>) {
-    // a session that spent nothing has nothing to show
-    days.retain(|_, (i, o)| *i + *o > 0);
-    let mut models: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
-    for ((_, model), (i, o)) in &days {
-        let m = models.entry(model).or_default();
-        m.0 = m.0.saturating_add(*i);
-        m.1 = m.1.saturating_add(*o);
+/// One model's tokens on one day, or over a stretch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Split {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    total: u64,
+}
+
+impl Split {
+    fn add(&mut self, o: Split) {
+        self.input = self.input.saturating_add(o.input);
+        self.output = self.output.saturating_add(o.output);
+        self.cache_read = self.cache_read.saturating_add(o.cache_read);
+        self.cache_write = self.cache_write.saturating_add(o.cache_write);
+        self.total = self.total.saturating_add(o.total);
     }
+}
+
+/// Tokens per (day, model).
+type Days = BTreeMap<(String, String), Split>;
+
+/// The first local day the transcripts' window covers.
+fn window_start(now: u64) -> String {
+    let at = chrono::DateTime::from_timestamp((now - RECENT_DAYS * 86_400) as i64, 0)
+        .unwrap_or_default()
+        .with_timezone(&chrono::Local);
+    at.format("%Y-%m-%d").to_string()
+}
+
+/// Lays Claude's stats file over the transcripts' days. Every day the file covers takes its
+/// totals and sessions from it, so those days read exactly as `/stats` shows them (the file
+/// keeps days whose transcripts Claude has since deleted); the transcripts still give those
+/// days their split between input, output and the cache, and alone cover the days since.
+fn stats_days(v: &Value, days: &mut Days, sessions: &mut BTreeMap<String, u64>) {
+    let list = v["dailyModelTokens"].as_array();
+    let through = v["lastComputedDate"]
+        .as_str()
+        .or_else(|| list?.iter().filter_map(|d| d["date"].as_str()).max())
+        .unwrap_or("")
+        .to_string();
+    for ((date, _), s) in days.iter_mut() {
+        if *date <= through {
+            s.total = 0;
+        }
+    }
+    sessions.retain(|date, _| *date > through);
+    for d in list.into_iter().flatten() {
+        let Some(date) = d["date"].as_str() else {
+            continue;
+        };
+        for (model, n) in d["tokensByModel"].as_object().into_iter().flatten() {
+            let e = days.entry((date.to_string(), model.clone())).or_default();
+            e.total = e.total.saturating_add(n.as_u64().unwrap_or(0));
+        }
+    }
+    for d in v["dailyActivity"].as_array().into_iter().flatten() {
+        if let Some(date) = d["date"].as_str() {
+            *sessions.entry(date.to_string()).or_default() += u64_at(d, "sessionCount");
+        }
+    }
+}
+
+/// Fills the per-model, per-day figures and the sessions per day. A provider with no model
+/// split of its own takes it from here.
+fn by_model_and_day(u: &mut ProviderUsage, mut days: Days, sessions: BTreeMap<String, u64>) {
+    // a session that spent nothing has nothing to show
+    days.retain(|_, s| s.total > 0);
     if u.models.is_empty() {
+        let mut models: BTreeMap<&str, Split> = BTreeMap::new();
+        for ((_, model), s) in &days {
+            models.entry(model).or_default().add(*s);
+        }
         u.models = models
             .iter()
-            .map(|(model, (i, o))| ModelUsage {
+            .map(|(model, s)| ModelUsage {
                 model: model.to_string(),
-                input_tokens: *i,
-                output_tokens: *o,
-                cache_tokens: 0,
-                total_tokens: i.saturating_add(*o),
+                input_tokens: s.input,
+                output_tokens: s.output,
+                cache_tokens: s.cache_read.saturating_add(s.cache_write),
+                cache_write_tokens: s.cache_write,
+                total_tokens: s.total,
             })
             .collect();
         u.models.sort_by_key(|m| std::cmp::Reverse(m.total_tokens));
@@ -153,11 +229,20 @@ fn by_model_and_day(u: &mut ProviderUsage, mut days: BTreeMap<(String, String), 
     }
     u.daily_models = days
         .into_iter()
-        .map(|((date, model), (i, o))| ModelDay {
+        .map(|((date, model), s)| ModelDay {
             date,
             model,
-            tokens: i.saturating_add(o),
+            input: s.input,
+            output: s.output,
+            cache_read: s.cache_read,
+            cache_write: s.cache_write,
+            total: s.total,
         })
+        .collect();
+    u.day_sessions = sessions
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .map(|(date, count)| DayCount { date, count })
         .collect();
 }
 
@@ -193,8 +278,8 @@ fn apply_stats_cache(u: &mut ProviderUsage, v: &Value) {
         for (name, m) in mu {
             let i = u64_at(m, "inputTokens");
             let o = u64_at(m, "outputTokens");
-            let c = u64_at(m, "cacheReadInputTokens")
-                .saturating_add(u64_at(m, "cacheCreationInputTokens"));
+            let w = u64_at(m, "cacheCreationInputTokens");
+            let c = u64_at(m, "cacheReadInputTokens").saturating_add(w);
             let total = i.saturating_add(o).saturating_add(c);
             if total == 0 {
                 continue;
@@ -204,6 +289,7 @@ fn apply_stats_cache(u: &mut ProviderUsage, v: &Value) {
                 input_tokens: i,
                 output_tokens: o,
                 cache_tokens: c,
+                cache_write_tokens: w,
                 total_tokens: total,
             });
         }
@@ -212,56 +298,81 @@ fn apply_stats_cache(u: &mut ProviderUsage, v: &Value) {
     }
 }
 
-/// Tokens in, out and from cache over the recent transcripts, and in and out per (day, model).
-type Days = BTreeMap<(String, String), (u64, u64)>;
+/// What the recent transcripts say: tokens in all, per (day, model), and sessions per day.
+#[derive(Default)]
+struct Scan {
+    total: Split,
+    days: Days,
+    sessions: BTreeMap<String, u64>,
+}
 
-fn sum_claude_tokens(projects: &Path, now: u64) -> (u64, u64, u64, Days) {
-    let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
-    let mut days = Days::new();
-    for f in recent_jsonl(projects, now) {
+/// Reads Claude's transcripts, counting every line's usage the way Claude's own `/stats` and
+/// its `stats-cache.json` do. A reply written over several lines repeats its usage on each, so
+/// this runs about three times what the API billed, but older days exist only in Claude's
+/// count (it deletes transcripts after 30 days), and one way of counting keeps the days
+/// comparable (ADR 0018). A session is a transcript right under its project's folder (subagents
+/// keep theirs deeper), on the day it began. The total counts from `from` on: a transcript
+/// touched lately can hold replies from long before.
+fn scan_claude(projects: &Path, files: Vec<PathBuf>, from: &str) -> Scan {
+    let mut scan = Scan::default();
+    for f in files {
         if std::fs::metadata(&f).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
             continue;
         }
+        let session = f.parent().and_then(Path::parent) == Some(projects);
+        let mut began: Option<String> = None;
         // stream line by line: reading the whole file allocated up to MAX_FILE_BYTES per transcript
         let Ok(file) = std::fs::File::open(&f) else {
             continue;
         };
         for line in BufReader::new(file).lines().map_while(Result::ok) {
-            if !line.contains("\"output_tokens\"") {
+            let usage_line = line.contains("\"output_tokens\"");
+            let want_start = began.is_none() && line.contains("\"timestamp\"");
+            if !usage_line && !want_start {
                 continue;
             }
             let Ok(v) = serde_json::from_str::<Value>(&line) else {
                 continue;
             };
+            let day = v["timestamp"].as_str().and_then(local_day);
+            if began.is_none() {
+                began = day.clone();
+            }
             let usage = if v["message"]["usage"].is_object() {
                 &v["message"]["usage"]
             } else {
                 &v["usage"]
             };
-            if usage.is_object() {
-                let (li, lo) = (
-                    u64_at(usage, "input_tokens"),
-                    u64_at(usage, "output_tokens"),
-                );
-                i = i.saturating_add(li);
-                o = o.saturating_add(lo);
-                c = c
-                    .saturating_add(u64_at(usage, "cache_creation_input_tokens"))
-                    .saturating_add(u64_at(usage, "cache_read_input_tokens"));
-                // a reply Claude made up itself carries "<synthetic>" for a model
-                let model = v["message"]["model"]
-                    .as_str()
-                    .filter(|m| !m.is_empty() && !m.starts_with('<'));
-                let day = v["timestamp"].as_str().and_then(local_day);
-                if let (Some(model), Some(day)) = (model, day) {
-                    let e = days.entry((day, model.to_string())).or_default();
-                    e.0 = e.0.saturating_add(li);
-                    e.1 = e.1.saturating_add(lo);
-                }
+            if !usage_line || !usage.is_object() {
+                continue;
+            }
+            let (Some(day), Some(model)) = (day, v["message"]["model"].as_str()) else {
+                continue;
+            };
+            let mut s = Split {
+                input: u64_at(usage, "input_tokens"),
+                output: u64_at(usage, "output_tokens"),
+                cache_read: u64_at(usage, "cache_read_input_tokens"),
+                cache_write: u64_at(usage, "cache_creation_input_tokens"),
+                total: 0,
+            };
+            s.total = s.input + s.output + s.cache_read + s.cache_write;
+            if day.as_str() >= from {
+                scan.total.add(s);
+            }
+            // a reply Claude made up itself carries "<synthetic>" for a model
+            if !model.is_empty() && !model.starts_with('<') {
+                scan.days
+                    .entry((day, model.to_string()))
+                    .or_default()
+                    .add(s);
             }
         }
+        if session && let Some(day) = began {
+            *scan.sessions.entry(day).or_default() += 1;
+        }
     }
-    (i, o, c, days)
+    scan
 }
 
 // ---- Codex ----
@@ -287,35 +398,51 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
         }
     }
 
-    // session rollouts carry token_count events with the live rate-limit windows
-    let files = recent_jsonl(&cdir.join("sessions"), now);
-    // only rollout-*.jsonl are real sessions; other jsonls in the tree would over-count
-    u.sessions = files
-        .iter()
-        .filter(|p| file_name(p).is_some_and(|n| n.starts_with("rollout-")))
-        .count() as u64;
+    // session rollouts carry token_count events with the live rate-limit windows. A year of them
+    // for the days; the card's own figures keep to the recent window
+    let files = jsonl_within(&cdir.join("sessions"), now, CODEX_DAYS);
+    let start = window_start(now);
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
     let mut days = Days::new();
+    let mut sessions: BTreeMap<String, u64> = BTreeMap::new();
     for f in &files {
+        // only rollout-*.jsonl are real sessions; other jsonls in the tree would over-count.
+        // Their names carry the day: rollout-YYYY-MM-DD...
+        let Some(d) = file_name(f)
+            .and_then(|n| n.strip_prefix("rollout-"))
+            .and_then(|n| n.get(..10))
+            .map(String::from)
+        else {
+            continue;
+        };
+        *sessions.entry(d.clone()).or_default() += 1;
+        let recent = d >= start;
+        if recent {
+            u.sessions += 1;
+        }
         let Some(tc) = last_token_count(f) else {
             continue;
         };
         let ttu = &tc["info"]["total_token_usage"];
-        let (fi, fo) = (u64_at(ttu, "input_tokens"), u64_at(ttu, "output_tokens"));
-        i = i.saturating_add(fi);
-        o = o.saturating_add(fo);
-        c = c.saturating_add(u64_at(ttu, "cached_input_tokens"));
-        // rollout filenames embed the session date: rollout-YYYY-MM-DD...
-        if let Some(d) = file_name(f)
-            .and_then(|n| n.strip_prefix("rollout-"))
-            .and_then(|n| n.get(..10))
-        {
-            // the whole session goes to the model it ran on
-            let model = rollout_model(f).unwrap_or_else(|| "Codex".into());
-            let e = days.entry((d.to_string(), model)).or_default();
-            e.0 = e.0.saturating_add(fi);
-            e.1 = e.1.saturating_add(fo);
+        let (fi, fo, fc) = (
+            u64_at(ttu, "input_tokens"),
+            u64_at(ttu, "output_tokens"),
+            u64_at(ttu, "cached_input_tokens"),
+        );
+        if recent {
+            i = i.saturating_add(fi);
+            o = o.saturating_add(fo);
+            c = c.saturating_add(fc);
         }
+        // the whole session goes to the model it ran on; its input counts the cached part
+        let model = rollout_model(f).unwrap_or_else(|| "Codex".into());
+        days.entry((d, model)).or_default().add(Split {
+            input: fi.saturating_sub(fc),
+            output: fo,
+            cache_read: fc,
+            cache_write: 0,
+            total: fi.saturating_add(fo),
+        });
         // Windows come from the newest rollout that actually carries them, not simply the newest
         // rollout: codex writes `rate_limits` on every session but leaves primary/secondary null
         // unless the server sent limits that turn, so the latest file is often empty.
@@ -342,7 +469,7 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
     if u.total_tokens > 0 {
         u.tokens_window = Some("recent sessions".into());
     }
-    by_model_and_day(&mut u, days);
+    by_model_and_day(&mut u, days, sessions);
     u
 }
 
@@ -449,6 +576,9 @@ mod tests {
 
     use super::*;
 
+    /// The fixtures' dates are early October 2026; the windows count back from here.
+    const OCT_3: u64 = 1_791_028_800;
+
     fn write(p: &Path, body: &str) {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, body).unwrap();
@@ -494,7 +624,7 @@ mod tests {
             &day.join("rollout-2026-10-02-b.jsonl"),
             &token_count(Value::Null, 50),
         );
-        let u = codex_usage(home.path(), now_secs());
+        let u = codex_usage(home.path(), OCT_3);
         assert_eq!(u.sessions, 2);
         assert_eq!(u.primary.unwrap().used_percent, 42.0);
         assert_eq!(u.plan.as_deref(), Some("ChatGPT Pro"));
@@ -516,16 +646,28 @@ mod tests {
             &day.join("rollout-2026-10-02-a.jsonl"),
             &format!("{ctx}\n{}", token_count(Value::Null, 15)),
         );
-        let u = codex_usage(home.path(), now_secs());
+        let u = codex_usage(home.path(), OCT_3);
+        // input counts its cached part, which shows apart as read from cache
         assert_eq!(
             u.daily_models,
             [ModelDay {
                 date: "2026-10-02".into(),
                 model: "gpt-6-luna".into(),
-                tokens: 15,
+                input: 9,
+                output: 5,
+                cache_read: 1,
+                cache_write: 0,
+                total: 15,
             }]
         );
         assert_eq!(u.models[0].model, "gpt-6-luna");
+        assert_eq!(
+            u.day_sessions,
+            [DayCount {
+                date: "2026-10-02".into(),
+                count: 1
+            }]
+        );
     }
 
     #[test]
@@ -544,11 +686,11 @@ mod tests {
         ]
         .join("\n");
         write(&home.path().join(".claude/projects/p/s.jsonl"), &body);
-        let u = claude_usage(home.path(), now_secs());
+        let u = claude_usage(home.path(), OCT_3);
         let mut got: Vec<(String, String, u64)> = u
             .daily_models
             .iter()
-            .map(|d| (d.date.clone(), d.model.clone(), d.tokens))
+            .map(|d| (d.date.clone(), d.model.clone(), d.total))
             .collect();
         got.sort();
         assert_eq!(
@@ -560,6 +702,61 @@ mod tests {
         );
         // no stats file: the model split comes from the transcripts
         assert_eq!(u.models[0].model, "claude-opus-5-5");
+        // the transcript is a session, on the day it began
+        assert_eq!(
+            u.day_sessions,
+            [DayCount {
+                date: "2026-10-01".into(),
+                count: 1
+            }]
+        );
+    }
+
+    #[test]
+    fn every_line_counts_as_claude_stats_counts_it() {
+        let home = tempfile::tempdir().unwrap();
+        let line = |out: u64, cache: u64| {
+            json!({ "timestamp": "2026-10-01T12:00:00Z", "message": { "id": "msg_1", "model": "claude-opus-5-5",
+                "usage": { "input_tokens": 3, "output_tokens": out, "cache_read_input_tokens": cache } } })
+            .to_string()
+        };
+        // a text block, then a tool call, of the same reply: the usage repeats on each line
+        let body = [line(40, 1000), line(40, 1000), line(90, 1000)].join("\n");
+        write(&home.path().join(".claude/projects/p/s.jsonl"), &body);
+        // the subagent's own transcript is no session of its own
+        write(
+            &home.path().join(".claude/projects/p/s/subagents/a.jsonl"),
+            &line(10, 500),
+        );
+        let u = claude_usage(home.path(), OCT_3);
+        assert_eq!(
+            (u.input_tokens, u.output_tokens, u.cache_tokens),
+            (12, 180, 3500)
+        );
+        assert_eq!(u.day_sessions.iter().map(|d| d.count).sum::<u64>(), 1);
+    }
+
+    #[test]
+    fn the_card_counts_only_the_last_30_days_of_a_long_transcript() {
+        let home = tempfile::tempdir().unwrap();
+        let line = |at: &str, id: &str, out: u64| {
+            json!({ "timestamp": at, "message": { "id": id, "model": "claude-opus-5-5",
+                "usage": { "input_tokens": 1, "output_tokens": out } } })
+            .to_string()
+        };
+        let body = [
+            line("2026-07-01T12:00:00Z", "old", 500),
+            line("2026-10-02T12:00:00Z", "new", 7),
+        ]
+        .join(
+            "
+",
+        );
+        write(&home.path().join(".claude/projects/p/s.jsonl"), &body);
+        let u = claude_usage(home.path(), OCT_3);
+        assert_eq!((u.input_tokens, u.output_tokens), (1, 7));
+        // the days still have both, for the heatmap
+        assert_eq!(u.daily_models.len(), 2);
     }
 
     #[test]
@@ -580,10 +777,11 @@ mod tests {
         );
         write(
             &cdir.join("projects/p/s.jsonl"),
-            &json!({ "message": { "usage": { "input_tokens": 7, "output_tokens": 3, "cache_read_input_tokens": 1 } } })
-                .to_string(),
+            &json!({ "timestamp": "2026-10-02T12:00:00Z", "message": { "id": "m", "model": "claude-opus-5-5",
+                "usage": { "input_tokens": 7, "output_tokens": 3, "cache_read_input_tokens": 1 } } })
+            .to_string(),
         );
-        let u = claude_usage(home.path(), now_secs());
+        let u = claude_usage(home.path(), OCT_3);
         assert_eq!(
             (u.messages, u.sessions, u.tool_calls, u.active_days),
             (99, 3, 2, 2)
@@ -591,6 +789,44 @@ mod tests {
         assert_eq!(u.models.len(), 1);
         assert_eq!(u.total_tokens, 11);
         assert!(!u.signed_in);
+    }
+
+    #[test]
+    fn the_stats_file_has_the_last_word_on_the_days_it_covers() {
+        let home = tempfile::tempdir().unwrap();
+        let cdir = home.path().join(".claude");
+        write(
+            &cdir.join("stats-cache.json"),
+            &json!({
+                "lastComputedDate": "2026-10-01",
+                "dailyActivity": [{ "date": "2026-10-01", "sessionCount": 4 }],
+                "dailyModelTokens": [{ "date": "2026-10-01", "tokensByModel": { "claude-opus-5-5": 1000 } }],
+            })
+            .to_string(),
+        );
+        let line = |at: &str| {
+            json!({ "timestamp": at, "message": { "model": "claude-opus-5-5",
+                "usage": { "input_tokens": 2, "output_tokens": 3 } } })
+            .to_string()
+        };
+        write(
+            &cdir.join("projects/p/a.jsonl"),
+            &line("2026-10-01T12:00:00Z"),
+        );
+        write(
+            &cdir.join("projects/p/b.jsonl"),
+            &line("2026-10-02T12:00:00Z"),
+        );
+        let u = claude_usage(home.path(), OCT_3);
+        let days: Vec<(&str, u64, u64)> = u
+            .daily_models
+            .iter()
+            .map(|d| (d.date.as_str(), d.input, d.total))
+            .collect();
+        // the covered day keeps the file's total and the transcript's split
+        assert_eq!(days, [("2026-10-01", 2, 1000), ("2026-10-02", 2, 5)]);
+        let sessions: Vec<u64> = u.day_sessions.iter().map(|d| d.count).collect();
+        assert_eq!(sessions, [4, 1]);
     }
 
     #[test]

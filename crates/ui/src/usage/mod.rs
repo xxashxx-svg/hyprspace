@@ -12,6 +12,7 @@ mod chart;
 mod limits;
 mod meter;
 pub mod model;
+mod overview;
 mod page;
 
 use std::collections::{HashMap, HashSet};

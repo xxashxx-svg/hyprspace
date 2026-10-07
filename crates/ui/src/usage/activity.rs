@@ -1,11 +1,10 @@
 // Settings, Usage, Activity: what each agent has done, from its own files on this machine.
 
-use gpui::{AnyElement, Div, FontWeight, Hsla, IntoElement, div, prelude::*, px, relative};
-use hyprspace_proto::usage::{ModelUsage, ProviderUsage};
+use gpui::{AnyElement, FontWeight, Hsla, IntoElement, div, prelude::*, px, relative};
+use hyprspace_proto::usage::ProviderUsage;
 
 use super::page::*;
 use super::{Limits, PROVIDERS, brand};
-use crate::assets::provider_mark;
 use crate::colors;
 
 /// "claude-opus-4-8" is "Opus 4.8", "claude-3-5-sonnet-20241022" is "Sonnet 3.5", and
@@ -57,97 +56,6 @@ pub(super) fn pretty_model(id: &str) -> String {
     } else {
         format!("{name} {}", nums.join("."))
     }
-}
-
-/// The summary over Activity: three figures split by hairlines.
-fn strip(
-    tokens: String,
-    sessions: String,
-    across: String,
-    signed: usize,
-    marks: Vec<(&str, bool)>,
-) -> AnyElement {
-    let stat = |label: &str, figure: AnyElement, foot: AnyElement| {
-        div()
-            .flex_1()
-            .flex_basis(px(0.))
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .gap(px(3.))
-            .px(px(18.))
-            .pt(px(14.))
-            .pb(px(15.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(colors::text2())
-                    .child(label.to_string()),
-            )
-            .child(figure)
-            .child(foot)
-    };
-    let figure = |text: String| {
-        div()
-            .text_size(px(26.))
-            .line_height(px(30.))
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(colors::text1())
-            .child(text)
-            .into_any_element()
-    };
-    let foot = |text: String| {
-        div()
-            .text_size(px(11.5))
-            .text_color(colors::text3())
-            .child(text)
-            .into_any_element()
-    };
-    let logos = div()
-        .flex()
-        .gap(px(7.))
-        .mt(px(3.))
-        .children(marks.into_iter().filter_map(|(id, live)| {
-            let tint = if live { brand(id) } else { colors::text3() };
-            provider_mark(id, 15., tint).map(|m| div().when(!live, |d| d.opacity(0.35)).child(m))
-        }))
-        .into_any_element();
-    let of = div()
-        .flex()
-        .items_end()
-        .gap(px(5.))
-        .child(figure(signed.to_string()))
-        .child(
-            div()
-                .pb(px(4.))
-                .text_size(px(14.))
-                .text_color(colors::text3())
-                .child(format!("of {}", PROVIDERS.len())),
-        )
-        .into_any_element();
-    div()
-        .flex()
-        .rounded(px(12.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::surface2())
-        .child(stat(
-            "Tokens",
-            figure(tokens),
-            foot("In and out, recent".into()),
-        ))
-        .child(
-            stat("Sessions", figure(sessions), foot(across))
-                .border_l_1()
-                .border_color(colors::border1()),
-        )
-        .child(
-            stat("Signed in", of, logos)
-                .border_l_1()
-                .border_color(colors::border1()),
-        )
-        .into_any_element()
 }
 
 fn skeleton(id: &str, label: &str) -> AnyElement {
@@ -242,78 +150,6 @@ fn tokens(u: &ProviderUsage, tint: Hsla) -> AnyElement {
     d.into_any_element()
 }
 
-fn block_head(left: &str, right: String) -> Div {
-    div()
-        .flex()
-        .justify_between()
-        .gap(px(12.))
-        .mb(px(10.))
-        .text_size(px(12.5))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(colors::text2())
-        .child(left.to_string())
-        .child(
-            div()
-                .font_weight(FontWeight::NORMAL)
-                .text_color(colors::text3())
-                .child(right),
-        )
-}
-
-fn models(list: &[ModelUsage], tint: Hsla) -> AnyElement {
-    let real = |m: &ModelUsage| m.input_tokens + m.output_tokens;
-    let mut shown: Vec<&ModelUsage> = list.iter().collect();
-    shown.sort_by_key(|m| std::cmp::Reverse(real(m)));
-    shown.truncate(6);
-    let max = shown.iter().map(|m| real(m)).max().unwrap_or(1).max(1);
-    div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(16.))
-        .child(block_head("By model", "in and out".into()))
-        .children(shown.into_iter().map(|m| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(10.))
-                .py(px(3.))
-                .text_size(px(12.5))
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(110.))
-                        .truncate()
-                        .text_color(colors::text2())
-                        .child(pretty_model(&m.model)),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .h(px(6.))
-                        .rounded(px(3.))
-                        .bg(colors::ink(0.05))
-                        .overflow_hidden()
-                        .child(
-                            div()
-                                .h_full()
-                                .w(relative(real(m) as f32 / max as f32))
-                                .bg(tint),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(56.))
-                        .flex()
-                        .justify_end()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(colors::text1())
-                        .child(short(real(m))),
-                )
-        }))
-        .into_any_element()
-}
-
 fn activity_card(u: &ProviderUsage) -> AnyElement {
     let tint = brand(&u.id);
     let counts: Vec<(&str, u64)> = [
@@ -361,9 +197,6 @@ fn activity_card(u: &ProviderUsage) -> AnyElement {
                 .into_any_element(),
         );
     }
-    if !u.models.is_empty() {
-        items.push(models(&u.models, tint));
-    }
     card(
         &u.id,
         &u.label,
@@ -376,31 +209,14 @@ fn activity_card(u: &ProviderUsage) -> AnyElement {
 }
 
 impl Limits {
-    /// The summary, then `chart` (tokens per day), then a card per agent.
-    pub(super) fn activity_view(&self, chart: Option<AnyElement>) -> Vec<AnyElement> {
+    /// `top` (the overview, tokens per day and the models), then a card per agent.
+    pub(super) fn activity_view(&self, top: Vec<AnyElement>) -> Vec<AnyElement> {
         let data: Vec<&ProviderUsage> = PROVIDERS
             .iter()
             .filter_map(|(id, _)| self.local.get(*id))
             .collect();
-        let on: Vec<&&ProviderUsage> = data.iter().filter(|u| u.signed_in).collect();
         let off: Vec<&&ProviderUsage> = data.iter().filter(|u| !u.signed_in).collect();
-        let mut out = Vec::new();
-        if !on.is_empty() {
-            let tokens: u64 = on.iter().map(|u| u.input_tokens + u.output_tokens).sum();
-            let sessions: u64 = on.iter().map(|u| u.sessions).sum();
-            let agents = if on.len() == 1 { "agent" } else { "agents" };
-            out.push(strip(
-                short(tokens),
-                grouped(sessions),
-                format!("Across {} {agents}", on.len()),
-                on.len(),
-                PROVIDERS
-                    .iter()
-                    .map(|(id, _)| (*id, self.local.get(*id).is_some_and(|u| u.signed_in)))
-                    .collect(),
-            ));
-        }
-        out.extend(chart);
+        let mut out = top;
         for (id, label) in PROVIDERS {
             match self.local.get(id) {
                 Some(u) if u.signed_in => out.push(activity_card(u)),

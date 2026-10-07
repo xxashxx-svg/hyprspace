@@ -444,6 +444,12 @@ pub fn tip(text: &'static str) -> impl Fn(&mut Window, &mut App) -> gpui::AnyVie
     move |_, cx| cx.new(|_| Tip(text.into())).into()
 }
 
+/// [`tip`] for words made at run time.
+pub fn tip_text(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView {
+    let text = text.into();
+    move |_, cx| cx.new(|_| Tip(text.clone())).into()
+}
+
 struct Tip(SharedString);
 
 impl gpui::Render for Tip {

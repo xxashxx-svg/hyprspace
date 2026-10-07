@@ -21,18 +21,35 @@ pub struct ModelUsage {
     pub model: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// Read from and written to the prompt cache, together.
     pub cache_tokens: u64,
+    /// The written part of `cache_tokens`.
+    #[serde(default)]
+    pub cache_write_tokens: u64,
     pub total_tokens: u64,
 }
 
-/// Tokens one model spent on one day, in and out.
+/// Tokens one model spent on one day, cache included, as Claude's own /stats counts them. A day
+/// known only from a total (Claude's stats file, before the transcripts' window) has no split.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelDay {
     /// The local day, `YYYY-MM-DD`.
     pub date: String,
     pub model: String,
-    pub tokens: u64,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub total: u64,
+}
+
+/// Sessions started on one local day.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayCount {
+    pub date: String,
+    pub count: u64,
 }
 
 /// One provider's usage as its local files describe it.
@@ -62,9 +79,12 @@ pub struct ProviderUsage {
     /// session, so without this a three-week-old number looks identical to a live one.
     pub updated_at: i64,
     pub models: Vec<ModelUsage>,
-    /// Tokens per model per day over the recent files, for Activity's chart.
+    /// Tokens per model per day, as far back as the files go, for Activity.
     #[serde(default)]
     pub daily_models: Vec<ModelDay>,
+    /// Sessions per day, as far back as the files go.
+    #[serde(default)]
+    pub day_sessions: Vec<DayCount>,
     pub note: Option<String>,
 }
 

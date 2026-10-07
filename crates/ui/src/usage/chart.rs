@@ -1,14 +1,13 @@
-// Activity's chart, after T3 Code's analytics: tokens per day over the last 30 days, a smooth
-// line for each agent or each model over a soft fill, named where it ends, on a linear or a log
-// scale (one busy day otherwise flattens every quiet one, so a spiky month starts on log). Over
-// it, the busiest day, what was used most and the daily average. The pointer picks a day and a
-// card lists its figures; the legend under it hides and shows lines with each one's total and
-// share.
+// Activity's chart, after T3 Code's analytics and Claude's /stats: tokens per day over the
+// period picked in the Overview, cache included, a smooth line for each agent or each model over
+// a soft fill, named where it ends, on a linear or a log scale (one busy day otherwise flattens
+// every quiet one, so a spiky stretch starts on log). The pointer picks a day and a card lists
+// its figures; the legend under it hides and shows lines with each one's total and share.
 // Everything comes from the agents' own files (`ProviderUsage::daily_models`).
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{Datelike, Duration as Days, Local, NaiveDate};
+use chrono::{Datelike, NaiveDate};
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Context, DispatchPhase, Entity, FontWeight,
     HitboxBehavior, Hsla, IntoElement, MouseMoveEvent, PathBuilder, Pixels, Point, SharedString,
@@ -24,9 +23,9 @@ use crate::colors;
 use crate::root::Root;
 use crate::widgets;
 
-/// Days on the chart, ending today.
-const N: usize = 30;
 const HEIGHT: f32 = 280.;
+/// Past this many days a dot on every day is clutter.
+const DOTS_UP_TO: usize = 45;
 /// Room left of the plot for the scale, under it for the dates, and right of it for the names.
 const LEFT: f32 = 44.;
 const BOTTOM: f32 = 26.;
@@ -46,6 +45,7 @@ pub enum By {
 /// What the chart remembers between frames, on `Limits`.
 #[derive(Default)]
 pub struct State {
+    pub period: super::overview::Period,
     pub by: By,
     /// A log scale, a power of ten to each step; unset, the data picks (`spiky`).
     pub log: Option<bool>,
@@ -82,7 +82,7 @@ fn agent_of(id: &str) -> Option<Agent> {
 }
 
 /// An agent's k-th line: its brand color, its gradient's second stop, then deeper takes on both.
-fn shade(agent: Agent, k: usize) -> Hsla {
+pub(super) fn shade(agent: Agent, k: usize) -> Hsla {
     let (a, b) = colors::brand(agent);
     let base = if k.is_multiple_of(2) { a } else { b };
     if k < 2 {
@@ -112,10 +112,7 @@ fn nice(v: u64) -> u64 {
 
 impl Data {
     pub fn new(l: &Limits) -> Self {
-        let today = Local::now().date_naive();
-        let days: Vec<NaiveDate> = (0..N)
-            .map(|i| today - Days::days((N - 1 - i) as i64))
-            .collect();
+        let days = super::overview::period_days(l);
         let index: HashMap<String, usize> = days
             .iter()
             .enumerate()
@@ -129,7 +126,7 @@ impl Data {
             let Some(agent) = agent_of(id) else {
                 continue;
             };
-            series.extend(lines(u, agent, l.chart.by, &index));
+            series.extend(lines(u, agent, l.chart.by, &index, days.len()));
         }
         series.retain(|s| s.total > 0);
         Self {
@@ -146,7 +143,8 @@ impl Data {
 /// Whether one day dwarfs the typical one, so a linear scale would flatten the rest: the busiest
 /// day over eight times the median of the days with any use.
 fn spiky(series: &[Series]) -> bool {
-    let mut days: Vec<u64> = (0..N)
+    let n = series.first().map_or(0, |s| s.values.len());
+    let mut days: Vec<u64> = (0..n)
         .map(|i| series.iter().map(|s| s.values[i]).max().unwrap_or(0))
         .filter(|v| *v > 0)
         .collect();
@@ -203,17 +201,23 @@ fn smooth(p: &[Point<Pixels>]) -> Vec<(Point<Pixels>, Point<Pixels>)> {
 }
 
 /// One provider's lines: the whole agent, or its busiest models and the rest together.
-fn lines(u: &ProviderUsage, agent: Agent, by: By, index: &HashMap<String, usize>) -> Vec<Series> {
+fn lines(
+    u: &ProviderUsage,
+    agent: Agent,
+    by: By,
+    index: &HashMap<String, usize>,
+    n: usize,
+) -> Vec<Series> {
     let mut per: HashMap<&str, Vec<u64>> = HashMap::new();
     for d in &u.daily_models {
         if let Some(&i) = index.get(&d.date) {
-            per.entry(&d.model).or_insert_with(|| vec![0; N])[i] += d.tokens;
+            per.entry(&d.model).or_insert_with(|| vec![0; n])[i] += d.total;
         }
     }
     let sum = |v: &Vec<u64>| v.iter().sum::<u64>();
     match by {
         By::Agent => {
-            let mut values = vec![0; N];
+            let mut values = vec![0; n];
             for v in per.values() {
                 for (i, n) in v.iter().enumerate() {
                     values[i] += n;
@@ -243,7 +247,7 @@ fn lines(u: &ProviderUsage, agent: Agent, by: By, index: &HashMap<String, usize>
                 })
                 .collect();
             if !rest.is_empty() {
-                let mut values = vec![0; N];
+                let mut values = vec![0; n];
                 for (_, v) in &rest {
                     for (i, n) in v.iter().enumerate() {
                         values[i] += n;
@@ -330,7 +334,8 @@ fn paint(
         .max()
         .unwrap_or(0);
     let (at, steps) = scale(max, log);
-    let x = |i: usize| plot.left() + plot.size.width * (i as f32 / (N - 1) as f32);
+    let n = days.len();
+    let x = |i: usize| plot.left() + plot.size.width * (i as f32 / (n - 1).max(1) as f32);
     let y = |v: u64| plot.bottom() - plot.size.height * at(v);
     let lh = px(14.);
 
@@ -354,9 +359,15 @@ fn paint(
         let at = point(plot.left() - px(8.) - label.width(), gy - lh / 2.);
         let _ = label.paint(at, lh, TextAlign::Left, None, window, cx);
     }
-    // the dates: a week apart back from today, each over a small tick
-    for i in (0..N).rev().step_by(7) {
-        let name = if i == N - 1 {
+    // the dates back from today, each over a small tick: every day or two over a week or two,
+    // else a week apart (more weeks apart over a longer stretch)
+    let every = if n <= 14 {
+        n.div_ceil(7)
+    } else {
+        (n / 5).max(7) / 7 * 7
+    };
+    for i in (0..n).rev().step_by(every) {
+        let name = if i == n - 1 {
             "Today".to_string()
         } else {
             day_label(days[i])
@@ -366,7 +377,7 @@ fn paint(
             colors::ink(0.18),
         ));
         let label = text(name, 10.5, colors::text3(), false, window);
-        let lx = if i == N - 1 {
+        let lx = if i == n - 1 {
             x(i) - label.width()
         } else {
             x(i) - label.width() / 2.
@@ -431,7 +442,7 @@ fn paint(
             }
         }
         for (i, v) in s.values.iter().enumerate() {
-            if *v == 0 {
+            if *v == 0 || (n > DOTS_UP_TO && hover != Some(i)) {
                 continue;
             }
             let r = if hover == Some(i) { px(4.) } else { px(2.5) };
@@ -570,7 +581,7 @@ fn paint(
     }
 }
 
-/// The chart's card, or nothing while no agent has figures for the last 30 days.
+/// The chart's card, or nothing while no agent has figures for the period.
 pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Option<AnyElement> {
     if d.series.is_empty() {
         return None;
@@ -607,7 +618,7 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
                     div()
                         .text_size(px(11.5))
                         .text_color(colors::text3())
-                        .child("In and out, the last 30 days"),
+                        .child("Every token, cache included, as Claude's /stats counts them"),
                 ),
         )
         .child(
@@ -646,95 +657,9 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
                     }),
             ),
         );
-    // the month in three figures: the busiest day, what was used most, the daily average
-    let per_day: Vec<u64> = (0..N)
-        .map(|i| shown.iter().map(|s| s.values[i]).sum())
-        .collect();
-    let busiest = per_day
-        .iter()
-        .enumerate()
-        .max_by_key(|(_, v)| **v)
-        .filter(|(_, v)| **v > 0);
-    let top = shown.iter().max_by_key(|s| s.total);
-    let active = per_day.iter().filter(|v| **v > 0).count().max(1);
-    let figure = |label: &'static str, value: String, foot: String, dot: Option<Hsla>| {
-        div()
-            .flex_1()
-            .flex_basis(px(0.))
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .gap(px(2.))
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(label),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .min_w_0()
-                    .children(dot.map(|c| div().flex_none().size(px(8.)).rounded_full().bg(c)))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(15.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(colors::text1())
-                            .child(value),
-                    ),
-            )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(foot),
-            )
-    };
-    let insights = div()
-        .flex()
-        .gap(px(16.))
-        .mx(px(16.))
-        .mb(px(6.))
-        .py(px(10.))
-        .border_t_1()
-        .border_b_1()
-        .border_color(colors::border1())
-        .children(busiest.map(|(i, v)| {
-            figure(
-                "Busiest day",
-                day_label(d.days[i]),
-                format!("{} tokens", short(*v)),
-                None,
-            )
-        }))
-        .children(top.map(|s| {
-            figure(
-                if d.by == By::Agent {
-                    "Used most"
-                } else {
-                    "Top model"
-                },
-                s.name.clone(),
-                format!("{} tokens", short(s.total)),
-                Some(s.color),
-            )
-        }))
-        .child(figure(
-            "Daily average",
-            short(per_day.iter().sum::<u64>() / active as u64),
-            format!(
-                "over {active} active {}",
-                if active == 1 { "day" } else { "days" }
-            ),
-            None,
-        ));
     let weak = limits.downgrade();
     let (days, hover, log) = (d.days.clone(), d.hover, d.log);
+    let count = days.len();
     let drawn = shown.clone();
     let plot = canvas(
         |bounds, window, _| (bounds, window.insert_hitbox(bounds, HitboxBehavior::Normal)),
@@ -748,7 +673,7 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
                 }
                 let day = hitbox.is_hovered(window).then(|| {
                     let t = ((e.position.x - left) / width).clamp(0., 1.);
-                    (t * (N - 1) as f32).round() as usize
+                    (t * (count - 1).max(1) as f32).round() as usize
                 });
                 let _ = weak.update(cx, |l, cx| {
                     if l.chart.hover != day {
@@ -825,7 +750,6 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
             .border_color(colors::border1())
             .bg(colors::surface2())
             .child(head)
-            .child(insights)
             .child(div().px(px(8.)).child(plot))
             .child(legend)
             .into_any_element(),
@@ -855,7 +779,7 @@ mod tests {
             total: values.iter().sum(),
             values,
         };
-        let mut calm = vec![0u64; N];
+        let mut calm = vec![0u64; 30];
         calm[1..6].copy_from_slice(&[10, 12, 9, 11, 10]);
         assert!(!spiky(&[line(calm.clone())]));
         let mut spike = calm;
