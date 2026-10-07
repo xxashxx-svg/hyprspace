@@ -483,14 +483,36 @@ impl TextInput {
         cx.emit(InputEvent::Cancel);
     }
 
+    /// A click places the cursor (Shift+click selects to it), a double-click takes the word
+    /// and a triple-click the line, as editors do.
     fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
-        self.selecting = true;
         let at = self.mouse_offset(e.position);
-        if e.modifiers.shift {
-            self.select_to(at, cx);
-        } else {
-            self.move_to(at, cx);
+        match e.click_count {
+            2 => {
+                self.selecting = false;
+                self.selected = word_at(&self.content, at);
+                self.reversed = false;
+                cx.notify();
+            }
+            n if n >= 3 => {
+                self.selecting = false;
+                let start = self.content[..at].rfind('\n').map_or(0, |i| i + 1);
+                let end = self.content[at..]
+                    .find('\n')
+                    .map_or(self.content.len(), |i| at + i);
+                self.selected = start..end;
+                self.reversed = false;
+                cx.notify();
+            }
+            _ => {
+                self.selecting = true;
+                if e.modifiers.shift {
+                    self.select_to(at, cx);
+                } else {
+                    self.move_to(at, cx);
+                }
+            }
         }
     }
 
@@ -503,6 +525,47 @@ impl TextInput {
             self.select_to(self.mouse_offset(e.position), cx);
         }
     }
+}
+
+/// The word around `offset`, for a double-click: a run of letters and digits, or of spaces, or
+/// one other character.
+fn word_at(text: &str, offset: usize) -> Range<usize> {
+    let class = |c: char| {
+        if c.is_alphanumeric() || c == '_' {
+            0
+        } else if c.is_whitespace() {
+            1
+        } else {
+            2
+        }
+    };
+    let Some(kind) = text[offset..]
+        .chars()
+        .next()
+        .or_else(|| text[..offset].chars().next_back())
+        .map(class)
+    else {
+        return offset..offset;
+    };
+    if kind == 2 {
+        let start = if text[offset..].is_empty() {
+            offset - text[..offset].chars().next_back().map_or(0, char::len_utf8)
+        } else {
+            offset
+        };
+        let len = text[start..].chars().next().map_or(0, char::len_utf8);
+        return start..start + len;
+    }
+    let start = text[..offset]
+        .char_indices()
+        .rev()
+        .find(|(_, c)| class(*c) != kind)
+        .map_or(0, |(i, c)| i + c.len_utf8());
+    let end = text[offset..]
+        .char_indices()
+        .find(|(_, c)| class(*c) != kind)
+        .map_or(text.len(), |(i, _)| offset + i);
+    start..end
 }
 
 /// The start of the word before `offset`, skipping spaces first.
@@ -573,6 +636,18 @@ impl Render for TextInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_double_click_takes_the_word_under_it() {
+        let t = "fix the login_bug.";
+        assert_eq!(word_at(t, 1), 0..3);
+        assert_eq!(word_at(t, 10), 8..17);
+        // at the end of a word, the word just before
+        assert_eq!(word_at(t, 3), 3..4);
+        assert_eq!(word_at("abc", 3), 0..3);
+        assert_eq!(word_at(t, 17), 17..18);
+        assert_eq!(word_at("", 0), 0..0);
+    }
 
     #[test]
     fn words_skip_spaces_then_stop_at_the_next_gap() {
