@@ -1,12 +1,14 @@
-// The composer's box, the folder picker over it, and the resume list under it. The box is framed
-// like the thread's reply pill and its line firms up a little while you type: the prompt, then
-// attach, permission and terminal on the left of its bottom row and the model, effort and the
-// round send button on the right, the way zeron lays it out.
+// The composer's box, the line under it, and the resume list. The box is framed like the
+// thread's reply pill and its line firms up a little while you type: the prompt, then attach,
+// permission and terminal on the left of its bottom row and the model, effort and the round
+// send button on the right, the way zeron lays it out. Its pickers sit flat in the box until
+// hovered. Under it, after T3 Code's: the folder and branch the thread starts on, and the keys.
 
 use gpui::{
     AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton, Window, div,
     prelude::*, px,
 };
+use hyprspace_proto::Permission;
 use hyprspace_proto::state::Pick;
 use hyprspace_theme::MONO;
 
@@ -25,13 +27,32 @@ pub fn model_label(c: &Composer, pick: &Pick) -> String {
     crate::models::name(catalog, &pick.model)
 }
 
+/// A picker in the box: flat until hovered, so the prompt leads.
+fn flat(id: &'static str) -> gpui::Stateful<gpui::Div> {
+    widgets::chip(id)
+        .border_color(colors::ink(0.))
+        .bg(colors::ink(0.))
+}
+
+/// The permission's icon: how far the agent goes on its own.
+fn permission_icon(p: Permission) -> (&'static str, gpui::Hsla) {
+    match p {
+        Permission::Plan => ("list-checks", colors::text3()),
+        Permission::Ask => ("hand", colors::text3()),
+        Permission::Auto => ("zap", colors::text3()),
+        // never asks: marked, so it isn't picked by accident
+        Permission::Bypass => ("shield-off", colors::busy()),
+    }
+}
+
 pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> AnyElement {
     let pick = c.pick();
     let focused = c.input.focus_handle(cx).is_focused(window);
+    let empty = c.input.read(cx).text().trim().is_empty() && c.images.is_empty();
     let model_chip: AnyElement = match &pick {
         Some(p) => model_menu::anchored_chip(
             &c.anchor,
-            widgets::chip("composer-model")
+            flat("composer-model")
                 .child(mark(p.agent, 13., colors::brand(p.agent).0))
                 .child(div().truncate().child(model_label(c, p)))
                 .child(widgets::caret())
@@ -55,7 +76,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .map(|spec| {
             model_menu::anchored_chip(
                 &c.effort_anchor,
-                widgets::chip("composer-effort")
+                flat("composer-effort")
                     .child(model_menu::effort_chip_label(&spec))
                     .child(widgets::caret())
                     .on_click(
@@ -63,7 +84,9 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                     ),
             )
         });
-    let permission_chip = widgets::chip("composer-permission")
+    let (glyph, tint) = permission_icon(c.prefs.permission);
+    let permission_chip = flat("composer-permission")
+        .child(icon(glyph, 13., tint))
         .child(pickers::permission_label(c.prefs.permission))
         .child(widgets::caret())
         .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_permission(e, cx)));
@@ -71,7 +94,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     let forced = c.agent().is_some_and(|a| !a.agent.structured());
     let on = c.terminal();
     let terminal_chip = (pick.is_some() && c.prefs.structured).then(|| {
-        widgets::chip("composer-terminal")
+        flat("composer-terminal")
             .child(icon(
                 "terminal",
                 13.,
@@ -93,11 +116,30 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     } else {
         colors::border1()
     };
+    // the send button firms up once there is something to send; empty, it starts the agent
+    // with no task, as a terminal would
+    let send = if empty {
+        div()
+            .id("composer-start")
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .size(px(28.))
+            .rounded_full()
+            .bg(colors::ink(0.1))
+            .cursor_pointer()
+            .hover(|s| s.bg(colors::ink(0.18)))
+            .child(icon("arrow-up", 15., colors::text2()))
+            .tooltip(widgets::tip("Start without a task"))
+    } else {
+        widgets::send("composer-start", "arrow-up").tooltip(widgets::tip("Start"))
+    };
     div()
         .w_full()
         .flex()
         .flex_col()
-        .rounded(px(14.))
+        .rounded(px(18.))
         .border_1()
         .border_color(frame)
         .bg(colors::surface2().opacity(0.85))
@@ -116,23 +158,24 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         })
         .child(
             div()
-                .min_h(px(64.))
-                .px(px(16.))
-                .pt(px(14.))
+                .min_h(px(76.))
+                .px(px(18.))
+                .pt(px(16.))
                 .pb(px(8.))
-                .text_size(px(14.))
-                .line_height(px(22.))
+                .text_size(px(14.5))
+                .line_height(px(23.))
                 .child(c.input.clone()),
         )
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap_2()
+                .gap(px(2.))
                 .px(px(8.))
                 .pb(px(8.))
                 .child(
                     widgets::icon_button("composer-attach", "paperclip", 28.)
+                        .tooltip(widgets::tip("Attach images"))
                         .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.pick_images(cx))),
                 )
                 .child(permission_chip)
@@ -141,7 +184,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .child(model_chip)
                 .children(effort_chip)
                 .child(
-                    widgets::send("composer-start", "arrow-up")
+                    send.ml(px(4.))
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.submit(cx))),
                 ),
@@ -149,8 +192,41 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .into_any_element()
 }
 
-/// Where the thread will run, as a quiet button above the box on its right, like zeron's folder
-/// picker. A project shows its folder; an open space asks for one.
+/// The line under the box: where the thread starts (the folder, a button when it can change,
+/// and its branch) on the left, and the keys on the right.
+pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .mt(px(8.))
+        .px(px(6.))
+        .child(folder_picker(c, cx))
+        .children(c.branch.clone().map(|b| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .min_w_0()
+                .px(px(6.))
+                .text_size(px(12.))
+                .text_color(colors::text3())
+                .child(icon("git-branch", 12., colors::text3()))
+                .child(div().max_w(px(200.)).truncate().font_family(MONO).child(b))
+        }))
+        .child(div().flex_1())
+        .child(
+            div()
+                .flex_none()
+                .text_size(px(11.5))
+                .text_color(colors::text3())
+                .child("Enter to send  \u{b7}  Shift+Enter for a new line"),
+        )
+        .into_any_element()
+}
+
+/// Where the thread will run, as a quiet button under the box, like zeron's folder picker. A
+/// project shows its folder; an open space asks for one.
 pub fn folder_picker(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
     let (label, pick) = match c.target.as_ref() {
         None => ("Choose a folder".to_string(), Some(PickFor::Project)),
@@ -170,10 +246,10 @@ pub fn folder_picker(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .flex()
         .items_center()
         .gap(px(6.))
-        .h(px(26.))
-        .px(px(8.))
-        .rounded(px(7.))
-        .text_size(px(12.5))
+        .h(px(24.))
+        .px(px(6.))
+        .rounded(px(6.))
+        .text_size(px(12.))
         .text_color(colors::text2())
         .child(icon("folder", 13., colors::text3()))
         .child(div().max_w(px(260.)).truncate().child(label))
@@ -240,10 +316,10 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
     });
     Some(
         div()
-            .mt(px(16.))
+            .mt(px(28.))
             .flex()
             .flex_col()
-            .rounded(px(10.))
+            .rounded(px(12.))
             .border_1()
             .border_color(colors::border1())
             .bg(colors::surface2().opacity(0.55))

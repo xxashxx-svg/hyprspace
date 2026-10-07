@@ -87,6 +87,8 @@ pub struct Composer {
     clone: CloneCard,
     next_request: u64,
     error: Option<String>,
+    /// The branch of the folder the thread starts in, when it is a repo.
+    branch: Option<String>,
     _subs: Vec<Subscription>,
 }
 
@@ -96,7 +98,7 @@ impl Composer {
     pub fn new(client: Client, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             TextInput::new(
-                "Describe the task, paste an image, or paste a repository link to clone it",
+                "Ask for anything, paste an image, or paste a repository link to clone it",
                 true,
                 cx,
             )
@@ -150,6 +152,7 @@ impl Composer {
             },
             next_request: 1,
             error: None,
+            branch: None,
             _subs: subs,
         }
     }
@@ -165,7 +168,26 @@ impl Composer {
         }
         self.asked = None;
         self.ask_resumable();
+        // the branch for the line under the box
+        if let Some(cwd) = self.cwd() {
+            self.client
+                .send(Command::Folder(hyprspace_proto::FolderCommand::GitStatus {
+                    cwd,
+                }));
+        }
         cx.notify();
+    }
+
+    /// The folder the next thread starts in, if one is known yet.
+    pub fn folder_now(&self) -> Option<PathBuf> {
+        self.cwd()
+    }
+
+    pub fn set_branch(&mut self, branch: Option<String>, cx: &mut Context<Self>) {
+        if self.branch != branch {
+            self.branch = branch;
+            cx.notify();
+        }
     }
 
     pub fn set_agents(&mut self, agents: Vec<AgentInfo>, cx: &mut Context<Self>) {
@@ -535,17 +557,18 @@ impl Render for Composer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.input.read(cx).text().to_string();
         let repo = repo::split(&text).map(|(r, _)| r);
-        // only a clone says what it will do; otherwise the box speaks for itself, as zeron's does
-        let heading = repo.as_ref().map(|r| {
-            div()
-                .flex()
-                .justify_center()
-                .mb(px(16.))
-                .text_size(px(22.))
-                .font_weight(FontWeight::MEDIUM)
-                .child("Clone ")
-                .child(bold(r.label.clone()))
-        });
+        // a clone says what it will do
+        let heading = div()
+            .flex()
+            .justify_center()
+            .mb(px(20.))
+            .text_size(px(24.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(colors::text1())
+            .map(|d| match &repo {
+                Some(r) => d.child("Clone ").child(bold(r.label.clone())),
+                None => d.child("What should we work on?"),
+            });
         let agent_name = self.agent().map(|a| a.agent.name()).unwrap_or("The agent");
         let below = match &repo {
             Some(r) => Some(clone::render(
@@ -583,8 +606,8 @@ impl Render for Composer {
             .on_drop(cx.listener(|c, paths: &ExternalPaths, _, cx| c.drop_paths(paths, cx)))
             .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent_dim()))
             .overflow_y_scroll()
-            // the box sits a third of the way down, like zeron's
-            .child(div().flex_none().h(relative(0.3)))
+            // the box sits a little above the middle, like zeron's
+            .child(div().flex_none().h(relative(0.26)))
             .child(
                 div()
                     .w_full()
@@ -593,15 +616,9 @@ impl Render for Composer {
                     .pb(px(24.))
                     .flex()
                     .flex_col()
-                    .children(heading)
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .mb(px(6.))
-                            .child(card::folder_picker(self, cx)),
-                    )
+                    .child(heading)
                     .child(card::card(self, window, cx))
+                    .child(card::footer(self, cx))
                     .children(self.error.clone().map(|e| {
                         div()
                             .mt(px(10.))

@@ -83,6 +83,13 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        // the branch for the line under the box, from the git status the composer asked for
+        let folder = self.composer.read(cx).folder_now();
+        let branch = folder
+            .and_then(|f| self.git.get(&f))
+            .map(|g| g.branch.branch.clone())
+            .filter(|b| !b.is_empty() && b != "HEAD");
+        self.composer.update(cx, |c, cx| c.set_branch(branch, cx));
         // settles down into place as it fades in, each time a space's composer comes up
         let composer = crate::slide::ease_in(
             div().relative().size_full().child(self.composer.clone()),
