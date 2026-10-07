@@ -270,7 +270,7 @@ impl Root {
 
     pub(crate) fn thread_card(&self, id: u64, cx: &App) -> Option<RowCard> {
         let (space, t) = self.state.thread(id)?;
-        let model = match t.agent() {
+        let (model, effort) = match t.agent() {
             Some(launch) => {
                 // with no model picked the label is the agent's own name, which needn't repeat
                 let mut s = match launch.model {
@@ -280,17 +280,24 @@ impl Root {
                 if launch.model.as_deref().is_some_and(crate::models::is_long) {
                     s.push_str(" 1M");
                 }
-                if let Some(e) = launch.effort.as_deref().filter(|e| !e.is_empty()) {
-                    let mut c = e.chars();
-                    let e: String = c
-                        .next()
-                        .map(|f| f.to_uppercase().chain(c).collect())
-                        .unwrap_or_default();
-                    s.push_str(&format!(" \u{b7} {e}"));
-                }
-                s
+                // the level picked, or the model's own default, said as such; none for a model
+                // that takes no effort
+                let catalog = self
+                    .agents
+                    .iter()
+                    .find(|a| a.agent == launch.agent)
+                    .map(|a| &a.catalog);
+                let id = crate::models::windowed(launch.model.as_deref().unwrap_or(""), false);
+                let effort = match launch.effort.as_deref().filter(|e| !e.is_empty()) {
+                    Some(e) => Some(crate::composer::effort_label(e)),
+                    None => catalog
+                        .and_then(|c| c.model(&id))
+                        .and_then(|m| m.default_effort.clone())
+                        .map(|d| format!("{} (default)", crate::composer::effort_label(&d))),
+                };
+                (s, effort)
             }
-            None => "Terminal".into(),
+            None => ("Terminal".to_string(), None),
         };
         let cwd = match &t.kind {
             ThreadKind::Terminal { cwd, .. } => cwd.clone(),
@@ -309,6 +316,7 @@ impl Root {
             branch,
             agent: t.agent().map(|l| l.agent),
             model: model.into(),
+            effort: effort.map(Into::into),
             subagents: self
                 .subagents(id, cx)
                 .into_iter()

@@ -1,8 +1,8 @@
 // The card that shows beside a thread's row when the pointer rests on it, after T3 Code's, in
 // the frame the app's menus and panels share: the thread's title under the agent's mark, then
-// its project, folder, branch and agent as labeled lines, and the subagents it has running. The
-// row itself only has room for the agent's mark. It floats just past the sidebar's edge, level
-// with the row, the way T3 Code's does, so the list under the pointer stays in view.
+// its project, folder, branch, agent and effort as labeled lines, and the subagents it has
+// running. The row itself only has room for the agent's mark. It floats just past the sidebar's
+// edge, level with the row, the way T3 Code's does, so the list under the pointer stays in view.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -33,8 +33,10 @@ pub struct RowCard {
     pub path: SharedString,
     pub branch: Option<SharedString>,
     pub agent: Option<Agent>,
-    /// The agent with its model and effort, "Claude Opus 5.5 · High", or "Terminal".
+    /// The agent with its model, "Claude Opus 5.5", or "Terminal".
     pub model: SharedString,
+    /// The effort it runs at, "High" or "High (default)", for a model that takes one.
+    pub effort: Option<SharedString>,
     /// Each subagent running: what it was asked, and how long it has run.
     pub subagents: Vec<(SharedString, SharedString)>,
 }
@@ -173,7 +175,19 @@ impl RowCard {
                     .min_w_0()
                     .child(div().flex_none().child(small_agent))
                     .child(div().min_w_0().truncate().child(self.model.clone())),
-            ));
+            ))
+            .children(self.effort.clone().map(|e| {
+                field(
+                    "Effort",
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .min_w_0()
+                        .child(icon("gauge", 11., colors::text3()))
+                        .child(div().min_w_0().truncate().child(e)),
+                )
+            }));
         let subs = (!self.subagents.is_empty()).then(|| {
             let more = self.subagents.len().saturating_sub(SUBS_SHOWN);
             div()
