@@ -4,6 +4,19 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.4 — 2026-10-07
+
+- Text files open editable in the viewer. Ctrl+S saves, and closing with unsaved edits asks whether to save or discard them.
+- Activity in Settings, Usage now looks like Claude's /stats. It has a 7 days, 30 days or all time view, a heatmap, streaks, your favorite model, tokens per day and each model's share. Its figures now match /stats, cache included.
+- Drop files on the composer or a thread's reply box to attach them.
+- In text boxes, Ctrl+Backspace and Ctrl+Delete delete a word, and Ctrl+arrows move by word. Double-click selects a word and triple-click selects the line.
+- The composer, the model menu, the dock's Files and Git tabs, the usage popover and the thread hover card have a new look. The hover card shows the thread's effort.
+- Side panels slide in and out, and a new thread grows into the sidebar.
+- Gemini is gone.
+- Fixed resuming a Claude conversation whose folder was saved with a trailing slash.
+- Fixed renaming a thread.
+- Fixed a sidebar row staying highlighted when the pointer moved to another monitor.
+
 ## 0.24.3 — 2026-10-05
 
 - Interrupting Claude with Esc or Ctrl+C now ends the thread's working state in the sidebar.
