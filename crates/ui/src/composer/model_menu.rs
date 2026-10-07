@@ -1,18 +1,19 @@
 // The model and effort menus both prompt boxes open from their chips: the composer's, for the
 // next thread, and a thread's own. After T3 Code's pickers. The model menu has a rail of agents
 // on the left when more than one is installed, a search box, and the models grouped under their
-// agent with the pick ticked. The highlight glides between rows and the menu eases in. Arrows
-// move, Enter picks, Esc closes, and typing searches the models. The effort menu is a slider,
-// in effort.rs.
+// agent with the pick ticked. The highlight glides between rows, the list eases along under
+// the wheel as the sidebar does, and the menu eases in. Arrows move, Enter picks, Esc closes,
+// and typing searches the models. The effort menu is a slider, in effort.rs.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, Focusable, FontWeight,
-    IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle, SharedString, Stateful,
-    Window, div, prelude::*, px,
+    AnyElement, App, Bounds, ClickEvent, Context, DispatchPhase, Div, FocusHandle, Focusable,
+    FontWeight, HitboxBehavior, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle,
+    ScrollWheelEvent, SharedString, Stateful, Window, canvas, div, point, prelude::*, px,
 };
 use hyprspace_proto::Agent;
 
@@ -27,10 +28,13 @@ const HEADING: f32 = 26.;
 const ROW: f32 = 32.;
 /// Where the rail's first button sits, and the step to the next.
 const RAIL_TOP: f32 = 8.;
+const RAIL_STEP: f32 = 34.;
 /// About how tall each menu opens, to tell whether it fits under its chip.
 const MODELS_TALL: f32 = 340.;
 const EFFORT_TALL: f32 = 200.;
-const RAIL_STEP: f32 = 34.;
+/// The wheel's easing, the sidebar's: a line's travel, and the time constant it settles in.
+const LINE: f32 = 20.;
+const EASE: f32 = 0.06;
 
 pub struct Model {
     pub agent: Agent,
@@ -114,6 +118,9 @@ pub struct ModelMenu {
     rail_glide: Glide,
     /// Each model's place among the list's children, which the agent headings shift.
     rows: RefCell<Vec<usize>>,
+    /// Wheel travel not scrolled yet, positive toward the end, and when the last step went.
+    wheel: Rc<Cell<f32>>,
+    stepped: Cell<Option<Instant>>,
     pub(super) slider: Slider,
 }
 
@@ -143,6 +150,8 @@ impl ModelMenu {
             glide: Glide::default(),
             rail_glide: Glide::default(),
             rows: RefCell::default(),
+            wheel: Rc::default(),
+            stepped: Cell::new(None),
             slider: Slider::default(),
         };
         window.focus(&m.focus, cx);
@@ -153,6 +162,57 @@ impl ModelMenu {
     pub fn is_effort(&self) -> bool {
         self.effort
     }
+
+    /// One frame of easing the list toward where the wheel sent it. GPUI's offset runs
+    /// negative as the list scrolls down.
+    fn ease(&self, window: &mut Window) {
+        let left = self.wheel.get();
+        if left == 0. {
+            self.stepped.set(None);
+            return;
+        }
+        let now = Instant::now();
+        let dt = self
+            .stepped
+            .replace(Some(now))
+            .map_or(1. / 120., |t| (now - t).as_secs_f32().min(0.05));
+        let step = if left.abs() < 0.5 {
+            left
+        } else {
+            left * (1. - (-dt / EASE).exp())
+        };
+        let at = self.scroll.offset();
+        let max = self.scroll.max_offset().y;
+        let y = (at.y - px(step)).clamp(-max, px(0.));
+        self.scroll.set_offset(point(at.x, y));
+        // an end reached drops what is left, so the next turn of the wheel answers at once
+        let stuck = y == -max || y == px(0.);
+        self.wheel.set(if stuck { 0. } else { left - step });
+        window.request_animation_frame();
+    }
+}
+
+/// Takes the wheel over the list before the list sees it, so it can be eased.
+fn wheel<H: Host>(m: &ModelMenu, cx: &mut Context<H>) -> AnyElement {
+    let pending = m.wheel.clone();
+    let view = cx.weak_entity();
+    canvas(
+        |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+        move |_, hitbox, window, _| {
+            window.on_mouse_event(move |e: &ScrollWheelEvent, phase, window, cx| {
+                if phase != DispatchPhase::Capture || !hitbox.is_hovered(window) {
+                    return;
+                }
+                let dy = e.delta.pixel_delta(px(LINE)).y;
+                pending.set(pending.get() - f32::from(dy));
+                cx.stop_propagation();
+                let _ = view.update(cx, |_, cx| cx.notify());
+            });
+        },
+    )
+    .absolute()
+    .size_full()
+    .into_any_element()
 }
 
 /// The models on the rail's agent whose name (or agent) has every word of `query`.
@@ -298,6 +358,7 @@ pub fn render<H: Host>(
     cx: &mut Context<H>,
 ) -> Option<AnyElement> {
     let chip = anchor.get()?;
+    m.ease(window);
     let body = if m.effort {
         effort::body(m, spec, cx)
     } else {
@@ -514,7 +575,7 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
                 .flex()
                 .flex_col()
                 .child(search)
-                .child(list),
+                .child(div().relative().child(list).child(wheel(m, cx))),
         )
         .into_any_element()
 }
