@@ -296,10 +296,17 @@ impl Root {
             ThreadKind::Terminal { cwd, .. } => cwd.clone(),
             ThreadKind::Structured { launch } => launch.cwd.clone(),
         };
+        let branch = self
+            .git
+            .get(&cwd)
+            .map(|g| &g.branch)
+            .filter(|b| b.is_repo && !b.branch.is_empty() && b.branch != "HEAD")
+            .map(|b| b.branch.clone().into());
         Some(RowCard {
             title: t.title.clone().into(),
             space: space.name.clone().into(),
-            path: cwd.display().to_string().into(),
+            path: super::card::tidy(&cwd).into(),
+            branch,
             agent: t.agent().map(|l| l.agent),
             model: model.into(),
             subagents: self
