@@ -17,13 +17,6 @@ pub struct UsageWindow {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UsageDay {
-    pub date: String,
-    pub value: u64,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ModelUsage {
     pub model: String,
     pub input_tokens: u64,
@@ -68,9 +61,6 @@ pub struct ProviderUsage {
     /// When the file the windows came from was last written. Codex only records them during a
     /// session, so without this a three-week-old number looks identical to a live one.
     pub updated_at: i64,
-    pub daily: Vec<UsageDay>,
-    /// "tokens" | "msgs" | "sessions"
-    pub daily_unit: Option<String>,
     pub models: Vec<ModelUsage>,
     /// Tokens per model per day over the recent files, for Activity's chart.
     #[serde(default)]

@@ -1,8 +1,7 @@
 // Settings, Usage, Activity: what each agent has done, from its own files on this machine.
 
-use chrono::{Datelike, Duration as Days, Local, NaiveDate};
 use gpui::{AnyElement, Div, FontWeight, Hsla, IntoElement, div, prelude::*, px, relative};
-use hyprspace_proto::usage::{ModelUsage, ProviderUsage, UsageDay};
+use hyprspace_proto::usage::{ModelUsage, ProviderUsage};
 
 use super::page::*;
 use super::{Limits, PROVIDERS, brand};
@@ -315,120 +314,6 @@ fn models(list: &[ModelUsage], tint: Hsla) -> AnyElement {
         .into_any_element()
 }
 
-/// One slot per day for the last 30, so two active days read as two bars on a calendar. If
-/// nothing falls in the last 30 days (a stats file that hasn't caught up), the window ends on
-/// the latest day there is instead, and says so.
-fn days(list: &[UsageDay], unit: &str, tint: Hsla) -> Option<AnyElement> {
-    const N: i64 = 30;
-    let parsed: Vec<(NaiveDate, u64)> = list
-        .iter()
-        .filter_map(|d| {
-            Some((
-                NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").ok()?,
-                d.value,
-            ))
-        })
-        .collect();
-    let value = |day: NaiveDate| {
-        parsed
-            .iter()
-            .filter(|(d, _)| *d == day)
-            .map(|(_, v)| *v)
-            .sum::<u64>()
-    };
-    let build = |end: NaiveDate| -> Vec<(NaiveDate, u64)> {
-        (0..N)
-            .map(|i| {
-                let d = end - Days::days(N - 1 - i);
-                (d, value(d))
-            })
-            .collect()
-    };
-    let today = Local::now().date_naive();
-    let mut slots = build(today);
-    let mut ends_today = true;
-    if !slots.iter().any(|s| s.1 > 0) {
-        let last = parsed.iter().map(|(d, _)| *d).max()?;
-        slots = build(last);
-        ends_today = false;
-    }
-    let active: Vec<&(NaiveDate, u64)> = slots.iter().filter(|s| s.1 > 0).collect();
-    let max = active.iter().map(|s| s.1).max()?;
-    let peak = active.iter().copied().max_by_key(|s| s.1)?;
-    let label = |d: NaiveDate| format!("{} {}", d.format("%b"), d.day());
-    let first = slots[0].0;
-    let last = slots[slots.len() - 1].0;
-    let n = active.len();
-    let head = block_head(
-        &if ends_today {
-            "Last 30 days".to_string()
-        } else {
-            format!("30 days to {}", label(last))
-        },
-        format!(
-            "{n} active {}, peak {} {unit} on {}",
-            if n == 1 { "day" } else { "days" },
-            short(peak.1),
-            label(peak.0)
-        ),
-    );
-    let bars = slots.iter().map(|(d, v)| {
-        let h = if *v > 0 {
-            relative((*v as f32 / max as f32).max(0.1))
-        } else {
-            px(3.).into()
-        };
-        let color = if *v == 0 {
-            colors::ink(0.08)
-        } else if *d == peak.0 {
-            tint
-        } else {
-            tint.opacity(0.45)
-        };
-        div()
-            .flex_1()
-            .min_w(px(2.))
-            .h(h)
-            .rounded_t(px(2.))
-            .bg(color)
-    });
-    Some(
-        div()
-            .px(px(16.))
-            .pt(px(14.))
-            .pb(px(16.))
-            .border_t_1()
-            .border_color(colors::border0())
-            .child(head)
-            .child(
-                div()
-                    .flex()
-                    .items_end()
-                    .gap(px(3.))
-                    .h(px(64.))
-                    .pb(px(1.))
-                    .border_b_1()
-                    .border_color(colors::border1())
-                    .children(bars),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .mt(px(6.))
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(label(first))
-                    .child(if ends_today {
-                        "Today".to_string()
-                    } else {
-                        label(last)
-                    }),
-            )
-            .into_any_element(),
-    )
-}
-
 fn activity_card(u: &ProviderUsage) -> AnyElement {
     let tint = brand(&u.id);
     let counts: Vec<(&str, u64)> = [
@@ -479,11 +364,6 @@ fn activity_card(u: &ProviderUsage) -> AnyElement {
     if !u.models.is_empty() {
         items.push(models(&u.models, tint));
     }
-    let chart = if u.daily.len() > 1 {
-        days(&u.daily, u.daily_unit.as_deref().unwrap_or("msgs"), tint)
-    } else {
-        None
-    };
     card(
         &u.id,
         &u.label,
@@ -491,7 +371,6 @@ fn activity_card(u: &ProviderUsage) -> AnyElement {
         u.account.as_deref().map(masked),
     )
     .child(rows(items))
-    .children(chart)
     .children(u.note.clone().map(note))
     .into_any_element()
 }

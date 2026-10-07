@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use hyprspace_proto::usage::{ModelDay, ModelUsage, ProviderUsage, UsageDay, UsageWindow};
+use hyprspace_proto::usage::{ModelDay, ModelUsage, ProviderUsage, UsageWindow};
 use serde_json::Value;
 
 use crate::util::{decode_jwt, home_dir, read_json, title_case};
@@ -127,18 +127,15 @@ fn claude_usage(home: &Path, now: u64) -> ProviderUsage {
 }
 
 /// Fills the per-model, per-day figures from `days`, keyed by (day, model) with tokens in and
-/// out. A provider with no model split or daily figures of its own takes them from here.
+/// out. A provider with no model split of its own takes it from here.
 fn by_model_and_day(u: &mut ProviderUsage, mut days: BTreeMap<(String, String), (u64, u64)>) {
     // a session that spent nothing has nothing to show
     days.retain(|_, (i, o)| *i + *o > 0);
     let mut models: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
-    let mut daily: BTreeMap<&str, u64> = BTreeMap::new();
-    for ((date, model), (i, o)) in &days {
+    for ((_, model), (i, o)) in &days {
         let m = models.entry(model).or_default();
         m.0 = m.0.saturating_add(*i);
         m.1 = m.1.saturating_add(*o);
-        let d = daily.entry(date).or_default();
-        *d = d.saturating_add(i.saturating_add(*o));
     }
     if u.models.is_empty() {
         u.models = models
@@ -153,16 +150,6 @@ fn by_model_and_day(u: &mut ProviderUsage, mut days: BTreeMap<(String, String), 
             .collect();
         u.models.sort_by_key(|m| std::cmp::Reverse(m.total_tokens));
         u.models.truncate(8);
-    }
-    if u.daily.len() < 2 && daily.len() > 1 {
-        u.daily = daily
-            .iter()
-            .map(|(date, value)| UsageDay {
-                date: date.to_string(),
-                value: *value,
-            })
-            .collect();
-        u.daily_unit = Some("tokens".into());
     }
     u.daily_models = days
         .into_iter()
@@ -193,17 +180,6 @@ fn apply_stats_cache(u: &mut ProviderUsage, v: &Value) {
             u.sessions = u.sessions.saturating_add(u64_at(d, "sessionCount"));
             u.tool_calls = u.tool_calls.saturating_add(u64_at(d, "toolCallCount"));
         }
-        u.daily = days
-            .iter()
-            .skip(days.len().saturating_sub(30))
-            .map(|d| UsageDay {
-                date: d["date"].as_str().unwrap_or("").to_string(),
-                value: u64_at(d, "messageCount"),
-            })
-            .collect();
-        if !u.daily.is_empty() {
-            u.daily_unit = Some("msgs".into());
-        }
     }
     // the cache also carries authoritative lifetime totals; prefer them over the daily sum
     if let Some(n) = v["totalSessions"].as_u64().filter(|n| *n > 0) {
@@ -211,28 +187,6 @@ fn apply_stats_cache(u: &mut ProviderUsage, v: &Value) {
     }
     if let Some(n) = v["totalMessages"].as_u64().filter(|n| *n > 0) {
         u.messages = n;
-    }
-    // tokens per day make a better activity sparkline than message counts
-    if let Some(days) = v["dailyModelTokens"].as_array() {
-        let mut daily: Vec<UsageDay> = days
-            .iter()
-            .map(|d| UsageDay {
-                date: d["date"].as_str().unwrap_or("").to_string(),
-                value: d["tokensByModel"]
-                    .as_object()
-                    .map(|m| {
-                        m.values()
-                            .filter_map(Value::as_u64)
-                            .fold(0u64, u64::saturating_add)
-                    })
-                    .unwrap_or(0),
-            })
-            .collect();
-        if !daily.is_empty() {
-            let n = daily.len();
-            u.daily = daily.split_off(n.saturating_sub(30));
-            u.daily_unit = Some("tokens".into());
-        }
     }
     // lifetime split by model
     if let Some(mu) = v["modelUsage"].as_object() {
@@ -341,7 +295,6 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
         .filter(|p| file_name(p).is_some_and(|n| n.starts_with("rollout-")))
         .count() as u64;
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
-    let mut by_day: BTreeMap<String, u64> = BTreeMap::new();
     let mut days = Days::new();
     for f in &files {
         let Some(tc) = last_token_count(f) else {
@@ -357,8 +310,6 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
             .and_then(|n| n.strip_prefix("rollout-"))
             .and_then(|n| n.get(..10))
         {
-            let e = by_day.entry(d.to_string()).or_insert(0);
-            *e = e.saturating_add(u64_at(ttu, "total_tokens"));
             // the whole session goes to the model it ran on
             let model = rollout_model(f).unwrap_or_else(|| "Codex".into());
             let e = days.entry((d.to_string(), model)).or_default();
@@ -390,13 +341,6 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
     u.total_tokens = i.saturating_add(o).saturating_add(c);
     if u.total_tokens > 0 {
         u.tokens_window = Some("recent sessions".into());
-    }
-    if by_day.len() > 1 {
-        u.daily = by_day
-            .into_iter()
-            .map(|(date, value)| UsageDay { date, value })
-            .collect();
-        u.daily_unit = Some("tokens".into());
     }
     by_model_and_day(&mut u, days);
     u
@@ -558,7 +502,6 @@ mod tests {
             (u.input_tokens, u.output_tokens, u.cache_tokens),
             (20, 10, 2)
         );
-        assert_eq!(u.daily.len(), 2);
         // no turn context in these rollouts, so the sessions go to Codex at large
         assert_eq!(u.daily_models.len(), 2);
         assert!(u.daily_models.iter().all(|d| d.model == "Codex"));
@@ -615,9 +558,8 @@ mod tests {
                 ("2026-10-02".into(), "claude-haiku-4-5".into(), 4),
             ]
         );
-        // no stats file: the model split and the days come from the transcripts
+        // no stats file: the model split comes from the transcripts
         assert_eq!(u.models[0].model, "claude-opus-5-5");
-        assert_eq!(u.daily.len(), 2);
     }
 
     #[test]
@@ -646,7 +588,6 @@ mod tests {
             (u.messages, u.sessions, u.tool_calls, u.active_days),
             (99, 3, 2, 2)
         );
-        assert_eq!(u.daily_unit.as_deref(), Some("msgs"));
         assert_eq!(u.models.len(), 1);
         assert_eq!(u.total_tokens, 11);
         assert!(!u.signed_in);

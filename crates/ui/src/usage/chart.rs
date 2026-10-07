@@ -1,7 +1,9 @@
-// Activity's chart, after T3 Code's analytics: tokens per day over the last 30 days, a line for
-// each agent or each model, named where it ends, on a linear or a log scale (one busy day
-// otherwise flattens every quiet one). The pointer picks a day and a card lists its figures; the
-// legend under it hides and shows lines and gives each one's total and share.
+// Activity's chart, after T3 Code's analytics: tokens per day over the last 30 days, a smooth
+// line for each agent or each model over a soft fill, named where it ends, on a linear or a log
+// scale (one busy day otherwise flattens every quiet one, so a spiky month starts on log). Over
+// it, the busiest day, what was used most and the daily average. The pointer picks a day and a
+// card lists its figures; the legend under it hides and shows lines with each one's total and
+// share.
 // Everything comes from the agents' own files (`ProviderUsage::daily_models`).
 
 use std::collections::{HashMap, HashSet};
@@ -10,7 +12,8 @@ use chrono::{Datelike, Duration as Days, Local, NaiveDate};
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Context, DispatchPhase, Entity, FontWeight,
     HitboxBehavior, Hsla, IntoElement, MouseMoveEvent, PathBuilder, Pixels, Point, SharedString,
-    TextAlign, TextRun, Window, canvas, div, fill, point, prelude::*, px, size,
+    TextAlign, TextRun, Window, canvas, div, fill, linear_color_stop, linear_gradient, point,
+    prelude::*, px, size,
 };
 use hyprspace_proto::Agent;
 use hyprspace_proto::usage::ProviderUsage;
@@ -23,7 +26,7 @@ use crate::widgets;
 
 /// Days on the chart, ending today.
 const N: usize = 30;
-const HEIGHT: f32 = 240.;
+const HEIGHT: f32 = 280.;
 /// Room left of the plot for the scale, under it for the dates, and right of it for the names.
 const LEFT: f32 = 44.;
 const BOTTOM: f32 = 26.;
@@ -44,8 +47,8 @@ pub enum By {
 #[derive(Default)]
 pub struct State {
     pub by: By,
-    /// A log scale, a power of ten to each step.
-    pub log: bool,
+    /// A log scale, a power of ten to each step; unset, the data picks (`spiky`).
+    pub log: Option<bool>,
     pub hidden: HashSet<String>,
     /// The day under the pointer.
     pub hover: Option<usize>,
@@ -131,13 +134,72 @@ impl Data {
         series.retain(|s| s.total > 0);
         Self {
             by: l.chart.by,
-            log: l.chart.log,
+            log: l.chart.log.unwrap_or_else(|| spiky(&series)),
             hover: l.chart.hover,
             hidden: l.chart.hidden.clone(),
             days,
             series,
         }
     }
+}
+
+/// Whether one day dwarfs the typical one, so a linear scale would flatten the rest: the busiest
+/// day over eight times the median of the days with any use.
+fn spiky(series: &[Series]) -> bool {
+    let mut days: Vec<u64> = (0..N)
+        .map(|i| series.iter().map(|s| s.values[i]).max().unwrap_or(0))
+        .filter(|v| *v > 0)
+        .collect();
+    if days.len() < 3 {
+        return false;
+    }
+    days.sort_unstable();
+    let median = days[days.len() / 2].max(1);
+    days[days.len() - 1] > median * 8
+}
+
+/// The control points of a smooth curve through `p`, two to a segment, that never overshoots
+/// the points (Fritsch and Carlson's monotone cubic), so a quiet day doesn't dip below the floor.
+fn smooth(p: &[Point<Pixels>]) -> Vec<(Point<Pixels>, Point<Pixels>)> {
+    let n = p.len();
+    if n < 2 {
+        return Vec::new();
+    }
+    let h: Vec<f32> = (0..n - 1).map(|k| f32::from(p[k + 1].x - p[k].x)).collect();
+    let d: Vec<f32> = (0..n - 1)
+        .map(|k| f32::from(p[k + 1].y - p[k].y) / h[k].max(0.001))
+        .collect();
+    let mut m: Vec<f32> = (0..n)
+        .map(|k| match k {
+            0 => d[0],
+            k if k == n - 1 => d[n - 2],
+            k if d[k - 1] * d[k] <= 0. => 0.,
+            k => (d[k - 1] + d[k]) / 2.,
+        })
+        .collect();
+    for k in 0..n - 1 {
+        if d[k] == 0. {
+            m[k] = 0.;
+            m[k + 1] = 0.;
+            continue;
+        }
+        let (a, b) = (m[k] / d[k], m[k + 1] / d[k]);
+        let r = a * a + b * b;
+        if r > 9. {
+            let t = 3. / r.sqrt();
+            m[k] = t * a * d[k];
+            m[k + 1] = t * b * d[k];
+        }
+    }
+    (0..n - 1)
+        .map(|k| {
+            let third = h[k] / 3.;
+            (
+                point(p[k].x + px(third), p[k].y + px(m[k] * third)),
+                point(p[k + 1].x - px(third), p[k + 1].y - px(m[k + 1] * third)),
+            )
+        })
+        .collect()
 }
 
 /// One provider's lines: the whole agent, or its busiest models and the rest together.
@@ -292,17 +354,22 @@ fn paint(
         let at = point(plot.left() - px(8.) - label.width(), gy - lh / 2.);
         let _ = label.paint(at, lh, TextAlign::Left, None, window, cx);
     }
-    // the dates: the first, the middle and today
-    for (i, name) in [
-        (0, day_label(days[0])),
-        (N / 2, day_label(days[N / 2])),
-        (N - 1, "Today".to_string()),
-    ] {
+    // the dates: a week apart back from today, each over a small tick
+    for i in (0..N).rev().step_by(7) {
+        let name = if i == N - 1 {
+            "Today".to_string()
+        } else {
+            day_label(days[i])
+        };
+        window.paint_quad(fill(
+            Bounds::new(point(x(i), plot.bottom()), size(px(1.), px(4.))),
+            colors::ink(0.18),
+        ));
         let label = text(name, 10.5, colors::text3(), false, window);
-        let lx = match i {
-            0 => x(i),
-            i if i == N - 1 => x(i) - label.width(),
-            _ => x(i) - label.width() / 2.,
+        let lx = if i == N - 1 {
+            x(i) - label.width()
+        } else {
+            x(i) - label.width() / 2.
         };
         let _ = label.paint(
             point(lx, plot.bottom() + px(8.)),
@@ -333,12 +400,33 @@ fn paint(
             .split(|(_, v)| **v == 0)
             .filter(|r| r.len() > 1)
         {
-            let mut b = PathBuilder::stroke(px(2.));
-            for (k, (i, v)) in run.iter().enumerate() {
-                let p = point(x(*i), y(**v));
-                if k == 0 { b.move_to(p) } else { b.line_to(p) }
+            let pts: Vec<Point<Pixels>> = run.iter().map(|(i, v)| point(x(*i), y(**v))).collect();
+            let ctrl = smooth(&pts);
+            // the soft fill under the run, fading to the floor
+            let mut area = PathBuilder::fill();
+            area.move_to(point(pts[0].x, plot.bottom()));
+            area.line_to(pts[0]);
+            for (k, (a, b)) in ctrl.iter().enumerate() {
+                area.cubic_bezier_to(pts[k + 1], *a, *b);
             }
-            if let Ok(path) = b.build() {
+            area.line_to(point(pts[pts.len() - 1].x, plot.bottom()));
+            area.close();
+            if let Ok(path) = area.build() {
+                window.paint_path(
+                    path,
+                    linear_gradient(
+                        180.,
+                        linear_color_stop(s.color.opacity(0.22), 0.),
+                        linear_color_stop(s.color.opacity(0.), 1.),
+                    ),
+                );
+            }
+            let mut line = PathBuilder::stroke(px(2.25));
+            line.move_to(pts[0]);
+            for (k, (a, b)) in ctrl.iter().enumerate() {
+                line.cubic_bezier_to(pts[k + 1], *a, *b);
+            }
+            if let Ok(path) = line.build() {
                 window.paint_path(path, s.color);
             }
         }
@@ -532,7 +620,7 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
                         widgets::segment(("chart-scale", i), None, name, d.log == log, false)
                             .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
                                 l.update(cx, |l, cx| {
-                                    l.chart.log = log;
+                                    l.chart.log = Some(log);
                                     cx.notify();
                                 });
                             }))
@@ -558,6 +646,93 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
                     }),
             ),
         );
+    // the month in three figures: the busiest day, what was used most, the daily average
+    let per_day: Vec<u64> = (0..N)
+        .map(|i| shown.iter().map(|s| s.values[i]).sum())
+        .collect();
+    let busiest = per_day
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, v)| **v)
+        .filter(|(_, v)| **v > 0);
+    let top = shown.iter().max_by_key(|s| s.total);
+    let active = per_day.iter().filter(|v| **v > 0).count().max(1);
+    let figure = |label: &'static str, value: String, foot: String, dot: Option<Hsla>| {
+        div()
+            .flex_1()
+            .flex_basis(px(0.))
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(colors::text3())
+                    .child(label),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .min_w_0()
+                    .children(dot.map(|c| div().flex_none().size(px(8.)).rounded_full().bg(c)))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(15.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors::text1())
+                            .child(value),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(colors::text3())
+                    .child(foot),
+            )
+    };
+    let insights = div()
+        .flex()
+        .gap(px(16.))
+        .mx(px(16.))
+        .mb(px(6.))
+        .py(px(10.))
+        .border_t_1()
+        .border_b_1()
+        .border_color(colors::border1())
+        .children(busiest.map(|(i, v)| {
+            figure(
+                "Busiest day",
+                day_label(d.days[i]),
+                format!("{} tokens", short(*v)),
+                None,
+            )
+        }))
+        .children(top.map(|s| {
+            figure(
+                if d.by == By::Agent {
+                    "Used most"
+                } else {
+                    "Top model"
+                },
+                s.name.clone(),
+                format!("{} tokens", short(s.total)),
+                Some(s.color),
+            )
+        }))
+        .child(figure(
+            "Daily average",
+            short(per_day.iter().sum::<u64>() / active as u64),
+            format!(
+                "over {active} active {}",
+                if active == 1 { "day" } else { "days" }
+            ),
+            None,
+        ));
     let weak = limits.downgrade();
     let (days, hover, log) = (d.days.clone(), d.hover, d.log);
     let drawn = shown.clone();
@@ -650,6 +825,7 @@ pub fn render(d: Data, limits: &Entity<Limits>, cx: &mut Context<Root>) -> Optio
             .border_color(colors::border1())
             .bg(colors::surface2())
             .child(head)
+            .child(insights)
             .child(div().px(px(8.)).child(plot))
             .child(legend)
             .into_any_element(),
@@ -668,6 +844,37 @@ mod tests {
         assert_eq!(nice(230), 250);
         assert_eq!(nice(18_500_000), 20_000_000);
         assert_eq!(nice(5_000), 5_000);
+    }
+
+    #[test]
+    fn a_month_with_one_huge_day_starts_on_log() {
+        let line = |values: Vec<u64>| Series {
+            key: "a".into(),
+            name: "a".into(),
+            color: colors::text1(),
+            total: values.iter().sum(),
+            values,
+        };
+        let mut calm = vec![0u64; N];
+        calm[1..6].copy_from_slice(&[10, 12, 9, 11, 10]);
+        assert!(!spiky(&[line(calm.clone())]));
+        let mut spike = calm;
+        spike[7] = 500;
+        assert!(spiky(&[line(spike)]));
+    }
+
+    #[test]
+    fn the_curve_never_overshoots_its_points() {
+        let p: Vec<Point<Pixels>> = [(0., 100.), (10., 20.), (20., 20.), (30., 90.)]
+            .iter()
+            .map(|(x, y)| point(px(*x), px(*y)))
+            .collect();
+        for (k, (a, b)) in smooth(&p).iter().enumerate() {
+            let (lo, hi) = (p[k].y.min(p[k + 1].y), p[k].y.max(p[k + 1].y));
+            for c in [a, b] {
+                assert!(c.y >= lo - px(0.01) && c.y <= hi + px(0.01), "{k}: {c:?}");
+            }
+        }
     }
 
     #[test]
