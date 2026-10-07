@@ -546,7 +546,7 @@ fn shell_preview() -> AnyElement {
     let threads = [
         (Agent::Claude, 0.78, ok),
         (Agent::Codex, 0.62, busy),
-        (Agent::Gemini, 0.7, colors::ink(0.25)),
+        (Agent::Claude, 0.7, colors::ink(0.25)),
     ];
     let rail = div()
         .flex_none()

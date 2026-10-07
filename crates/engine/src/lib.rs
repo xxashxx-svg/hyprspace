@@ -150,11 +150,7 @@ async fn serve(
                     }
                     let _ = events.unbounded_send(Event::Run { id, event });
                 });
-                let started = match hyprspace_harness::for_agent(agent) {
-                    Some(h) => h.start(launch, emit),
-                    None => Err(std::io::Error::other("it only runs in a terminal")),
-                };
-                match started {
+                match hyprspace_harness::for_agent(agent).start(launch, emit) {
                     Ok(session) => {
                         let live = Live { session, journal };
                         if let Some(prompt) = prompt {

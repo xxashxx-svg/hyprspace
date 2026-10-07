@@ -157,17 +157,6 @@ pub fn command(
                 ));
             }
         }
-        Agent::Gemini => {
-            if run.permission == Permission::Bypass {
-                out.push("--yolo".into());
-            }
-            if let Some(m) = model {
-                out.push(format!("-m {}", quote(m)));
-            }
-            if prompt {
-                out.push(format!("-i {}", prompt_arg()));
-            }
-        }
     }
     if prompt && run.agent == Agent::Codex {
         out.push(prompt_arg());
@@ -813,14 +802,6 @@ mod tests {
             command(&c, None, false, false),
             "codex resume th-1 --sandbox read-only --ask-for-approval on-request -m gpt-6-luna -c \"model_reasoning_effort=low\""
         );
-
-        let mut g = run(Agent::Gemini);
-        g.permission = Permission::Bypass;
-        g.model = Some("gemini-3-pro".into());
-        assert_eq!(
-            command(&g, None, false, false),
-            "gemini --yolo -m gemini-3-pro"
-        );
     }
 
     #[test]
@@ -828,8 +809,6 @@ mod tests {
         let var = prompt_arg();
         let c = command(&run(Agent::Codex), None, false, true);
         assert!(c.ends_with(&format!(" {var}")), "{c}");
-        let g = command(&run(Agent::Gemini), None, false, true);
-        assert!(g.ends_with(&format!("-i {var}")), "{g}");
         assert!(var.contains(PROMPT_VAR));
     }
 

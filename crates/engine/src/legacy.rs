@@ -123,7 +123,6 @@ pub fn import(dir: &Path) -> Option<AppState> {
     let last = match s.last_provider.as_deref() {
         Some("claude") => Some(Agent::Claude),
         Some("codex") => Some(Agent::Codex),
-        Some("gemini") => Some(Agent::Gemini),
         _ => None,
     };
     state.composer.agent = last;
@@ -236,7 +235,6 @@ fn thread(state: &mut AppState, home: &Path, pane: Pane, cwd: &str) {
     let agent = match pane.provider.as_str() {
         "claude" => Agent::Claude,
         "codex" => Agent::Codex,
-        "gemini" => Agent::Gemini,
         _ => return,
     };
     if pane.draft || pane.ephemeral || cwd.trim().is_empty() {

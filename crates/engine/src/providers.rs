@@ -8,14 +8,14 @@ use hyprspace_proto::agents::ProviderStatus;
 
 use crate::util::{decode_jwt, home_dir, no_window, read_json, title_case};
 
-/// Install and sign-in state for one provider: claude, codex, gemini, opencode or grok. Blocks
+/// Install and sign-in state for one provider: claude, codex, opencode or grok. Blocks
 /// on `<cli> --version`, so run it off the UI thread.
 pub fn status(id: &str) -> ProviderStatus {
     let mut st = ProviderStatus {
         id: id.to_string(),
         ..Default::default()
     };
-    if !matches!(id, "claude" | "gemini" | "codex" | "opencode" | "grok") {
+    if !matches!(id, "claude" | "codex" | "opencode" | "grok") {
         return st;
     }
     st.version = cli_version(id);
@@ -95,14 +95,6 @@ fn sign_in(home: &Path, st: &mut ProviderStatus, xai_key: bool) {
                 }
             }
             if st.account.is_none() && st.detail.is_none() {
-                st.detail = Some("Not signed in".into());
-            }
-        }
-        "gemini" => {
-            if let Some(v) = read_json(&home.join(".gemini").join("google_accounts.json")) {
-                st.account = v["active"].as_str().map(String::from);
-            }
-            if st.account.is_none() {
                 st.detail = Some("Not signed in".into());
             }
         }

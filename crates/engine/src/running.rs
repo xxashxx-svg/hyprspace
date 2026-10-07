@@ -35,8 +35,6 @@ pub fn agent_of(cmd: &[String]) -> Option<Agent> {
             Some(Agent::Claude)
         } else if stem == "codex" || path.contains("@openai/codex") {
             Some(Agent::Codex)
-        } else if stem == "gemini" || path.contains("@google/gemini-cli") {
-            Some(Agent::Gemini)
         } else {
             None
         }
@@ -186,10 +184,6 @@ mod tests {
         assert_eq!(
             agent_of(&cmd(r"node C:\npm\node_modules\@openai\codex\bin\codex.js")),
             Some(Agent::Codex)
-        );
-        assert_eq!(
-            agent_of(&cmd("/opt/homebrew/bin/gemini")),
-            Some(Agent::Gemini)
         );
         assert_eq!(agent_of(&cmd("powershell.exe -NoLogo")), None);
         // a tool claude runs that only mentions claude further along is not claude

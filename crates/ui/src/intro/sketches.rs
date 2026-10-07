@@ -144,7 +144,7 @@ pub fn folders() -> AnyElement {
         ))
         .child(folder("website", "1"))
         .child(thread(
-            Some(Agent::Gemini),
+            Some(Agent::Codex),
             "Draft the pricing page",
             None,
             false,
@@ -591,7 +591,7 @@ pub fn app() -> AnyElement {
             [
                 (Agent::Claude, 0.7, 0.45, 0.55),
                 (Agent::Codex, 0.61, 0.53, 0.51),
-                (Agent::Gemini, 0.52, 0.61, 0.47),
+                (Agent::Codex, 0.52, 0.61, 0.47),
                 (Agent::Claude, 0.43, 0.69, 0.43),
             ]
             .map(|(agent, a, b, c)| {

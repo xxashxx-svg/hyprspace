@@ -1,6 +1,6 @@
 # ADR 0006: Terminal sessions run agents by typed command, and the engine owns the launch
 
-- Status: Accepted
+- Status: Accepted; the Gemini part superseded by ADR 0017
 - Date: 2026-10-02
 
 ## Context

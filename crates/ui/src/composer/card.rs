@@ -91,7 +91,6 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .child(widgets::caret())
         .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_permission(e, cx)));
     // on: the agent runs interactively in a terminal session, on the plan's terminal limits
-    let forced = c.agent().is_some_and(|a| !a.agent.structured());
     let on = c.terminal();
     let terminal_chip = (pick.is_some() && c.prefs.structured).then(|| {
         flat("composer-terminal")
@@ -106,10 +105,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                     .border_color(colors::border2())
                     .text_color(colors::text1())
             })
-            .when(!forced, |d| {
-                d.on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_terminal(cx)))
-            })
-            .when(forced, |d| d.cursor_default())
+            .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_terminal(cx)))
     });
     let frame = if focused {
         colors::ink(0.16)

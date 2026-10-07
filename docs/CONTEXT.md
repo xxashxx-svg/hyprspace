@@ -52,9 +52,9 @@ idea needs a name, add it here first. Modeled on zeron's `CONTEXT.md`.
   of the thread on screen.
 - **Opener**: an app that opens a folder: a code editor, or Explorer on Windows and Finder on
   macOS.
-- **Agent**: a coding CLI the user has installed and signed in to (`claude`, `codex`, `gemini`,
-  `opencode`, `grok`). Also called a **provider** where the subject is the account behind it
-  (sign-in, plan, usage).
+- **Agent**: a coding CLI the user has installed and signed in to (`claude`, `codex`). Also
+  called a **provider** where the subject is the account behind it (sign-in, plan, usage), and
+  Settings' Activity reads two more providers it can't start, `opencode` and `grok`.
 - **Resume list**: the conversations an agent saved on disk for a folder, which the composer
   offers to reopen. `claude --resume <id>` only works in the folder the conversation started in.
 - **Command palette**: the searchable list of commands, threads and terminal text (Ctrl+K or

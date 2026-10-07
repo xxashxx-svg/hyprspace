@@ -130,7 +130,6 @@ pub fn brand(agent: &str) -> (Color, Color) {
     match agent {
         "claude" => (Color::rgb(0xd97757), Color::rgb(0xe8a07e)),
         "codex" => (Color::rgb(0x10a37f), Color::rgb(0x5ed3b3)),
-        "gemini" => (Color::rgb(0x4c8bf5), Color::rgb(0x9b72cb)),
         _ => (Color::rgb(0x8f8f8f), Color::rgb(0xe5e5e5)),
     }
 }

@@ -270,7 +270,7 @@ mod tests {
                 cwd: PathBuf::new(),
                 cols: 80,
                 rows: 24,
-                run: Some(Launch::new(Agent::Gemini, "/w")),
+                run: Some(Launch::new(Agent::Codex, "/w")),
                 prompt: Some("hi".into()),
             },
             Command::WriteTerminal {

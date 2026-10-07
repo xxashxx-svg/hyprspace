@@ -37,8 +37,9 @@ impl Requests {
     }
 
     pub fn load_state(&self) {
+        // before the state was read, a file that names Gemini would not parse and start clean
         let state = match self.store.load(STATE) {
-            Ok(Some(raw)) => match serde_json::from_str::<AppState>(&raw) {
+            Ok(Some(raw)) => match serde_json::from_str::<AppState>(&without_gemini(&raw)) {
                 Ok(state) => {
                     self.can_save.store(true, Ordering::Relaxed);
                     state
@@ -82,7 +83,7 @@ impl Requests {
         let tx = self.tx.clone();
         tokio::task::spawn_blocking(move || {
             let home = crate::home_dir();
-            let agents = [Agent::Claude, Agent::Codex, Agent::Gemini]
+            let agents = [Agent::Claude, Agent::Codex]
                 .into_iter()
                 .map(|agent| AgentInfo {
                     agent,
@@ -125,9 +126,83 @@ impl Requests {
     }
 }
 
+/// Gemini left in ADR 0017. A state saved before then can name it: a terminal thread that ran
+/// it, the composer's last agent, its model pick. Those go, a thread keeping its shell, so the
+/// rest loads instead of the whole file failing to parse and the app starting clean.
+fn without_gemini(raw: &str) -> String {
+    use serde_json::Value;
+    if !raw.contains("\"gemini\"") {
+        return raw.to_string();
+    }
+    let Ok(mut v) = serde_json::from_str::<Value>(raw) else {
+        return raw.to_string();
+    };
+    fn names_gemini(v: &Value) -> bool {
+        v.get("agent").and_then(Value::as_str) == Some("gemini")
+    }
+    fn walk(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                for (k, child) in map.iter_mut() {
+                    if (k == "run" && names_gemini(child))
+                        || (k == "agent" && child.as_str() == Some("gemini"))
+                    {
+                        *child = Value::Null;
+                    } else {
+                        walk(child);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                items.retain(|i| !names_gemini(i));
+                items.iter_mut().for_each(walk);
+            }
+            _ => {}
+        }
+    }
+    walk(&mut v);
+    serde_json::to_string(&v).unwrap_or_else(|_| raw.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_state_that_names_gemini_still_loads() {
+        use hyprspace_proto::Launch;
+        use hyprspace_proto::state::{Pick, Space, Thread, ThreadKind};
+        let mut s = AppState::default();
+        s.spaces.push(Space {
+            id: 1,
+            threads: vec![Thread {
+                id: 2,
+                kind: ThreadKind::Terminal {
+                    cwd: "/w".into(),
+                    run: Some(Launch::new(Agent::Codex, "/w")),
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        s.composer.agent = Some(Agent::Codex);
+        s.composer.picks = vec![Pick {
+            agent: Agent::Codex,
+            model: String::new(),
+            effort: String::new(),
+        }];
+        // the same state, saved while Gemini was there
+        let raw = serde_json::to_string(&s)
+            .unwrap()
+            .replace("\"codex\"", "\"gemini\"");
+        assert!(serde_json::from_str::<AppState>(&raw).is_err());
+        let back: AppState = serde_json::from_str(&without_gemini(&raw)).unwrap();
+        assert_eq!(back.composer.agent, None);
+        assert!(back.composer.picks.is_empty());
+        let (_, t) = back.thread(2).unwrap();
+        assert_eq!(t.agent(), None);
+        assert_eq!(t.cwd(), &std::path::PathBuf::from("/w"));
+    }
     use futures::StreamExt as _;
 
     #[test]

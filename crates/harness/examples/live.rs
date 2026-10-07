@@ -39,7 +39,6 @@ async fn main() {
         let _ = tx.send(e);
     });
     let session = hyprspace_harness::for_agent(agent)
-        .expect("a structured agent")
         .start(launch, emit)
         .expect("start the CLI");
     session.send(Prompt::text(prompt));

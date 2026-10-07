@@ -14,10 +14,9 @@ use crate::assets::{icon, mark};
 use crate::root::Root;
 use crate::{colors, widgets};
 
-const INSTALL: [(Agent, &str); 3] = [
+const INSTALL: [(Agent, &str); 2] = [
     (Agent::Claude, "npm install -g @anthropic-ai/claude-code"),
     (Agent::Codex, "npm install -g @openai/codex"),
-    (Agent::Gemini, "npm install -g @google/gemini-cli"),
 ];
 
 /// Each mode, most careful first, in the words Settings' Defaults uses.
@@ -203,7 +202,7 @@ impl Root {
             .gap(px(14.))
             .child(h1("Run your coding agents side by side"))
             .child(lead(
-                "HyprSpace is one window for the AI coding tools you already use. Each thread runs Claude Code, Codex or Gemini in a folder you choose, as a transcript you can read and steer or as a real terminal.",
+                "HyprSpace is one window for the AI coding tools you already use. Each thread runs Claude Code or Codex in a folder you choose, as a transcript you can read and steer or as a real terminal.",
             ))
             .child(sketches::app())
             .child(aside(

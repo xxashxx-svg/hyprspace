@@ -54,14 +54,13 @@ pub struct SkillItem {
     pub kind: SkillKind,
 }
 
-/// An agent CLI the app can start. Claude and Codex run as structured sessions or in a
-/// terminal; Gemini only in a terminal for now (docs/REWRITE.md, open questions).
+/// An agent CLI the app can start, as a structured session or in a terminal. Gemini left in
+/// ADR 0017.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Agent {
     Claude,
     Codex,
-    Gemini,
 }
 
 impl Agent {
@@ -69,7 +68,6 @@ impl Agent {
         match self {
             Agent::Claude => "Claude",
             Agent::Codex => "Codex",
-            Agent::Gemini => "Gemini",
         }
     }
 
@@ -78,13 +76,7 @@ impl Agent {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
-            Agent::Gemini => "gemini",
         }
-    }
-
-    /// Whether a harness drives it over a machine protocol. The rest only run in a terminal.
-    pub fn structured(self) -> bool {
-        !matches!(self, Agent::Gemini)
     }
 }
 

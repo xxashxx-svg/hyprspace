@@ -221,12 +221,10 @@ impl Composer {
             .or_else(|| self.installed().next())
     }
 
-    /// Whether the next thread runs in a terminal: structured sessions are off, the terminal is
-    /// picked, or it's the only way the agent runs.
+    /// Whether the next thread runs in a terminal: structured sessions are off, or the terminal
+    /// is picked.
     fn terminal(&self) -> bool {
-        !self.prefs.structured
-            || self.prefs.terminal
-            || self.agent().is_some_and(|a| !a.agent.structured())
+        !self.prefs.structured || self.prefs.terminal
     }
 
     fn toggle_terminal(&mut self, cx: &mut Context<Self>) {

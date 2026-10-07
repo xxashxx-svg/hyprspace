@@ -32,10 +32,9 @@ const FILES_EVERY: Duration = Duration::from_secs(60);
 const TICK: Duration = Duration::from_secs(30);
 
 /// The providers Settings' Activity view reads, in its order.
-pub const PROVIDERS: [(&str, &str); 5] = [
+pub const PROVIDERS: [(&str, &str); 4] = [
     ("claude", "Claude Code"),
     ("codex", "Codex"),
-    ("gemini", "Gemini"),
     ("opencode", "OpenCode"),
     ("grok", "Grok"),
 ];
@@ -118,7 +117,6 @@ impl Limits {
             UsageEvent::Live { agent, usage } => match agent {
                 Agent::Claude => self.readings.claude = Some(*usage),
                 Agent::Codex => self.readings.codex = Some(*usage),
-                Agent::Gemini => {}
             },
             UsageEvent::Local { provider, usage } => {
                 self.pending.remove(&provider);

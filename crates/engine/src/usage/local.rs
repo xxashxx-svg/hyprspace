@@ -24,7 +24,6 @@ pub fn provider_usage(id: &str) -> Option<ProviderUsage> {
     Some(match id {
         "claude" => claude_usage(&home, now),
         "codex" => codex_usage(&home, now),
-        "gemini" => gemini_usage(&home),
         "opencode" => opencode_usage(&home),
         "grok" => grok_usage(&home, now, std::env::var("XAI_API_KEY").is_ok()),
         _ => return None,
@@ -348,25 +347,6 @@ fn last_token_count(file: &Path) -> Option<Value> {
         .filter_map(|l| serde_json::from_str::<Value>(l).ok())
         .find(|v| v["payload"]["type"] == "token_count")
         .map(|v| v["payload"].clone())
-}
-
-// ---- Gemini ----
-
-fn gemini_usage(home: &Path) -> ProviderUsage {
-    let g = home.join(".gemini");
-    let account = read_json(&g.join("google_accounts.json"))
-        .and_then(|v| v["active"].as_str().map(String::from));
-    ProviderUsage {
-        id: "gemini".into(),
-        label: "Gemini".into(),
-        signed_in: g.join("oauth_creds.json").exists() || account.is_some(),
-        account,
-        note: Some(
-            "Gemini CLI doesn't record token usage locally, so only the signed-in account is shown."
-                .into(),
-        ),
-        ..Default::default()
-    }
 }
 
 // ---- OpenCode ----

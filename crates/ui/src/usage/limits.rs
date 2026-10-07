@@ -280,7 +280,7 @@ impl Limits {
         }
         if cards {
             out.push(foot_text(
-                "A bar turns amber or red when you're using it up faster than the window runs out. Gemini, OpenCode and Grok don't report plan limits, so they only show under Activity.",
+                "A bar turns amber or red when you're using it up faster than the window runs out. OpenCode and Grok don't report plan limits, so they only show under Activity.",
             ));
         }
         out

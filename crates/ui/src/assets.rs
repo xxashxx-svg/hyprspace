@@ -51,7 +51,6 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/shield-off.svg",
     "brand/claude.svg",
     "brand/openai.svg",
-    "brand/gemini.svg",
     // the main area, the dock, the viewer and the Open button
     "icons/layout-grid.svg",
     "icons/panel-left.svg",
@@ -187,7 +186,6 @@ pub fn provider_mark(id: &str, size: f32, color: Hsla) -> Option<Svg> {
     let file = match id {
         "claude" => "brand/claude.svg",
         "codex" => "brand/openai.svg",
-        "gemini" => "brand/gemini.svg",
         "opencode" => "brand/opencode.svg",
         "grok" => "brand/grok.svg",
         _ => return None,
@@ -206,7 +204,6 @@ pub fn mark(agent: Agent, size: f32, color: Hsla) -> Svg {
     let file = match agent {
         Agent::Claude => "brand/claude.svg",
         Agent::Codex => "brand/openai.svg",
-        Agent::Gemini => "brand/gemini.svg",
     };
     svg()
         .path(file)
@@ -229,7 +226,7 @@ mod tests {
             assert!(Assets.load(path).unwrap().is_some());
         }
         assert!(Assets.load("icons/nope.svg").unwrap().is_none());
-        assert_eq!(Assets.list("brand/").unwrap().len(), 9);
+        assert_eq!(Assets.list("brand/").unwrap().len(), 8);
     }
 
     #[test]

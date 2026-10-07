@@ -31,13 +31,11 @@ pub trait Harness: Send + Sync {
     fn start(&self, launch: Launch, emit: Emit) -> io::Result<Session>;
 }
 
-/// The default adapter for each agent, running the user's own CLI from PATH. None for an agent
-/// that only runs in a terminal.
-pub fn for_agent(agent: Agent) -> Option<Box<dyn Harness>> {
+/// The default adapter for each agent, running the user's own CLI from PATH.
+pub fn for_agent(agent: Agent) -> Box<dyn Harness> {
     match agent {
-        Agent::Claude => Some(Box::new(Claude::default())),
-        Agent::Codex => Some(Box::new(Codex::default())),
-        Agent::Gemini => None,
+        Agent::Claude => Box::new(Claude::default()),
+        Agent::Codex => Box::new(Codex::default()),
     }
 }
 

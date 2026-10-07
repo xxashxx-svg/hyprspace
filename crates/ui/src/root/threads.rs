@@ -409,7 +409,7 @@ impl Root {
             terminal,
         } = start;
         let resumed = launch.resume.is_some() && !terminal;
-        let kind = if terminal || !launch.agent.structured() {
+        let kind = if terminal {
             // a Claude thread claims its conversation id up front, so it can resume it later
             if launch.agent == Agent::Claude && launch.resume.is_none() {
                 launch.resume = Some(uuid::Uuid::new_v4().to_string());

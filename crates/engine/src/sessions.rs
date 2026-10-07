@@ -301,7 +301,7 @@ mod tests {
             .map(|s| (s.id.as_str(), s.title.as_str()))
             .collect();
         assert_eq!(rows, [("s1", "Add login"), ("s2", "Old chat")]);
-        assert!(list_in(home.path(), "gemini", cwd).is_empty());
+        assert!(list_in(home.path(), "grok", cwd).is_empty());
 
         assert_eq!(resume_in(home.path(), cwd, "s1"), Resume::Resume);
         assert_eq!(resume_in(home.path(), cwd, "gone"), Resume::Continue);

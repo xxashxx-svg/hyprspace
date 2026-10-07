@@ -18,8 +18,6 @@ pub fn handle(cmd: UsageCommand, tx: UnboundedSender<Event>) {
                 let usage = match agent {
                     Agent::Claude => live::claude().await,
                     Agent::Codex => live::codex().await,
-                    // no endpoint to ask
-                    Agent::Gemini => return,
                 };
                 let _ = tx.unbounded_send(Event::Usage(UsageEvent::Live {
                     agent,

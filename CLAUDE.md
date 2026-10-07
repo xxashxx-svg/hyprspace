@@ -176,7 +176,7 @@ CONTRIBUTING.md              dev setup, style rules, PR flow (for outside contri
 - **Terminal sessions.** `engine/src/pty.rs` spawns a bare shell; `terminal.rs` builds the agent's
   launch command from fixed flags and catalog ids and types it into the shell once it first
   prints. User text never goes into a command line: Claude gets the prompt typed in at its first
-  status line, Codex and Gemini read it from `HYPRSPACE_PROMPT`. Claude's hooks re-invoke our
+  status line, Codex reads it from `HYPRSPACE_PROMPT`. Claude's hooks re-invoke our
   binary (`hyprspace agent-hook`), which posts to a loopback listener for the sidebar's live state
   (ADR 0006). The UI's `terminal/` folds bytes through `alacritty_terminal` and paints the grid.
 - **Composer.** Agent, model, effort, permission (`Plan`, `Ask`, `Auto`, `Bypass`, mapped per CLI

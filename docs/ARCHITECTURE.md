@@ -115,12 +115,12 @@ drop(session)                    // kills the CLI
   drops its master PTY off-thread, because closing a pseudoconsole can block until the process
   tree detaches. `kill_all` runs from `Engine::shutdown` on quit: orphaned `OpenConsole.exe` hosts
   busy-spin at about 8% CPU each. Locks recover from poisoning, so one panic can't brick PTY I/O.
-- **Launching agents.** `terminal.rs` builds `claude ...`, `codex ...` or `gemini ...` from fixed
+- **Launching agents.** `terminal.rs` builds `claude ...` or `codex ...` from fixed
   flags and catalog ids (anything past a plain token is quoted) and the PTY types it into the shell
   once it first prints, so the user's profile and PATH apply. User text never enters the command
   line. Claude gets the composer's prompt typed in when its status line first reports, which is
-  when its TUI reads input. Codex and Gemini have no such signal, and keys typed on a timer once
-  answered Codex's "update available" dialog, so they start with the prompt as their own argument,
+  when its TUI reads input. Codex has no such signal, and keys typed on a timer once
+  answered Codex's "update available" dialog, so it starts with the prompt as its own argument,
   read from `HYPRSPACE_PROMPT`, which no shell re-parses (ADR 0006).
 - **A Claude thread owns its conversation id.** The UI picks a UUID when it creates the thread; the
   engine passes `--session-id <id>` the first time and `--resume <id>` once Claude's transcript
@@ -139,8 +139,8 @@ drop(session)                    // kills the CLI
   Structured threads show the same two things from their own transcript. Session ids are checked against
   `[A-Za-z0-9_-]` because they go into a command and a path. Approving a permission produces no
   hook of its own, which is why `PostToolUse` is wired: it's what ends a "needs your answer" state.
-  `HYPRSPACE_DEBUG_HOOKS=1` logs payloads; it's off by default because they hold prompts. Codex and
-  Gemini rows show no live state (no hooks).
+  `HYPRSPACE_DEBUG_HOOKS=1` logs payloads; it's off by default because they hold prompts. Codex
+  rows show no live state (no hooks).
 - **Claude's own status.** No hook fires when a turn is interrupted with Esc or Ctrl+C. Claude
   keeps a file per running session, `~/.claude/sessions/<pid>.json`, whose `status` is `busy`,
   `waiting` (a dialog blocks the turn), or `idle`. The watcher already finds Claude's process
