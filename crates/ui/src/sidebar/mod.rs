@@ -8,22 +8,24 @@
 // It is a view of its own, cached, so a frame that only changes a terminal reuses its layout. Its
 // rows are a virtual list: only the ones on screen are laid out, which is what keeps scrolling
 // smooth with dozens of threads. The wheel eases the list along instead of jumping a notch at a
-// time, the way the Tauri app's webview scrolled.
+// time, the way the Tauri app's webview scrolled. A thread that joins the list grows in from
+// nothing as it fades in, after T3 Code's, so the rows under it glide down instead of jumping.
 
 mod card;
 mod drag;
 mod row;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, ClickEvent, Context, DispatchPhase, DragMoveEvent, Entity, ExternalPaths,
     Focusable, FontWeight, HitboxBehavior, IntoElement, ListAlignment, ListOffset, ListState,
-    MouseButton, MouseDownEvent, ScrollWheelEvent, Subscription, Transformation, WeakEntity,
-    Window, canvas, div, list, percentage, prelude::*, px,
+    MouseButton, MouseDownEvent, Pixels, ScrollWheelEvent, Subscription, Transformation,
+    WeakEntity, Window, canvas, div, list, percentage, prelude::*, px,
 };
 use hyprspace_proto::{Space, Thread};
 use hyprspace_theme::MONO;
@@ -32,6 +34,7 @@ use crate::assets::icon;
 use crate::colors;
 use crate::palette::TogglePalette;
 use crate::root::{MenuItems, Root, Screen, SidebarDrag};
+use crate::slide::{animations, ease_out};
 use crate::time::now_ms;
 use crate::workbench::PaneDrag;
 
@@ -50,6 +53,10 @@ const LINE: f32 = 20.;
 /// up to this many pixels a frame, faster nearer the edge.
 const EDGE_ZONE: f32 = 56.;
 const EDGE_SPEED: f32 = 14.;
+/// How long a row that joins the list takes to grow in, T3 Code's 150 ms.
+const ARRIVE: Duration = Duration::from_millis(150);
+/// More rows than this joining at once, like a search cleared, just appear.
+const MAX_ARRIVALS: usize = 40;
 
 /// How far the list scrolls this frame for a drag at `y` in a list spanning `top..bottom`:
 /// negative up, positive down, nothing away from the edges.
@@ -106,6 +113,54 @@ fn changed(old: &[Item], new: &[Item]) -> (Range<usize>, usize) {
     (head..old.len() - tail, new.len() - head - tail)
 }
 
+/// The threads in `new` that `old` didn't list.
+fn arrived(old: &[Item], new: &[Item]) -> Vec<u64> {
+    new.iter()
+        .filter(|i| !old.contains(i))
+        .filter_map(|i| match i {
+            Item::Thread(id) | Item::Shelved(id) => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A row growing into the list: when it joined, and its full height once it has been laid out.
+#[derive(Clone)]
+struct Arrival {
+    since: Instant,
+    height: Rc<Cell<Option<Pixels>>>,
+}
+
+impl Arrival {
+    /// `row` as far as it has grown in. Its own height is only known after a first layout, so
+    /// the first frame draws it at nothing, which is where it starts anyway.
+    fn draw(&self, row: AnyElement, window: &mut Window) -> AnyElement {
+        let t = self.since.elapsed().as_secs_f32() / ARRIVE.as_secs_f32();
+        if t >= 1. {
+            return row;
+        }
+        window.request_animation_frame();
+        let t = ease_out(t);
+        let height = self.height.clone();
+        div()
+            .w_full()
+            .h(self.height.get().map_or(px(0.), |h| h * t))
+            .overflow_hidden()
+            .opacity(t)
+            // pinned to the bottom, so it slides down into place as the room opens
+            .flex()
+            .flex_col()
+            .justify_end()
+            .child(div().w_full().flex_none().child(row))
+            .on_children_prepainted(move |b, _, _| {
+                if let Some(b) = b.first() {
+                    height.set(Some(b.size.height));
+                }
+            })
+            .into_any_element()
+    }
+}
+
 /// The sidebar as a view of its own. It draws from the root's state and redraws whenever the
 /// root does.
 pub struct SidebarView {
@@ -119,6 +174,11 @@ pub struct SidebarView {
     stepped: Option<Instant>,
     /// While a row is dragged near the list's top or bottom, how far to scroll each frame.
     edge: f32,
+    /// Threads growing into the list.
+    arrivals: Rc<RefCell<HashMap<u64, Arrival>>>,
+    /// The rows last listed were the saved state's, not the empty list before it loaded, which
+    /// would make every row at launch look new.
+    loaded: bool,
     _watch: Subscription,
 }
 
@@ -132,6 +192,8 @@ impl SidebarView {
             pending: Rc::default(),
             stepped: None,
             edge: 0.,
+            arrivals: Rc::default(),
+            loaded: false,
             _watch: cx.observe(root, |v: &mut Self, _, cx| {
                 v.stale = true;
                 cx.notify();
@@ -193,8 +255,25 @@ impl gpui::Render for SidebarView {
         let Some(root) = self.root.upgrade() else {
             return div().into_any_element();
         };
-        let items = root.update(cx, |r, cx| r.sidebar_items(cx));
+        let (items, loaded) = root.update(cx, |r, cx| (r.sidebar_items(cx), r.loaded));
+        self.arrivals
+            .borrow_mut()
+            .retain(|_, a| a.since.elapsed() < ARRIVE);
         if items != *self.items {
+            let new = arrived(&self.items, &items);
+            if self.loaded && animations() && new.len() <= MAX_ARRIVALS {
+                let since = Instant::now();
+                let mut arrivals = self.arrivals.borrow_mut();
+                for id in new {
+                    arrivals.insert(
+                        id,
+                        Arrival {
+                            since,
+                            height: Rc::default(),
+                        },
+                    );
+                }
+            }
             let (range, count) = changed(&self.items, &items);
             if !range.is_empty() || count > 0 {
                 // the view stays on the row it showed at the top: a splice over that row would reset
@@ -209,6 +288,7 @@ impl gpui::Render for SidebarView {
             }
             self.items = Rc::new(items);
         }
+        self.loaded = loaded;
         // a thread just opened or made shows its row, even with the list scrolled past it. This
         // runs before the remeasure below, which forgets every row's height: a row clicked in
         // plain view has to still read as shown, or each click would scroll the list
@@ -251,13 +331,23 @@ impl gpui::Render for SidebarView {
         }
         let wheel = self.wheel(cx);
         let (items, weak, now) = (self.items.clone(), self.root.clone(), now_ms());
-        let rows = list(self.list.clone(), move |ix, _, cx| {
+        let arrivals = self.arrivals.clone();
+        let rows = list(self.list.clone(), move |ix, window, cx| {
             let item = items.get(ix).cloned();
-            weak.update(cx, |r, cx| match item {
-                Some(item) => r.sidebar_item(&item, now, cx),
-                None => div().into_any_element(),
-            })
-            .unwrap_or_else(|_| div().into_any_element())
+            let arrival = match item {
+                Some(Item::Thread(id) | Item::Shelved(id)) => arrivals.borrow().get(&id).cloned(),
+                _ => None,
+            };
+            let row = weak
+                .update(cx, |r, cx| match item {
+                    Some(item) => r.sidebar_item(&item, now, cx),
+                    None => div().into_any_element(),
+                })
+                .unwrap_or_else(|_| div().into_any_element());
+            match arrival {
+                Some(a) => a.draw(row, window),
+                None => row,
+            }
         })
         .size_full();
         let rows = div()
@@ -710,6 +800,33 @@ mod tests {
             Item::Gap(4),
         ];
         assert_eq!(changed(&shut, &open), (1..1, 2));
+    }
+
+    #[test]
+    fn only_threads_new_to_the_list_arrive() {
+        let old = [Item::Gap(2), Item::Thread(1), Item::Thread(2), Item::Gap(4)];
+        let new = [
+            Item::Gap(2),
+            Item::Thread(3),
+            Item::Thread(1),
+            Item::Thread(2),
+            Item::Settled {
+                count: 1,
+                open: true,
+            },
+            Item::Shelved(4),
+            Item::Gap(4),
+        ];
+        assert_eq!(arrived(&old, &new), [3, 4]);
+        // a thread that moves to a shelf joins it there
+        let settled = [
+            Item::Gap(2),
+            Item::Thread(1),
+            Item::Shelved(2),
+            Item::Gap(4),
+        ];
+        assert_eq!(arrived(&old, &settled), [2]);
+        assert!(arrived(&old, &old).is_empty());
     }
 
     #[test]
