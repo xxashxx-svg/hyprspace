@@ -144,6 +144,11 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .border_color(frame)
         .bg(colors::surface2().opacity(0.85))
         .shadow(colors::shadow())
+        // files held over the screen land here
+        .drag_over::<gpui::ExternalPaths>(|s, _, _, _| {
+            s.border_color(colors::accent())
+                .bg(colors::accent().opacity(0.06))
+        })
         .when(!c.images.is_empty(), |d| {
             d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
                 "composer-img",

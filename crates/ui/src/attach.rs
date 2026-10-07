@@ -1,5 +1,6 @@
 // Images that go in with a prompt: pasted ones are written to a temp file (the CLIs take image
-// paths), dropped ones are used where they are. Shared by the composer and the transcript.
+// paths), dropped ones are used where they are. Shared by the composer and the transcript, with
+// how a dropped file's path is typed, which the terminal shares too.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,6 +18,35 @@ pub fn is_image(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| IMAGE_EXT.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+/// What gets typed for a file: its path, quoted when it holds a space (Windows profile folders
+/// often do) or anything a shell reads as syntax, like zsh's parentheses in "shot(1).png", so an
+/// agent reads it as one argument, then a space to keep typing after. Forward slashes on
+/// Windows: the CLIs take them, and a bash in a terminal won't eat them.
+pub fn path_text(path: &Path) -> String {
+    let mut p = path.display().to_string();
+    if cfg!(windows) {
+        p = p.replace('\\', "/");
+    }
+    let plain = |c: char| c.is_alphanumeric() || "/._-:~+@,=".contains(c);
+    if !p.chars().all(plain) {
+        format!("\"{p}\" ")
+    } else {
+        format!("{p} ")
+    }
+}
+
+/// Files dropped on a prompt box: the images, to go in as images, and the paths of the rest to
+/// type in, as a terminal types a dropped file.
+pub fn split_drop(paths: &[PathBuf]) -> (Vec<PathBuf>, String) {
+    let images = paths.iter().filter(|p| is_image(p)).cloned().collect();
+    let text = paths
+        .iter()
+        .filter(|p| !is_image(p))
+        .map(|p| path_text(p))
+        .collect();
+    (images, text)
 }
 
 /// Writes a pasted image to `hyprspace-images` in the temp folder and returns its path.
@@ -109,6 +139,31 @@ pub fn tray(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paths_stay_one_argument() {
+        assert_eq!(path_text(Path::new("/tmp/a.png")), "/tmp/a.png ");
+        assert_eq!(
+            path_text(Path::new("C:/Users/First Last/a.png")),
+            "\"C:/Users/First Last/a.png\" "
+        );
+        assert_eq!(
+            path_text(Path::new("/tmp/shot(1).png")),
+            "\"/tmp/shot(1).png\" "
+        );
+    }
+
+    #[test]
+    fn a_drop_keeps_images_and_types_the_rest() {
+        let paths = [
+            PathBuf::from("/w/a.png"),
+            PathBuf::from("/w/src"),
+            PathBuf::from("/w/b.rs"),
+        ];
+        let (images, text) = split_drop(&paths);
+        assert_eq!(images, [PathBuf::from("/w/a.png")]);
+        assert_eq!(text, "/w/src /w/b.rs ");
+    }
 
     #[test]
     fn a_pasted_bitmap_is_saved_as_png() {

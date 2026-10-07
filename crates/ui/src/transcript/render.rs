@@ -71,8 +71,9 @@ pub fn view(
         .flex_col()
         .bg(colors::bg())
         .text_color(colors::text1())
-        .on_drop(cx.listener(|v, paths: &ExternalPaths, _, cx| v.drop_paths(paths, cx)))
-        .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent_dim()))
+        .on_drop(
+            cx.listener(|v, paths: &ExternalPaths, window, cx| v.drop_paths(paths, window, cx)),
+        )
         .child(
             div()
                 .relative()
@@ -795,6 +796,11 @@ fn composer(
             colors::border1()
         })
         .bg(colors::surface2().opacity(0.6))
+        // files held over the thread land here
+        .drag_over::<ExternalPaths>(|s, _, _, _| {
+            s.border_color(colors::accent())
+                .bg(colors::accent().opacity(0.06))
+        })
         .when(!v.images.is_empty(), |d| {
             d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
                 "thread-img",

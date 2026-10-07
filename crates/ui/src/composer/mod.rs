@@ -509,14 +509,15 @@ impl Composer {
         }
     }
 
-    fn drop_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
-        self.images.extend(
-            paths
-                .paths()
-                .iter()
-                .filter(|p| attach::is_image(p))
-                .cloned(),
-        );
+    /// Files dropped on the screen: images go in with the task, anything else has its path
+    /// typed in at the cursor, as a terminal does, and the box takes the keyboard.
+    fn drop_paths(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+        let (images, text) = attach::split_drop(paths.paths());
+        self.images.extend(images);
+        if !text.is_empty() {
+            self.input.update(cx, |i, cx| i.insert(&text, cx));
+        }
+        window.focus(&self.input.focus_handle(cx), cx);
         cx.notify();
     }
 }
@@ -603,8 +604,9 @@ impl Render for Composer {
             .items_center()
             .bg(colors::bg())
             .text_color(colors::text1())
-            .on_drop(cx.listener(|c, paths: &ExternalPaths, _, cx| c.drop_paths(paths, cx)))
-            .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent_dim()))
+            .on_drop(
+                cx.listener(|c, paths: &ExternalPaths, window, cx| c.drop_paths(paths, window, cx)),
+            )
             .overflow_y_scroll()
             // the box sits a little above the middle, like zeron's
             .child(div().flex_none().h(relative(0.26)))

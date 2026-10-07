@@ -26,23 +26,6 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
-/// What gets typed for a pasted image: its path, quoted when it holds a space (Windows profile
-/// folders often do) or anything a shell reads as syntax, like zsh's parentheses in "shot(1).png",
-/// so the agent reads it as one argument, then a space to keep typing after.
-/// Forward slashes on Windows: the CLIs take them, and a bash in the pane won't eat them.
-pub fn image_text(path: &std::path::Path) -> String {
-    let mut p = path.display().to_string();
-    if cfg!(windows) {
-        p = p.replace('\\', "/");
-    }
-    let plain = |c: char| c.is_alphanumeric() || "/._-:~+@,=".contains(c);
-    if !p.chars().all(plain) {
-        format!("\"{p}\" ")
-    } else {
-        format!("{p} ")
-    }
-}
-
 impl TerminalView {
     /// Files dropped from File Explorer or Finder: their paths typed in, the way a terminal does,
     /// and images kept so their `[Image #N]` previews before the prompt goes.
@@ -58,7 +41,7 @@ impl TerminalView {
         }
         window.focus(&self.focus, cx);
         let before = self.before_paste();
-        let text: String = paths.iter().map(|p| image_text(p)).collect();
+        let text: String = paths.iter().map(|p| attach::path_text(p)).collect();
         self.paste_text(&text, cx);
         for p in paths.iter().filter(|p| attach::is_image(p)) {
             self.pasted(p.clone(), before.clone(), cx);
@@ -104,7 +87,7 @@ impl TerminalView {
         match saved {
             Some(path) => {
                 let before = self.before_paste();
-                self.paste_text(&image_text(&path), cx);
+                self.paste_text(&attach::path_text(&path), cx);
                 self.pasted(path, before, cx);
                 true
             }
@@ -120,7 +103,6 @@ impl TerminalView {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use super::*;
 
@@ -130,19 +112,6 @@ mod tests {
         assert_eq!(
             paste_bytes("x\x1b[201~rm -rf\r\n", true),
             b"\x1b[200~xrm -rf\r\x1b[201~"
-        );
-    }
-
-    #[test]
-    fn image_paths_stay_one_argument() {
-        assert_eq!(image_text(Path::new("/tmp/a.png")), "/tmp/a.png ");
-        assert_eq!(
-            image_text(Path::new("C:/Users/First Last/a.png")),
-            "\"C:/Users/First Last/a.png\" "
-        );
-        assert_eq!(
-            image_text(Path::new("/tmp/shot(1).png")),
-            "\"/tmp/shot(1).png\" "
         );
     }
 }

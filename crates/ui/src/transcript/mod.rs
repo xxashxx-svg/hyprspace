@@ -404,14 +404,15 @@ impl TranscriptView {
         cx.notify();
     }
 
-    fn drop_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
-        self.images.extend(
-            paths
-                .paths()
-                .iter()
-                .filter(|p| attach::is_image(p))
-                .cloned(),
-        );
+    /// Files dropped on the thread: images go in with the next message, anything else has its
+    /// path typed in at the cursor, as a terminal does, and the box takes the keyboard.
+    fn drop_paths(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+        let (images, text) = attach::split_drop(paths.paths());
+        self.images.extend(images);
+        if !text.is_empty() {
+            self.input.update(cx, |i, cx| i.insert(&text, cx));
+        }
+        window.focus(&self.input.focus_handle(cx), cx);
         cx.notify();
     }
 }
