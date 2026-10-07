@@ -1,6 +1,7 @@
 // The effort menu, after Codex's: the level's name over a chip for the model, and a thick pill
 // slider with a round knob across the model's reasoning levels, lowest on the left. The top level
-// lights the fill with a gradient and a few twinkling sparks. A switch for the 1M context window
+// lights the fill with a gradient, a soft shine sweeping along it and sparks that drift and
+// twinkle inside it, and gives the knob a glow. A switch for the 1M context window
 // sits under it when the model has one. Clicking or dragging moves the knob and the arrows step
 // it. A level applies when the mouse lets go or the menu closes, so a drag across four levels is
 // one change, not four.
@@ -30,6 +31,8 @@ const TRACK_H: f32 = 26.;
 const KNOB: f32 = 22.;
 /// From the track's ends to the knob's center at either end.
 const END: f32 = (TRACK_H - KNOB) / 2. + KNOB / 2.;
+/// The width of the shine that sweeps the top level's fill.
+const SHINE: f32 = 44.;
 /// The window switch's two segments.
 const SEGMENT: f32 = 60.;
 
@@ -162,25 +165,62 @@ pub(super) fn key<H: Host>(
 }
 
 /// Sparks over the top level's fill, each twinkling on its own beat.
-fn sparks() -> impl Iterator<Item = AnyElement> {
-    (0..14usize).map(|k| {
+/// The top level's life inside the fill: a shine sweeping along it, and sparks drifting right as
+/// they twinkle. They stay in a box clear of the pill's round ends and the knob, since a clip in
+/// GPUI is square and would let them show past the curve.
+fn sparkle() -> AnyElement {
+    let sparks = (0..12usize).map(|k| {
         let x = (k * 37 % 100) as f32 / 100.;
-        let y = 4. + (k * 7 % 17) as f32;
+        let y = 6. + (k * 7 % 12) as f32;
         let size = if k % 3 == 0 { 2.5 } else { 1.5 };
         div()
             .absolute()
-            .left(relative(x))
             .top(px(y))
             .size(px(size))
             .rounded_full()
             .bg(colors::on_accent())
             .with_animation(
                 ("spark", k),
-                Animation::new(Duration::from_millis(1100 + k as u64 * 230)).repeat(),
-                |d, t| d.opacity(0.1 + 0.8 * (t * PI).sin()),
+                Animation::new(Duration::from_millis(2200 + k as u64 * 310)).repeat(),
+                move |d, t| {
+                    d.left(relative((x + t * 0.18).fract()))
+                        .opacity(0.15 + 0.75 * (t * PI).sin())
+                },
             )
             .into_any_element()
-    })
+    });
+    let glint = |from: f32, to: f32| {
+        linear_gradient(
+            90.,
+            linear_color_stop(colors::on_accent().opacity(from), 0.),
+            linear_color_stop(colors::on_accent().opacity(to), 1.),
+        )
+    };
+    let shine = div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .w(px(SHINE))
+        .flex()
+        .child(div().flex_1().h_full().bg(glint(0., 0.22)))
+        .child(div().flex_1().h_full().bg(glint(0.22, 0.)))
+        .with_animation(
+            "effort-shine",
+            Animation::new(Duration::from_millis(2600))
+                .repeat()
+                .with_easing(crate::slide::ease_out),
+            |d, t| d.left(relative(t * 1.3 - 0.3)),
+        );
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .left(px(TRACK_H / 2.))
+        .right(px(KNOB + 2.))
+        .overflow_hidden()
+        .child(shine)
+        .children(sparks)
+        .into_any_element()
 }
 
 pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyElement {
@@ -289,7 +329,7 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
                     .rounded_full()
                     .overflow_hidden()
                     .bg(bg)
-                    .when(top, |d| d.children(sparks())),
+                    .when(top, |d| d.child(sparkle())),
                 |d, f| d.w(px(knob_x(f) + END)),
             )
         });
@@ -316,6 +356,16 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
                 .rounded_full()
                 .bg(colors::on_accent())
                 .shadow_sm()
+                // the top level glows in the gradient's far color
+                .when(top, |d| {
+                    d.shadow(vec![gpui::BoxShadow {
+                        color: peak(accent).opacity(0.7),
+                        offset: gpui::point(px(0.), px(0.)),
+                        blur_radius: px(10.),
+                        spread_radius: px(1.),
+                        inset: false,
+                    }])
+                })
                 // without a level picked, it waits at the low end
                 .when(now.is_none(), |d| d.opacity(0.5)),
             |d, f| d.left(px(knob_x(f) - KNOB / 2.)),
