@@ -2,7 +2,7 @@
 // view (`page.rs`). One `Limits` entity holds every reading for both, so opening Settings never
 // fetches anything the meter didn't.
 //
-// Asking cadence follows CLAUDE.md's Usage section: the live endpoints every 180s for Claude and
+// Asking cadence follows docs/internals/usage.md: the live endpoints every 180s for Claude and
 // 60s for Codex. The engine enforces those as floors too (engine/src/usage/live.rs), so nothing
 // here can ask faster by mistake. Codex's session files are read only while its live reading has
 // nothing, and Claude's status line arrives on its own from terminal sessions.

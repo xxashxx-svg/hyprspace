@@ -1,6 +1,6 @@
 name: check
 
-# The check (CLAUDE.md, Run, build and check): fmt, clippy with warnings as errors, and the
+# The check (AGENTS.md, Run, check, ship): fmt, clippy with warnings as errors, and the
 # tests, for the whole Cargo workspace on Windows and macOS. A red check blocks a merge.
 
 on:

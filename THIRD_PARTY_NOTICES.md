@@ -25,7 +25,7 @@ Parts of the GPUI app are adapted from [zeron](https://github.com/zeronsh/zeron)
   `crates/harness/src/lib.rs`
 - the fake CLI in `crates/harness/fixtures/fake_cli/` follows the scenarios in
   `crates/harness/tests/fixtures/fake-claude.sh` and `fake-codex.sh`
-- the crate split (`proto`, `harness`, `engine`, `ui`, `theme`) and `docs/CONTEXT.md` follow
+- the crate split (`proto`, `harness`, `engine`, `ui`, `theme`) and `docs/internals/glossary.md` follow
   zeron's layout and its `CONTEXT.md`
 - `crates/ui/src/markdown/` follows the shape of `crates/ui/src/markdown/` and
   `crates/markdown/src/parser.rs` (a pulldown-cmark block tree with flattened inline runs, drawn

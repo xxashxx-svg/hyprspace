@@ -1,5 +1,5 @@
 // Usage records. `ProviderUsage` is read from files the CLIs write locally; `LiveUsage` is the
-// account's real limits from the provider's usage endpoint (CLAUDE.md rule 1 covers how).
+// account's real limits from the provider's usage endpoint (AGENTS.md covers how).
 
 use serde::{Deserialize, Serialize};
 
@@ -156,7 +156,7 @@ pub struct StatusReport {
     pub windows: Vec<LiveBar>,
 }
 
-/// Usage requests (docs/CONTEXT.md, Usage). How often the live endpoints may really be asked is
+/// Usage requests (docs/internals/usage.md). How often the live endpoints may really be asked is
 /// the engine's rule, not the caller's: a request inside the floor answers from the last reading.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]

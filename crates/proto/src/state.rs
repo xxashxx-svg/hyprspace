@@ -144,7 +144,7 @@ impl AppState {
     }
 }
 
-/// A project (one folder) or an open space (`cwd` is None), as docs/CONTEXT.md defines them.
+/// A space: one folder. `cwd` is None only in state saved when open spaces still existed.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Space {

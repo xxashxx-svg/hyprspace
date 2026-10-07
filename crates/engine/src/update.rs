@@ -1,5 +1,5 @@
 // The app updating itself, on hyprspace-update: the same feed, key and installer arguments the
-// Tauri app's updater uses (docs/adr/0011-updater.md). A check answers with what the feed says;
+// Tauri app's updater uses (docs/internals/updates.md). A check answers with what the feed says;
 // an install checks again, downloads, verifies, starts the installer (or swaps the macOS bundle)
 // and tells the UI to quit so the install can finish.
 

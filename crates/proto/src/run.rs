@@ -1,6 +1,6 @@
 // What a structured session is started with and what its runs report. Each harness turns its
 // CLI's own protocol into these types, so the transcript never sees raw CLI JSON.
-// Shape and reasons: docs/adr/0004-harness-protocol.md.
+// Shape and reasons: docs/internals/sessions.md.
 
 use std::path::PathBuf;
 
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::agents::Agent;
 
 /// How much an agent may do without asking. Each harness maps these onto its CLI's own modes
-/// (docs/adr/0004-harness-protocol.md has the table).
+/// (docs/internals/sessions.md has the table).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Permission {

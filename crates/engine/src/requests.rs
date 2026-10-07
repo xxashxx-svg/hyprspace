@@ -126,7 +126,7 @@ impl Requests {
     }
 }
 
-/// Gemini left in ADR 0017. A state saved before then can name it: a terminal thread that ran
+/// Gemini was removed in October 2026. A state saved before then can name it: a terminal thread that ran
 /// it, the composer's last agent, its model pick. Those go, a thread keeping its shell, so the
 /// rest loads instead of the whole file failing to parse and the app starting clean.
 fn without_gemini(raw: &str) -> String {

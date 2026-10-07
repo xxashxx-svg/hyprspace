@@ -4,7 +4,7 @@
 //   node scripts/version.mjs patch|minor|major     (or: npm run version -- minor)
 //
 // Two numbers move together:
-//   version      "0.2.0"  — what people see, adapted SemVer exactly like the desktop (docs/VERSIONING.md)
+//   version      "0.2.0"  — what people see, adapted SemVer exactly like the desktop (docs/operations/release.md)
 //   versionCode  200      — Android's own counter, derived from the version
 //
 // versionCode is the one that bites: Android REFUSES to install an update whose code isn't higher

@@ -1,7 +1,6 @@
 name: upgrade-test
 
-# Proves the last Tauri version updates into the GPUI app (docs/REWRITE.md, "Upgrading from the
-# Tauri app"). Each job builds and signs the GPUI app the way release.yml does, with the real
+# Proves the last Tauri version updates into the GPUI app (docs/internals/updates.md). Each job builds and signs the GPUI app the way release.yml does, with the real
 # updater key. It builds the Tauri app from a second checkout of the v0.21.1 tag, since that code
 # left this branch, with one patch and three build overrides. The patch
 # (scripts/tauri-autoinstall.patch) makes it press "Restart & update" itself when built with

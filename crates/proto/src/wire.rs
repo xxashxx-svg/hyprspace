@@ -1,8 +1,7 @@
 // What crosses the channel between the UI and the engine. Commands go in, events come out.
 // Session messages name the session they are about, so one event stream can serve every view;
 // app-level requests (saved state, agents, resume list, clone) answer with an event of their own.
-// Shape and reasons: docs/adr/0002-channel-boundary.md and
-// docs/adr/0005-app-requests-and-journals.md.
+// Shape and reasons: docs/internals/overview.md.
 
 use std::path::PathBuf;
 

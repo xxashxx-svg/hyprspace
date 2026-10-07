@@ -1,6 +1,6 @@
 //! The engine: sessions, PTYs, git, providers, usage and persistence, with no UI. It runs
 //! in-process on its own tokio runtime, and the UI reaches it only through the typed channel in
-//! `hyprspace-proto` (docs/adr/0002-channel-boundary.md).
+//! `hyprspace-proto` (docs/internals/overview.md).
 //!
 //! The library modules (git, usage, skills...) were copied from the Tauri app's Rust and are
 //! called directly for now; each gains a command in proto when the UI first needs it.

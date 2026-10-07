@@ -310,7 +310,7 @@ struct Scan {
 /// its `stats-cache.json` do. A reply written over several lines repeats its usage on each, so
 /// this runs about three times what the API billed, but older days exist only in Claude's
 /// count (it deletes transcripts after 30 days), and one way of counting keeps the days
-/// comparable (ADR 0018). A session is a transcript right under its project's folder (subagents
+/// comparable (docs/internals/usage.md). A session is a transcript right under its project's folder (subagents
 /// keep theirs deeper), on the day it began. The total counts from `from` on: a transcript
 /// touched lately can hold replies from long before.
 fn scan_claude(projects: &Path, files: Vec<PathBuf>, from: &str) -> Scan {

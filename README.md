@@ -40,7 +40,7 @@ HyprSpace is early. Expect bugs.
 ## Building from source
 
 You need Rust 1.98.1 (`rustup toolchain install 1.98.1`). On Windows, add the MSVC C++ build tools.
-On macOS, add Xcode and its Metal toolchain ([docs/BUILD-MAC.md](./docs/BUILD-MAC.md)).
+On macOS, add Xcode and its Metal toolchain ([docs/operations/development.md](./docs/operations/development.md)).
 
 ```bash
 git clone https://github.com/xxashxx-svg/hyprspace.git
@@ -48,7 +48,7 @@ cd hyprspace
 cargo run -p hyprspace
 ```
 
-Read [CLAUDE.md](./CLAUDE.md) before writing code. It's the project guide, for people and agents
+Read [AGENTS.md](./AGENTS.md) before writing code. It's the project guide, for people and agents
 alike. [docs/](./docs/README.md) goes deeper.
 
 ## Contributing

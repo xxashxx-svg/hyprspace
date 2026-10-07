@@ -4,7 +4,7 @@
 //! The tokens are the Tauri app's (`src/styles/tokens.css`), and the themes are its
 //! `src/themes.ts`: each is one hue, and both its light and dark side are derived from that hue
 //! in oklch. Lines and washes are the "ink" color at low alpha (white on the dark side, black on
-//! the light side), as CLAUDE.md rule 3 asks.
+//! the light side), as AGENTS.md asks.
 
 mod oklch;
 mod syntax;

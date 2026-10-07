@@ -5,7 +5,7 @@
 //! `src-tauri/tauri.conf.json` (see the v0.21.1 tag). The Tauri app updates from that same file
 //! and key, and so does this crate: one feed, one key, so the last Tauri version can install the
 //! first GPUI release and the GPUI app keeps updating from the same place afterwards
-//! (docs/REWRITE.md, "Upgrading from the Tauri app").
+//! (docs/internals/updates.md).
 //!
 //! Flow: [`check`] reads the feed and returns an [`Update`] when it's newer, [`download`] fetches
 //! the artifact and refuses it unless the signature verifies, [`stage`] writes it to disk, then

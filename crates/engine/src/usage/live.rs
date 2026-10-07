@@ -4,7 +4,7 @@
 //! This is the same path Ledge and other desktop clients use. The token is read from the CLI's
 //! credentials file at request time and sent straight back to that provider, only ever to a usage
 //! endpoint. Nothing is stored, nothing is forwarded anywhere else, and no inference call is made
-//! (CLAUDE.md rule 1).
+//! (AGENTS.md, The user's own subscription).
 //!
 //! Two things matter for not getting throttled:
 //!   * Claude's oauth endpoints rate limit per token, and the bucket is SHARED with Claude Code

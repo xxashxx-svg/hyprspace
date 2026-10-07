@@ -1,6 +1,6 @@
 ; The HyprSpace installer: per user, no admin, into %LOCALAPPDATA%\HyprSpace.
 ;
-; It wears the Tauri app's identity on purpose (docs/adr/0010-installers.md): the same
+; It wears the Tauri app's identity on purpose (docs/internals/updates.md): the same
 ; product name, publisher, registry keys, install folder and shortcut, so it installs over the
 ; Tauri app in place and Apps keeps one HyprSpace entry. The Tauri app's updater runs it as
 ;   HyprSpace_<version>_x64-setup.exe /P /R /UPDATE /ARGS

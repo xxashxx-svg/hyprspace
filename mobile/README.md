@@ -81,7 +81,7 @@ Because the app talks to a device on your LAN, **Expo Go on a real phone is the 
 
 The app has **its own version line** — `deploy.ps1` doesn't touch it, because it ships as a GitHub
 release asset rather than through the Tauri updater. See
-[docs/VERSIONING.md](../docs/VERSIONING.md#the-android-app-mobile).
+[docs/operations/release.md](../docs/operations/release.md#the-android-app).
 
 ```bash
 npm run version -- patch|minor|major     # bumps expo.version + android.versionCode together

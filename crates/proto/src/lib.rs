@@ -3,7 +3,7 @@
 //!
 //! `wire` holds the commands and events that cross the channel, `run` what a structured session
 //! starts with and reports, `state` what the app keeps between runs; the other modules hold the
-//! domain records those messages (and the engine's library calls) carry. Words follow docs/CONTEXT.md.
+//! domain records those messages (and the engine's library calls) carry. Words follow docs/internals/glossary.md.
 
 pub mod agents;
 pub mod channel;

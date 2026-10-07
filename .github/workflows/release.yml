@@ -6,8 +6,7 @@ name: release
 # job MERGES its own entry into the release's latest.json (windows-x86_64, then darwin-aarch64),
 # and the last job (macos) publishes the draft, so the updater endpoint (releases/latest) only
 # sees the release once it is complete. The installed Tauri app reads that same latest.json and
-# key, so the first GPUI release installs through it (docs/REWRITE.md, "Upgrading from the Tauri
-# app"; docs/adr/0010 and 0011).
+# key, so the first GPUI release installs through it (docs/internals/updates.md).
 #
 # The jobs chain with `needs` on purpose: they all read-modify-write the same latest.json asset,
 # so they must not run concurrently or one would clobber another's platform entry.

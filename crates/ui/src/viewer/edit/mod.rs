@@ -4,7 +4,7 @@
 // and Shift+Tab over a selection's lines, and Ctrl+S. Syntax colors follow the edits a moment
 // later. Nothing is written over a change made outside: a save only lands while the file still
 // holds what was read (`FolderCommand::WriteFile`), and a file nobody has edited here follows
-// the disk on its own. Our own, since Zed's editor is GPL (docs/REWRITE.md); the IME bridge is
+// the disk on its own. Our own, since Zed's editor is GPL (docs/internals/viewer.md); the IME bridge is
 // the text box's, from Zed's Apache-2.0 input example.
 
 mod buffer;

@@ -1,8 +1,7 @@
 // The intro: what HyprSpace is, which agents it found, how the app fits together, the defaults,
 // and a first folder (the Tauri app's Onboarding.tsx and onboarding.css). It shows once, on a
 // first run with no spaces; someone who already has spaces gets the flag set without seeing it.
-// The command palette replays it. The Tauri app's sign-in and licensing steps are left behind
-// (docs/REWRITE.md).
+// The command palette replays it. The Tauri app's sign-in and licensing steps are left behind.
 
 mod sketches;
 mod steps;

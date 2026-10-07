@@ -45,7 +45,7 @@ if ($LASTEXITCODE -ne 0) { throw "gh is not logged in. Run: gh auth login" }
 $bullets = @($Notes -split "(?:`r?`n)|\s\|\s" | ForEach-Object { $_.Trim().TrimStart("-", "*", " ") } | Where-Object { $_ -ne "" -and $_ -notmatch "^\s*$" })
 if ($bullets.Count -eq 0) { throw "No release notes given." }
 
-# ---- version: the Cargo workspace's is the app's (docs/VERSIONING.md)
+# ---- version: the Cargo workspace's is the app's (docs/operations/release.md)
 $cargo = Get-Content Cargo.toml -Raw -Encoding UTF8
 $cur = [regex]::Match($cargo, '(?m)^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
 if (-not $cur) { throw "No version in Cargo.toml's [workspace.package]." }

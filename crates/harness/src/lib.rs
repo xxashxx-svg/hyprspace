@@ -1,6 +1,6 @@
 //! Drives agent CLIs over their machine protocols and turns their output into `RunEvent`s.
-//! Inference always runs through the user's own binary (CLAUDE.md rule 1): no SDK, no API key,
-//! no token. Shape and reasons: docs/adr/0004-harness-protocol.md.
+//! Inference always runs through the user's own binary (AGENTS.md): no SDK, no API key,
+//! no token. Shape and reasons: docs/internals/sessions.md.
 //!
 //! One `Harness` per agent starts a `Session`: a task that owns the CLI's process and answers
 //! `send`, `interrupt` and `answer` until the session is dropped, which kills the process.

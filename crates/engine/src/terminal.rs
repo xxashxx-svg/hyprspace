@@ -4,7 +4,7 @@
 //
 // What runs in a terminal can change under us: Claude stopped with Ctrl+C and started again by
 // hand, or Codex started in its place. Every shell gets its session's hooks file and a `claude`
-// that brings it along (ADR 0014), and a watcher reads which agent runs under each shell.
+// that brings it along (docs/internals/terminals.md), and a watcher reads which agent runs under each shell.
 //
 // The command is built from fixed flags and catalog ids only. User text never goes into it; the
 // prompt goes in as keystrokes after the CLI is up.
@@ -135,7 +135,7 @@ pub fn command(
             if let Some(id) = run.resume.as_deref() {
                 out.push(format!("resume {}", quote(id)));
             }
-            // the presets in docs/adr/0004-harness-protocol.md
+            // the presets in docs/internals/sessions.md
             out.push(
                 match run.permission {
                     Permission::Plan => "--sandbox read-only --ask-for-approval never",

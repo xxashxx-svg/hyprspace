@@ -54,8 +54,7 @@ pub struct SkillItem {
     pub kind: SkillKind,
 }
 
-/// An agent CLI the app can start, as a structured session or in a terminal. Gemini left in
-/// ADR 0017.
+/// An agent CLI the app can start, as a structured session or in a terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Agent {

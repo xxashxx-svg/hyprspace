@@ -1,5 +1,5 @@
 // Requests for Settings' Skills view: list, read, write and delete Claude skills and slash
-// commands (docs/CONTEXT.md, Skill). Each names the folder whose project skills it is about.
+// commands (docs/internals/glossary.md, Skill). Each names the folder whose project skills it is about.
 
 use std::path::PathBuf;
 

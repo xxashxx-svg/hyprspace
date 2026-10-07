@@ -12,8 +12,8 @@ To actually launch agents you need whichever CLI you want to use already install
 
 ## Repo layout
 
-[CLAUDE.md](./CLAUDE.md) has the full repo map and an architecture overview, and it's the canonical
-reference. Read it first. The one-paragraph version:
+[AGENTS.md](./AGENTS.md) is the project guide, with the rules, where code lives and how it works.
+Read it first. The one-paragraph version:
 
 - `apps/hyprspace` is the binary. It starts the engine, opens the window, and wires the two
   together.
@@ -22,13 +22,14 @@ reference. Read it first. The one-paragraph version:
   over their machine protocols, and `crates/ui` is the GPUI app. `theme`, `syntax` and `update`
   are what their names say.
 - `docs/` is the deeper material, starting at [docs/README.md](./docs/README.md). The domain words
-  are in [docs/CONTEXT.md](./docs/CONTEXT.md) and the decisions in [docs/adr/](./docs/adr/).
+  are in [docs/internals/glossary.md](./docs/internals/glossary.md), and the decisions and their
+  reasons in [docs/internals/](./docs/internals/).
 - `website/` is the marketing site, a separate Vite app with its own
   [README](./website/README.md).
 
 ## Code style
 
-The full list of hard constraints lives in [CLAUDE.md](./CLAUDE.md). The ones that bite contributors
+The full list of hard constraints lives in [AGENTS.md](./AGENTS.md). The ones that bite contributors
 most often:
 
 - **Respect the boundary.** `proto` and `engine` never depend on GPUI, and `ui` never calls the
@@ -41,7 +42,7 @@ most often:
 - **User text never goes into a command line.** Launch commands are built from fixed flags and
   catalog ids. Prompts are typed in after the CLI is up or passed through an environment variable.
 - **Comment the why, not the what.** Match the surrounding code rather than your own preferred
-  style, and use the words in `docs/CONTEXT.md`.
+  style, and use the words in `docs/internals/glossary.md`.
 - **Never hand-edit version numbers.** `deploy.ps1` owns the `version` in the root `Cargo.toml`
   and the workspace entries in `Cargo.lock`. A PR that bumps them will be asked to revert it.
 

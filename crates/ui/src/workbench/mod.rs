@@ -2,7 +2,7 @@
 // diff opens over it in the viewer card. This module holds what the root does to them; `frame.rs`
 // draws the thread and the dock, `header.rs` a terminal thread's title bar, `bar.rs` the row
 // above with the Open button, `card.rs` the viewer card. Reasons for the shape:
-// docs/adr/0015-one-thread-on-screen.md.
+// docs/internals/threads.md.
 
 mod bar;
 mod card;

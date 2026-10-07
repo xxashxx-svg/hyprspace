@@ -1,5 +1,5 @@
 // What can be on screen. The main area shows one thread at a time; a file or a diff opens over it
-// in the viewer. Reasons: docs/adr/0015-one-thread-on-screen.md.
+// in the viewer. Reasons: docs/internals/threads.md.
 
 use std::path::PathBuf;
 

@@ -3,9 +3,9 @@
 // in src/stores/workspace.ts and settings.ts). This module only ever reads it: the Tauri app may
 // still be installed or running, and v2 stays its own.
 //
-// What comes over (docs/adr/0012-carrying-over-tauri-state.md): every project folder as a space,
+// What comes over (docs/internals/overview.md, Saved state): every project folder as a space,
 // in order, archived ones still archived; the folders an open space's panes ran in, as spaces of
-// their own (ADR 0008 dropped open spaces); theme and light or dark; each agent's model and
+// their own (open spaces are gone, docs/internals/threads.md); theme and light or dark; each agent's model and
 // effort, the last agent used and its permission mode; the sidebar and dock widths; the Open
 // button's app; whether the intro was seen; and the last version that ran, for What's new.
 // Each agent pane comes over as a terminal thread in its folder's space, on the conversation it
