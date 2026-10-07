@@ -4,3 +4,7 @@
 
 # A patch applies byte for byte, so a CRLF checkout would stop it matching the files it patches.
 *.patch text eol=lf
+
+# A bundle of xterm.js written by mobile/scripts/build-term.mjs. GitHub would count it as half the
+# repo's TypeScript.
+mobile/src/terminal/termHtml.ts linguist-generated
