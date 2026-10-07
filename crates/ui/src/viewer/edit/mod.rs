@@ -535,8 +535,10 @@ fn shape_plain(text: &str, window: &mut Window) -> ShapedLine {
 
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let dialog = self.unsaved_dialog(cx);
         div()
             .id("editor")
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -556,5 +558,6 @@ impl Render for Editor {
                     .on_scroll_wheel(cx.listener(Self::on_wheel))
                     .child(EditorElement::new(cx.entity())),
             )
+            .children(dialog)
     }
 }

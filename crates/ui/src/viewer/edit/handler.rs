@@ -86,6 +86,9 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.asking() {
+            return;
+        }
         let range = range
             .as_ref()
             .map(|r| self.range_from_utf16(r))
@@ -101,6 +104,9 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.asking() {
+            return;
+        }
         let range = range
             .as_ref()
             .map(|r| self.range_from_utf16(r))

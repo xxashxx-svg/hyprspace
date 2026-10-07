@@ -9,6 +9,16 @@ use crate::viewer::code::ROW;
 
 impl Editor {
     pub(super) fn on_key(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // the close dialog holds the keyboard: Enter saves, Esc goes back to the text
+        if self.asking() {
+            match e.keystroke.key.as_str() {
+                "enter" => self.save_and_close(cx),
+                "escape" => self.keep_editing(cx),
+                _ => {}
+            }
+            cx.stop_propagation();
+            return;
+        }
         let m = &e.keystroke.modifiers;
         let primary = if cfg!(target_os = "macos") {
             m.platform
