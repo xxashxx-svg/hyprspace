@@ -2622,6 +2622,7 @@ version = "0.24.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "chrono",
  "futures",
  "hyprspace-harness",
  "hyprspace-proto",

@@ -179,12 +179,16 @@ pub(super) fn foot_text(text: &str) -> AnyElement {
 impl Root {
     pub(crate) fn usage_page(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let now = now_ms() as i64;
+        // the chart takes clicks, so it is built before `limits` is borrowed for the rest
+        let chart = (self.limits.read(cx).view == View::Activity)
+            .then(|| super::chart::Data::new(self.limits.read(cx)))
+            .and_then(|d| super::chart::render(d, &self.limits.clone(), cx));
         let limits = self.limits.read(cx);
         let view = limits.view;
         let loading = !limits.pending.is_empty();
         let body = match view {
             View::Limits => limits.limits_view(now),
-            View::Activity => limits.activity_view(),
+            View::Activity => limits.activity_view(chart),
         };
         let tabs = widgets::segments().children(
             [(View::Limits, "Limits"), (View::Activity, "Activity")]

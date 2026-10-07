@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+chrono.workspace = true
 hyprspace-proto.workspace = true
 hyprspace-harness.workspace = true
 hyprspace-update.workspace = true

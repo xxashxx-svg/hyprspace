@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use hyprspace_proto::usage::{ModelUsage, ProviderUsage, UsageDay, UsageWindow};
+use hyprspace_proto::usage::{ModelDay, ModelUsage, ProviderUsage, UsageDay, UsageWindow};
 use serde_json::Value;
 
 use crate::util::{decode_jwt, home_dir, read_json, title_case};
@@ -114,7 +114,7 @@ fn claude_usage(home: &Path, now: u64) -> ProviderUsage {
     }
 
     // tokens aren't rolled up anywhere, so sum recent transcripts (bounded)
-    let (i, o, c) = sum_claude_tokens(&cdir.join("projects"), now);
+    let (i, o, c, days) = sum_claude_tokens(&cdir.join("projects"), now);
     u.input_tokens = i;
     u.output_tokens = o;
     u.cache_tokens = c;
@@ -122,7 +122,66 @@ fn claude_usage(home: &Path, now: u64) -> ProviderUsage {
     if u.total_tokens > 0 {
         u.tokens_window = Some(format!("last {RECENT_DAYS} days"));
     }
+    by_model_and_day(&mut u, days);
     u
+}
+
+/// Fills the per-model, per-day figures from `days`, keyed by (day, model) with tokens in and
+/// out. A provider with no model split or daily figures of its own takes them from here.
+fn by_model_and_day(u: &mut ProviderUsage, mut days: BTreeMap<(String, String), (u64, u64)>) {
+    // a session that spent nothing has nothing to show
+    days.retain(|_, (i, o)| *i + *o > 0);
+    let mut models: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
+    let mut daily: BTreeMap<&str, u64> = BTreeMap::new();
+    for ((date, model), (i, o)) in &days {
+        let m = models.entry(model).or_default();
+        m.0 = m.0.saturating_add(*i);
+        m.1 = m.1.saturating_add(*o);
+        let d = daily.entry(date).or_default();
+        *d = d.saturating_add(i.saturating_add(*o));
+    }
+    if u.models.is_empty() {
+        u.models = models
+            .iter()
+            .map(|(model, (i, o))| ModelUsage {
+                model: model.to_string(),
+                input_tokens: *i,
+                output_tokens: *o,
+                cache_tokens: 0,
+                total_tokens: i.saturating_add(*o),
+            })
+            .collect();
+        u.models.sort_by_key(|m| std::cmp::Reverse(m.total_tokens));
+        u.models.truncate(8);
+    }
+    if u.daily.len() < 2 && daily.len() > 1 {
+        u.daily = daily
+            .iter()
+            .map(|(date, value)| UsageDay {
+                date: date.to_string(),
+                value: *value,
+            })
+            .collect();
+        u.daily_unit = Some("tokens".into());
+    }
+    u.daily_models = days
+        .into_iter()
+        .map(|((date, model), (i, o))| ModelDay {
+            date,
+            model,
+            tokens: i.saturating_add(o),
+        })
+        .collect();
+}
+
+/// The local day an RFC 3339 time falls on, `YYYY-MM-DD`.
+fn local_day(stamp: &str) -> Option<String> {
+    let t = chrono::DateTime::parse_from_rfc3339(stamp).ok()?;
+    Some(
+        t.with_timezone(&chrono::Local)
+            .format("%Y-%m-%d")
+            .to_string(),
+    )
 }
 
 // Claude keeps its own daily activity roll-up: cheap and accurate for messages, sessions, tools
@@ -199,8 +258,12 @@ fn apply_stats_cache(u: &mut ProviderUsage, v: &Value) {
     }
 }
 
-fn sum_claude_tokens(projects: &Path, now: u64) -> (u64, u64, u64) {
+/// Tokens in, out and from cache over the recent transcripts, and in and out per (day, model).
+type Days = BTreeMap<(String, String), (u64, u64)>;
+
+fn sum_claude_tokens(projects: &Path, now: u64) -> (u64, u64, u64, Days) {
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
+    let mut days = Days::new();
     for f in recent_jsonl(projects, now) {
         if std::fs::metadata(&f).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
             continue;
@@ -222,15 +285,29 @@ fn sum_claude_tokens(projects: &Path, now: u64) -> (u64, u64, u64) {
                 &v["usage"]
             };
             if usage.is_object() {
-                i = i.saturating_add(u64_at(usage, "input_tokens"));
-                o = o.saturating_add(u64_at(usage, "output_tokens"));
+                let (li, lo) = (
+                    u64_at(usage, "input_tokens"),
+                    u64_at(usage, "output_tokens"),
+                );
+                i = i.saturating_add(li);
+                o = o.saturating_add(lo);
                 c = c
                     .saturating_add(u64_at(usage, "cache_creation_input_tokens"))
                     .saturating_add(u64_at(usage, "cache_read_input_tokens"));
+                // a reply Claude made up itself carries "<synthetic>" for a model
+                let model = v["message"]["model"]
+                    .as_str()
+                    .filter(|m| !m.is_empty() && !m.starts_with('<'));
+                let day = v["timestamp"].as_str().and_then(local_day);
+                if let (Some(model), Some(day)) = (model, day) {
+                    let e = days.entry((day, model.to_string())).or_default();
+                    e.0 = e.0.saturating_add(li);
+                    e.1 = e.1.saturating_add(lo);
+                }
             }
         }
     }
-    (i, o, c)
+    (i, o, c, days)
 }
 
 // ---- Codex ----
@@ -265,13 +342,15 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
         .count() as u64;
     let (mut i, mut o, mut c) = (0u64, 0u64, 0u64);
     let mut by_day: BTreeMap<String, u64> = BTreeMap::new();
+    let mut days = Days::new();
     for f in &files {
         let Some(tc) = last_token_count(f) else {
             continue;
         };
         let ttu = &tc["info"]["total_token_usage"];
-        i = i.saturating_add(u64_at(ttu, "input_tokens"));
-        o = o.saturating_add(u64_at(ttu, "output_tokens"));
+        let (fi, fo) = (u64_at(ttu, "input_tokens"), u64_at(ttu, "output_tokens"));
+        i = i.saturating_add(fi);
+        o = o.saturating_add(fo);
         c = c.saturating_add(u64_at(ttu, "cached_input_tokens"));
         // rollout filenames embed the session date: rollout-YYYY-MM-DD...
         if let Some(d) = file_name(f)
@@ -280,6 +359,11 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
         {
             let e = by_day.entry(d.to_string()).or_insert(0);
             *e = e.saturating_add(u64_at(ttu, "total_tokens"));
+            // the whole session goes to the model it ran on
+            let model = rollout_model(f).unwrap_or_else(|| "Codex".into());
+            let e = days.entry((d.to_string(), model)).or_default();
+            e.0 = e.0.saturating_add(fi);
+            e.1 = e.1.saturating_add(fo);
         }
         // Windows come from the newest rollout that actually carries them, not simply the newest
         // rollout: codex writes `rate_limits` on every session but leaves primary/secondary null
@@ -314,7 +398,20 @@ fn codex_usage(home: &Path, now: u64) -> ProviderUsage {
             .collect();
         u.daily_unit = Some("tokens".into());
     }
+    by_model_and_day(&mut u, days);
     u
+}
+
+/// The model a Codex session ran on, from the first turn's context near the top of its rollout.
+fn rollout_model(file: &Path) -> Option<String> {
+    let f = std::fs::File::open(file).ok()?;
+    BufReader::new(f)
+        .lines()
+        .map_while(Result::ok)
+        .take(400)
+        .filter(|l| l.contains("\"turn_context\""))
+        .filter_map(|l| serde_json::from_str::<Value>(&l).ok())
+        .find_map(|v| v["payload"]["model"].as_str().map(String::from))
 }
 
 fn file_name(p: &Path) -> Option<&str> {
@@ -461,6 +558,65 @@ mod tests {
             (u.input_tokens, u.output_tokens, u.cache_tokens),
             (20, 10, 2)
         );
+        assert_eq!(u.daily.len(), 2);
+        // no turn context in these rollouts, so the sessions go to Codex at large
+        assert_eq!(u.daily_models.len(), 2);
+        assert!(u.daily_models.iter().all(|d| d.model == "Codex"));
+    }
+
+    #[test]
+    fn codex_names_the_model_a_session_ran_on() {
+        let home = tempfile::tempdir().unwrap();
+        let day = home.path().join(".codex/sessions/2026/10/02");
+        let ctx = json!({ "type": "turn_context", "payload": { "model": "gpt-6-luna" } });
+        write(
+            &day.join("rollout-2026-10-02-a.jsonl"),
+            &format!("{ctx}\n{}", token_count(Value::Null, 15)),
+        );
+        let u = codex_usage(home.path(), now_secs());
+        assert_eq!(
+            u.daily_models,
+            [ModelDay {
+                date: "2026-10-02".into(),
+                model: "gpt-6-luna".into(),
+                tokens: 15,
+            }]
+        );
+        assert_eq!(u.models[0].model, "gpt-6-luna");
+    }
+
+    #[test]
+    fn claude_splits_transcripts_by_day_and_model() {
+        let home = tempfile::tempdir().unwrap();
+        let line = |stamp: &str, model: &str, i: u64, o: u64| {
+            json!({ "timestamp": stamp, "message": { "model": model, "usage": { "input_tokens": i, "output_tokens": o } } })
+                .to_string()
+        };
+        // midday UTC lands on the same local day in every time zone a person lives in
+        let body = [
+            line("2026-10-01T12:00:00Z", "claude-opus-5-5", 10, 5),
+            line("2026-10-01T12:30:00Z", "claude-opus-5-5", 1, 1),
+            line("2026-10-02T12:00:00Z", "claude-haiku-4-5", 2, 2),
+            line("2026-10-02T12:00:00Z", "<synthetic>", 9, 9),
+        ]
+        .join("\n");
+        write(&home.path().join(".claude/projects/p/s.jsonl"), &body);
+        let u = claude_usage(home.path(), now_secs());
+        let mut got: Vec<(String, String, u64)> = u
+            .daily_models
+            .iter()
+            .map(|d| (d.date.clone(), d.model.clone(), d.tokens))
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                ("2026-10-01".into(), "claude-opus-5-5".into(), 17),
+                ("2026-10-02".into(), "claude-haiku-4-5".into(), 4),
+            ]
+        );
+        // no stats file: the model split and the days come from the transcripts
+        assert_eq!(u.models[0].model, "claude-opus-5-5");
         assert_eq!(u.daily.len(), 2);
     }
 

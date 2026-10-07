@@ -8,6 +8,7 @@
 // nothing, and Claude's status line arrives on its own from terminal sessions.
 
 mod activity;
+mod chart;
 mod limits;
 mod meter;
 pub mod model;
@@ -57,6 +58,8 @@ pub struct Limits {
     /// Activity: each provider's local files, and the scans still running.
     pub(crate) local: HashMap<String, ProviderUsage>,
     pub(crate) pending: HashSet<String>,
+    /// Activity's chart: by agent or model, the lines hidden, the day under the pointer.
+    pub(crate) chart: chart::State,
     loaded: bool,
     _poll: Task<()>,
 }
@@ -80,6 +83,7 @@ impl Limits {
             view: View::Limits,
             local: HashMap::new(),
             pending: HashSet::new(),
+            chart: chart::State::default(),
             loaded: false,
             _poll: poll,
         }

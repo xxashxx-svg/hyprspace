@@ -9,9 +9,26 @@ use super::{Limits, PROVIDERS, brand};
 use crate::assets::provider_mark;
 use crate::colors;
 
-/// "claude-opus-4-8" is "Opus 4.8", "claude-3-5-sonnet-20241022" is "Sonnet 3.5". Other ids pass
-/// through.
-fn pretty_model(id: &str) -> String {
+/// "claude-opus-4-8" is "Opus 4.8", "claude-3-5-sonnet-20241022" is "Sonnet 3.5", and
+/// "gpt-5.6-terra" is "GPT-5.6 Terra". Other ids pass through.
+pub(super) fn pretty_model(id: &str) -> String {
+    if let Some(rest) = id.strip_prefix("gpt-") {
+        let mut parts = rest.split('-');
+        let version = parts.next().unwrap_or_default();
+        let words: Vec<String> = parts
+            .map(|w| {
+                let mut c = w.chars();
+                c.next().map_or_else(String::new, |f| {
+                    f.to_uppercase().collect::<String>() + c.as_str()
+                })
+            })
+            .collect();
+        return [format!("GPT-{version}")]
+            .into_iter()
+            .chain(words)
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
     let Some(rest) = id.strip_prefix("claude-") else {
         return id.to_string();
     };
@@ -254,7 +271,7 @@ fn models(list: &[ModelUsage], tint: Hsla) -> AnyElement {
         .px(px(16.))
         .pt(px(14.))
         .pb(px(16.))
-        .child(block_head("By model", "all time, in and out".into()))
+        .child(block_head("By model", "in and out".into()))
         .children(shown.into_iter().map(|m| {
             div()
                 .flex()
@@ -480,7 +497,8 @@ fn activity_card(u: &ProviderUsage) -> AnyElement {
 }
 
 impl Limits {
-    pub(super) fn activity_view(&self) -> Vec<AnyElement> {
+    /// The summary, then `chart` (tokens per day), then a card per agent.
+    pub(super) fn activity_view(&self, chart: Option<AnyElement>) -> Vec<AnyElement> {
         let data: Vec<&ProviderUsage> = PROVIDERS
             .iter()
             .filter_map(|(id, _)| self.local.get(*id))
@@ -503,6 +521,7 @@ impl Limits {
                     .collect(),
             ));
         }
+        out.extend(chart);
         for (id, label) in PROVIDERS {
             match self.local.get(id) {
                 Some(u) if u.signed_in => out.push(activity_card(u)),
@@ -535,6 +554,9 @@ mod tests {
         assert_eq!(pretty_model("claude-opus-4-8"), "Opus 4.8");
         assert_eq!(pretty_model("claude-haiku-4-5-20251001"), "Haiku 4.5");
         assert_eq!(pretty_model("claude-3-5-sonnet-20241022"), "Sonnet 3.5");
-        assert_eq!(pretty_model("gpt-6-luna"), "gpt-6-luna");
+        assert_eq!(pretty_model("gpt-6-luna"), "GPT-6 Luna");
+        assert_eq!(pretty_model("gpt-5.6-terra"), "GPT-5.6 Terra");
+        assert_eq!(pretty_model("gpt-5.5"), "GPT-5.5");
+        assert_eq!(pretty_model("codex"), "codex");
     }
 }

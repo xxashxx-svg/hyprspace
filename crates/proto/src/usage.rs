@@ -32,6 +32,16 @@ pub struct ModelUsage {
     pub total_tokens: u64,
 }
 
+/// Tokens one model spent on one day, in and out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelDay {
+    /// The local day, `YYYY-MM-DD`.
+    pub date: String,
+    pub model: String,
+    pub tokens: u64,
+}
+
 /// One provider's usage as its local files describe it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +72,9 @@ pub struct ProviderUsage {
     /// "tokens" | "msgs" | "sessions"
     pub daily_unit: Option<String>,
     pub models: Vec<ModelUsage>,
+    /// Tokens per model per day over the recent files, for Activity's chart.
+    #[serde(default)]
+    pub daily_models: Vec<ModelDay>,
     pub note: Option<String>,
 }
 
