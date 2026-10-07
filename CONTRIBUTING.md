@@ -5,10 +5,10 @@ Thanks for taking a look. HyprSpace is a Rust app on GPUI, built as one Cargo wo
 ## Getting set up
 
 Prerequisites and the clone-to-running steps are in the
-[README](./README.md#prerequisites). Once `cargo run -p hyprspace` opens a window, you're ready.
+[README](./README.md#building-from-source). Once `cargo run -p hyprspace` opens a window, you're ready.
 
 To actually launch agents you need whichever CLI you want to use already installed and logged in
-(`claude`, `codex`, `gemini`). HyprSpace spawns them, it never authenticates on their behalf.
+(`claude` or `codex`). HyprSpace spawns them, it never authenticates on their behalf.
 
 ## Repo layout
 
