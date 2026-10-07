@@ -27,6 +27,9 @@ const HEADING: f32 = 26.;
 const ROW: f32 = 32.;
 /// Where the rail's first button sits, and the step to the next.
 const RAIL_TOP: f32 = 8.;
+/// About how tall each menu opens, to tell whether it fits under its chip.
+const MODELS_TALL: f32 = 340.;
+const EFFORT_TALL: f32 = 200.;
 const RAIL_STEP: f32 = 34.;
 
 pub struct Model {
@@ -329,13 +332,19 @@ pub fn render<H: Host>(
         .text_color(colors::text1())
         .child(body)
         .children(foot);
-    // rises a few pixels into place as it fades in
-    let frame = crate::slide::ease_in(frame, ("model-menu-open", m.opened), 160, |d, t| {
-        d.opacity(t).top(px(8. * (1. - t)))
+    // under the chip where it fits, as on the new-thread screen, so it covers neither the
+    // heading nor the text; over it under a thread, where the box sits at the window's foot
+    let tall = if m.effort { EFFORT_TALL } else { MODELS_TALL };
+    let below = window.viewport_size().height - chip.bottom() >= px(tall + 16.);
+    // slides a few pixels into place, away from its chip, as it fades in
+    let from = if below { -8. } else { 8. };
+    let frame = crate::slide::ease_in(frame, ("model-menu-open", m.opened), 160, move |d, t| {
+        d.opacity(t).top(px(from * (1. - t)))
     });
     let dismiss = cx.listener(|h: &mut H, _: &(), window, cx| close(h, window, cx));
-    Some(widgets::above(
+    Some(widgets::by_chip(
         chip,
+        below,
         window,
         move |w, cx| dismiss(&(), w, cx),
         frame,

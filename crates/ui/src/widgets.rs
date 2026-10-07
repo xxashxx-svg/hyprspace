@@ -175,16 +175,28 @@ pub fn layer(
     float(corner, at, window, close, content)
 }
 
-/// Like [`layer`], but sitting just above `chip` with its left edge on the chip's, so a picker
-/// opens from its chip wherever on the chip the click landed.
-pub fn above(
+/// Like [`layer`], but by a picker's chip, wherever on the chip the click landed: under it when
+/// `below`, else over it, with its right edge on the chip's, so a picker on the right of a box
+/// stays over the box.
+pub fn by_chip(
     chip: Bounds<Pixels>,
+    below: bool,
     window: &Window,
     close: impl Fn(&mut Window, &mut App) + 'static,
     content: impl IntoElement,
 ) -> AnyElement {
-    let at = point(chip.origin.x, chip.origin.y - px(6.));
-    float(Anchor::BottomLeft, at, window, close, content)
+    let (corner, at) = if below {
+        (
+            Anchor::TopRight,
+            point(chip.right(), chip.bottom() + px(6.)),
+        )
+    } else {
+        (
+            Anchor::BottomRight,
+            point(chip.right(), chip.top() - px(6.)),
+        )
+    };
+    float(corner, at, window, close, content)
 }
 
 fn float(
