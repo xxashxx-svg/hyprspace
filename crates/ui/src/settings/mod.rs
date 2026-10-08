@@ -296,7 +296,7 @@ impl Root {
             })
             .child(
                 widgets::select(id, label)
-                    .min_w(px(168.))
+                    .min_w(px(150.))
                     .max_w(px(240.))
                     .on_click(cx.listener(move |r, e: &ClickEvent, _, cx| {
                         r.settings.menu = Some((e.position(), picker));

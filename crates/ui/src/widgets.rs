@@ -284,7 +284,7 @@ pub fn dropdown(
         Open::Down,
         window,
         close,
-        menu_frame().w(w).max_w(w).child(content),
+        menu_frame().w(w).min_w(w).max_w(w).child(content),
     )
 }
 
@@ -438,18 +438,16 @@ pub fn select(id: impl Into<ElementId>, label: impl Into<SharedString>) -> State
         .flex()
         .items_center()
         .gap_2()
-        .h(px(34.))
-        .pl(px(12.))
-        .pr(px(10.))
+        .h(px(30.))
+        .pl(px(11.))
+        .pr(px(9.))
         .rounded(px(8.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::ink(0.04))
-        .text_size(px(13.))
+        .bg(colors::ink(0.045))
+        .text_size(px(12.5))
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text1())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.07)))
+        .hover(|s| s.bg(colors::ink(0.08)))
         .child(div().flex_1().min_w_0().truncate().child(label.into()))
         .child(icon("chevron-down", 12., colors::text3()))
 }

@@ -478,7 +478,7 @@ fn stepper(value: String, less: AnyElement, more: AnyElement) -> Div {
         .gap(px(2.))
         .p(px(2.))
         .rounded(px(8.))
-        .bg(colors::ink(0.05))
+        .bg(colors::ink(0.045))
         .child(less)
         .child(
             div()
