@@ -282,10 +282,31 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             },
         )
         .await;
+        // a folder that isn't a space yet: the phone sends space 0 with it
+        say(
+            &mut ws,
+            &Up::Ask {
+                ask: Ask::New {
+                    space: 0,
+                    folder: Some("/somewhere/new".into()),
+                    start: hyprspace_proto::phone::NewThread {
+                        agent: None,
+                        model: String::new(),
+                        effort: String::new(),
+                        permission: hyprspace_proto::Permission::Ask,
+                        terminal: true,
+                        prompt: String::new(),
+                    },
+                },
+            },
+        )
+        .await;
         say(&mut ws, &Up::Ping).await;
         loop {
-            if matches!(hear(&mut ws).await, Down::Pong) {
-                break;
+            match hear(&mut ws).await {
+                Down::Pong => break,
+                Down::Failed { message, .. } => panic!("{message}"),
+                _ => {}
             }
         }
         let root = tempfile::tempdir().unwrap();
@@ -315,6 +336,14 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 on: true,
             },
         }) => Some(()),
+        _ => None,
+    });
+    wait(&mut events, |e| match e {
+        Event::Phone(PhoneEvent::Ask {
+            ask: Ask::New {
+                folder: Some(f), ..
+            },
+        }) if f == "/somewhere/new" => Some(()),
         _ => None,
     });
     // the phone sized the terminal, and leaving gave it back

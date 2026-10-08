@@ -450,6 +450,9 @@ impl Phone {
                 let hub = self.hub();
                 let known = |t: u64| hub.board.threads.iter().any(|b| b.id == t);
                 let ok = match &ask {
+                    Ask::New {
+                        folder: Some(_), ..
+                    } => true,
                     Ask::New { space, .. } => hub.board.spaces.iter().any(|s| s.id == *space),
                     Ask::Send { thread, .. }
                     | Ask::Approve { thread, .. }
