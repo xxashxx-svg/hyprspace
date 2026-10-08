@@ -44,10 +44,10 @@ A paired Android phone reaches the desktop app directly, with no server between 
   replaces it every five minutes. Ten failed hellos or pairings in a minute shut the door for
   that minute, and at most 16 connections can be waiting to say hello at once.
 - A paired phone gets a 32-byte token; `phone.json` keeps only its hash, and the phone seals its
-  copy with a key in the Android keystore. Forget on either side ends it on both: the computer
-  sends `Denied { forget: true }` (now, or at the phone's next hello) and the phone drops the
-  computer; the phone sends `Leave` and the computer drops the phone. A computer that's off when
-  the phone forgets it keeps the phone listed until it's forgotten there too.
+  copy with a key in the Android keystore. Revoke on the computer or Forget on the phone ends it
+  on both: the computer sends `Denied { forget: true }` (now, or at the phone's next hello) and
+  the phone drops the computer; the phone sends `Leave` and the computer drops the phone. A
+  computer that's off when the phone forgets it keeps the phone listed until it's revoked there.
 - `PROTOCOL` moves when a message changes shape. A phone on another protocol is told which side
   to update, not let in.
 

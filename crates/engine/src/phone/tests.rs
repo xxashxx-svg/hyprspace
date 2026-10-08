@@ -366,6 +366,66 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
         .await;
         assert!(matches!(hear(&mut ws).await, Down::Denied { .. }));
     });
+
+    // revoking a connected phone cuts it off now, and its token stops working
+    client.send(Command::Phone(PhoneCommand::Pair));
+    let link = wait(&mut events, |e| match e {
+        Event::Phone(PhoneEvent::Pairing { pairing: Some(p) }) => Some(p.link),
+        _ => None,
+    });
+    let secret = query(&link, "c").to_string();
+    let (mut ws, token) = rt.block_on(async {
+        let mut ws = connect(port, &fingerprint).await;
+        say(
+            &mut ws,
+            &Up::Pair {
+                proof: super::prove(&secret, &fingerprint),
+                device: "Second phone".into(),
+                protocol: PROTOCOL,
+                app: String::new(),
+            },
+        )
+        .await;
+        match hear(&mut ws).await {
+            Down::Welcome { token, .. } => (ws, token.expect("a token")),
+            other => panic!("{other:?}"),
+        }
+    });
+    let device = wait(&mut events, |e| match e {
+        Event::Phone(PhoneEvent::Status { status }) => status
+            .devices
+            .iter()
+            .find(|d| d.name == "Second phone" && d.online)
+            .map(|d| d.id.clone()),
+        _ => None,
+    });
+    client.send(Command::Phone(PhoneCommand::Forget { device }));
+    rt.block_on(async {
+        loop {
+            match hear(&mut ws).await {
+                Down::Denied { forget, .. } => {
+                    assert!(forget);
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        let mut ws = connect(port, &fingerprint).await;
+        say(
+            &mut ws,
+            &Up::Hello {
+                token,
+                device: "Second phone".into(),
+                protocol: PROTOCOL,
+                app: String::new(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            hear(&mut ws).await,
+            Down::Denied { forget: true, .. }
+        ));
+    });
     client.send(Command::Close { id: SessionId(1) });
     engine.shutdown();
 }

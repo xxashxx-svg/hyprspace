@@ -194,7 +194,7 @@ impl Root {
         if devices.is_empty() {
             return vec![row(
                 "No phones yet",
-                "A phone you pair shows here. Forget one and this computer and the phone both drop the pairing.",
+                "A phone you pair shows here. Revoke one to cut it off at once. It has to pair again to connect.",
                 div(),
             )];
         }
@@ -217,7 +217,9 @@ impl Root {
                 row(
                     d.name.clone(),
                     seen,
-                    widgets::button(("phone-forget", d.paired as usize), "Forget").on_click(
+                    widgets::button(("phone-forget", d.paired as usize), "Revoke")
+                        .tooltip(widgets::tip("Disconnect this phone and stop its access. It has to pair again to connect."))
+                        .on_click(
                         cx.listener(move |r, _: &ClickEvent, _, _| {
                             r.client
                                 .send(Command::Phone(PhoneCommand::Forget { device: id.clone() }))

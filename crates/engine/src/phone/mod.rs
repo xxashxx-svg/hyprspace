@@ -194,7 +194,9 @@ impl Phone {
                 for id in gone {
                     if let Some(c) = hub.conns.get(&id) {
                         let _ = c.tx.unbounded_send(Down::Denied {
-                            message: "This computer removed this phone.".into(),
+                            message:
+                                "This computer revoked this phone's access. Pair again to connect."
+                                    .into(),
                             forget: true,
                         });
                     }
@@ -305,8 +307,9 @@ impl Phone {
                     None => {
                         hub.failures.push_back(Instant::now());
                         return Err(Down::Denied {
-                            message: "This computer removed this phone. Pair again to reconnect."
-                                .into(),
+                            message:
+                                "This computer revoked this phone's access. Pair again to connect."
+                                    .into(),
                             forget: true,
                         });
                     }
