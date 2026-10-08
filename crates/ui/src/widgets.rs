@@ -13,7 +13,7 @@ use crate::assets::icon;
 use crate::colors;
 use crate::transcript::Status;
 
-/// A quiet button: text on a hairline border that lifts on hover.
+/// A quiet button: text on a faint fill that deepens on hover, like the segmented controls.
 pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Stateful<Div> {
     button_frame(id).child(label.into())
 }
@@ -23,17 +23,18 @@ pub fn button_frame(id: impl Into<ElementId>) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
+        .flex_none()
         .items_center()
         .gap_1()
-        .h(px(26.))
-        .px(px(10.))
-        .rounded(px(6.))
-        .border_1()
-        .border_color(colors::border1())
-        .text_size(px(12.))
+        .h(px(28.))
+        .px(px(12.))
+        .rounded(px(8.))
+        .bg(colors::ink(0.06))
+        .text_size(px(12.5))
+        .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text1())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::surface3()).border_color(colors::border2()))
+        .hover(|s| s.bg(colors::ink(0.1)))
 }
 
 /// The one button that moves things forward, in the theme's accent.
