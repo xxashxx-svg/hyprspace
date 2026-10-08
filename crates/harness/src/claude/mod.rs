@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use hyprspace_proto::{Agent, Launch, Permission, Prompt, RunEvent, RunStatus, Tool};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::mpsc;
@@ -33,6 +33,7 @@ pub struct Claude {
     program: PathBuf,
     config: Option<PathBuf>,
     patience: Duration,
+    mcp: Option<crate::Mcp>,
 }
 
 impl Default for Claude {
@@ -40,6 +41,7 @@ impl Default for Claude {
         Self {
             program: PathBuf::from("claude"),
             config: None,
+            mcp: None,
             patience: Duration::from_secs(5),
         }
     }
@@ -49,6 +51,11 @@ impl Claude {
     /// Runs `program` instead of `claude` from PATH (the tests' fake CLI).
     pub fn with_program(mut self, program: impl Into<PathBuf>) -> Self {
         self.program = program.into();
+        self
+    }
+
+    pub fn with_mcp(mut self, mcp: Option<crate::Mcp>) -> Self {
+        self.mcp = mcp;
         self
     }
 
@@ -115,7 +122,11 @@ impl Harness for Claude {
             resume::origin(&config, thread)
         });
         let cwd = origin.unwrap_or_else(|| launch.cwd.clone());
-        let proc = spawn(&self.program, &args(&launch), &cwd)?;
+        let mut args = args(&launch);
+        if let Some(path) = self.mcp.as_ref().and_then(mcp_config) {
+            args.extend(["--mcp-config".into(), path.to_string_lossy().into_owned()]);
+        }
+        let proc = spawn(&self.program, &args, &cwd)?;
         let (tx, rx) = mpsc::unbounded_channel();
         let actor = Actor {
             child: proc.child,
@@ -629,6 +640,23 @@ fn blocks(v: &Value) -> &[Value] {
         .as_array()
         .map(|a| a.as_slice())
         .unwrap_or_default()
+}
+
+fn mcp_config(mcp: &crate::Mcp) -> Option<PathBuf> {
+    let dir = std::env::temp_dir().join("hyprspace-mcp");
+    std::fs::create_dir_all(&dir).ok()?;
+    let name = mcp.args.last()?;
+    if !name.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let path = dir.join(format!("{name}.json"));
+    let config = json!({ "mcpServers": { "hyprspace": {
+        "type": "stdio",
+        "command": mcp.command,
+        "args": mcp.args,
+    }}});
+    std::fs::write(&path, config.to_string()).ok()?;
+    Some(path)
 }
 
 fn resets(v: &Value) -> Option<u64> {

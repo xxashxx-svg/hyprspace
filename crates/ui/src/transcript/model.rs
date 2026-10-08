@@ -202,6 +202,18 @@ impl Transcript {
             .collect()
     }
 
+    pub fn last_reply(&self) -> String {
+        self.items
+            .iter()
+            .rev()
+            .take_while(|i| !matches!(i, Item::User { .. }))
+            .find_map(|i| match i {
+                Item::Text { source, .. } if !source.trim().is_empty() => Some(source.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
     /// Seconds the live run has taken so far.
     pub fn elapsed(&self) -> Option<u64> {
         self.run.as_ref().map(|r| r.since.elapsed().as_secs())

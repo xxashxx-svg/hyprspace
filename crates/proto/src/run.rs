@@ -52,6 +52,16 @@ impl Launch {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Delegation {
+    pub agent: Agent,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub title: Option<String>,
+    pub task: String,
+}
+
 /// One message from the user: text plus image files to attach.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

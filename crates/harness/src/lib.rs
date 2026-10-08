@@ -11,6 +11,7 @@ pub mod codex;
 mod spawn;
 
 use std::io;
+use std::path::PathBuf;
 
 use hyprspace_proto::{Agent, Answer, Launch, Prompt, RunEvent};
 use tokio::sync::mpsc;
@@ -33,9 +34,19 @@ pub trait Harness: Send + Sync {
 
 /// The default adapter for each agent, running the user's own CLI from PATH.
 pub fn for_agent(agent: Agent) -> Box<dyn Harness> {
+    with_mcp(agent, None)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mcp {
+    pub command: PathBuf,
+    pub args: Vec<String>,
+}
+
+pub fn with_mcp(agent: Agent, mcp: Option<Mcp>) -> Box<dyn Harness> {
     match agent {
-        Agent::Claude => Box::new(Claude::default()),
-        Agent::Codex => Box::new(Codex::default()),
+        Agent::Claude => Box::new(Claude::default().with_mcp(mcp)),
+        Agent::Codex => Box::new(Codex::default().with_mcp(mcp)),
     }
 }
 

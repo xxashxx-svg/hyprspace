@@ -16,7 +16,7 @@ mod drag;
 mod row;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -422,7 +422,17 @@ impl Root {
                 searching: !q.is_empty(),
             });
         }
-        items.extend(active.iter().map(|t| Item::Thread(t.id)));
+        let shown: HashSet<u64> = active.iter().map(|t| t.id).collect();
+        let nested = |t: &Thread| t.parent.is_some_and(|p| shown.contains(&p));
+        for t in active.iter().filter(|t| !nested(t)) {
+            items.push(Item::Thread(t.id));
+            items.extend(
+                active
+                    .iter()
+                    .filter(|c| c.parent == Some(t.id))
+                    .map(|c| Item::Thread(c.id)),
+            );
+        }
         let searching = !q.is_empty();
         let snoozed = threads(|t| t.snooze.is_some(), recent);
         if !snoozed.is_empty() {
@@ -453,7 +463,15 @@ impl Root {
     fn sidebar_item(&self, item: &Item, now: u64, cx: &mut Context<Self>) -> AnyElement {
         match *item {
             Item::Thread(id) => match self.state.thread(id) {
-                Some((_, t)) => slot().child(self.thread_row(t, now, cx)).into_any_element(),
+                Some((_, t)) => slot()
+                    .when(
+                        t.parent
+                            .and_then(|p| self.state.thread(p))
+                            .is_some_and(|(_, p)| p.active()),
+                        |d| d.pl(px(EDGE + 16.)),
+                    )
+                    .child(self.thread_row(t, now, cx))
+                    .into_any_element(),
                 None => div().into_any_element(),
             },
             Item::Shelved(id) => match self.state.thread(id) {

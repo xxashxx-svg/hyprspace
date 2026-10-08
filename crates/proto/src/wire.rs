@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
 use crate::phone::{PhoneCommand, PhoneEvent};
-use crate::run::{Answer, Launch, Prompt, RunEvent};
+use crate::run::{Answer, Delegation, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Entry};
 use crate::update::{UpdateCommand, UpdateEvent};
@@ -31,6 +31,8 @@ pub enum Command {
         launch: Launch,
         prompt: Option<Prompt>,
         journal: Option<String>,
+        #[serde(default)]
+        delegate: bool,
     },
     /// Start a run, or steer the live one: a prompt sent mid-run joins it.
     Send {
@@ -123,6 +125,11 @@ pub enum Command {
     Update(UpdateCommand),
     /// The bridge a paired phone reaches the app through (`phone.rs`).
     Phone(PhoneCommand),
+    Delegated {
+        request: u64,
+        ok: bool,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -211,6 +218,11 @@ pub enum Event {
     Skills(SkillEvent),
     Update(UpdateEvent),
     Phone(PhoneEvent),
+    Delegate {
+        request: u64,
+        parent: SessionId,
+        ask: Delegation,
+    },
 }
 
 #[cfg(test)]
@@ -234,6 +246,12 @@ mod tests {
                 launch: Launch::new(Agent::Claude, "/tmp/x"),
                 prompt: Some(Prompt::text("hi")),
                 journal: Some("thread-4".into()),
+                delegate: true,
+            },
+            Command::Delegated {
+                request: 3,
+                ok: true,
+                text: "Done.".into(),
             },
             Command::Send {
                 id: SessionId(1),

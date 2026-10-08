@@ -45,6 +45,7 @@ pub struct TranscriptView {
     client: Client,
     launch: Launch,
     journal: String,
+    delegate: bool,
     model: Transcript,
     /// A session is open in the engine.
     open: bool,
@@ -81,7 +82,7 @@ impl TranscriptView {
     pub fn new(
         id: SessionId,
         launch: Launch,
-        journal: String,
+        thread: &hyprspace_proto::Thread,
         history: bool,
         first: Option<Prompt>,
         client: Client,
@@ -109,13 +110,14 @@ impl TranscriptView {
             id,
             client,
             launch,
-            journal,
+            journal: thread.journal(),
+            delegate: thread.parent.is_none(),
             model: Transcript::default(),
             open: false,
             loading: history,
             queued: None,
-            queue: Vec::new(),
-            resume_at: None,
+            queue: thread.queue.clone(),
+            resume_at: thread.resume_at,
             input,
             images: Vec::new(),
             scroll: ScrollHandle::new(),
@@ -147,6 +149,10 @@ impl TranscriptView {
         self.status
     }
 
+    pub fn last_reply(&self) -> String {
+        self.model.last_reply()
+    }
+
     /// Seconds the live run has taken, while one is live.
     pub fn elapsed(&self) -> Option<u64> {
         self.model.elapsed()
@@ -164,10 +170,6 @@ impl TranscriptView {
 
     pub fn agent(&self) -> hyprspace_proto::Agent {
         self.launch.agent
-    }
-
-    pub fn set_queue(&mut self, queue: Vec<Prompt>) {
-        self.queue = queue;
     }
 
     pub fn set_resume(&mut self, at: Option<u64>, cx: &mut Context<Self>) {
@@ -279,6 +281,7 @@ impl TranscriptView {
                 launch: self.launch.clone(),
                 prompt: Some(prompt),
                 journal: Some(self.journal.clone()),
+                delegate: self.delegate,
             });
         }
         self.scroll.scroll_to_bottom();

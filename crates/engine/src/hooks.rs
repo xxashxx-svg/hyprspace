@@ -74,7 +74,7 @@ pub fn listen(on: impl Fn(Hook) + Send + 'static) -> std::io::Result<u16> {
 }
 
 /// Read one HTTP request and return its body. Bounded so a malformed request can't wedge the thread.
-fn read_request(s: &mut TcpStream) -> Option<String> {
+pub(crate) fn read_request(s: &mut TcpStream) -> Option<String> {
     s.set_read_timeout(Some(Duration::from_secs(3))).ok();
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 4096];

@@ -2,6 +2,7 @@
 // composer, or settings) on the right. It owns the saved state, keeps one view per opened thread
 // so runs go on while another thread is on screen, and routes the engine's events to them.
 
+mod delegate;
 mod render;
 mod settle;
 mod threads;
@@ -115,6 +116,7 @@ pub struct Root {
     pub(crate) agents: Vec<AgentInfo>,
     pub(crate) views: HashMap<u64, View>,
     pub(crate) sessions: HashMap<SessionId, u64>,
+    pub(crate) delegations: HashMap<u64, u64>,
     pub(crate) next_session: u64,
     pub(crate) status: HashMap<u64, Status>,
     /// Threads that finished while off screen, until they are opened.
@@ -293,6 +295,7 @@ impl Root {
             agents: Vec::new(),
             views: HashMap::new(),
             sessions: HashMap::new(),
+            delegations: HashMap::new(),
             next_session: 1,
             status: HashMap::new(),
             unseen: HashSet::new(),
@@ -429,6 +432,11 @@ impl Root {
                     cx.notify();
                 }
             }
+            Event::Delegate {
+                request,
+                parent,
+                ask,
+            } => self.delegate(request, parent, ask, cx),
             Event::Folder(e) => self.folder_event(e, cx),
             Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
             Event::Skills(e) => self.skills.update(cx, |s, cx| s.event(e, window, cx)),

@@ -5,6 +5,7 @@
 //! The library modules (git, usage, skills...) were copied from the Tauri app's Rust and are
 //! called directly for now; each gains a command in proto when the UI first needs it.
 
+pub mod delegate;
 pub mod env;
 mod folder;
 pub mod git;
@@ -143,6 +144,7 @@ async fn serve(
     let journals = store.dir().join("journals");
     let requests = Requests::new(store, tx.clone());
     let folders = Folders::default();
+    let delegates = delegate::Delegates::default();
     let mut structured: HashMap<SessionId, Live> = HashMap::new();
     while let Some(cmd) = rx.next().await {
         match cmd {
@@ -151,9 +153,11 @@ async fn serve(
                 launch,
                 prompt,
                 journal,
+                delegate,
             } => {
                 // the old session's CLI dies with it, before the new one starts
                 structured.remove(&id);
+                let mcp = delegate.then(|| delegates.mcp(id, &tx)).flatten();
                 let agent = launch.agent;
                 let journal = journal.map(|name| {
                     let j = Arc::new(Journal::open(&journal::path(&journals, &name)));
@@ -170,7 +174,7 @@ async fn serve(
                     }
                     let _ = events.unbounded_send(Event::Run { id, event });
                 });
-                match hyprspace_harness::for_agent(agent).start(launch, emit) {
+                match hyprspace_harness::with_mcp(agent, mcp).start(launch, emit) {
                     Ok(session) => {
                         let live = Live { session, journal };
                         if let Some(prompt) = prompt {
@@ -298,6 +302,7 @@ async fn serve(
             Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
             Command::Update(cmd) => update::handle(cmd, tx.clone()),
             Command::Phone(cmd) => phone.command(cmd),
+            Command::Delegated { request, ok, text } => delegates.answer(request, ok, text),
         }
     }
 }

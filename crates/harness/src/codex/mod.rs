@@ -25,6 +25,7 @@ use rpc::{Incoming, Rpc};
 pub struct Codex {
     program: PathBuf,
     patience: Duration,
+    mcp: Option<crate::Mcp>,
 }
 
 impl Default for Codex {
@@ -32,6 +33,7 @@ impl Default for Codex {
         Self {
             program: PathBuf::from("codex"),
             patience: Duration::from_secs(5),
+            mcp: None,
         }
     }
 }
@@ -40,6 +42,11 @@ impl Codex {
     /// Runs `program app-server` instead of `codex` from PATH (the tests' fake CLI).
     pub fn with_program(mut self, program: impl Into<PathBuf>) -> Self {
         self.program = program.into();
+        self
+    }
+
+    pub fn with_mcp(mut self, mcp: Option<crate::Mcp>) -> Self {
+        self.mcp = mcp;
         self
     }
 
@@ -62,9 +69,16 @@ fn policy(permission: Permission) -> (&'static str, &'static str) {
 }
 
 /// `thread/start` or `thread/resume` and its params.
-fn thread_request(launch: &Launch) -> (&'static str, Value) {
+fn thread_request(launch: &Launch, mcp: Option<&crate::Mcp>) -> (&'static str, Value) {
     let (approval, sandbox) = policy(launch.permission);
     let mut p = json!({ "approvalPolicy": approval, "sandbox": sandbox });
+    if let Some(mcp) = mcp {
+        p["config"] = json!({ "mcp_servers.hyprspace": {
+            "command": mcp.command,
+            "args": mcp.args,
+            "tool_timeout_sec": 86400,
+        }});
+    }
     if let Some(model) = &launch.model {
         p["model"] = json!(model);
     }
@@ -114,6 +128,7 @@ impl Harness for Codex {
             thread: String::new(),
             run: None,
             approvals: HashMap::new(),
+            mcp: self.mcp.clone(),
             tools: HashMap::new(),
             streamed: HashSet::new(),
             last_text: None,
@@ -147,7 +162,8 @@ struct Actor {
     thread: String,
     run: Option<Run>,
     /// Approval requests waiting on the user, with the JSON-RPC id to answer.
-    approvals: HashMap<String, Value>,
+    approvals: HashMap<String, (Value, bool)>,
+    mcp: Option<crate::Mcp>,
     /// Tool items in flight. A file-change approval names only the item, so its edits come
     /// from here.
     tools: HashMap<String, Tool>,
@@ -222,7 +238,7 @@ impl Actor {
         });
         self.rpc.request("initialize", hello).await?;
         self.rpc.notify("initialized");
-        let (method, params) = thread_request(&self.launch);
+        let (method, params) = thread_request(&self.launch, self.mcp.as_ref());
         let opened = self.rpc.request(method, params).await?;
         self.thread = text(&opened["thread"]["id"]);
         let cwd = opened["cwd"].as_str().map(PathBuf::from);
@@ -274,13 +290,15 @@ impl Actor {
                 }
             }
             Input::Answer { request, answer } => {
-                if let Some(id) = self.approvals.remove(&request) {
-                    let decision = match answer {
-                        Answer::Allow => "accept",
-                        Answer::AllowAlways => "acceptForSession",
-                        Answer::Deny => "decline",
+                if let Some((id, elicit)) = self.approvals.remove(&request) {
+                    let reply = match (elicit, answer) {
+                        (true, Answer::Deny) => json!({ "action": "decline" }),
+                        (true, _) => json!({ "action": "accept", "content": {} }),
+                        (false, Answer::Allow) => json!({ "decision": "accept" }),
+                        (false, Answer::AllowAlways) => json!({ "decision": "acceptForSession" }),
+                        (false, Answer::Deny) => json!({ "decision": "decline" }),
                     };
-                    self.rpc.respond(&id, json!({ "decision": decision }));
+                    self.rpc.respond(&id, reply);
                 }
             }
         }
@@ -336,6 +354,11 @@ impl Actor {
                 .get(params["itemId"].as_str().unwrap_or_default())
                 .cloned()
                 .unwrap_or(Tool::Edit { changes: vec![] }),
+            "mcpServer/elicitation/request" => Tool::Mcp {
+                server: text(&params["serverName"]),
+                tool: String::new(),
+                input: text(&params["message"]),
+            },
             // anything else must still get an answer, or the turn waits forever
             _ => {
                 let message = format!("HyprSpace does not answer {method} yet.");
@@ -344,13 +367,13 @@ impl Actor {
             }
         };
         let request = key(&id);
-        self.approvals.insert(request.clone(), id);
+        let elicit = matches!(tool, Tool::Mcp { .. });
+        self.approvals.insert(request.clone(), (id, elicit));
         (self.emit)(RunEvent::Approval {
             request,
             tool,
             reason: params["reason"].as_str().map(str::to_string),
-            // both request kinds take "acceptForSession"
-            always: true,
+            always: !elicit,
         });
     }
 
@@ -580,7 +603,7 @@ mod tests {
     #[test]
     fn permissions_map_to_codex_presets() {
         let mut launch = Launch::new(Agent::Codex, "/w");
-        let (method, p) = thread_request(&launch);
+        let (method, p) = thread_request(&launch, None);
         assert_eq!(method, "thread/start");
         assert_eq!(p["approvalPolicy"], "on-request");
         assert_eq!(p["sandbox"], "read-only");
@@ -589,7 +612,7 @@ mod tests {
         launch.permission = Permission::Bypass;
         launch.model = Some("gpt-5.5".into());
         launch.resume = Some("th-1".into());
-        let (method, p) = thread_request(&launch);
+        let (method, p) = thread_request(&launch, None);
         assert_eq!(method, "thread/resume");
         assert_eq!(p["threadId"], "th-1");
         assert_eq!(p["sandbox"], "danger-full-access");

@@ -249,9 +249,6 @@ impl Root {
         let view = match &thread.kind {
             ThreadKind::Structured { launch } => {
                 let launch = launch.clone();
-                let journal = thread.journal();
-                let queue = thread.queue.clone();
-                let resume_at = thread.resume_at;
                 let catalog = self
                     .agents
                     .iter()
@@ -259,9 +256,7 @@ impl Root {
                     .map(|a| a.catalog.clone());
                 let v = cx.new(|cx| {
                     let mut v =
-                        TranscriptView::new(session, launch, journal, history, first, client, cx);
-                    v.set_queue(queue);
-                    v.set_resume(resume_at, cx);
+                        TranscriptView::new(session, launch, thread, history, first, client, cx);
                     if let Some(c) = catalog {
                         v.set_catalog(c, cx);
                     }
@@ -360,6 +355,7 @@ impl Root {
         match e {
             TranscriptEvent::Status(s) => {
                 self.set_status(thread, *s);
+                self.delegation_moved(thread, *s, cx);
                 self.tick(cx);
             }
             TranscriptEvent::Started { thread: t, cwd } => {

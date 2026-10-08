@@ -75,6 +75,25 @@ One enum for both CLIs:
 
 The Codex rows follow its own presets. Codex has no plan mode, so Plan reads and never asks.
 
+## Queue, limits and delegation
+
+- **A message sent mid-run waits.** It goes in the thread's queue (`Thread.queue`, saved with the
+  state) and sends when the run finishes as Done. Steer sends one now, into the live run. A stopped
+  run and a restart hold the queue until the user sends.
+- **A usage limit continues by itself.** Claude's rejected `rate_limit_event` (with `resetsAt`) or
+  its `rate_limit` error, and Codex's `usageLimitExceeded`, become `RunEvent::Limited`. The UI saves
+  `Thread.resume_at`: the CLI's reset time, else the usage meter's spent window, else 30 minutes,
+  plus a minute. When it comes, the thread gets a continue message. Any message sent before that
+  cancels it.
+- **Delegation is an MCP tool.** A top-level structured session gets the `hyprspace` MCP server:
+  our own binary as `hyprspace mcp <port> <token>`, passed to Claude as an `--mcp-config` file and
+  to Codex as `config` on `thread/start`. Its one tool, `delegate`, posts to a loopback listener
+  (`engine/src/delegate.rs`), which hands `Event::Delegate` to the UI and holds the call open. The
+  UI starts a child thread (`Thread.parent`) with the parent's folder and permission, and answers
+  with `Command::Delegated` and the child's last reply when it finishes. Stopping the parent stops
+  its children. Children get no tool, so delegation is one level deep. Codex asks about MCP calls
+  with `mcpServer/elicitation/request`, which shows as a normal approval.
+
 ## Journals
 
 Each structured thread appends every prompt, answer and run event to

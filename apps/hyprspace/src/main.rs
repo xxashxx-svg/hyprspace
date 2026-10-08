@@ -35,6 +35,7 @@ fn hook(args: &[String]) -> bool {
     match cmd.as_str() {
         "agent-hook" => hyprspace_engine::hooks::run_agent_hook(port, session),
         "status-line" => hyprspace_engine::hooks::run_status_line(port, session),
+        "mcp" => hyprspace_engine::delegate::run(port, session),
         _ => return false,
     }
     true
