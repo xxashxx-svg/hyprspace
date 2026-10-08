@@ -75,6 +75,48 @@ pub fn addresses(only_tailscale: bool) -> Vec<IpAddr> {
     lan.into_iter().chain(ts).take(4).collect()
 }
 
+/// The DNS-SD type a phone looks for.
+pub const SERVICE: &str = "_hyprspace._tcp.local.";
+
+/// Says on the local network where the bridge listens, with the certificate's fingerprint so a
+/// phone knows which computer it is. A phone falls back to this when the address it saved stops
+/// answering: the router handed out a new one, or the port was taken and the bridge moved. None
+/// when mDNS can't start, or when the bridge is pinned to one address for a test.
+pub fn announce(port: u16, fingerprint: &str, name: &str) -> Option<mdns_sd::ServiceDaemon> {
+    if pinned().is_some() {
+        return None;
+    }
+    let daemon = mdns_sd::ServiceDaemon::new().ok()?;
+    let host: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let id: String = fingerprint
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(8)
+        .collect();
+    let info = mdns_sd::ServiceInfo::new(
+        SERVICE,
+        &format!("HyprSpace {id}"),
+        &format!("{}.local.", host.trim_matches('-')),
+        "",
+        port,
+        &[("f", fingerprint), ("n", name)][..],
+    )
+    .ok()?
+    // every address the computer has, kept current as they change
+    .enable_addr_auto();
+    daemon.register(info).ok()?;
+    Some(daemon)
+}
+
 fn pinned() -> Option<IpAddr> {
     std::env::var("HYPRSPACE_PHONE_BIND").ok()?.parse().ok()
 }

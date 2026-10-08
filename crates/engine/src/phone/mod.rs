@@ -60,6 +60,8 @@ struct Hub {
     fingerprint: String,
     error: Option<String>,
     tasks: Vec<JoinHandle<()>>,
+    /// The bridge's announcement on the local network, while it listens.
+    mdns: Option<mdns_sd::ServiceDaemon>,
     pairing: Option<Secret>,
     /// When recent pairings and hellos failed, so a phone guessing codes slows to a stop.
     failures: VecDeque<Instant>,
@@ -120,6 +122,7 @@ impl Phone {
             fingerprint: String::new(),
             error: None,
             tasks: Vec::new(),
+            mdns: None,
             pairing: None,
             failures: VecDeque::new(),
             next_conn: 1,
@@ -243,6 +246,9 @@ impl Phone {
         }
         hub.store.set_port(port);
         hub.port = port;
+        if !only_ts {
+            hub.mdns = net::announce(port, &hub.fingerprint, &host_name());
+        }
         for l in listeners {
             hub.tasks
                 .push(tokio::spawn(server::listen(self.clone(), l, tls.clone())));
@@ -748,6 +754,9 @@ impl Hub {
     fn stop(&mut self) {
         for t in self.tasks.drain(..) {
             t.abort();
+        }
+        if let Some(d) = self.mdns.take() {
+            let _ = d.shutdown();
         }
         let conns: Vec<u64> = self.conns.keys().copied().collect();
         for c in conns {

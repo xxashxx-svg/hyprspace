@@ -75,6 +75,10 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private val lock = Any()
 
     @Volatile private var socket: Socket? = null
+    /** The last try found nothing listening at any saved address. */
+    @Volatile private var unreachable = false
+    /** Looks for the computer with this fingerprint on the local network (`find`). */
+    var finder: (suspend (String) -> Found?)? = null
     private var job: Job? = null
     /** Wakes the retry wait early: the app came to the front, or the network came back. */
     private val nudge = Channel<Unit>(Channel.CONFLATED)
@@ -129,7 +133,25 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 return
             }
             if (_conn.value !is Conn.Online) _conn.value = Conn.Connecting
+            unreachable = false
             val why = session(d)
+            // nothing answered where it was saved: look for it on the local network, and go
+            // straight there if it moved
+            if (unreachable) {
+                val found = finder?.invoke(d.id)
+                if (found != null && (found.port != d.port || !d.hosts.containsAll(found.hosts))) {
+                    store.update { saved ->
+                        saved.copy(desktops = saved.desktops.map {
+                            if (it.id != d.id) it else it.copy(
+                                hosts = (found.hosts + it.hosts).distinct().take(6),
+                                port = found.port,
+                                last = found.hosts.first(),
+                            )
+                        })
+                    }
+                    continue
+                }
+            }
             if (why is Conn.Denied) {
                 _conn.value = why
                 return
@@ -147,7 +169,10 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private suspend fun session(d: Desktop): Conn {
         val trust = Pinned(d.id)
         val s = open(d.order(), d.port, trust)
-            ?: return Conn.Offline("Can't reach ${d.name}. Is HyprSpace open there with Phone on?", 0)
+        if (s == null) {
+            unreachable = true
+            return Conn.Offline("Can't reach ${d.name}. Is HyprSpace open there with Phone on?", 0)
+        }
         socket = s
         try {
             send(s, Up.Hello(d.token, deviceName()))

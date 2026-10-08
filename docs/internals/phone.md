@@ -19,6 +19,12 @@ A paired Android phone reaches the desktop app directly, with no server between 
   the phone pings every twenty seconds.
 - **The port** is 47821, or one the OS picks when that is taken. It is saved, so a phone that
   paired once finds it again.
+- **Found again after a move.** A restart can leave the computer on another address (the router
+  handed out a new one) or the bridge on another port (an installed copy and a dev copy both
+  want 47821). The bridge announces itself over mDNS (`_hyprspace._tcp`, with the certificate's
+  fingerprint), and a phone that can't reach any saved address looks for that fingerprint,
+  saves where it is now and connects, with no new pairing. Tailscale addresses don't move, and
+  Tailscale only has no announcement.
 - `HYPRSPACE_PHONE_BIND` pins one address, for tests and a test copy on loopback, where Windows
   doesn't ask about the firewall.
 

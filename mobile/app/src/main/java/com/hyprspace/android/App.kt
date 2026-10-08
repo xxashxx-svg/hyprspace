@@ -34,6 +34,7 @@ class App : Application() {
         store = Store(this, scope)
         link = Link(store, scope)
         notifier = Notifier(this, store)
+        link.finder = { fingerprint -> com.hyprspace.android.net.find(this, fingerprint) }
         Link.deviceName = {
             Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
                 ?: android.os.Build.MODEL

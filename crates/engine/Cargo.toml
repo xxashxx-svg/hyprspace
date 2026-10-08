@@ -28,6 +28,9 @@ tokio-tungstenite = { version = "0.30", default-features = false, features = ["h
 sha2 = "0.10"
 getrandom = "0.3"
 if-addrs = "0.15"
+# the bridge says where it is on the local network, so a paired phone finds it after the
+# computer's address or port changed (phone/net.rs)
+mdns-sd = "0.21"
 
 # the processes under each terminal's shell, to see which agent runs there (running.rs); gpui's
 # screen capture already builds this crate
