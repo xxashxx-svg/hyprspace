@@ -37,6 +37,10 @@ on:
         description: "Also build + attach the Android app (mobile/)"
         type: boolean
         default: true
+      desktop:
+        description: "Build Windows and macOS. Off rebuilds only the APK for an existing release."
+        type: boolean
+        default: true
 
 env:
   RELEASES_REPO: xxashxx-svg/hyprspace
@@ -46,6 +50,7 @@ env:
 
 jobs:
   windows:
+    if: inputs.desktop
     runs-on: windows-latest
     timeout-minutes: 90
     permissions:
@@ -250,6 +255,8 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Restore the signing key
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
