@@ -1,5 +1,4 @@
-// Settings, Usage, Limits: each plan's windows as how much is left, with when they reset. The
-// popover under the ring draws the same rows, stacked to fit its width.
+// Settings, Usage, Limits: each plan's windows as how much is left, with when they reset.
 
 use chrono::{Local, TimeZone};
 use gpui::{AnyElement, Div, FontWeight, Hsla, IntoElement, div, prelude::*, px, relative};
@@ -14,7 +13,7 @@ use crate::colors;
 use crate::time::ago;
 
 /// When a window resets, as a clock time: "11:20 PM" today, "Fri 9:00 AM" further out.
-fn clock(ms: i64, now: i64) -> String {
+pub(super) fn clock(ms: i64, now: i64) -> String {
     let Some(t) = Local.timestamp_millis_opt(ms).single() else {
         return String::new();
     };
@@ -87,8 +86,8 @@ fn track(left: f32, tint: Hsla, used: Option<String>, chip: Option<String>) -> D
         }))
 }
 
-/// Settings puts the numbers beside the bar; the narrow popover stacks the bar under them.
-fn lay(label: &str, number: Div, sub: String, bar: Div, wide: bool) -> AnyElement {
+/// The numbers beside the bar.
+fn lay(label: &str, number: Div, sub: String, bar: Div) -> AnyElement {
     let label = div()
         .text_size(px(12.5))
         .font_weight(FontWeight::SEMIBOLD)
@@ -98,24 +97,6 @@ fn lay(label: &str, number: Div, sub: String, bar: Div, wide: bool) -> AnyElemen
         .text_size(px(11.5))
         .text_color(colors::text3())
         .child(sub);
-    if !wide {
-        return div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .p(px(14.))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .child(label)
-                    .child(number),
-            )
-            .child(bar)
-            .child(sub)
-            .into_any_element();
-    }
     div()
         .flex()
         .items_center()
@@ -137,7 +118,7 @@ fn lay(label: &str, number: Div, sub: String, bar: Div, wide: bool) -> AnyElemen
 }
 
 /// A limit window: how much is left, the bar, and when it comes back.
-pub(super) fn limit_row(w: &Win, tint: Hsla, now: i64, wide: bool) -> AnyElement {
+fn limit_row(w: &Win, tint: Hsla, now: i64) -> AnyElement {
     let gone = w.expired(now);
     let used = w.pct.round() as i64;
     let left = 100 - used;
@@ -170,10 +151,10 @@ pub(super) fn limit_row(w: &Win, tint: Hsla, now: i64, wide: bool) -> AnyElement
         (!gone).then(|| format!("{used}% used")),
         w.resets_at.filter(|_| !gone).map(|r| clock(r, now)),
     );
-    lay(&w.label, number, sub, bar, wide)
+    lay(&w.label, number, sub, bar)
 }
 
-pub(super) fn extra_row(x: &LiveExtra, tint: Hsla, wide: bool) -> AnyElement {
+fn extra_row(x: &LiveExtra, tint: Hsla) -> AnyElement {
     let cur = if x.currency.as_deref() == Some("USD") {
         "$"
     } else {
@@ -189,7 +170,6 @@ pub(super) fn extra_row(x: &LiveExtra, tint: Hsla, wide: bool) -> AnyElement {
         ),
         "This month".to_string(),
         track(pct as f32, tint, Some(format!("{pct}% used")), None),
-        wide,
     )
 }
 
@@ -202,13 +182,9 @@ fn limit_card(b: &Block, note_text: Option<String>, now: i64) -> AnyElement {
             "now" => "Updated just now".to_string(),
             a => format!("Updated {a} ago"),
         });
-    let mut items: Vec<AnyElement> = b
-        .windows
-        .iter()
-        .map(|w| limit_row(w, tint, now, true))
-        .collect();
+    let mut items: Vec<AnyElement> = b.windows.iter().map(|w| limit_row(w, tint, now)).collect();
     if let Some(x) = &b.extra {
-        items.push(extra_row(x, tint, true));
+        items.push(extra_row(x, tint));
     }
     card(id, b.agent.name(), b.plan.clone(), age)
         .child(rows(items))
