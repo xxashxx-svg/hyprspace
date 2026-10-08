@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.13 — 2026-10-08
+
+- The usage popover is smaller: one line per limit, with how much is left and when it resets
+
 ## 0.24.12 — 2026-10-08
 
 - Your phone can snooze threads and send photos to threads on this computer.
