@@ -29,16 +29,18 @@ Ash runs many threads and clears finished ones all the time. Archiving only hid 
 agent kept running, and a Claude process holds a few hundred MB, so a day of work left dozens of
 idle agents behind. Settle and snooze replaced it.
 
-- **Settling frees the session.** An idle settled thread's terminal and agent close, and the
-  conversation resumes when the thread is opened again. A busy one finishes its turn first, and one
-  waiting on an approval keeps its question. A plain shell keeps its terminal, since it has
-  nothing to resume and may be running a dev server.
+- **Settling frees the session, once it's known to be idle.** An idle settled thread's terminal
+  and agent close, and the conversation resumes when the thread is opened again. A working one
+  finishes its turn first, and one waiting on an approval keeps its question. Only a structured
+  thread and Claude in a terminal (through its hooks) say whether they're working; Codex in a
+  terminal never does, so it keeps running when settled, like a plain shell, which has nothing to
+  resume and may be running a dev server.
 - **Untouched threads settle by themselves** after three days by default (Settings, General).
   "Touched" means a turn started or ended, or the thread came back from Settled or Snoozed. Only
   opening it doesn't count, so the age on its row stays the time of its last activity. The thread
   on screen or at work never settles by itself.
-- **Snooze** hides a thread until a time or until its agent finishes. A snoozed thread keeps its
-  session and wakes at the top of the list marked new.
+- **Snooze** hides a thread until a time or until its agent finishes. A snoozed thread always
+  keeps its session, working or not, and wakes at the top of the list marked new.
 - Opening a settled or snoozed thread doesn't bring it back; sending it a message does. Settling
   and snoozing show a toast with Undo for five seconds.
 - Saved `archived` threads load as settled, and an archived space loads with its threads settled.

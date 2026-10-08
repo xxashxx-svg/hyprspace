@@ -3,9 +3,10 @@
 // until a time, or until its agent finishes, and comes back marked new. Either can be undone for
 // a few seconds from the toast.
 //
-// A settled thread that is idle gives up its terminal and agent process; the conversation
-// resumes when it is opened again. That is what keeps dozens of threads cheap. A plain shell has
-// nothing to resume, and may be running a dev server or a watcher, so it keeps its terminal.
+// A settled thread known to be idle gives up its terminal and agent process; the conversation
+// resumes when it is opened again. That is what keeps dozens of threads cheap. A thread at work
+// keeps going, and a snoozed one always keeps its session. A plain shell has nothing to resume,
+// and Codex in a terminal never says whether it's working, so both keep their terminal.
 
 use std::time::{Duration, Instant};
 
@@ -13,7 +14,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window, div,
     prelude::*, px,
 };
-use hyprspace_proto::{Snooze, ThreadKind};
+use hyprspace_proto::{Agent, Snooze, ThreadKind};
 
 use super::{Root, Screen};
 use crate::assets::icon;
@@ -54,19 +55,20 @@ impl Root {
         self.screen == Screen::Thread(thread)
     }
 
-    /// Gives up an idle thread's session when its conversation can resume; a busy one keeps it
-    /// until its turn ends.
+    /// Gives up a thread's session when it is known to be idle and its conversation can resume.
+    /// Only a structured thread and Claude in a terminal (through its hooks) say whether they're
+    /// working, so anything else keeps running.
     pub(crate) fn free(&mut self, thread: u64) {
-        let resumes = self
+        let knowable = self
             .state
             .thread(thread)
             .is_some_and(|(_, t)| match &t.kind {
                 ThreadKind::Structured { .. } => true,
-                ThreadKind::Terminal { run, .. } => {
-                    run.as_ref().is_some_and(|l| l.resume.is_some())
-                }
+                ThreadKind::Terminal { run, .. } => run
+                    .as_ref()
+                    .is_some_and(|l| l.agent == Agent::Claude && l.resume.is_some()),
             });
-        if resumes && !self.busy(thread) {
+        if knowable && !self.busy(thread) {
             self.drop_view(thread);
         }
     }
@@ -284,13 +286,14 @@ impl Root {
             Screen::Thread(id) => Some(id),
             _ => None,
         };
-        // a shelved thread opened for a look gives its session back once it is off screen
+        // a settled thread opened for a look gives its session back once it is off screen; a
+        // snoozed one keeps it
         let looked: Vec<u64> = self
             .views
             .keys()
             .copied()
             .filter(|id| {
-                !self.on_screen(*id) && self.state.thread(*id).is_some_and(|(_, t)| !t.active())
+                !self.on_screen(*id) && self.state.thread(*id).is_some_and(|(_, t)| t.settled)
             })
             .collect();
         for id in looked {
