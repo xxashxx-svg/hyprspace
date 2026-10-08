@@ -288,6 +288,24 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 break;
             }
         }
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("proj")).unwrap();
+        std::fs::create_dir(root.path().join(".hidden")).unwrap();
+        std::fs::write(root.path().join("notes.txt"), "x").unwrap();
+        say(
+            &mut ws,
+            &Up::Folders {
+                path: root.path().display().to_string(),
+            },
+        )
+        .await;
+        loop {
+            if let Down::Folders { dirs, parent, .. } = hear(&mut ws).await {
+                assert_eq!(dirs, vec![root.path().join("proj").display().to_string()]);
+                assert!(parent.is_some());
+                break;
+            }
+        }
         token
     });
     wait(&mut events, |e| match e {

@@ -72,6 +72,11 @@ pub enum Up {
         ask: Ask,
     },
     Ping,
+    /// The folders inside `path` on the computer, empty for the home folder. Answered with
+    /// `Folders`.
+    Folders {
+        path: String,
+    },
 }
 
 /// What the phone asks the desktop's UI to do. Each one goes through the same code as the
@@ -95,6 +100,9 @@ pub enum Ask {
     /// A new thread in `space`.
     New {
         space: u64,
+        /// A folder to start in instead of `space`. It becomes a space if it isn't one yet.
+        #[serde(default)]
+        folder: Option<String>,
         start: NewThread,
     },
     /// Settles a thread, or brings it back.
@@ -159,6 +167,11 @@ pub enum Down {
         message: String,
     },
     Pong,
+    Folders {
+        path: String,
+        parent: Option<String>,
+        dirs: Vec<String>,
+    },
 }
 
 /// Everything the phone's home screen shows: the sidebar, what can start a thread, and the
@@ -453,6 +466,7 @@ mod tests {
         let up = Up::Ask {
             ask: Ask::New {
                 space: 3,
+                folder: None,
                 start: NewThread {
                     agent: Some(Agent::Claude),
                     model: "opus".into(),
@@ -728,6 +742,11 @@ mod tests {
                 message: "gone".into(),
             },
             Down::Pong,
+            Down::Folders {
+                path: "C:\\Users\\ash".into(),
+                parent: Some("C:\\Users".into()),
+                dirs: vec!["C:\\Users\\ash\\code".into()],
+            },
         ];
         let up = [
             Up::Hello {
@@ -776,7 +795,8 @@ mod tests {
             },
             Up::Ask {
                 ask: Ask::New {
-                    space: 1,
+                    space: 0,
+                    folder: Some("/home/ash/code".into()),
                     start: NewThread {
                         agent: None,
                         model: String::new(),
@@ -794,6 +814,9 @@ mod tests {
                 },
             },
             Up::Leave,
+            Up::Folders {
+                path: String::new(),
+            },
             Up::Ping,
         ];
         let lines = |all: Vec<String>| all.join("\n") + "\n";

@@ -125,7 +125,7 @@ fn diff(cwd: &Path, path: &str) -> Result<String, String> {
 
 /// One level of a folder: folders first, then files, each by name ignoring case. `.git` is left
 /// out; nobody browses it from a file tree.
-fn list_dir(path: &Path) -> Result<Vec<DirEntry>, String> {
+pub(crate) fn list_dir(path: &Path) -> Result<Vec<DirEntry>, String> {
     let rd = std::fs::read_dir(path).map_err(|e| e.to_string())?;
     let mut out: Vec<(String, DirEntry)> = rd
         .flatten()

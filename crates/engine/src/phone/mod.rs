@@ -470,6 +470,29 @@ impl Phone {
                     let _ = c.tx.unbounded_send(Down::Pong);
                 }
             }
+            Up::Folders { path } => {
+                let me = self.clone();
+                tokio::task::spawn_blocking(move || {
+                    let path = match path.trim() {
+                        "" => crate::util::home_dir(),
+                        p => PathBuf::from(p),
+                    };
+                    let dirs = crate::folder::list_dir(&path)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|e| e.dir && !e.name.starts_with('.'))
+                        .map(|e| path.join(e.name).display().to_string())
+                        .collect();
+                    let down = Down::Folders {
+                        path: path.display().to_string(),
+                        parent: path.parent().map(|p| p.display().to_string()),
+                        dirs,
+                    };
+                    if let Some(c) = me.hub().conns.get(&conn) {
+                        let _ = c.tx.unbounded_send(down);
+                    }
+                });
+            }
             Up::Leave => {
                 let mut hub = self.hub();
                 if let Some(device) = hub.conns.get(&conn).map(|c| c.device.clone()) {

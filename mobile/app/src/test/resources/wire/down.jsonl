@@ -5,3 +5,4 @@
 {"type":"term","frame":{"thread":3,"cols":40,"rows":20,"reset":true,"drop":1,"len":2,"lines":[[1,[{"t":"ok","fg":2,"bg":17834032,"s":9},{"t":" plain"}]]],"cursor":[1,4],"fit":true,"paste":true}}
 {"type":"failed","thread":2,"message":"gone"}
 {"type":"pong"}
+{"type":"folders","path":"C:\\Users\\ash","parent":"C:\\Users","dirs":["C:\\Users\\ash\\code"]}

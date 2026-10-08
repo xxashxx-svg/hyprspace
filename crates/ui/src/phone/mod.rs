@@ -266,7 +266,16 @@ impl Root {
                     self.settle(thread, on, window, cx);
                 }
             }
-            Ask::New { space, start } => {
+            Ask::New {
+                space,
+                folder,
+                start,
+            } => {
+                let space = match folder.map(std::path::PathBuf::from) {
+                    Some(f) if f.is_dir() => self.add_project(f, cx),
+                    Some(_) => return,
+                    None => space,
+                };
                 let Some(cwd) = self.state.space(space).and_then(|s| s.cwd.clone()) else {
                     return;
                 };

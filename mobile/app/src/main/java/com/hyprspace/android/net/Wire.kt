@@ -107,6 +107,9 @@ sealed interface Up {
 
     @Serializable @SerialName("ping")
     data object Ping : Up
+
+    @Serializable @SerialName("folders")
+    data class Folders(val path: String = "") : Up
 }
 
 @Serializable
@@ -121,7 +124,7 @@ sealed interface Ask {
     data class Interrupt(val thread: Long) : Ask
 
     @Serializable @SerialName("new")
-    data class New(val space: Long, val start: NewThread) : Ask
+    data class New(val space: Long, val start: NewThread, val folder: String? = null) : Ask
 
     @Serializable @SerialName("settle")
     data class Settle(val thread: Long, val on: Boolean) : Ask
@@ -161,6 +164,9 @@ sealed interface Down {
 
     @Serializable @SerialName("pong")
     data object Pong : Down
+
+    @Serializable @SerialName("folders")
+    data class Folders(val path: String, val parent: String? = null, val dirs: List<String> = emptyList()) : Down
 }
 
 @Serializable

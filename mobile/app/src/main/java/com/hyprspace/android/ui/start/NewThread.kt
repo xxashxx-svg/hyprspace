@@ -28,6 +28,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hyprspace.android.App
 import com.hyprspace.android.R
 import com.hyprspace.android.net.Agent
@@ -55,6 +57,7 @@ import com.hyprspace.android.net.NewThread
 import com.hyprspace.android.net.Permission
 import com.hyprspace.android.ui.AgentMark
 import com.hyprspace.android.ui.LocalHues
+import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.SpaceTag
 import com.hyprspace.android.ui.clickableQuiet
 
@@ -81,6 +84,8 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
     var permission by remember { mutableStateOf(board.start.permission) }
     var terminal by remember { mutableStateOf(true) }
     var prompt by remember { mutableStateOf("") }
+    var folder by remember { mutableStateOf<String?>(null) }
+    var browsing by remember { mutableStateOf(false) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = h.surface2) {
@@ -93,15 +98,27 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (browsing) {
+                FolderBrowser(
+                    app,
+                    onPick = { folder = it; browsing = false },
+                    onBack = { browsing = false },
+                )
+                return@Column
+            }
             Text("New thread", style = MaterialTheme.typography.titleLarge, color = h.text1)
 
             Field("Space") {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (s in order) {
-                        Chip(on = s.id == spaceId, onClick = { spaceId = s.id }) {
+                        Chip(on = folder == null && s.id == spaceId, onClick = { spaceId = s.id; folder = null }) {
                             SpaceTag(s, 16.dp)
                             Text(s.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                    }
+                    Chip(on = folder != null, onClick = { browsing = true; app.link.browse(folder ?: "") }) {
+                        Icon(painterResource(R.drawable.ic_folder), null, Modifier.size(14.dp))
+                        Text(folder?.let(::leaf) ?: "Other folder", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -183,7 +200,7 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
             Button(
                 onClick = {
                     val start = NewThread(agent, model, effort, permission, terminal || agent == null, prompt.trim())
-                    if (app.link.ask(Ask.New(spaceId, start))) {
+                    if (app.link.ask(Ask.New(if (folder != null) 0 else spaceId, start, folder))) {
                         onStarted(spaceId)
                         onDismiss()
                     }
@@ -196,6 +213,68 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
             }
             Spacer(Modifier.height(8.dp))
         }
+    }
+}
+
+private fun leaf(path: String): String =
+    path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/').ifEmpty { path }
+
+@Composable
+private fun FolderBrowser(app: App, onPick: (String) -> Unit, onBack: () -> Unit) {
+    val h = LocalHues.current
+    val here by app.link.folders.collectAsStateWithLifecycle()
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(painterResource(R.drawable.ic_arrow_left), "Back", Modifier.size(20.dp), tint = h.text1)
+            }
+            Text("Choose a folder", style = MaterialTheme.typography.titleLarge, color = h.text1)
+        }
+        val f = here
+        if (f == null) {
+            Text("Loading", style = MaterialTheme.typography.bodyMedium, color = h.text3)
+            return@Column
+        }
+        Text(f.path, fontFamily = Mono, style = MaterialTheme.typography.bodySmall, color = h.text2)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(h.ink(0.04f))) {
+            f.parent?.let { up ->
+                FolderRow(R.drawable.ic_arrow_up, "Up a level") { app.link.browse(up) }
+            }
+            for (d in f.dirs) {
+                FolderRow(R.drawable.ic_folder, leaf(d)) { app.link.browse(d) }
+            }
+            if (f.dirs.isEmpty()) {
+                Text(
+                    "No folders in here.",
+                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = h.text3,
+                )
+            }
+        }
+        Button(
+            onClick = { onPick(f.path) },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = h.accent, contentColor = h.onAccent),
+        ) {
+            Text("Use ${leaf(f.path)}", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun FolderRow(icon: Int, label: String, onClick: () -> Unit) {
+    val h = LocalHues.current
+    Row(
+        Modifier.fillMaxWidth().clickableQuiet(onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(painterResource(icon), null, Modifier.size(16.dp), tint = h.text3)
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = h.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(14.dp), tint = h.text3)
     }
 }
 

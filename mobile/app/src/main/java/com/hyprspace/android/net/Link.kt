@@ -67,6 +67,8 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private val _failures = MutableSharedFlow<String>(extraBufferCapacity = 8)
     /** Things the computer couldn't do, worded for the user. */
     val failures: SharedFlow<String> = _failures
+    private val _folders = MutableStateFlow<Down.Folders?>(null)
+    val folders: StateFlow<Down.Folders?> = _folders
 
     private val transcripts = HashMap<Long, Pair<Transcript, MutableStateFlow<TranscriptView>>>()
     private val terms = HashMap<Long, Pair<TermBuffer, MutableStateFlow<TermView>>>()
@@ -313,6 +315,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 flow.value = b.apply(d.frame)
             }
             is Down.Failed -> _failures.tryEmit(d.message)
+            is Down.Folders -> _folders.value = d
             is Down.Welcome, is Down.Denied, Down.Pong -> {}
         }
     }
@@ -323,6 +326,11 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     fun term(thread: Long): StateFlow<TermView> = synchronized(lock) {
         terms.getOrPut(thread) { TermBuffer() to MutableStateFlow(TermView()) }.second
+    }
+
+    fun browse(path: String) {
+        _folders.value = null
+        send(Up.Folders(path))
     }
 
     fun watch(thread: Long) {
