@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.8 — 2026-10-08
+
+- From your phone, start a thread in any folder on the computer, not only in a space you already have.
+- Shorter wording in the phone app's Settings.
+
 ## 0.24.7 — 2026-10-08
 
 - Fixes pairing the Android app with this version of the desktop.
