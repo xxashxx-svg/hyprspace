@@ -70,8 +70,20 @@ private fun Camera(onFound: (PairLink) -> Unit) {
     val ctx = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val worker = remember { Executors.newSingleThreadExecutor() }
+    // the reader comes from Google Play services; a phone without it gets the typed code instead
     val scanner = remember {
-        BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+        runCatching {
+            BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+        }.getOrNull()
+    }
+    if (scanner == null) {
+        Text(
+            "This phone can't read QR codes here. Go back and type the code instead.",
+            Modifier.padding(24.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+        )
+        return
     }
     var done by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
