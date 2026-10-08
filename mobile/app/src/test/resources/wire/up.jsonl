@@ -1,0 +1,14 @@
+{"type":"hello","token":"tok","device":"Pixel","protocol":1}
+{"type":"pair","code":"K7MX-Q2RT","device":"Pixel","protocol":1}
+{"type":"watch","thread":2}
+{"type":"unwatch","thread":2}
+{"type":"fit","thread":3,"cols":40,"rows":20}
+{"type":"unfit","thread":3}
+{"type":"keys","thread":3,"text":"\u001b[A"}
+{"type":"paste","thread":3,"text":"a\nb"}
+{"type":"ask","ask":{"type":"send","thread":2,"text":"go"}}
+{"type":"ask","ask":{"type":"approve","thread":2,"request":"r","answer":"deny"}}
+{"type":"ask","ask":{"type":"interrupt","thread":2}}
+{"type":"ask","ask":{"type":"new","space":1,"start":{"agent":null,"model":"","effort":"","permission":"plan","terminal":true,"prompt":""}}}
+{"type":"ask","ask":{"type":"settle","thread":2,"on":false}}
+{"type":"ping"}

@@ -10,7 +10,7 @@ members = [
     "crates/update",
     "apps/hyprspace",
 ]
-# The Android app is its own Expo project, not part of this workspace.
+# The Android app is its own Gradle project, not part of this workspace.
 exclude = ["mobile"]
 
 [workspace.package]

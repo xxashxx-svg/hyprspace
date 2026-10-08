@@ -12,7 +12,8 @@ use crate::assets::icon;
 use crate::time::{ago, local, now_ms};
 use crate::{colors, widgets};
 
-const APP: &str = "https://github.com/xxashxx-svg/hyprspace/releases?q=android";
+/// The releases page: the Android app is the `HyprSpace-android.apk` asset on a release.
+const APP: &str = "https://github.com/xxashxx-svg/hyprspace/releases";
 
 impl Root {
     pub(super) fn phone_page(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -95,7 +96,19 @@ impl Root {
         if prefs.on && status.on {
             page = page.child(group("Pair a phone", vec![self.pairing_row(cx)]));
         }
-        page = page.child(group("Paired phones", self.device_rows(cx)));
+        let mut paired = self.device_rows(cx);
+        if !status.security.is_empty() {
+            paired.push(row(
+                "Security code",
+                "A phone paired by typing the code shows this code too. If the two differ, forget that phone.",
+                div()
+                    .font_family(hyprspace_theme::MONO)
+                    .text_size(px(13.))
+                    .text_color(colors::text1())
+                    .child(status.security.clone()),
+            ));
+        }
+        page = page.child(group("Paired phones", paired));
         page.child(group(
             "What your phone gets",
             vec![
@@ -116,7 +129,7 @@ impl Root {
                 ),
                 row(
                     "Get the app",
-                    "HyprSpace for Android is on the releases page.",
+                    "Download HyprSpace-android.apk from a release on GitHub and open it on your phone.",
                     widgets::button_frame("phone-get")
                         .gap(px(6.))
                         .child("Open")

@@ -55,3 +55,23 @@ bash scripts/package-macos.sh         # target/package: HyprSpace.app, its .app.
 A Mac build without the Apple secrets is signed ad hoc and not notarized, so its first launch is
 blocked: right-click the app, Open, then Open (once), or System Settings, Privacy & Security, Open
 Anyway. A locally built app never updates itself.
+
+## The Android app
+
+`mobile/` is a Gradle project: Kotlin, Compose, AGP 9. It needs JDK 17 and the Android SDK
+(`ANDROID_HOME`, or `sdk.dir` in `mobile/local.properties`) with platform 37.
+
+```bash
+cd mobile
+./gradlew assembleDebug          # app/build/outputs/apk/debug, installs as "com.hyprspace.android.dev"
+./gradlew testDebugUnitTest      # the wire fixtures, the transcript, terminal frames, pairing links
+./gradlew assembleRelease        # shrunk; signed with the debug key unless the release variables are set
+```
+
+To try it against a dev build, set `HYPRSPACE_PHONE_BIND=127.0.0.1` for the desktop: the bridge
+stays on loopback, so no firewall asks about it, and an emulator reaches it at `10.0.2.2`. Pair
+by opening the QR code's link with the host swapped, `adb shell am start -d
+"hyprspace://pair?...&h=10.0.2.2&..."`, or type `10.0.2.2:47821` and the code by hand.
+
+A change to `crates/proto/src/phone.rs` or the types it carries rewrites the fixtures the app's
+tests read: `HYPRSPACE_WRITE_FIXTURES=1 cargo test -p hyprspace-proto phone`.

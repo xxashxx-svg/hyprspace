@@ -162,6 +162,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             id: 1,
             name: "w".into(),
             path: "/w".into(),
+            ..Default::default()
         }],
         threads: vec![BoardThread {
             id: 7,

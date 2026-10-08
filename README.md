@@ -33,6 +33,13 @@ irm https://hyprspace.dev/install.ps1 | iex
 Or download the `.dmg` or `.exe` from [GitHub Releases](https://github.com/xxashxx-svg/hyprspace/releases).
 HyprSpace runs on Windows and on macOS with Apple silicon, and an installed copy updates itself.
 
+## On your phone
+
+The Android app shows your threads wherever you are on your network or Tailscale: follow your
+agents, answer them, type into terminals and start new work. On the desktop, switch on Settings,
+Phone, then install `HyprSpace-android.apk` from a release and scan the code. It talks to your
+computer directly; nothing goes through a server.
+
 ## Some notes
 
 HyprSpace is early. Expect bugs.

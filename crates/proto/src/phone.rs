@@ -162,6 +162,8 @@ pub struct BoardSpace {
     pub id: u64,
     pub name: String,
     pub path: String,
+    /// The fill and lettering of its tag, light side then dark, 0xRRGGBBAA.
+    pub tag: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -395,6 +397,9 @@ pub struct PhoneStatus {
     /// Why it isn't listening. User-facing.
     pub error: Option<String>,
     pub devices: Vec<Device>,
+    /// Eight characters of the certificate's fingerprint. A phone paired by typing the code
+    /// shows the same, to compare.
+    pub security: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -459,5 +464,341 @@ mod tests {
         let json = serde_json::to_string(&frame).unwrap();
         assert!(json.contains(r#"[1,[{"t":"hi","fg":2}]]"#), "{json}");
         assert_eq!(serde_json::from_str::<Down>(&json).unwrap(), frame);
+    }
+
+    /// One of every message, in the shapes the Android app reads and writes. The same lines sit
+    /// in mobile/app/src/test/resources/wire, where the app's tests decode them, so a change on
+    /// either side that the other misses fails a test. `HYPRSPACE_WRITE_FIXTURES=1` rewrites them.
+    #[test]
+    fn the_phone_reads_and_writes_these_exact_lines() {
+        use crate::agents::{AgentCatalog, AgentInfo, ModelInfo, ProviderStatus};
+        use crate::run::{ChangeKind, FileChange, Prompt, RunEvent, RunStatus, Tool};
+        use crate::state::Entry;
+        let tool = |kind: &str| match kind {
+            "command" => Tool::Command {
+                command: "cd \"C:\\w\" && npm test".into(),
+            },
+            "read" => Tool::Read {
+                path: "src/a.ts".into(),
+            },
+            "edit" => Tool::Edit {
+                changes: vec![FileChange {
+                    path: "src/a.ts".into(),
+                    kind: ChangeKind::Update,
+                    diff: "@@\n-a\n+b".into(),
+                }],
+            },
+            "search" => Tool::Search {
+                pattern: "next".into(),
+                path: None,
+            },
+            "web" => Tool::Web {
+                target: "https://example.com".into(),
+            },
+            "mcp" => Tool::Mcp {
+                server: "s".into(),
+                tool: "t".into(),
+                input: "{}".into(),
+            },
+            "agent" => Tool::Agent {
+                description: "Look around".into(),
+                agent_type: "general-purpose".into(),
+                prompt: "Find it".into(),
+            },
+            _ => Tool::Other {
+                name: "Todo".into(),
+                input: "{\"a\":1}".into(),
+            },
+        };
+        let run = |event| Entry::Run { event };
+        let entries = vec![
+            Entry::Prompt {
+                prompt: Prompt {
+                    text: "hi".into(),
+                    images: vec!["C:\\a.png".into()],
+                },
+            },
+            run(RunEvent::Started {
+                agent: Agent::Claude,
+                model: "claude-opus-5-5".into(),
+                thread: "t".into(),
+                cwd: "/w".into(),
+            }),
+            run(RunEvent::Text { text: "a".into() }),
+            run(RunEvent::Thinking { text: "b".into() }),
+            run(RunEvent::Tool {
+                id: "1".into(),
+                tool: tool("command"),
+            }),
+            run(RunEvent::ToolDone {
+                id: "1".into(),
+                ok: true,
+                output: "ok".into(),
+            }),
+            run(RunEvent::SubagentTool {
+                parent: "2".into(),
+                id: "3".into(),
+                tool: tool("read"),
+            }),
+            run(RunEvent::SubagentToolDone {
+                parent: "2".into(),
+                id: "3".into(),
+                ok: false,
+                output: "no".into(),
+            }),
+            run(RunEvent::SubagentText {
+                parent: "2".into(),
+                text: "c".into(),
+            }),
+            run(RunEvent::Woke),
+            run(RunEvent::Approval {
+                request: "r".into(),
+                tool: tool("edit"),
+                reason: Some("why".into()),
+                always: true,
+            }),
+            Entry::Answer {
+                request: "r".into(),
+                answer: Answer::AllowAlways,
+            },
+            run(RunEvent::Steered),
+            run(RunEvent::Usage {
+                input: 1,
+                output: 2,
+            }),
+            run(RunEvent::Context { used: 3, window: 4 }),
+            run(RunEvent::Error {
+                message: "e".into(),
+            }),
+            run(RunEvent::Finished {
+                status: RunStatus::Interrupted,
+                ms: 5,
+                text: String::new(),
+                error: None,
+            }),
+            run(RunEvent::Failed {
+                message: "f".into(),
+            }),
+        ]
+        .into_iter()
+        .chain(
+            ["search", "web", "mcp", "agent", "other"]
+                .into_iter()
+                .map(|k| {
+                    run(RunEvent::Tool {
+                        id: k.into(),
+                        tool: tool(k),
+                    })
+                }),
+        )
+        .collect();
+        let palette = Palette {
+            bg: 0x161616ff,
+            ansi: vec![0xff0000ff; 16],
+            ..Default::default()
+        };
+        let down = [
+            Down::Welcome {
+                desktop: "Desk".into(),
+                version: "0.25.0".into(),
+                token: Some("tok".into()),
+            },
+            Down::Denied {
+                message: "no".into(),
+            },
+            Down::Board {
+                board: Box::new(Board {
+                    spaces: vec![BoardSpace {
+                        id: 1,
+                        name: "w".into(),
+                        path: "/w".into(),
+                        tag: vec![1, 2, 3, 4],
+                    }],
+                    threads: vec![BoardThread {
+                        id: 2,
+                        space: 1,
+                        title: "T".into(),
+                        kind: BoardKind::Structured,
+                        agent: Some(Agent::Codex),
+                        model: Some("GPT-5.5".into()),
+                        status: BoardStatus::Waiting,
+                        doing: Some("Run tests".into()),
+                        since: Some(9),
+                        unseen: true,
+                        place: "main".into(),
+                        branch: true,
+                        touched: 8,
+                        shelf: Shelf::Snoozed,
+                        rank: -3,
+                        live: true,
+                    }],
+                    agents: vec![AgentInfo {
+                        agent: Agent::Claude,
+                        status: ProviderStatus {
+                            id: "claude".into(),
+                            installed: true,
+                            ..Default::default()
+                        },
+                        catalog: AgentCatalog {
+                            agent: Agent::Claude,
+                            models: vec![ModelInfo {
+                                id: "opus".into(),
+                                label: "Opus".into(),
+                                note: None,
+                                efforts: vec!["high".into()],
+                                default_effort: Some("high".into()),
+                            }],
+                            efforts: vec!["low".into()],
+                        },
+                    }],
+                    start: StartPrefs {
+                        agent: Some(Agent::Claude),
+                        permission: Permission::Bypass,
+                        picks: vec![(Agent::Claude, "opus".into(), "high".into())],
+                        structured: true,
+                    },
+                    theme: BoardTheme {
+                        scheme: crate::state::Scheme::Dark,
+                        light: palette.clone(),
+                        dark: palette,
+                    },
+                }),
+            },
+            Down::Transcript {
+                thread: 2,
+                entries,
+                reset: true,
+            },
+            Down::Term {
+                frame: TermFrame {
+                    thread: 3,
+                    cols: 40,
+                    rows: 20,
+                    reset: true,
+                    drop: 1,
+                    len: 2,
+                    lines: vec![(
+                        1,
+                        vec![
+                            Span {
+                                t: "ok".into(),
+                                fg: Some(2),
+                                bg: Some(Span::RGB | 0x102030),
+                                s: Span::BOLD | Span::INVERSE,
+                            },
+                            Span {
+                                t: " plain".into(),
+                                ..Default::default()
+                            },
+                        ],
+                    )],
+                    cursor: Some((1, 4)),
+                    fit: true,
+                    paste: true,
+                },
+            },
+            Down::Failed {
+                thread: Some(2),
+                message: "gone".into(),
+            },
+            Down::Pong,
+        ];
+        let up = [
+            Up::Hello {
+                token: "tok".into(),
+                device: "Pixel".into(),
+                protocol: PROTOCOL,
+            },
+            Up::Pair {
+                code: "K7MX-Q2RT".into(),
+                device: "Pixel".into(),
+                protocol: PROTOCOL,
+            },
+            Up::Watch { thread: 2 },
+            Up::Unwatch { thread: 2 },
+            Up::Fit {
+                thread: 3,
+                cols: 40,
+                rows: 20,
+            },
+            Up::Unfit { thread: 3 },
+            Up::Keys {
+                thread: 3,
+                text: "\u{1b}[A".into(),
+            },
+            Up::Paste {
+                thread: 3,
+                text: "a\nb".into(),
+            },
+            Up::Ask {
+                ask: Ask::Send {
+                    thread: 2,
+                    text: "go".into(),
+                },
+            },
+            Up::Ask {
+                ask: Ask::Approve {
+                    thread: 2,
+                    request: "r".into(),
+                    answer: Answer::Deny,
+                },
+            },
+            Up::Ask {
+                ask: Ask::Interrupt { thread: 2 },
+            },
+            Up::Ask {
+                ask: Ask::New {
+                    space: 1,
+                    start: NewThread {
+                        agent: None,
+                        model: String::new(),
+                        effort: String::new(),
+                        permission: Permission::Plan,
+                        terminal: true,
+                        prompt: String::new(),
+                    },
+                },
+            },
+            Up::Ask {
+                ask: Ask::Settle {
+                    thread: 2,
+                    on: false,
+                },
+            },
+            Up::Ping,
+        ];
+        let lines = |all: Vec<String>| all.join("\n") + "\n";
+        let down = lines(
+            down.iter()
+                .map(|d| serde_json::to_string(d).unwrap())
+                .collect(),
+        );
+        let up_json = lines(
+            up.iter()
+                .map(|u| serde_json::to_string(u).unwrap())
+                .collect(),
+        );
+        // every line reads back as what it was
+        for (line, u) in up_json.lines().zip(&up) {
+            assert_eq!(&serde_json::from_str::<Up>(line).unwrap(), u);
+        }
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mobile/app/src/test/resources/wire");
+        if std::env::var_os("HYPRSPACE_WRITE_FIXTURES").is_some() {
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("down.jsonl"), &down).unwrap();
+            std::fs::write(dir.join("up.jsonl"), &up_json).unwrap();
+        }
+        let read = |name: &str| {
+            std::fs::read_to_string(dir.join(name))
+                .unwrap_or_default()
+                .replace("\r\n", "\n")
+        };
+        assert_eq!(
+            read("down.jsonl"),
+            down,
+            "the phone's fixtures are stale: run with HYPRSPACE_WRITE_FIXTURES=1 and update the app"
+        );
+        assert_eq!(read("up.jsonl"), up_json, "the phone's fixtures are stale");
     }
 }

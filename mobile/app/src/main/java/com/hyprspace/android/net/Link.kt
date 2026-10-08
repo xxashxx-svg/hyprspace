@@ -1,0 +1,346 @@
+// The connection to the paired computer. It tries every address the computer gave at once and
+// keeps the first that answers, says hello with the phone's token, and reconnects with a
+// growing wait when the line drops. What comes in is kept per thread for the screens to show:
+// the board, each watched transcript and each watched terminal.
+
+package com.hyprspace.android.net
+
+import android.util.Log
+import com.hyprspace.android.BuildConfig
+import com.hyprspace.android.data.Store
+import com.hyprspace.android.model.TermBuffer
+import com.hyprspace.android.model.TermView
+import com.hyprspace.android.model.Transcript
+import com.hyprspace.android.model.Item
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+
+sealed interface Conn {
+    /** Nothing paired yet. */
+    data object None : Conn
+    data object Connecting : Conn
+    data class Online(val desktop: String, val version: String) : Conn
+    /** Lost or couldn't reach it; trying again at [retry] (ms since the epoch). */
+    data class Offline(val message: String, val retry: Long) : Conn
+    /** The computer won't let this phone in until something changes (pair again, update). */
+    data class Denied(val message: String) : Conn
+}
+
+data class TranscriptView(
+    val items: List<Item> = emptyList(),
+    val model: String? = null,
+    val context: Pair<Long, Long>? = null,
+    val loaded: Boolean = false,
+)
+
+private sealed interface WsEvent {
+    data object Open : WsEvent
+    data class Text(val text: String) : WsEvent
+    data class Gone(val why: String) : WsEvent
+}
+
+/** One socket and what it hears, in order. */
+private class Socket(val host: String, val ws: WebSocket, val events: Channel<WsEvent>)
+
+class Link(private val store: Store, private val scope: CoroutineScope) {
+    private val _conn = MutableStateFlow<Conn>(if (store.saved.value.current() == null) Conn.None else Conn.Connecting)
+    val conn: StateFlow<Conn> = _conn
+    private val _board = MutableStateFlow<Board?>(null)
+    val board: StateFlow<Board?> = _board
+    private val _failures = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /** Things the computer couldn't do, worded for the user. */
+    val failures: SharedFlow<String> = _failures
+
+    private val transcripts = HashMap<Long, Pair<Transcript, MutableStateFlow<TranscriptView>>>()
+    private val terms = HashMap<Long, Pair<TermBuffer, MutableStateFlow<TermView>>>()
+    private val watching = LinkedHashSet<Long>()
+    private val fits = HashMap<Long, Pair<Int, Int>>()
+    private val lock = Any()
+
+    @Volatile private var socket: Socket? = null
+    private var job: Job? = null
+    /** Wakes the retry wait early: the app came to the front, or the network came back. */
+    private val nudge = Channel<Unit>(Channel.CONFLATED)
+
+    /** Connect to the current computer and stay connected until [stop]. */
+    fun start() {
+        synchronized(lock) {
+            if (job?.isActive == true) {
+                nudge.trySend(Unit)
+                return
+            }
+            job = scope.launch { run() }
+        }
+    }
+
+    fun stop() {
+        synchronized(lock) {
+            job?.cancel()
+            job = null
+        }
+        socket?.ws?.close(1000, null)
+        socket = null
+        if (_conn.value !is Conn.Denied) {
+            _conn.value = if (store.saved.value.current() == null) Conn.None else Conn.Offline("Paused", 0)
+        }
+    }
+
+    /** Drop everything from the last computer, for a switch to another one. */
+    fun restart() {
+        stop()
+        synchronized(lock) {
+            transcripts.clear()
+            terms.clear()
+            watching.clear()
+            fits.clear()
+        }
+        _board.value = null
+        _conn.value = if (store.saved.value.current() == null) Conn.None else Conn.Connecting
+        if (store.saved.value.current() != null) start()
+    }
+
+    fun nudge() {
+        nudge.trySend(Unit)
+    }
+
+    private suspend fun run() {
+        var wait = 1_000L
+        while (scope.isActive) {
+            val d = store.saved.value.current()
+            if (d == null) {
+                _conn.value = Conn.None
+                return
+            }
+            if (_conn.value !is Conn.Online) _conn.value = Conn.Connecting
+            val why = session(d)
+            if (why is Conn.Denied) {
+                _conn.value = why
+                return
+            }
+            // a line that was up and dropped is worth a quick retry; one that never came up waits longer each time
+            if (why is Conn.Online) wait = 1_000L
+            val reason = (why as? Conn.Offline)?.message ?: "Lost the connection. Reconnecting."
+            _conn.value = Conn.Offline(reason, System.currentTimeMillis() + wait)
+            withTimeoutOrNull(wait) { nudge.receive() }
+            wait = (wait * 2).coerceAtMost(15_000L)
+        }
+    }
+
+    /** One connection, start to end. Returns why it ended. */
+    private suspend fun session(d: Desktop): Conn {
+        val trust = Pinned(d.id)
+        val s = open(d.order(), d.port, trust)
+            ?: return Conn.Offline("Can't reach ${d.name}. Is HyprSpace open there with Phone on?", 0)
+        socket = s
+        try {
+            send(s, Up.Hello(d.token, deviceName()))
+            val first = withTimeoutOrNull(10_000) { next(s) }
+            when (first) {
+                is Down.Welcome -> {
+                    _conn.value = Conn.Online(first.desktop, first.version)
+                    store.update { saved ->
+                        saved.copy(desktops = saved.desktops.map {
+                            if (it.id == d.id) it.copy(last = s.host, name = first.desktop) else it
+                        })
+                    }
+                }
+                is Down.Denied -> return Conn.Denied(first.message)
+                else -> return Conn.Offline("${d.name} didn't answer", 0)
+            }
+            // what was open before the line dropped opens again
+            val (watched, fitted) = synchronized(lock) { watching.toList() to fits.toMap() }
+            for (t in watched) send(s, Up.Watch(t))
+            for ((t, size) in fitted) send(s, Up.Fit(t, size.first, size.second))
+            while (true) {
+                val down = next(s) ?: break
+                handle(down)
+            }
+            return Conn.Online("", "")
+        } finally {
+            s.ws.cancel()
+            if (socket === s) socket = null
+        }
+    }
+
+    /** The next message, or null once the socket is gone. Unknown shapes are skipped. */
+    private suspend fun next(s: Socket): Down? {
+        while (true) {
+            when (val e = s.events.receive()) {
+                is WsEvent.Text -> runCatching { wire.decodeFromString(Down.serializer(), e.text) }
+                    .onFailure { if (BuildConfig.DEBUG) Log.w(TAG, "unreadable: ${e.text.take(200)}", it) }
+                    .getOrNull()?.let {
+                        if (BuildConfig.DEBUG) Log.d(TAG, "down ${it::class.simpleName} ${e.text.length}b")
+                        return it
+                    }
+                is WsEvent.Gone -> return null
+                WsEvent.Open -> {}
+            }
+        }
+    }
+
+    /**
+     * Opens a socket to whichever host answers first. Each starts a quarter second after the one
+     * before, so the likeliest address gets a head start without the others waiting on it.
+     */
+    private suspend fun open(hosts: List<String>, port: Int, trust: Pinned): Socket? = coroutineScope {
+        val http = client(trust)
+        val result = CompletableDeferred<Socket?>()
+        val sockets = Collections.synchronizedList(ArrayList<Socket>())
+        val failed = AtomicInteger(0)
+        val tries = hosts.mapIndexed { i, host ->
+            launch {
+                delay(250L * i)
+                if (result.isCompleted) return@launch
+                val events = Channel<WsEvent>(Channel.UNLIMITED)
+                val bracketed = if (host.contains(':')) "[$host]" else host
+                val ws = http.newWebSocket(Request.Builder().url("wss://$bracketed:$port/").build(), Listener(events))
+                val s = Socket(host, ws, events)
+                sockets += s
+                if (events.receive() is WsEvent.Open) {
+                    if (!result.complete(s)) ws.cancel()
+                } else if (failed.incrementAndGet() == hosts.size) {
+                    result.complete(null)
+                }
+            }
+        }
+        val won = withTimeoutOrNull(8_000) { result.await() }
+        tries.forEach { it.cancel() }
+        synchronized(sockets) { for (s in sockets) if (s !== won) s.ws.cancel() }
+        won
+    }
+
+    private fun send(s: Socket, up: Up) {
+        s.ws.send(wire.encodeToString(Up.serializer(), up))
+    }
+
+    /** Sends when connected. Returns whether it went out. */
+    fun send(up: Up): Boolean {
+        val s = socket ?: return false
+        if (_conn.value !is Conn.Online) return false
+        return s.ws.send(wire.encodeToString(Up.serializer(), up))
+    }
+
+    fun ask(ask: Ask): Boolean = send(Up.Do(ask)).also {
+        if (!it) _failures.tryEmit("Not connected. Try again once it reconnects.")
+    }
+
+    private fun handle(d: Down) {
+        when (d) {
+            is Down.BoardMsg -> {
+                _board.value = d.board
+                if (store.saved.value.theme != d.board.theme) store.update { it.copy(theme = d.board.theme) }
+            }
+            is Down.Transcript -> synchronized(lock) {
+                val (t, flow) = transcripts.getOrPut(d.thread) { Transcript() to MutableStateFlow(TranscriptView()) }
+                if (d.reset) t.reset()
+                d.entries.forEach(t::add)
+                flow.value = TranscriptView(t.items(), t.model, t.context, loaded = true)
+            }
+            is Down.Term -> synchronized(lock) {
+                val (b, flow) = terms.getOrPut(d.frame.thread) { TermBuffer() to MutableStateFlow(TermView()) }
+                flow.value = b.apply(d.frame)
+            }
+            is Down.Failed -> _failures.tryEmit(d.message)
+            is Down.Welcome, is Down.Denied, Down.Pong -> {}
+        }
+    }
+
+    fun transcript(thread: Long): StateFlow<TranscriptView> = synchronized(lock) {
+        transcripts.getOrPut(thread) { Transcript() to MutableStateFlow(TranscriptView()) }.second
+    }
+
+    fun term(thread: Long): StateFlow<TermView> = synchronized(lock) {
+        terms.getOrPut(thread) { TermBuffer() to MutableStateFlow(TermView()) }.second
+    }
+
+    fun watch(thread: Long) {
+        synchronized(lock) { watching += thread }
+        send(Up.Watch(thread))
+    }
+
+    fun unwatch(thread: Long) {
+        synchronized(lock) {
+            watching -= thread
+            fits -= thread
+        }
+        send(Up.Unwatch(thread))
+    }
+
+    fun fit(thread: Long, cols: Int, rows: Int) {
+        synchronized(lock) { fits[thread] = cols to rows }
+        send(Up.Fit(thread, cols, rows))
+    }
+
+    fun unfit(thread: Long) {
+        synchronized(lock) { fits -= thread }
+        send(Up.Unfit(thread))
+    }
+
+    /**
+     * Pairs with the computer behind [link] and saves it as the current one. The socket used
+     * to pair closes; the usual connection takes over from there.
+     */
+    suspend fun pair(link: PairLink): Result<Desktop> {
+        val trust = Pinned(link.fingerprint)
+        val s = open(link.hosts, link.port, trust)
+            ?: return Result.failure(Exception("Can't reach ${link.name}. Check that this phone is on the same network or on Tailscale, and that Phone is on in HyprSpace's Settings."))
+        try {
+            send(s, Up.Pair(link.code, deviceName()))
+            return when (val first = withTimeoutOrNull(10_000) { next(s) }) {
+                is Down.Welcome -> {
+                    val token = first.token ?: return Result.failure(Exception("The computer didn't hand out a token."))
+                    val id = trust.seen ?: return Result.failure(Exception("The computer's certificate went missing."))
+                    val d = Desktop(id, first.desktop, link.hosts, link.port, token, System.currentTimeMillis(), s.host)
+                    store.remember(d)
+                    Result.success(d)
+                }
+                is Down.Denied -> Result.failure(Exception(first.message))
+                else -> Result.failure(Exception("${link.name} didn't answer."))
+            }
+        } finally {
+            s.ws.close(1000, null)
+        }
+    }
+
+    private class Listener(val events: Channel<WsEvent>) : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            events.trySend(WsEvent.Open)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            events.trySend(WsEvent.Text(text))
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            events.trySend(WsEvent.Gone(reason))
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            events.trySend(WsEvent.Gone(t.message ?: "failed"))
+        }
+    }
+
+    companion object {
+        private const val TAG = "HyprLink"
+
+        /** What the computer's Settings lists this phone as. */
+        var deviceName: () -> String = { android.os.Build.MODEL }
+    }
+}

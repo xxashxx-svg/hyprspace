@@ -40,7 +40,15 @@ Don't move or delete a pushed tag without asking.
 
 ## The Android app
 
-`mobile/` has its own version line and ships as a GitHub release asset, not through `deploy.ps1`.
-`cd mobile && npm run version -- patch|minor|major` moves `expo.version` and Android's
-`versionCode` together. Never edit either by hand: Android refuses an update whose `versionCode`
-isn't higher.
+`mobile/` has its own version, `hyprspace.version` in `mobile/gradle.properties`, and its
+`versionCode` is worked out from it. Raise it by hand when the app changes; it only goes up,
+since Android refuses an update whose `versionCode` isn't higher.
+
+The app ships on a desktop release, only when asked: run `release.yml` with **android** ticked
+(or ask for it alongside a `deploy.ps1` release). The job tests and builds the APK and attaches
+it as `HyprSpace-android-<version>.apk` and `HyprSpace-android.apk`. It signs with the
+`ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets (key alias `hyprspace`); without
+them the APK is signed with a throwaway key and can't update an install of a real release.
+
+A desktop release that changes `PROTOCOL` needs an app release with it: a phone on the old
+protocol is told to update, not let in.

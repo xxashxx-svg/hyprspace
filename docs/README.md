@@ -14,6 +14,7 @@ adding one.
 - [Dock, viewer and editor](./internals/viewer.md)
 - [Usage and activity](./internals/usage.md)
 - [Updates and installers](./internals/updates.md)
+- [The phone](./internals/phone.md): the bridge, pairing, the board, terminal frames
 
 Runbooks:
 

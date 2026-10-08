@@ -146,14 +146,25 @@ impl Phone {
                 self.hub().sessions = sessions.into_iter().collect();
             }
             PhoneCommand::Pair => {
+                let long = URL_SAFE_NO_PAD.encode(store::random(18));
                 let mut hub = self.hub();
                 hub.pairing = Some(Secret {
-                    long: URL_SAFE_NO_PAD.encode(store::random(18)),
+                    long: long.clone(),
                     code: short_code(),
                     expires: now_ms() + PAIR_FOR.as_millis() as u64,
                     tries: 0,
                 });
                 hub.send_pairing();
+                // an expired code leaves the screen, unless a newer one took its place
+                let me = self.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(PAIR_FOR).await;
+                    let mut hub = me.hub();
+                    if hub.pairing.as_ref().is_some_and(|p| p.long == long) {
+                        hub.pairing = None;
+                        hub.send_pairing();
+                    }
+                });
             }
             PhoneCommand::StopPairing => {
                 let mut hub = self.hub();
@@ -605,6 +616,7 @@ impl Hub {
             },
             error: self.error.clone(),
             devices: self.store.devices(|id| online.contains(id)),
+            security: security(&self.fingerprint),
         };
         self.to_ui(PhoneEvent::Status { status });
     }
@@ -744,6 +756,20 @@ fn watcher(thread: u64, live: Arc<AtomicBool>, tx: UnboundedSender<Down>) -> jou
                 })
                 .is_ok()
     })
+}
+
+/// The fingerprint as a phone shows it: its first eight letters and digits, in two groups.
+fn security(fingerprint: &str) -> String {
+    let s: String = fingerprint
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(8)
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    if s.len() < 8 {
+        return String::new();
+    }
+    format!("{}-{}", &s[..4], &s[4..])
 }
 
 /// Eight characters from an alphabet with no look-alikes (no 0 and O, no 1, I and L).

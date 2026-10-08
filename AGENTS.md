@@ -33,6 +33,10 @@ endpoints above. This repo is public. Adding analytics is Ash's call, needs an o
 Settings, and the Settings copy must say exactly what is sent. Never send prompts, terminal output,
 paths, project names, or anything joined to an account.
 
+The phone bridge is the one way in. It listens only once the user switches it on in Settings,
+Phone, speaks TLS under a certificate the phone pins, and answers only phones the user paired.
+It never goes through a server of ours, and its Settings copy says what a phone sees and can do.
+
 ### 3. Fast on a busy machine
 
 Ash runs many agents at once, all day. A dropped frame, a lying spinner or a stale label gets
@@ -93,6 +97,10 @@ work done, walk this list:
 - **Entry points.** A thing reachable from a menu is often also in the command palette, Settings or
   a key binding. Settings, Shortcuts is a hand-kept list: a changed binding changes there too.
 - **Reverse states.** Settle needs bring back, snooze needs wake, a way in needs a way out.
+- **The phone.** The phone sees the sidebar through the board (`crates/ui/src/phone`) and acts
+  through the same code as a click. A new thread state, row line or action may need the board,
+  `crates/proto/src/phone.rs` and the Android app (`mobile/`). A changed wire type moves
+  `PROTOCOL` and the fixtures the proto test writes.
 - **Saved state.** `AppState` is saved whole. A changed or removed field must still load an old
   `state.json` (serde defaults, or a rewrite before parsing like `requests::without_gemini`).
 - **Docs.** Check whether the change makes existing guidance wrong. See Documentation below.
@@ -110,6 +118,12 @@ The check. CI runs it on Windows and macOS for every push to `main`:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
+```
+
+The Android app has a check of its own, run from `mobile/` (CI runs it on Linux):
+
+```bash
+./gradlew testDebugUnitTest assembleDebug
 ```
 
 - Prove a change the smallest way that works: the tests you touched, then the check before a
@@ -149,8 +163,9 @@ Architecture and its reasons: [docs/internals/overview.md](docs/internals/overvi
 - `crates/ui`: the GPUI app, one folder per area.
 - `crates/theme`, `crates/syntax`, `crates/update`: tokens and themes, tree-sitter highlighting,
   the updater.
-- `website/` is the marketing site, and `mobile/` an Android app that has nothing to pair with
-  until it is redone. Each is its own project.
+- `mobile/`: the Android app, Kotlin and Compose. It pairs with the desktop over the phone
+  bridge (`crates/engine/src/phone`). Its own Gradle project and version.
+- `website/` is the marketing site, its own project.
 
 ## Taste
 

@@ -112,8 +112,11 @@ impl Root {
         let mut spaces = Vec::new();
         let mut threads = Vec::new();
         for s in self.state.spaces.iter().filter(|s| !s.archived) {
+            let (lf, li) = hyprspace_theme::tag(&s.name, false);
+            let (df, di) = hyprspace_theme::tag(&s.name, true);
             spaces.push(BoardSpace {
                 id: s.id,
+                tag: vec![lf.0, li.0, df.0, di.0],
                 name: s.name.clone(),
                 path: s
                     .cwd
@@ -197,7 +200,7 @@ impl Root {
         BoardThread {
             id,
             space,
-            title: t.title.clone(),
+            title: line(&t.title, 200),
             kind: match t.kind {
                 ThreadKind::Structured { .. } => BoardKind::Structured,
                 ThreadKind::Terminal { .. } => BoardKind::Terminal,
@@ -211,7 +214,7 @@ impl Root {
                 Status::Done => BoardStatus::Done,
                 Status::Failed => BoardStatus::Failed,
             },
-            doing,
+            doing: doing.map(|d| line(&d, 160)),
             since: running.map(|secs| now.saturating_sub(secs * 1000)),
             unseen: self.unseen.contains(&id),
             place,
@@ -250,7 +253,17 @@ impl Root {
                     v.update(cx, |v, cx| v.stop(cx));
                 }
             }
-            Ask::Settle { thread, on } => self.settle(thread, on, window, cx),
+            Ask::Settle { thread, on } => {
+                let snoozed = self
+                    .state
+                    .thread(thread)
+                    .is_some_and(|(_, t)| t.snooze.is_some());
+                if !on && snoozed {
+                    self.snooze(thread, None, window, cx);
+                } else {
+                    self.settle(thread, on, window, cx);
+                }
+            }
             Ask::New { space, start } => {
                 let Some(cwd) = self.state.space(space).and_then(|s| s.cwd.clone()) else {
                     return;
@@ -303,6 +316,21 @@ impl Root {
             _ => None,
         }
     }
+}
+
+/// The first line of `text`, at most `max` characters: the phone shows one line of a title or
+/// of what an agent last said, and an agent's whole last message can run to pages.
+fn line(text: &str, max: usize) -> String {
+    let first = text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or_default()
+        .trim();
+    if first.chars().count() <= max {
+        return first.to_string();
+    }
+    let cut: String = first.chars().take(max).collect();
+    format!("{}...", cut.trim_end())
 }
 
 fn theme(id: &str, dark: bool, a: &hyprspace_proto::state::Appearance) -> Theme {

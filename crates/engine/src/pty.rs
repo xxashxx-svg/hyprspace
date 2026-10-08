@@ -1,7 +1,7 @@
 // Terminal sessions on portable-pty, copied from src-tauri/src/pty.rs. The coalescer, the
 // off-thread child wait, the off-thread drop on kill and `kill_all` carry over unchanged.
 // Left behind: the Tauri channel (output goes out as engine events), the mobile tap and replay
-// buffer (the phone app is redone later), the xterm pause gate (the emulator now runs in-process),
+// buffer (the phone bridge keeps its own, engine/src/phone), the xterm pause gate (the emulator now runs in-process),
 // and the headless query answerer (the UI's emulator answers terminal queries itself).
 
 use std::collections::HashMap;
