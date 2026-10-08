@@ -70,12 +70,18 @@ phone draws them in the desktop theme's own ANSI colors.
 ## Sizing a terminal for the phone
 
 Reading a 180-column terminal on a phone means tiny text or sideways scrolling, so the phone asks
-for the PTY at its own size (`Up::Fit`). The engine resizes the PTY and its mirror, keeps the size
-the desktop last asked for, and ignores the desktop's resizes meanwhile. The desktop shows a strip
-saying so; typing there sends `PhoneCommand::Take` and the PTY goes back to the desktop's size.
-Leaving the thread or dropping the line gives it back too. The phone re-fits on a size change
-only while it still holds the terminal, so its keyboard sliding away doesn't snatch it back from
-someone typing at the desktop.
+for the PTY at its own width (`Up::Fit`). Only the width: the rows stay the desktop's, and the
+phone scrolls through them. ConPTY repaints its whole screen when the height changes and
+overwrites the lines the emulator just pulled down from scrollback, so a phone that resized the
+height each time its keyboard opened, or each time it came back to a thread, lost 20 lines a go.
+A width change still repaints, and can leave a line or two wrong at the edge of the screen.
+
+The engine keeps the width the desktop last asked for, and sets the PTY back to it when the
+phone leaves the thread, 20 seconds later so a phone hopping between threads doesn't resize back
+and forth, or at once when the phone disconnects. The desktop shows a strip while the phone has
+the width; typing there sends `PhoneCommand::Take` and gives it back. The phone asks again only
+when its own width changes or its user presses Fit to phone, never on its own after the desktop
+took it back.
 
 ## What the phone does
 

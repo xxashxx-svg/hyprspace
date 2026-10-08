@@ -62,6 +62,7 @@ import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.TermFont
 import com.hyprspace.android.ui.clickableQuiet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 
 private val FONT = 12.5.sp
 
@@ -171,29 +172,35 @@ fun Terminal(
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val cols = with(density) { ((maxWidth - 16.dp).toPx() / cell.width).toInt() }
             val rows = with(density) { ((maxHeight - 8.dp).toPx() / cell.height).toInt() }
-            // ask for the terminal at this size once the size settles (the keyboard slides in and out)
-            // Once the computer takes it back, only the strip's button takes it again; the
-            // keyboard sliding away mustn't snatch it from someone typing there.
-            LaunchedEffect(cols, rows, live, autoFit, fitNow) {
-                if (!live || cols < 20 || rows < 5) return@LaunchedEffect
-                val first = !asked
-                if (fitNow || (autoFit && (first || view.fit))) {
+            // The terminal takes this screen's width (the computer keeps its height, which the
+            // view scrolls through), asked for again only when the width changes. Once the
+            // computer takes it back, only the strip's button takes it again.
+            LaunchedEffect(cols, live, autoFit, fitNow) {
+                if (!live || cols < 20) return@LaunchedEffect
+                if (fitNow || (autoFit && (!asked || (view.fit && cols != view.cols)))) {
                     delay(250)
                     onFit(cols, rows)
                     asked = true
                     fitNow = false
                 }
             }
-            // The screen follows its bottom line, where the prompt is, unless the reader scrolled up
-            // to read. The keyboard sliding in shrinks the screen, and the bottom stays in view.
-            val list = rememberLazyListState()
+            // The screen follows the cursor, with a few lines under it, where a prompt and an
+            // agent's input box sit, unless the reader scrolled up to read. It opens there too.
+            val list = rememberLazyListState(initialFirstVisibleItemIndex = (view.lines.size - 1).coerceAtLeast(0))
             LaunchedEffect(list) {
-                snapshotFlow { list.isScrollInProgress }.collect { moving ->
+                // only a scroll that happened counts; the first look, before the jump to the
+                // bottom, would read as "scrolled up" and stop the following
+                snapshotFlow { list.isScrollInProgress }.drop(1).collect { moving ->
                     if (!moving) follow = !list.canScrollForward
                 }
             }
             LaunchedEffect(view.lines.size, view.cursor, maxHeight, follow) {
-                if (follow && view.lines.isNotEmpty()) list.scrollToItem(view.lines.size - 1, Int.MAX_VALUE / 2)
+                if (!follow || view.lines.isEmpty()) return@LaunchedEffect
+                val last = view.lines.size - 1
+                val shown = (rows - 1).coerceAtLeast(1)
+                // the cursor's line a few lines from the bottom, or the last line when it hides
+                val bottom = view.cursor?.first?.let { minOf(it + 3, last) } ?: last
+                list.scrollToItem((bottom - shown + 1).coerceIn(0, last))
             }
             val full = maxWidth
             val wide = view.cols > cols

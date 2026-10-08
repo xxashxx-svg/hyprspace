@@ -33,7 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +63,7 @@ import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
+import kotlinx.coroutines.flow.drop
 
 /** What the list shows: the transcript's items, with runs of calls in a row folded together. */
 private sealed interface Shown {
@@ -104,11 +105,16 @@ fun Chat(
 ) {
     val h = LocalHues.current
     val shown = remember(view.items) { fold(view.items) }
-    val list = rememberLazyListState()
-    val atEnd by remember { derivedStateOf { !list.canScrollForward } }
-    // keep up with the reply while the reader is at the bottom
-    LaunchedEffect(shown.size, view.items.lastOrNull()) {
-        if (shown.isNotEmpty() && (atEnd || list.firstVisibleItemIndex == 0)) list.scrollToItem(shown.size - 1, Int.MAX_VALUE / 2)
+    // opens at the newest message and keeps up with the reply, unless the reader scrolled up
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = (shown.size - 1).coerceAtLeast(0))
+    var follow by remember { mutableStateOf(true) }
+    LaunchedEffect(list) {
+        snapshotFlow { list.isScrollInProgress }.drop(1).collect { moving ->
+            if (!moving) follow = !list.canScrollForward
+        }
+    }
+    LaunchedEffect(shown.size, view.items.lastOrNull(), follow) {
+        if (follow && shown.isNotEmpty()) list.scrollToItem(shown.size - 1, Int.MAX_VALUE / 2)
     }
     Column(modifier) {
         if (!view.loaded) {
@@ -133,7 +139,7 @@ fun Chat(
                 }
             }
         }
-        Composer(working, onSend, onStop)
+        Composer(working, { follow = true; onSend(it) }, onStop)
     }
 }
 

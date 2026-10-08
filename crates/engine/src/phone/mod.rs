@@ -35,6 +35,8 @@ use store::Store;
 const PAIR_FOR: Duration = Duration::from_secs(5 * 60);
 /// Wrong codes a pairing takes before it stops working.
 const PAIR_TRIES: u8 = 5;
+/// How long a terminal keeps a phone's width after the phone stops showing it.
+const LEAVE: Duration = Duration::from_secs(20);
 /// How often a watched terminal's screen goes out.
 const FRAME: Duration = Duration::from_millis(50);
 
@@ -374,8 +376,26 @@ impl Phone {
             Up::Watch { thread } => self.watch(conn, thread),
             Up::Unwatch { thread } => {
                 let mut hub = self.hub();
-                hub.unwatch(conn, thread);
+                hub.unwatch(conn, thread, true);
                 hub.send_watching();
+                drop(hub);
+                // A phone hopping between threads mustn't resize the terminal each time, so the
+                // width it asked for holds a little while after it leaves.
+                let me = self.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(LEAVE).await;
+                    let mut hub = me.hub();
+                    let back = hub
+                        .conns
+                        .get(&conn)
+                        .is_some_and(|c| c.watching.contains_key(&thread));
+                    if let Some(&id) = hub.sessions.get(&thread)
+                        && !back
+                        && hub.terms.get(&id).is_some_and(|t| t.fit == Some(conn))
+                    {
+                        hub.unfit(id);
+                    }
+                });
             }
             Up::Fit { thread, cols, rows } => self.hub().fit(conn, thread, cols, rows),
             Up::Unfit { thread } => {
@@ -540,15 +560,23 @@ impl Phone {
         );
     }
 
-    /// The desktop resized a terminal. Returns whether the PTY should follow: not while a
-    /// phone has it sized, until the desktop takes it back.
+    /// The desktop resized a terminal. Returns whether the PTY should follow as asked. While a
+    /// phone has the width, the height still follows the desktop, and this does it.
     pub fn resize(&self, id: SessionId, cols: u16, rows: u16) -> bool {
         let mut hub = self.hub();
+        let ptys = hub.ptys.clone();
         let Some(t) = hub.terms.get_mut(&id) else {
             return true;
         };
         t.desktop = (cols, rows);
         if t.fit.is_some() {
+            if t.size.1 != rows {
+                t.size.1 = rows;
+                if let Some(m) = &mut t.mirror {
+                    m.resize(t.size.0, rows);
+                }
+                let _ = ptys.resize(id, t.size.0, rows);
+            }
             return false;
         }
         t.size = (cols, rows);
@@ -685,7 +713,9 @@ impl Hub {
         self.to_ui(PhoneEvent::Watching { threads });
     }
 
-    fn unwatch(&mut self, conn: u64, thread: u64) {
+    /// Stops a phone watching a thread. A terminal sized for it goes back to the desktop's size,
+    /// now or, with `later`, when the caller says.
+    fn unwatch(&mut self, conn: u64, thread: u64, later: bool) {
         let Some(c) = self.conns.get_mut(&conn) else {
             return;
         };
@@ -693,6 +723,7 @@ impl Hub {
             w.live.store(false, Ordering::Relaxed);
         }
         if let Some(&id) = self.sessions.get(&thread)
+            && !later
             && self.terms.get(&id).is_some_and(|t| t.fit == Some(conn))
         {
             self.unfit(id);
@@ -706,7 +737,7 @@ impl Hub {
             .map(|c| c.watching.keys().copied().collect())
             .unwrap_or_default();
         for t in threads {
-            self.unwatch(conn, t);
+            self.unwatch(conn, t, false);
         }
         // dropping the sender ends the connection's task
         self.conns.remove(&conn);
@@ -720,14 +751,20 @@ impl Hub {
         let Some(t) = self.terms.get_mut(&id) else {
             return;
         };
-        let (cols, rows) = (cols.clamp(20, 500), rows.clamp(5, 300));
+        // Only the width follows the phone; the rows stay the desktop's. ConPTY repaints its
+        // whole screen when the height changes and overwrites the lines the emulator just pulled
+        // down from scrollback, so every height change lost lines. The phone scrolls instead.
+        let _ = rows;
+        let (cols, rows) = (cols.clamp(20, 500), t.desktop.1.max(5));
         let first = t.fit.is_none();
         t.fit = Some(conn);
-        t.size = (cols, rows);
-        if let Some(m) = &mut t.mirror {
-            m.resize(cols, rows);
+        if t.size != (cols, rows) {
+            t.size = (cols, rows);
+            if let Some(m) = &mut t.mirror {
+                m.resize(cols, rows);
+            }
+            let _ = self.ptys.resize(id, cols, rows);
         }
-        let _ = self.ptys.resize(id, cols, rows);
         if first {
             self.to_ui(PhoneEvent::Fit { id, phone: true });
         }
