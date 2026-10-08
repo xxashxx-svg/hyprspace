@@ -16,22 +16,22 @@ pub(super) const MODES: [(Permission, &str, &str); 4] = [
     (
         Permission::Plan,
         "Plan only",
-        "Reads and plans. It changes nothing.",
+        "Reads and plans. Changes nothing.",
     ),
     (
         Permission::Ask,
         "Ask first",
-        "Asks before every edit and command.",
+        "Asks before edits and commands.",
     ),
     (
         Permission::Auto,
         "Auto edit",
-        "Edits files in the folder on its own. Asks before anything else.",
+        "Edits on its own, asks for the rest.",
     ),
     (
         Permission::Bypass,
         "Full access",
-        "Never asks. Use it only in folders you trust.",
+        "Never asks. Trusted folders only.",
     ),
 ];
 
@@ -72,7 +72,7 @@ impl Root {
         let rows: Vec<AnyElement> = if snoozed.is_empty() {
             vec![row(
                 "Nothing is snoozed",
-                "Snooze a thread from the clock on its row or its menu. It comes back to the top of the list when it wakes.",
+                "Use the clock on a thread's row.",
                 div(),
             )]
         } else {
@@ -173,11 +173,7 @@ impl Root {
             .child(group(
                 "New threads",
                 [
-                    Some(row(
-                        "Agent",
-                        "New threads start with it. The composer changes it too.",
-                        agent_control,
-                    )),
+                    Some(row("Agent", "What new threads start with.", agent_control)),
                     Some(permission),
                 ]
                 .into_iter()
@@ -188,7 +184,7 @@ impl Root {
                 "Threads",
                 vec![row(
                     "Settle untouched threads",
-                    "A thread nobody touched for this long moves to the Settled shelf. One on screen or at work stays.",
+                    "Idle threads move to Settled. Open or working ones stay.",
                     settle,
                 )],
             ))
@@ -196,8 +192,8 @@ impl Root {
             .child(group(
                 "Experimental",
                 vec![row(
-                    "Structured option in the composer",
-                    "A Structured button that runs one thread as a transcript you read and steer, instead of in a terminal. New threads still start in a terminal. Still being built.",
+                    "Structured threads",
+                    "Adds a Structured button to the composer. Still being built.",
                     switch,
                 )],
             ))
@@ -205,7 +201,7 @@ impl Root {
                 "Folders",
                 vec![row(
                     "Open folders in",
-                    "The Open button in a thread's bar opens its folder here.",
+                    "Where the Open button goes.",
                     open_control,
                 )],
             ))

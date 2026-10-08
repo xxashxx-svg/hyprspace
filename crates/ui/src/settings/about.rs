@@ -23,7 +23,7 @@ impl Root {
             let updater = self.updater.clone();
             app.push(row(
                 "What's new",
-                format!("The changes in version {VERSION}."),
+                format!("Version {VERSION}"),
                 widgets::button("about-news", "Show").on_click(move |_: &ClickEvent, _, cx| {
                     updater.update(cx, |u, cx| u.show_whats_new(cx))
                 }),
@@ -31,7 +31,7 @@ impl Root {
         }
         app.push(row(
             "Intro",
-            "The short tour from the first run.",
+            "",
             widgets::button("about-intro", "Show")
                 .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.show_intro(window, cx))),
         ));
@@ -57,7 +57,7 @@ impl Root {
                     ),
                     row(
                         "Report a problem",
-                        "Opens a new issue on GitHub.",
+                        "",
                         link("about-issue", format!("{REPO}/issues/new")),
                     ),
                 ],

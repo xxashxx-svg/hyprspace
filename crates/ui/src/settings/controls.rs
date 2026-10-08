@@ -86,6 +86,33 @@ pub(super) fn row(
     desc: impl Into<SharedString>,
     control: impl IntoElement,
 ) -> AnyElement {
+    let desc = desc.into();
+    if desc.is_empty() {
+        return div()
+            .flex()
+            .items_center()
+            .gap(px(16.))
+            .min_h(px(48.))
+            .py(px(9.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors::text1())
+                    .child(name.into()),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(control),
+            )
+            .into_any_element();
+    }
     row_with(None, name, text(desc), control)
 }
 

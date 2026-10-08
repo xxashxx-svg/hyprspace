@@ -39,9 +39,9 @@ pub(super) fn page() -> AnyElement {
         vec![chord(&[MOD, "C"]), chord(&[MOD, "Shift", "C"])]
     };
     let copy_desc = if cfg!(target_os = "macos") {
-        "Copies the selected text."
+        ""
     } else {
-        "With nothing selected, Ctrl+C interrupts the program as usual."
+        "With nothing selected, Ctrl+C interrupts."
     };
     div()
         .flex()
@@ -52,100 +52,52 @@ pub(super) fn page() -> AnyElement {
             vec![
                 line(
                     "Command palette",
-                    "Threads, themes and settings. Works inside a terminal too.",
+                    "Works in a terminal too.",
                     &[chord(&[MOD, "K"])],
                 ),
-                line(
-                    "Command palette, the other way",
-                    "Opens the same palette.",
-                    &[chord(&[MOD, "Shift", "P"])],
-                ),
-                line(
-                    "Sidebar",
-                    "Shows or hides the list of folders and threads.",
-                    &[chord(&[MOD, "Shift", "B"])],
-                ),
-                line(
-                    "Files and git",
-                    "Shows or hides the dock on the right.",
-                    &[chord(&[MOD, "Shift", "G"])],
-                ),
-                line(
-                    "Close Settings",
-                    "Goes back to where you were.",
-                    &["Esc".into()],
-                ),
+                line("Command palette, again", "", &[chord(&[MOD, "Shift", "P"])]),
+                line("Sidebar", "", &[chord(&[MOD, "Shift", "B"])]),
+                line("Files and git", "", &[chord(&[MOD, "Shift", "G"])]),
+                line("Close Settings", "", &["Esc".into()]),
             ],
         ))
         .child(group(
             "Files and images",
             vec![
-                line(
-                    "Open a path from a terminal",
-                    "A file opens over the thread. An image opens so you can zoom it.",
-                    &[chord(&[MOD, "Click"])],
-                ),
+                line("Open a path from a terminal", "", &[chord(&[MOD, "Click"])]),
                 line(
                     "Zoom an image",
-                    "Around the pointer. Drag to move it, double-click to fit it again.",
+                    "Drag to move. Double-click to fit.",
                     &["Wheel".into()],
                 ),
-                line(
-                    "Close a file or an image",
-                    "A click outside it closes it too.",
-                    &["Esc".into()],
-                ),
+                line("Close a file or an image", "", &["Esc".into()]),
             ],
         ))
         .child(group(
             "Prompt box",
             vec![
-                line(
-                    "Send",
-                    "While a run is going, the prompt joins it.",
-                    &["Enter".into()],
-                ),
-                line(
-                    "New line",
-                    "Adds a line instead of sending.",
-                    &[chord(&["Shift", "Enter"])],
-                ),
-                line(
-                    "Interrupt the run",
-                    "In a structured thread. The agent stops where it is.",
-                    &["Esc".into()],
-                ),
-                line(
-                    "Paste",
-                    "Text, or an image to attach.",
-                    &[chord(&[MOD, "V"])],
-                ),
+                line("Send", "Queues it while a run works.", &["Enter".into()]),
+                line("New line", "", &[chord(&["Shift", "Enter"])]),
+                line("Interrupt the run", "", &["Esc".into()]),
+                line("Paste", "Images attach.", &[chord(&[MOD, "V"])]),
             ],
         ))
         .child(group(
             "Terminal",
             vec![
                 line("Copy", copy_desc, &copy),
-                line(
-                    "Paste",
-                    "Pastes the clipboard's text.",
-                    &[chord(&[MOD, "V"])],
-                ),
+                line("Paste", "", &[chord(&[MOD, "V"])]),
                 line(
                     "Paste an image",
-                    "Saves the clipboard's image and types its path, for agents that read images.",
+                    "Types the image's path.",
                     &[chord(&[ALT, "V"])],
                 ),
                 line(
                     "Find",
-                    "Enter and Shift+Enter step through the matches.",
+                    "Enter steps through matches.",
                     &[chord(&[MOD, "F"])],
                 ),
-                line(
-                    "Open a link or file",
-                    "Files open in the viewer, links in your browser.",
-                    &[chord(&[MOD, "Click"])],
-                ),
+                line("Open a link or file", "", &[chord(&[MOD, "Click"])]),
             ],
         ))
         .into_any_element()

@@ -47,18 +47,14 @@ impl Root {
         let mut access = vec![
             row(
                 "Let your phone connect",
-                "Your phone talks to this computer directly, encrypted. Nothing goes through a server, and it only works while HyprSpace is open here.",
+                "Direct and encrypted, no server. Works while HyprSpace is open.",
                 switch,
             ),
             row(
                 "Networks",
                 match prefs.network {
-                    Network::Everywhere => {
-                        "Any network this computer is on. Away from home, your phone reaches it over Tailscale."
-                    }
-                    Network::Tailscale => {
-                        "Only devices on your tailnet can reach it, from home or anywhere else."
-                    }
+                    Network::Everywhere => "Wi-Fi at home, Tailscale away.",
+                    Network::Tailscale => "Only devices on your tailnet.",
                 },
                 networks,
             ),
@@ -69,7 +65,7 @@ impl Root {
                 None if status.on => row_note(
                     "Listening",
                     format!(
-                        "On {} at port {}.",
+                        "{}, port {}",
                         match status.addresses.as_slice() {
                             [] => "no network yet".to_string(),
                             a => a.join(", "),
@@ -78,7 +74,7 @@ impl Root {
                     ),
                     false,
                 ),
-                None => row_note("Starting", "One moment.".to_string(), false),
+                None => row_note("Starting", String::new(), false),
             });
         }
 
@@ -87,32 +83,28 @@ impl Root {
             .flex_col()
             .gap(px(28.))
             .child(group("Access", access));
+        let mut phones = Vec::new();
         if prefs.on && status.on {
-            page = page.child(group("Pair a phone", vec![self.pairing_row(cx)]));
+            phones.push(self.pairing_row(cx));
         }
-        let paired = self.device_rows(cx);
-        page = page.child(group("Paired phones", paired));
+        phones.extend(self.device_rows(cx));
+        page = page.child(group("Phones", phones));
         page.child(group(
-            "What your phone gets",
+            "The app",
             vec![
                 row(
-                    "What it sees",
-                    "Your spaces and threads, their transcripts, the screens of terminal threads, the agents and models you can start, and your theme's colors.",
-                    div(),
-                ),
-                row(
                     "What it can do",
-                    "Send messages, answer approvals, stop a run, type into terminals, start threads and settle them. Each goes through the same steps as doing it here.",
+                    "See your threads and terminals, send messages, answer approvals and start threads.",
                     div(),
                 ),
                 row(
-                    "How it travels",
-                    "Over TLS under a certificate made on this computer. Your phone saves its fingerprint when it pairs and refuses any other. The pairing code never crosses the network: each side proves it knows the code, tied to that certificate.",
+                    "Security",
+                    "TLS pinned to this computer's certificate. The pairing code is never sent.",
                     div(),
                 ),
                 row(
                     "Get the app",
-                    "Download HyprSpace-android.apk from a release on GitHub and open it on your phone.",
+                    "The Android APK is on GitHub releases.",
                     widgets::button_frame("phone-get")
                         .gap(px(6.))
                         .child("Open")
@@ -127,8 +119,8 @@ impl Root {
     fn pairing_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(p) = &self.phone.pairing else {
             return row(
-                "Show a pairing code",
-                "Open HyprSpace on your phone, tap Pair and scan the code. Each code works once.",
+                "Pair a phone",
+                "Scan the code with the HyprSpace app.",
                 widgets::button("phone-pair", "Show code").on_click(cx.listener(
                     |r, _: &ClickEvent, _, _| r.client.send(Command::Phone(PhoneCommand::Pair)),
                 )),
@@ -157,7 +149,7 @@ impl Root {
                         div()
                             .text_size(px(13.))
                             .text_color(colors::text2())
-                            .child("Scan this with HyprSpace on your phone. If the camera can't read it, type the code instead."),
+                            .child("Scan with the HyprSpace app, or type the code."),
                     )
                     .child(
                         div()
@@ -168,7 +160,7 @@ impl Root {
                             .child(p.code.clone()),
                     )
                     .child(text(format!(
-                        "It works once. A new one replaces it at {until}. To type it in, your phone also needs this address: {}.",
+                        "Address {}. New code at {until}.",
                         self.phone
                             .status
                             .addresses
@@ -177,13 +169,13 @@ impl Root {
                             .unwrap_or_else(|| "this computer's address".into())
                     )))
                     .child(
-                        div().flex().child(
-                            widgets::button("phone-unpair", "Cancel").on_click(cx.listener(
-                                |r, _: &ClickEvent, _, _| {
+                        div()
+                            .flex()
+                            .child(widgets::button("phone-unpair", "Cancel").on_click(
+                                cx.listener(|r, _: &ClickEvent, _, _| {
                                     r.client.send(Command::Phone(PhoneCommand::StopPairing))
-                                },
+                                }),
                             )),
-                        ),
                     ),
             )
             .into_any_element()
@@ -192,11 +184,7 @@ impl Root {
     fn device_rows(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let devices = &self.phone.status.devices;
         if devices.is_empty() {
-            return vec![row(
-                "No phones yet",
-                "A phone you pair shows here. Revoke one to cut it off at once. It has to pair again to connect.",
-                div(),
-            )];
+            return vec![row("No phones yet", "", div())];
         }
         let now = now_ms();
         devices
@@ -204,27 +192,25 @@ impl Root {
             .map(|d| {
                 let id = d.id.clone();
                 let mut seen = if d.online {
-                    "Connected now".to_string()
+                    "Online".to_string()
                 } else {
                     match ago(d.seen, now).as_str() {
-                        "now" => "Connected a moment ago".to_string(),
-                        a => format!("Last connected {a} ago"),
+                        "now" => "Seen just now".to_string(),
+                        a => format!("Seen {a} ago"),
                     }
                 };
                 if !d.app.is_empty() {
-                    seen = format!("{seen}. App {}", d.app);
+                    seen = format!("{seen} · App {}", d.app);
                 }
                 row(
                     d.name.clone(),
                     seen,
                     widgets::button(("phone-forget", d.paired as usize), "Revoke")
-                        .tooltip(widgets::tip("Disconnect this phone and stop its access. It has to pair again to connect."))
-                        .on_click(
-                        cx.listener(move |r, _: &ClickEvent, _, _| {
+                        .tooltip(widgets::tip("Cut it off now. It has to pair again."))
+                        .on_click(cx.listener(move |r, _: &ClickEvent, _, _| {
                             r.client
                                 .send(Command::Phone(PhoneCommand::Forget { device: id.clone() }))
-                        }),
-                    ),
+                        })),
                 )
             })
             .collect()

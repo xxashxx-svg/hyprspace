@@ -102,19 +102,19 @@ pub(crate) const TABS: &[Entry] = &[
     Entry {
         tab: Tab::General,
         label: "General",
-        desc: "How new threads start and where folders open",
+        desc: "Defaults for new threads",
         icon: "sliders-horizontal",
     },
     Entry {
         tab: Tab::Appearance,
         label: "Appearance",
-        desc: "The theme, light or dark, fonts and motion",
+        desc: "Theme, fonts and motion",
         icon: "palette",
     },
     Entry {
         tab: Tab::Agents,
         label: "Agents",
-        desc: "The model and effort each agent starts with",
+        desc: "Each agent's model and effort",
         icon: "bot",
     },
     Entry {
@@ -138,13 +138,13 @@ pub(crate) const TABS: &[Entry] = &[
     Entry {
         tab: Tab::Shortcuts,
         label: "Shortcuts",
-        desc: "The keys and clicks the app answers to",
+        desc: "Keys and clicks",
         icon: "keyboard",
     },
     Entry {
         tab: Tab::About,
         label: "About",
-        desc: "The version, updates and where the code lives",
+        desc: "Version and updates",
         icon: "info",
     },
 ];

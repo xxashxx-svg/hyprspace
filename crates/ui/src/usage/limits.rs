@@ -278,13 +278,13 @@ impl Limits {
                     .justify_center()
                     .text_size(px(13.))
                     .text_color(colors::text3())
-                    .child("No limits yet. They show up here once Claude or Codex is signed in on this machine.")
+                    .child("No limits yet. Sign in to Claude or Codex on this machine.")
                     .into_any_element(),
             );
         }
         if cards {
             out.push(foot_text(
-                "A bar turns amber or red when you're using it up faster than the window runs out. OpenCode and Grok don't report plan limits, so they only show under Activity.",
+                "Amber or red means you'll run out before it resets. OpenCode and Grok report no limits.",
             ));
         }
         out

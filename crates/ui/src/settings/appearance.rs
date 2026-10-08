@@ -279,19 +279,11 @@ impl Root {
                 vec![
                     row(
                         "Font",
-                        "Everything outside the terminal.",
+                        "",
                         self.dropdown(Picker::UiFont, ui_font_label(&current.ui_font), cx),
                     ),
-                    row(
-                        "Diff colors",
-                        "Added and removed lines in diffs and change counts.",
-                        diff_control,
-                    ),
-                    row(
-                        "Animations",
-                        "Menus, panels and rows ease in. Off, they snap.",
-                        animation_control,
-                    ),
+                    row("Diff colors", "", diff_control),
+                    row("Animations", "", animation_control),
                 ],
             ))
             .child(group(
@@ -299,11 +291,11 @@ impl Root {
                 vec![
                     row(
                         "Font",
-                        "Terminal sessions draw in this font. Fonts without Nerd Font icons show fewer prompt symbols.",
+                        "Nerd Fonts show prompt icons.",
                         self.dropdown(Picker::Font, font_label(&current.terminal_font), cx),
                     ),
-                    row("Font size", "Open terminals resize to fit.", size_stepper),
-                    row("Line height", "Lower is tighter, higher is airier.", line_stepper),
+                    row("Font size", "", size_stepper),
+                    row("Line height", "", line_stepper),
                 ],
             ))
             .into_any_element()

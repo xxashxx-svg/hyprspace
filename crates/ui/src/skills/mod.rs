@@ -253,8 +253,7 @@ impl Skills {
                         .child(format!("{name}.")),
                 )
                 .into_any_element(),
-            None => "Your user skills. Open a project to manage its project skills here too."
-                .into_any_element(),
+            None => "Your user skills. Open a project to see its skills too.".into_any_element(),
         };
         let rows = self.items.iter().enumerate().map(|(i, it)| {
             let edit = it.clone();

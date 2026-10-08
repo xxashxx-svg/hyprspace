@@ -233,7 +233,7 @@ impl Limits {
         }
         if !data.is_empty() {
             out.push(foot_text(
-                "Everything here comes from each tool's own files on this machine. No network calls, no tokens spent.",
+                "Read from each tool's files on this machine. No network calls.",
             ));
         }
         out
