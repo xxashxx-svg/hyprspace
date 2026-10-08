@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.7 — 2026-10-08
+
+- Fixes pairing the Android app with this version of the desktop.
+
 ## 0.24.6 — 2026-10-08
 
 - The reply box lines up with its buttons and matches the look of Settings.
