@@ -99,20 +99,16 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 if on { colors::text1() } else { colors::text3() },
             ))
             .child("Structured")
-            .when(on, |d| {
-                d.bg(colors::surface3())
-                    .border_color(colors::border2())
-                    .text_color(colors::text1())
-            })
+            .when(on, |d| d.bg(colors::ink(0.1)).text_color(colors::text1()))
             .tooltip(widgets::tip(
                 "Run this thread as a transcript instead of a terminal",
             ))
             .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_structured(cx)))
     });
     let frame = if focused {
-        colors::ink(0.16)
+        colors::ink(0.12)
     } else {
-        colors::border1()
+        gpui::transparent_black()
     };
     // the send button firms up once there is something to send; empty, it starts the agent
     // with no task, as a terminal would
@@ -140,8 +136,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .rounded(px(18.))
         .border_1()
         .border_color(frame)
-        .bg(colors::surface2().opacity(0.85))
-        .shadow(colors::shadow())
+        .bg(colors::ink(0.045))
         // files held over the screen land here
         .drag_over::<gpui::ExternalPaths>(|s, _, _, _| {
             s.border_color(colors::accent())
@@ -323,9 +318,7 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
             .flex()
             .flex_col()
             .rounded(px(12.))
-            .border_1()
-            .border_color(colors::border1())
-            .bg(colors::surface2().opacity(0.55))
+            .bg(colors::ink(0.035))
             .overflow_hidden()
             .child(
                 div()

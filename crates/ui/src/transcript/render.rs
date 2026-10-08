@@ -638,7 +638,11 @@ pub(super) fn tool_card(
         None => Some(spinner::eclipse((key.clone(), 1), colors::text3())),
         Some((false, _)) => Some(
             div()
-                .text_color(colors::error())
+                .text_color(if matches!(t, Tool::Edit { .. }) {
+                    colors::error()
+                } else {
+                    colors::text3()
+                })
                 .child("Failed")
                 .into_any_element(),
         ),
@@ -788,11 +792,11 @@ fn composer(
         .rounded(px(14.))
         .border_1()
         .border_color(if focused {
-            colors::ink(0.16)
+            colors::ink(0.12)
         } else {
-            colors::border1()
+            gpui::transparent_black()
         })
-        .bg(colors::surface2().opacity(0.6))
+        .bg(colors::ink(0.045))
         // files held over the thread land here
         .drag_over::<ExternalPaths>(|s, _, _, _| {
             s.border_color(colors::accent())
@@ -825,7 +829,8 @@ fn composer(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .py(px(3.))
+                        .pl(px(2.))
+                        .pt(px(6.))
                         .text_size(px(14.))
                         .line_height(px(22.))
                         .child(v.input.clone()),
