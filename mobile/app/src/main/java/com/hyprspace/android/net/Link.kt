@@ -328,6 +328,11 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         terms.getOrPut(thread) { TermBuffer() to MutableStateFlow(TermView()) }.second
     }
 
+    fun desktopAtLeast(version: String): Boolean {
+        val have = (_conn.value as? Conn.Online)?.version ?: return false
+        return !com.hyprspace.android.update.Releases.newer(version, have)
+    }
+
     fun browse(path: String) {
         _folders.value = null
         send(Up.Folders(path))

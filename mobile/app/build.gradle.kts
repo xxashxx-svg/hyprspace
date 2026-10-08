@@ -6,11 +6,9 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-// The app carries the desktop's version, from the workspace's Cargo.toml, so deploy.ps1 moves
-// both. versionCode follows it, so an update always carries a higher one.
-val appVersion = rootDir.resolve("../Cargo.toml").readLines()
-    .dropWhile { it.trim() != "[workspace.package]" }
-    .firstNotNullOf { Regex("""^version\s*=\s*"([^"]+)"""").find(it.trim())?.groupValues?.get(1) }
+// The app's own version, moved by mobile/deploy.ps1. versionCode follows it, so an update always
+// carries a higher one.
+val appVersion = rootDir.resolve("VERSION").readText().trim()
 val appCode = appVersion.split(".").map { it.toInt() }.let { (a, b, c) -> a * 1_000_000 + b * 1_000 + c }
 // the commit a build came from, so two builds of one version can be told apart
 val commit = providers.exec {

@@ -12,8 +12,8 @@ use crate::assets::icon;
 use crate::time::{ago, local, now_ms};
 use crate::{colors, widgets};
 
-/// The releases page: the Android app is the `HyprSpace-android.apk` asset on a release.
-const APP: &str = "https://github.com/xxashxx-svg/hyprspace/releases";
+/// The Android app's releases, tagged `android-v`, each with a `HyprSpace-android.apk`.
+const APP: &str = "https://github.com/xxashxx-svg/hyprspace/releases?q=android-v&expanded=true";
 
 impl Root {
     pub(super) fn phone_page(&self, cx: &mut Context<Self>) -> AnyElement {

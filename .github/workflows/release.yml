@@ -34,9 +34,9 @@ on:
         type: boolean
         default: false
       android:
-        description: "Also build + attach the Android app (mobile/)"
+        description: "Also build + attach the Android app (mobile/). Phone releases have their own workflow, android.yml."
         type: boolean
-        default: true
+        default: false
       desktop:
         description: "Build Windows and macOS. Off rebuilds only the APK for an existing release."
         type: boolean
@@ -234,7 +234,7 @@ jobs:
               dist/*.dmg dist/*.app.tar.gz dist/latest.json
           fi
           # every platform is in: publish, which is when releases/latest starts pointing here
-          gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false
+          gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false --latest
 
   # The Android app (mobile/, Kotlin and Compose). Its version is its own (hyprspace.version in
   # mobile/gradle.properties), so this only runs when you ask for it, and attaches the APK to the
@@ -285,7 +285,7 @@ jobs:
         working-directory: mobile
         run: |
           tag="${{ inputs.tag }}"
-          version=$(grep -m1 '^version = ' ../Cargo.toml | cut -d'"' -f2)
+          version=$(tr -d '[:space:]' < VERSION)
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/HyprSpace-android-$version.apk"
           # a stable name too, so a link to the app never goes stale

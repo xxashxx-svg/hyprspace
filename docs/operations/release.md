@@ -40,20 +40,29 @@ Don't move or delete a pushed tag without asking.
 
 ## The Android app
 
-`mobile/` carries the desktop's version: its build reads the workspace `version` from
-`Cargo.toml`, so `deploy.ps1` moves both and there is nothing to raise by hand. `versionCode` is
-worked out from it (major * 1000000 + minor * 1000 + patch), so it only goes up, as Android needs.
-Every build also carries the commit it came from, shown in the app's Settings and next to the
-phone in the desktop's Settings, Phone, so two builds of one version can be told apart.
+The app has its own version in `mobile/VERSION` and ships on its own, separate from the desktop:
 
-The app ships with every desktop release (`release.yml`'s **android** input, on by default). The
-job tests and builds the APK and attaches it as `HyprSpace-android-<version>.apk` and
-`HyprSpace-android.apk`. Installed apps check the latest release every six hours, download that
-APK, check its SHA-256 against GitHub's digest and its signer against their own, and install it
-with Android's package installer. The first update asks; after that, on Android 12 and newer, the
-app installs updates itself a minute after it leaves the screen. It signs with the
-`ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets (key alias `hyprspace`); without
-them the APK is signed with a throwaway key and can't update an install of a real release.
+```powershell
+.\mobile\deploy.ps1 patch "One bullet per line`nAnother bullet"
+```
+
+It bumps `mobile/VERSION`, commits `android: android-v<new>`, tags, pushes, opens a draft release
+and runs `.github/workflows/android.yml`. CI tests and builds the APK, signs it with the
+`ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets (key alias `hyprspace`),
+attaches `HyprSpace-android-<version>.apk` and `HyprSpace-android.apk`, and publishes the release
+with `--latest=false`. The repo's latest release stays the desktop's, because the desktop updater
+reads `latest.json` from it; `release.yml` marks each desktop release latest when it publishes.
+`versionCode` is worked out from the version (major * 1000000 + minor * 1000 + patch), so it only
+goes up, as Android needs.
+
+Installed apps list the releases every six hours, take the newest `android-v` one with an APK,
+check its SHA-256 against GitHub's digest and its signer against their own, and install it with
+Android's package installer. The first update asks; after that, on Android 12 and newer, the app
+installs updates itself a minute after it leaves the screen.
+
+The app and the desktop stay compatible through `PROTOCOL`, not their versions. A phone feature
+that needs something new from the desktop ships both, and the app hides it until the desktop says
+it is new enough (`Link.desktopAtLeast`, against the version in `Welcome`).
 
 A desktop release that changes `PROTOCOL` needs an app release with it: a phone on the old
 protocol is told to update, not let in.

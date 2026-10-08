@@ -1,0 +1,77 @@
+# The Android app's own release, cut by mobile/deploy.ps1: test, build and sign the APK for
+# android-v<version>, attach it to that draft release, and publish it without making it the repo's
+# latest release. The desktop updater reads latest.json from the latest release, so that stays the
+# desktop's. The app finds its updates by the android-v tags (mobile/.../update/Updater.kt).
+#
+# Secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD (key alias "hyprspace", the same
+# password for the key). An APK signed with any other key can't update an installed app.
+
+name: android
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. android-v1.0.1"
+        required: true
+
+env:
+  RELEASES_REPO: xxashxx-svg/hyprspace
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: The tag matches mobile/VERSION
+        run: |
+          want="android-v$(tr -d '[:space:]' < mobile/VERSION)"
+          if [ "$want" != "${{ inputs.tag }}" ]; then
+            echo "::error::mobile/VERSION says $want, not ${{ inputs.tag }}"
+            exit 1
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Restore the signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::No ANDROID_KEYSTORE_BASE64 secret. A debug-signed APK can't update installed apps."
+            exit 1
+          fi
+          mkdir -p ~/.hyprspace-signing
+          echo "$KEYSTORE" | base64 -d > ~/.hyprspace-signing/android.jks
+          chmod 700 ~/.hyprspace-signing && chmod 600 ~/.hyprspace-signing/android.jks
+          {
+            echo "HYPRSPACE_ANDROID_KEYSTORE=$HOME/.hyprspace-signing/android.jks"
+            echo "HYPRSPACE_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "HYPRSPACE_ANDROID_KEY_ALIAS=hyprspace"
+            echo "HYPRSPACE_ANDROID_KEY_PASSWORD=$KEYSTORE_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Test and build the APK
+        working-directory: mobile
+        run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
+      - name: Attach it and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: mobile
+        run: |
+          tag="${{ inputs.tag }}"
+          version=$(tr -d '[:space:]' < VERSION)
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/HyprSpace-android-$version.apk"
+          cp app/build/outputs/apk/release/app-release.apk out/HyprSpace-android.apk
+          gh release upload "$tag" --repo "$RELEASES_REPO" --clobber \
+            "out/HyprSpace-android-$version.apk" out/HyprSpace-android.apk
+          gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false --latest=false

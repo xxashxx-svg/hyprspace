@@ -37,15 +37,21 @@ sealed interface Update {
 data class Release(val version: String, val url: String, val size: Long, val sha256: String?)
 
 object Releases {
-    const val LATEST = "https://api.github.com/repos/xxashxx-svg/hyprspace/releases/latest"
+    const val LIST = "https://api.github.com/repos/xxashxx-svg/hyprspace/releases?per_page=50"
+    const val TAG = "android-v"
     const val APK = "HyprSpace-android.apk"
 
-    fun parse(json: String): Release? {
-        val v = wire.parseToJsonElement(json).jsonObject
-        val tag = v["tag_name"]?.jsonPrimitive?.content ?: return null
+    fun parse(json: String): Release? =
+        wire.parseToJsonElement(json).jsonArray.map { it.jsonObject }
+            .filter { it.text("draft") != "true" && it.text("prerelease") != "true" }
+            .mapNotNull { one(it) }
+            .reduceOrNull { a, b -> if (newer(b.version, a.version)) b else a }
+
+    private fun one(v: JsonObject): Release? {
+        val tag = v.text("tag_name")?.takeIf { it.startsWith(TAG) } ?: return null
         val asset = v["assets"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { it.text("name") == APK } ?: return null
         return Release(
-            version = tag.removePrefix("v"),
+            version = tag.removePrefix(TAG),
             url = asset.text("browser_download_url") ?: return null,
             size = asset["size"]?.jsonPrimitive?.longOrNull ?: 0,
             sha256 = asset.text("digest")?.takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:"),
@@ -92,7 +98,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
     }
 
     private fun fetch(): Update {
-        val body = http.newCall(Request.Builder().url(Releases.LATEST).header("Accept", "application/vnd.github+json").build())
+        val body = http.newCall(Request.Builder().url(Releases.LIST).header("Accept", "application/vnd.github+json").build())
             .execute().use { r ->
                 if (!r.isSuccessful) error("GitHub answered ${r.code}.")
                 r.body.string()

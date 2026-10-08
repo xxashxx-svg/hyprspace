@@ -110,9 +110,11 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
 
             Field("Space") {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip(on = folder != null, onClick = { browsing = true; app.link.browse(folder ?: "") }) {
-                        Icon(painterResource(R.drawable.ic_folder), null, Modifier.size(14.dp))
-                        Text(folder?.let(::leaf) ?: "Other folder", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (app.link.desktopAtLeast(FOLDERS)) {
+                        Chip(on = folder != null, onClick = { browsing = true; app.link.browse(folder ?: "") }) {
+                            Icon(painterResource(R.drawable.ic_folder), null, Modifier.size(14.dp))
+                            Text(folder?.let(::leaf) ?: "Other folder", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                     for (s in order) {
                         Chip(on = folder == null && s.id == spaceId, onClick = { spaceId = s.id; folder = null }) {
@@ -215,6 +217,8 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
         }
     }
 }
+
+private const val FOLDERS = "0.24.8"
 
 private fun leaf(path: String): String =
     path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/').ifEmpty { path }
