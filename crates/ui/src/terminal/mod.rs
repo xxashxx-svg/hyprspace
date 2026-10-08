@@ -4,6 +4,7 @@
 // each have their own module.
 
 mod clipboard;
+mod contrast;
 mod emulator;
 mod glyphs;
 mod images;

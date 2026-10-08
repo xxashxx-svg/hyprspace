@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
@@ -85,6 +87,28 @@ private fun color(c: Long?, h: Hues, fallback: Color): Color = when {
     else -> fallback
 }
 
+private val seen = HashMap<Pair<Color, Color>, Color>()
+
+/**
+ * Text pushed toward black on a light background, or white on a dark one, just far enough to
+ * read (4.5:1). A program's colors are picked for one kind of background, as the desktop does.
+ */
+private fun readable(fg: Color, bg: Color): Color = seen.getOrPut(fg to bg) {
+    fun ratio(a: Color, b: Color): Float {
+        val (x, y) = a.luminance() to b.luminance()
+        return (maxOf(x, y) + 0.05f) / (minOf(x, y) + 0.05f)
+    }
+    if (ratio(fg, bg) >= 4.5f) return@getOrPut fg
+    val toward = if (bg.luminance() > 0.18f) Color.Black else Color.White
+    var lo = 0f
+    var hi = 1f
+    repeat(12) {
+        val mid = (lo + hi) / 2
+        if (ratio(lerp(fg, toward, mid), bg) >= 4.5f) hi = mid else lo = mid
+    }
+    lerp(fg, toward, hi).copy(alpha = fg.alpha)
+}
+
 /** A line as styled text, with the cursor drawn at [cursor] when it's on this line. */
 private fun line(spans: List<Span>, h: Hues, cursor: Int?): AnnotatedString = buildAnnotatedString {
     var col = 0
@@ -96,6 +120,7 @@ private fun line(spans: List<Span>, h: Hues, cursor: Int?): AnnotatedString = bu
             fg = if (bg == Color.Transparent) h.termBg else bg
             bg = f
         }
+        fg = readable(fg, if (bg == Color.Transparent) h.termBg else bg)
         if (s.s and Span.DIM != 0) fg = fg.copy(alpha = fg.alpha * 0.6f)
         if (s.s and Span.HIDDEN != 0) fg = Color.Transparent
         val style = SpanStyle(

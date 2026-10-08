@@ -315,7 +315,8 @@ fn text_color(cell: &Cell, under_cursor: bool) -> Hsla {
     if under_cursor {
         return hsla(theme().term_bg);
     }
-    let mut color = cell_color(cell.colors().0);
+    let (fg, bg) = cell.colors();
+    let mut color = super::contrast::readable(cell_color(fg), cell_color(bg));
     if cell.dim {
         color.a *= 0.6;
     }
