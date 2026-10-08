@@ -397,7 +397,7 @@ impl Transcript {
                 expired: false,
             }),
             RunEvent::Context { used, window } => self.context = Some((used, window)),
-            RunEvent::Steered | RunEvent::Usage { .. } => {}
+            RunEvent::Steered | RunEvent::Usage { .. } | RunEvent::Limited { .. } => {}
             RunEvent::Error { message } => self.items.push(Item::Error(message)),
             RunEvent::Finished {
                 status,

@@ -150,6 +150,7 @@ struct Run {
     kill_at: Option<Instant>,
     input: u64,
     output: u64,
+    limited: bool,
 }
 
 impl Run {
@@ -162,6 +163,7 @@ impl Run {
             kill_at: None,
             input: 0,
             output: 0,
+            limited: false,
         }
     }
 }
@@ -371,6 +373,9 @@ impl Actor {
                     (self.emit)(RunEvent::Error {
                         message: error_text(code),
                     });
+                    if code == "rate_limit" {
+                        self.limited(None);
+                    }
                 }
                 if let Some(used) = context_used(&v["message"]["usage"]) {
                     self.context = used;
@@ -426,9 +431,7 @@ impl Actor {
                     .remove(v["request_id"].as_str().unwrap_or_default());
             }
             "rate_limit_event" if v["rate_limit_info"]["status"] == "rejected" => {
-                (self.emit)(RunEvent::Error {
-                    message: "Claude's usage limit was reached. Try again after it resets.".into(),
-                });
+                self.limited(resets(&v["rate_limit_info"]["resetsAt"]));
             }
             "result" => self.result(v),
             _ => {}
@@ -522,6 +525,15 @@ impl Actor {
         };
         for _ in run.steers.drain(..=at) {
             (self.emit)(RunEvent::Steered);
+        }
+    }
+
+    fn limited(&mut self, resets: Option<u64>) {
+        if let Some(run) = self.run.as_mut()
+            && !run.limited
+        {
+            run.limited = true;
+            (self.emit)(RunEvent::Limited { resets });
         }
     }
 
@@ -619,6 +631,11 @@ fn blocks(v: &Value) -> &[Value] {
         .unwrap_or_default()
 }
 
+fn resets(v: &Value) -> Option<u64> {
+    let t = v.as_u64().or_else(|| v.as_f64().map(|f| f as u64))?;
+    Some(if t < 100_000_000_000 { t * 1000 } else { t })
+}
+
 // The terse codes an assistant frame carries when a turn fails before any reply.
 fn error_text(code: &str) -> String {
     match code {
@@ -660,6 +677,20 @@ fn result_error(v: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn limit_resets_read_as_ms() {
+        use serde_json::json;
+        assert_eq!(
+            super::resets(&json!(1_760_000_000)),
+            Some(1_760_000_000_000)
+        );
+        assert_eq!(
+            super::resets(&json!(1_760_000_000_000u64)),
+            Some(1_760_000_000_000)
+        );
+        assert_eq!(super::resets(&json!(null)), None);
+    }
+
     use super::*;
 
     #[test]

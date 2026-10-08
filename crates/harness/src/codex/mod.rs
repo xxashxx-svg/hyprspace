@@ -421,6 +421,9 @@ impl Actor {
                 (self.emit)(RunEvent::Error {
                     message: readable(&params["error"]["message"]),
                 });
+                if limited(&params["error"]) {
+                    (self.emit)(RunEvent::Limited { resets: None });
+                }
             }
             "turn/completed" => self.turn_completed(&params["turn"]).await,
             _ => {}
@@ -532,6 +535,15 @@ fn text(v: &Value) -> String {
     v.as_str().unwrap_or_default().to_string()
 }
 
+fn limited(error: &Value) -> bool {
+    let info = &error["codexErrorInfo"];
+    info == "usageLimitExceeded"
+        || info.get("usageLimitExceeded").is_some()
+        || text(&error["message"])
+            .to_lowercase()
+            .contains("usage limit")
+}
+
 /// An error message, unwrapped when codex passes the API's JSON error body through as is.
 fn readable(message: &Value) -> String {
     let raw = text(message);
@@ -549,6 +561,20 @@ async fn sleep_until(at: Option<Instant>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn usage_limits_are_told_apart() {
+        use serde_json::json;
+        assert!(super::limited(
+            &json!({ "message": "x", "codexErrorInfo": "usageLimitExceeded" })
+        ));
+        assert!(super::limited(
+            &json!({ "message": "You've hit your usage limit. Try again at 3:05 PM." })
+        ));
+        assert!(!super::limited(
+            &json!({ "message": "stream disconnected", "codexErrorInfo": "other" })
+        ));
+    }
+
     use super::*;
 
     #[test]

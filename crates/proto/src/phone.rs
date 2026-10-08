@@ -582,6 +582,9 @@ mod tests {
                 answer: Answer::AllowAlways,
             },
             run(RunEvent::Steered),
+            run(RunEvent::Limited {
+                resets: Some(1_760_000_000_000),
+            }),
             run(RunEvent::Usage {
                 input: 1,
                 output: 2,

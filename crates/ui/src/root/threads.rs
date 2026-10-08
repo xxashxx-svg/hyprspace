@@ -13,6 +13,8 @@ use crate::terminal::{TerminalEvent, TerminalView};
 use crate::time::now_ms;
 use crate::transcript::{Status, TranscriptEvent, TranscriptView};
 
+const RETRY_LIMIT: u64 = 30 * 60 * 1000;
+
 /// Two paths name the same folder. Windows paths are case-blind.
 fn same_folder(a: &Path, b: &Path) -> bool {
     let norm = |p: &Path| {
@@ -248,6 +250,8 @@ impl Root {
             ThreadKind::Structured { launch } => {
                 let launch = launch.clone();
                 let journal = thread.journal();
+                let queue = thread.queue.clone();
+                let resume_at = thread.resume_at;
                 let catalog = self
                     .agents
                     .iter()
@@ -256,6 +260,8 @@ impl Root {
                 let v = cx.new(|cx| {
                     let mut v =
                         TranscriptView::new(session, launch, journal, history, first, client, cx);
+                    v.set_queue(queue);
+                    v.set_resume(resume_at, cx);
                     if let Some(c) = catalog {
                         v.set_catalog(c, cx);
                     }
@@ -364,6 +370,44 @@ impl Root {
                 {
                     launch.resume = Some(t.clone());
                     launch.cwd = cwd.clone();
+                }
+                self.save();
+            }
+            TranscriptEvent::Limited(resets) => {
+                let now = now_ms();
+                let agent = self
+                    .state
+                    .thread(thread)
+                    .and_then(|(_, t)| t.agent().map(|l| l.agent));
+                let meter = agent.and_then(|a| {
+                    self.limits
+                        .read(cx)
+                        .readings
+                        .picture(now as i64)
+                        .spent_until(a, now as i64)
+                });
+                let at = resets
+                    .or(meter.map(|m| m as u64))
+                    .filter(|at| *at > now)
+                    .unwrap_or(now + RETRY_LIMIT)
+                    + 60_000;
+                if let Some(t) = self.state.thread_mut(thread) {
+                    t.resume_at = Some(at);
+                }
+                if let Some(View::Structured(v)) = self.views.get(&thread) {
+                    v.update(cx, |v, cx| v.set_resume(Some(at), cx));
+                }
+                self.save();
+            }
+            TranscriptEvent::ResumeAt(at) => {
+                if let Some(t) = self.state.thread_mut(thread) {
+                    t.resume_at = *at;
+                }
+                self.save();
+            }
+            TranscriptEvent::Queue(queue) => {
+                if let Some(t) = self.state.thread_mut(thread) {
+                    t.queue = queue.clone();
                 }
                 self.save();
             }

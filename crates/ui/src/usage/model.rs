@@ -316,6 +316,16 @@ impl Picture {
         self.claude.iter().chain(self.codex.iter())
     }
 
+    pub fn spent_until(&self, agent: Agent, now: i64) -> Option<i64> {
+        self.blocks()
+            .filter(|b| b.agent == agent)
+            .flat_map(|b| &b.windows)
+            .filter(|w| w.pct >= 99.5)
+            .filter_map(|w| w.resets_at)
+            .filter(|at| *at > now)
+            .max()
+    }
+
     /// The window the ring reports: the most urgent across every provider, so it never sits
     /// calmly on Claude's session while Codex is about to run out. A spent window can't move and
     /// can't be acted on, so it only counts when every window is spent.
@@ -344,6 +354,36 @@ impl Picture {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_spent_window_says_when_the_agent_can_go_again() {
+        let win = |pct: f64, at: i64| Win {
+            key: "w".into(),
+            label: "w".into(),
+            pct,
+            resets_at: Some(at),
+            window_ms: None,
+            severity: None,
+            stale: false,
+        };
+        let block = |agent, windows| Block {
+            agent,
+            plan: None,
+            updated_at: None,
+            windows,
+            note: None,
+            extra: None,
+        };
+        let p = Picture {
+            claude: Some(block(Agent::Claude, vec![win(100.0, 500), win(40.0, 900)])),
+            codex: Some(block(Agent::Codex, vec![win(80.0, 700)])),
+            claude_stale: false,
+            claude_missing: None,
+            codex_missing: None,
+        };
+        assert_eq!(p.spent_until(Agent::Claude, 100), Some(500));
+        assert_eq!(p.spent_until(Agent::Claude, 600), None);
+        assert_eq!(p.spent_until(Agent::Codex, 100), None);
+    }
     use hyprspace_proto::usage::UsageWindow;
 
     use super::*;

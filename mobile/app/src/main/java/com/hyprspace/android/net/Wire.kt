@@ -412,6 +412,9 @@ sealed interface RunEvent {
     @Serializable @SerialName("finished")
     data class Finished(val status: RunStatus, val ms: Long, val text: String = "", val error: String? = null) : RunEvent
 
+    @Serializable @SerialName("limited")
+    data class Limited(val resets: Long? = null) : RunEvent
+
     @Serializable @SerialName("failed")
     data class Failed(val message: String) : RunEvent
 }

@@ -132,6 +132,8 @@ pub enum RunEvent {
     Context { used: u64, window: u64 },
     /// Something went wrong that the user should see. The run may still go on.
     Error { message: String },
+    /// The plan's usage limit stopped the run. `resets` is unix ms, when the CLI said.
+    Limited { resets: Option<u64> },
     Finished {
         status: RunStatus,
         ms: u64,
@@ -270,6 +272,9 @@ mod tests {
                 },
             },
             RunEvent::Woke,
+            RunEvent::Limited {
+                resets: Some(1_760_000_000_000),
+            },
             RunEvent::Finished {
                 status: RunStatus::Interrupted,
                 ms: 10,

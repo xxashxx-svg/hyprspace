@@ -509,6 +509,9 @@ impl Root {
         .flex_none()
         .group_hover(group.clone(), |s| s.opacity(0.));
         let state = match status {
+            _ if t.resume_at.is_some() => {
+                Some(icon("clock", 12., colors::busy()).into_any_element())
+            }
             Status::Waiting => Some(
                 widgets::status_dot(status)
                     .with_animation(

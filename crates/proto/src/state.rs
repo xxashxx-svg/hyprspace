@@ -189,6 +189,9 @@ pub struct Thread {
     /// Its place in the sidebar's list, higher nearer the top, once it was dragged there; until
     /// then, when it was made. Activity never changes it, so a row stays where it is.
     pub order: Option<i64>,
+    pub queue: Vec<Prompt>,
+    pub resume_at: Option<u64>,
+    pub parent: Option<u64>,
 }
 
 /// When a snoozed thread comes back.
@@ -215,6 +218,9 @@ impl Default for Thread {
             touched: 0,
             snooze: None,
             order: None,
+            queue: Vec::new(),
+            resume_at: None,
+            parent: None,
         }
     }
 }

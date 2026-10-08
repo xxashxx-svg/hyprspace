@@ -14,7 +14,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window, div,
     prelude::*, px,
 };
-use hyprspace_proto::{Agent, Snooze, ThreadKind};
+use hyprspace_proto::{Agent, Snooze, Thread, ThreadKind};
 
 use super::{Root, Screen};
 use crate::assets::icon;
@@ -265,6 +265,27 @@ impl Root {
         }
     }
 
+    fn resume_due(&mut self, now: u64, cx: &mut Context<Self>) {
+        let due: Vec<Thread> = self
+            .state
+            .spaces
+            .iter()
+            .flat_map(|s| &s.threads)
+            .filter(|t| t.resume_at.is_some_and(|at| at <= now))
+            .cloned()
+            .collect();
+        for t in due {
+            if !self.views.contains_key(&t.id) {
+                self.make_view(&t, None, true, cx);
+            }
+            if let Some(super::View::Structured(v)) = self.views.get(&t.id) {
+                v.update(cx, |v, cx| v.continue_now(cx));
+            } else if let Some(t) = self.state.thread_mut(t.id) {
+                t.resume_at = None;
+            }
+        }
+    }
+
     /// Wakes snoozes that are due and settles threads that sat untouched long enough. The pump
     /// calls it every few seconds.
     pub(crate) fn tidy_threads(&mut self, cx: &mut Context<Self>) {
@@ -299,6 +320,7 @@ impl Root {
         for id in looked {
             self.free(id);
         }
+        self.resume_due(now, cx);
         woke.extend(self.state.wake_due(now, false));
         for s in &mut self.state.spaces {
             for t in &mut s.threads {

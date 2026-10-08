@@ -179,7 +179,7 @@ class Transcript {
                 key(), event.request, event.tool, event.reason, event.always, null, false,
             )
             is RunEvent.Context -> context = event.used to event.window
-            RunEvent.Steered, is RunEvent.Usage -> {}
+            RunEvent.Steered, is RunEvent.Usage, is RunEvent.Limited -> {}
             is RunEvent.Error -> items += Item.Error(key(), event.message)
             is RunEvent.Finished -> {
                 if (event.text.isNotEmpty() && !(running && said)) items += Item.Reply(key(), event.text)

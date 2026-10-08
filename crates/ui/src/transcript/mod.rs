@@ -35,6 +35,9 @@ pub enum TranscriptEvent {
     },
     /// The user picked another model for this thread.
     Launch(Launch),
+    Queue(Vec<Prompt>),
+    Limited(Option<u64>),
+    ResumeAt(Option<u64>),
 }
 
 pub struct TranscriptView {
@@ -48,6 +51,8 @@ pub struct TranscriptView {
     /// Waiting for the journal; a prompt sent meanwhile waits in `queued`.
     loading: bool,
     queued: Option<Prompt>,
+    queue: Vec<Prompt>,
+    resume_at: Option<u64>,
     input: Entity<TextInput>,
     images: Vec<PathBuf>,
     scroll: ScrollHandle,
@@ -109,6 +114,8 @@ impl TranscriptView {
             open: false,
             loading: history,
             queued: None,
+            queue: Vec::new(),
+            resume_at: None,
             input,
             images: Vec::new(),
             scroll: ScrollHandle::new(),
@@ -159,6 +166,27 @@ impl TranscriptView {
         self.launch.agent
     }
 
+    pub fn set_queue(&mut self, queue: Vec<Prompt>) {
+        self.queue = queue;
+    }
+
+    pub fn set_resume(&mut self, at: Option<u64>, cx: &mut Context<Self>) {
+        self.resume_at = at;
+        cx.notify();
+    }
+
+    pub fn continue_now(&mut self, cx: &mut Context<Self>) {
+        self.cancel_resume(cx);
+        self.offer(Prompt::text(CONTINUE), cx);
+    }
+
+    pub(super) fn cancel_resume(&mut self, cx: &mut Context<Self>) {
+        if self.resume_at.take().is_some() {
+            cx.emit(TranscriptEvent::ResumeAt(None));
+            cx.notify();
+        }
+    }
+
     pub fn set_catalog(&mut self, catalog: AgentCatalog, cx: &mut Context<Self>) {
         self.catalog = Some(catalog);
         cx.notify();
@@ -171,12 +199,7 @@ impl TranscriptView {
 
     /// A message from the phone, sent the way the reply box sends one.
     pub fn send_text(&mut self, text: String, cx: &mut Context<Self>) {
-        let prompt = Prompt::text(text);
-        if self.loading {
-            self.queued = Some(prompt);
-            return;
-        }
-        self.send(prompt, cx);
+        self.offer(Prompt::text(text), cx);
     }
 
     /// An approval answered from the phone.
@@ -199,14 +222,50 @@ impl TranscriptView {
             images: std::mem::take(&mut self.images),
         };
         self.input.update(cx, |i, cx| i.set_text("", cx));
+        self.offer(prompt, cx);
+    }
+
+    fn offer(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
         if self.loading {
             self.queued = Some(prompt);
-            return;
+        } else if self.model.running() {
+            self.queue.push(prompt);
+            self.queue_changed(cx);
+        } else {
+            self.send(prompt, cx);
         }
-        self.send(prompt, cx);
+    }
+
+    pub(super) fn steer(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if ix < self.queue.len() {
+            let prompt = self.queue.remove(ix);
+            self.queue_changed(cx);
+            self.send(prompt, cx);
+        }
+    }
+
+    pub(super) fn unqueue(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if ix < self.queue.len() {
+            self.queue.remove(ix);
+            self.queue_changed(cx);
+        }
+    }
+
+    fn next_queued(&mut self, cx: &mut Context<Self>) {
+        if !self.model.running() && !self.queue.is_empty() {
+            let prompt = self.queue.remove(0);
+            self.queue_changed(cx);
+            self.send(prompt, cx);
+        }
+    }
+
+    fn queue_changed(&mut self, cx: &mut Context<Self>) {
+        cx.emit(TranscriptEvent::Queue(self.queue.clone()));
+        cx.notify();
     }
 
     fn send(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
+        self.cancel_resume(cx);
         self.model.prompt(&prompt);
         if self.open {
             self.client.send(Command::Send {
@@ -328,12 +387,25 @@ impl TranscriptView {
         if matches!(event, RunEvent::Failed { .. }) {
             self.open = false;
         }
+        if let RunEvent::Limited { resets } = &event {
+            cx.emit(TranscriptEvent::Limited(*resets));
+        }
+        let done = matches!(
+            event,
+            RunEvent::Finished {
+                status: hyprspace_proto::RunStatus::Done,
+                ..
+            }
+        );
         let follow = self.at_bottom();
         self.model.apply(event);
         if follow {
             self.scroll.scroll_to_bottom();
         }
         self.changed(cx);
+        if done {
+            self.next_queued(cx);
+        }
     }
 
     /// The engine could not start or reach the session.
@@ -495,7 +567,8 @@ impl model_menu::Host for TranscriptView {
 }
 
 const IDLE_HINT: &str = "Ask for anything";
-const RUNNING_HINT: &str = "Reply, or steer while it works";
+const CONTINUE: &str = "The usage limit has reset. Continue where you left off.";
+const RUNNING_HINT: &str = "Queue a message for when it finishes";
 
 impl Focusable for TranscriptView {
     fn focus_handle(&self, cx: &gpui::App) -> gpui::FocusHandle {
