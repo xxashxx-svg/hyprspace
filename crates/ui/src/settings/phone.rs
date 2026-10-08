@@ -220,7 +220,7 @@ impl Root {
             .iter()
             .map(|d| {
                 let id = d.id.clone();
-                let seen = if d.online {
+                let mut seen = if d.online {
                     "Connected now".to_string()
                 } else {
                     match ago(d.seen, now).as_str() {
@@ -228,6 +228,9 @@ impl Root {
                         a => format!("Last connected {a} ago"),
                     }
                 };
+                if !d.app.is_empty() {
+                    seen = format!("{seen}. App {}", d.app);
+                }
                 row(
                     d.name.clone(),
                     seen,

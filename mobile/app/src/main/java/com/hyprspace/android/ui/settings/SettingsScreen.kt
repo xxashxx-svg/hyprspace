@@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hyprspace.android.App
-import com.hyprspace.android.BuildConfig
+import com.hyprspace.android.net.APP
 import com.hyprspace.android.R
 import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.Desktop
@@ -163,8 +163,15 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
 
             Group("About") {
                 Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    Text("Version", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = h.text1)
-                    Text(BuildConfig.VERSION_NAME, fontFamily = Mono, style = MaterialTheme.typography.bodyMedium, color = h.text2)
+                    Text("This app", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = h.text1)
+                    Text(APP, fontFamily = Mono, style = MaterialTheme.typography.bodyMedium, color = h.text2)
+                }
+                (conn as? Conn.Online)?.version?.takeIf { it.isNotEmpty() }?.let { desk ->
+                    HorizontalDivider(color = h.border0)
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        Text("HyprSpace on ${(conn as Conn.Online).desktop}", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = h.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(desk, fontFamily = Mono, style = MaterialTheme.typography.bodyMedium, color = h.text2)
+                    }
                 }
                 HorizontalDivider(color = h.border0)
                 Text(

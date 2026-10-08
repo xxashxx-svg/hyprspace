@@ -22,6 +22,9 @@ pub enum Up {
         token: String,
         device: String,
         protocol: u32,
+        /// The app's version and the commit it was built from, "0.24.4 (5321b19)".
+        #[serde(default)]
+        app: String,
     },
     /// The first message from a phone pairing now, with the code from the desktop's QR or
     /// screen. Answered with `Welcome` carrying the phone's token, or `Denied`.
@@ -29,6 +32,8 @@ pub enum Up {
         code: String,
         device: String,
         protocol: u32,
+        #[serde(default)]
+        app: String,
     },
     /// Stream one thread: its transcript, or its terminal's screen.
     Watch {
@@ -414,6 +419,8 @@ pub struct Device {
     pub paired: u64,
     pub seen: u64,
     pub online: bool,
+    /// The app version it last connected with.
+    pub app: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -712,11 +719,13 @@ mod tests {
                 token: "tok".into(),
                 device: "Pixel".into(),
                 protocol: PROTOCOL,
+                app: "0.24.4 (5321b19)".into(),
             },
             Up::Pair {
                 code: "K7MX-Q2RT".into(),
                 device: "Pixel".into(),
                 protocol: PROTOCOL,
+                app: "0.24.4 (5321b19)".into(),
             },
             Up::Watch { thread: 2 },
             Up::Unwatch { thread: 2 },

@@ -30,6 +30,8 @@ struct Saved1 {
     token: String,
     paired: u64,
     seen: u64,
+    #[serde(default)]
+    app: String,
 }
 
 pub struct Store {
@@ -111,7 +113,7 @@ impl Store {
     }
 
     /// Pairs a phone and returns its id and the token it keeps.
-    pub fn add(&mut self, name: &str, now: u64) -> (String, String) {
+    pub fn add(&mut self, name: &str, app: &str, now: u64) -> (String, String) {
         let id = URL_SAFE_NO_PAD.encode(random(9));
         let token = URL_SAFE_NO_PAD.encode(random(32));
         self.saved.devices.push(Saved1 {
@@ -120,16 +122,18 @@ impl Store {
             token: hash(&token),
             paired: now,
             seen: now,
+            app: app.to_string(),
         });
         self.save();
         (id, token)
     }
 
     /// The paired phone holding `token`, marked seen now, with its saved name updated.
-    pub fn check(&mut self, token: &str, name: &str, now: u64) -> Option<String> {
+    pub fn check(&mut self, token: &str, name: &str, app: &str, now: u64) -> Option<String> {
         let h = hash(token);
         let d = self.saved.devices.iter_mut().find(|d| d.token == h)?;
         d.seen = now;
+        d.app = app.to_string();
         if !name.is_empty() {
             d.name = name.to_string();
         }
@@ -153,6 +157,7 @@ impl Store {
                 paired: d.paired,
                 seen: d.seen,
                 online: online(&d.id),
+                app: d.app.clone(),
             })
             .collect()
     }
@@ -179,18 +184,19 @@ mod tests {
     fn a_token_works_until_its_phone_is_forgotten() {
         let dir = tempfile::tempdir().unwrap();
         let mut s = Store::load(dir.path());
-        let (id, token) = s.add("Pixel", 1);
+        let (id, token) = s.add("Pixel", "0.24.4", 1);
         assert!(
             !std::fs::read_to_string(dir.path().join("phone.json"))
                 .unwrap()
                 .contains(&token)
         );
         let mut s = Store::load(dir.path());
-        assert_eq!(s.check(&token, "Pixel 9", 2), Some(id.clone()));
-        assert_eq!(s.check("nope", "", 2), None);
+        assert_eq!(s.check(&token, "Pixel 9", "0.25.0", 2), Some(id.clone()));
+        assert_eq!(s.check("nope", "", "", 2), None);
+        assert_eq!(s.devices(|_| false)[0].app, "0.25.0");
         assert_eq!(s.devices(|_| false)[0].name, "Pixel 9");
         s.forget(&id);
-        assert_eq!(s.check(&token, "", 3), None);
+        assert_eq!(s.check(&token, "", "", 3), None);
     }
 
     #[test]

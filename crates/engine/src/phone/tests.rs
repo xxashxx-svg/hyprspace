@@ -215,6 +215,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 code: secret.clone(),
                 device: "Test phone".into(),
                 protocol: PROTOCOL,
+                app: String::new(),
             },
         )
         .await;
@@ -308,6 +309,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 token: token.clone(),
                 device: "Test phone".into(),
                 protocol: PROTOCOL,
+                app: String::new(),
             },
         )
         .await;
@@ -324,6 +326,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 code: secret.clone(),
                 device: "Thief".into(),
                 protocol: PROTOCOL,
+                app: String::new(),
             },
         )
         .await;
@@ -336,6 +339,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 token: "made-up".into(),
                 device: "Thief".into(),
                 protocol: PROTOCOL,
+                app: String::new(),
             },
         )
         .await;

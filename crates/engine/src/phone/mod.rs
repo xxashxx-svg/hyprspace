@@ -275,12 +275,13 @@ impl Phone {
                 token,
                 device,
                 protocol,
+                app,
             } => {
                 if protocol != PROTOCOL {
                     return Err(outdated(protocol));
                 }
                 let device = clip(&device);
-                match hub.store.check(&token, &device, now) {
+                match hub.store.check(&token, &device, &clip(&app), now) {
                     Some(id) => (protocol, id, None),
                     None => {
                         hub.failures.push_back(Instant::now());
@@ -295,6 +296,7 @@ impl Phone {
                 code,
                 device,
                 protocol,
+                app,
             } => {
                 if protocol != PROTOCOL {
                     return Err(outdated(protocol));
@@ -323,7 +325,7 @@ impl Phone {
                 }
                 hub.pairing = None;
                 hub.send_pairing();
-                let (id, token) = hub.store.add(&clip(&device), now);
+                let (id, token) = hub.store.add(&clip(&device), &clip(&app), now);
                 (protocol, id, Some(token))
             }
             _ => return Err("Say hello first.".into()),

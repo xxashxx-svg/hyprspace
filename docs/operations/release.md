@@ -40,9 +40,11 @@ Don't move or delete a pushed tag without asking.
 
 ## The Android app
 
-`mobile/` has its own version, `hyprspace.version` in `mobile/gradle.properties`, and its
-`versionCode` is worked out from it. Raise it by hand when the app changes; it only goes up,
-since Android refuses an update whose `versionCode` isn't higher.
+`mobile/` carries the desktop's version: its build reads the workspace `version` from
+`Cargo.toml`, so `deploy.ps1` moves both and there is nothing to raise by hand. `versionCode` is
+worked out from it (major * 1000000 + minor * 1000 + patch), so it only goes up, as Android needs.
+Every build also carries the commit it came from, shown in the app's Settings and next to the
+phone in the desktop's Settings, Phone, so two builds of one version can be told apart.
 
 The app ships on a desktop release, only when asked: run `release.yml` with **android** ticked
 (or ask for it alongside a `deploy.ps1` release). The job tests and builds the APK and attaches

@@ -6,6 +6,7 @@
 
 package com.hyprspace.android.net
 
+import com.hyprspace.android.BuildConfig
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -16,6 +17,10 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
 const val PROTOCOL = 1
+
+/** This build's version and the commit it came from: "0.24.4 (5321b19)". */
+val APP: String =
+    if (BuildConfig.COMMIT.isEmpty()) BuildConfig.VERSION_NAME else "${BuildConfig.VERSION_NAME} (${BuildConfig.COMMIT})"
 
 val wire = Json {
     ignoreUnknownKeys = true
@@ -71,10 +76,10 @@ enum class Scheme {
 @Serializable
 sealed interface Up {
     @Serializable @SerialName("hello")
-    data class Hello(val token: String, val device: String, val protocol: Int = PROTOCOL) : Up
+    data class Hello(val token: String, val device: String, val protocol: Int = PROTOCOL, val app: String = APP) : Up
 
     @Serializable @SerialName("pair")
-    data class Pair(val code: String, val device: String, val protocol: Int = PROTOCOL) : Up
+    data class Pair(val code: String, val device: String, val protocol: Int = PROTOCOL, val app: String = APP) : Up
 
     @Serializable @SerialName("watch")
     data class Watch(val thread: Long) : Up

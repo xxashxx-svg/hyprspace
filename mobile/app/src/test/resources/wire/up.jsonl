@@ -1,5 +1,5 @@
-{"type":"hello","token":"tok","device":"Pixel","protocol":1}
-{"type":"pair","code":"K7MX-Q2RT","device":"Pixel","protocol":1}
+{"type":"hello","token":"tok","device":"Pixel","protocol":1,"app":"0.24.4 (5321b19)"}
+{"type":"pair","code":"K7MX-Q2RT","device":"Pixel","protocol":1,"app":"0.24.4 (5321b19)"}
 {"type":"watch","thread":2}
 {"type":"unwatch","thread":2}
 {"type":"fit","thread":3,"cols":40,"rows":20}

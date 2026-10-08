@@ -278,7 +278,7 @@ jobs:
         working-directory: mobile
         run: |
           tag="${{ inputs.tag }}"
-          version=$(grep '^hyprspace.version=' gradle.properties | cut -d= -f2)
+          version=$(grep -m1 '^version = ' ../Cargo.toml | cut -d'"' -f2)
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/HyprSpace-android-$version.apk"
           # a stable name too, so a link to the app never goes stale
