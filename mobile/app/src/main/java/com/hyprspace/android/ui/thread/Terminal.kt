@@ -30,11 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +44,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.hyprspace.android.R
 import com.hyprspace.android.model.TermView
 import com.hyprspace.android.net.Span
@@ -157,7 +158,7 @@ fun Terminal(
     onKeys: (String) -> Unit,
     onPaste: (String) -> Unit,
     modifier: Modifier = Modifier,
-    onImage: (() -> Unit)? = null,
+    attach: (@Composable ((Photo) -> Unit) -> (() -> Unit))? = null,
 ) {
     val h = LocalHues.current
     val measure = rememberTextMeasurer()
@@ -265,6 +266,34 @@ fun Terminal(
             },
             modifier = Modifier.size(1.dp),
         )
+        val photos = remember { mutableStateListOf<Photo>() }
+        val pick = attach?.invoke { p ->
+            val i = photos.indexOfFirst { it.key == p.key }
+            if (i >= 0) photos[i] = p else photos.add(p)
+        }
+        // once every photo is up, they go in together, as paths the agent attaches
+        LaunchedEffect(photos.toList()) {
+            if (photos.isEmpty() || photos.any { it.path == null && !it.failed }) return@LaunchedEffect
+            val paths = photos.mapNotNull { it.path }.map { if (' ' in it) "\"$it\"" else it }
+            delay(300)
+            if (paths.isNotEmpty()) {
+                follow = true
+                onPaste(paths.joinToString(" ") + " ")
+            }
+            photos.clear()
+        }
+        if (photos.isNotEmpty()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(h.surface2)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (p in photos) PhotoThumb(p) { photos.remove(p) }
+            }
+        }
         Keys(
             ctrl,
             onCtrl = { ctrl = !ctrl },
@@ -277,7 +306,7 @@ fun Terminal(
                 clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
                     ?.takeIf { it.isNotEmpty() }?.let(onPaste)
             },
-            onImage = onImage?.let { pick -> { follow = true; pick() } },
+            onImage = pick,
         )
     }
 }
@@ -301,6 +330,7 @@ private fun Keys(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Key(icon = R.drawable.ic_keyboard, onClick = onKeyboard)
+        if (onImage != null) Key(icon = R.drawable.ic_image_plus, onClick = onImage)
         Key("Esc") { onKeys("\u001b") }
         Key("Tab") { onKeys("\t") }
         Key("Ctrl", on = ctrl, onClick = onCtrl)
@@ -311,7 +341,6 @@ private fun Keys(
         Key(icon = R.drawable.ic_arrow_right) { onKeys("\u001b[C") }
         Key("Enter") { onKeys("\r") }
         Key("Paste", onClick = onPaste)
-        if (onImage != null) Key(icon = R.drawable.ic_image_plus, onClick = onImage)
         Key("Shift Tab") { onKeys("\u001b[Z") }
         Key("Ctrl D") { onKeys("\u0004") }
     }

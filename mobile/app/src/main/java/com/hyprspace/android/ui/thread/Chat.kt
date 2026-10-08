@@ -4,8 +4,12 @@
 package com.hyprspace.android.ui.thread
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.Image
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,10 +38,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -45,8 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +77,7 @@ import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 
 /** What the list shows: the transcript's items, with runs of calls in a row folded together. */
 private sealed interface Shown {
@@ -120,6 +127,7 @@ fun Chat(
     // opens at the newest message and keeps up with the reply, unless the reader scrolled up
     val list = rememberLazyListState(initialFirstVisibleItemIndex = (shown.size - 1).coerceAtLeast(0))
     var follow by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(list) {
         snapshotFlow { list.isScrollInProgress }.drop(1).collect { moving ->
             if (!moving) follow = !list.canScrollForward
@@ -151,17 +159,19 @@ fun Chat(
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = h.text3)
             }
         } else {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
-                Modifier.weight(1f).fillMaxWidth(),
+                Modifier.fillMaxSize().clipToBounds(),
                 state = list,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                overscrollEffect = null,
             ) {
                 if (shown.isEmpty() && pending.isEmpty()) {
                     item { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
                 }
                 items(shown, key = { it.key }) { s ->
-                    Box(Modifier.animateItem()) {
+                    Box(Modifier.animateItem(placementSpec = null)) {
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)
                             is Shown.One -> One(s.item, canAnswer, answered, answer)
@@ -169,15 +179,40 @@ fun Chat(
                     }
                 }
                 items(pending, key = { "pending$it" }) { text ->
-                    Box(Modifier.animateItem()) {
+                    Box(Modifier.animateItem(placementSpec = null)) {
                         One(Item.User("pending", text, 0, steer = working), false, answered, answer)
                     }
                 }
                 if (busy) {
                     item(key = "working") {
-                        Box(Modifier.animateItem()) { Working(doing, since) }
+                        Box(Modifier.animateItem(placementSpec = null)) { Working(doing, since) }
                     }
                 }
+            }
+            val away by remember { derivedStateOf { list.canScrollForward } }
+            androidx.compose.animation.AnimatedVisibility(
+                away,
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f),
+            ) {
+                Box(
+                    Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(h.surface2)
+                        .border(1.dp, h.border1, CircleShape)
+                        .clickableQuiet {
+                            scope.launch {
+                                list.animateScrollToItem((rows - 1).coerceAtLeast(0), Int.MAX_VALUE / 2)
+                                follow = true
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(painterResource(R.drawable.ic_arrow_down), "Jump to the newest", Modifier.size(16.dp), tint = h.text2)
+                }
+            }
             }
         }
         Composer(working, send, onStop, attach)
@@ -515,7 +550,7 @@ private fun Composer(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            for (p in photos) Thumb(p) { photos.remove(p) }
+            for (p in photos) PhotoThumb(p) { photos.remove(p) }
         }
     }
     Row(
@@ -573,37 +608,6 @@ private fun Composer(
             }
         }
     }
-    }
-}
-
-@Composable
-private fun Thumb(p: Photo, onRemove: () -> Unit) {
-    val h = LocalHues.current
-    Box(Modifier.size(60.dp)) {
-        Image(
-            p.thumb,
-            null,
-            Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).alpha(if (p.path == null) 0.5f else 1f),
-            contentScale = ContentScale.Crop,
-        )
-        if (p.path == null && !p.failed) {
-            CircularProgressIndicator(Modifier.align(Alignment.Center).size(18.dp), strokeWidth = 2.dp, color = h.text1)
-        }
-        if (p.failed) {
-            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(h.error.copy(alpha = 0.35f)))
-        }
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .padding(3.dp)
-                .size(20.dp)
-                .clip(CircleShape)
-                .background(h.bg.copy(alpha = 0.8f))
-                .clickableQuiet(onRemove),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(painterResource(R.drawable.ic_x), "Remove", Modifier.size(11.dp), tint = h.text1)
-        }
     }
 }
 

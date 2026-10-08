@@ -178,13 +178,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                         onFit = { cols, rows -> app.link.fit(id, cols, rows) },
                         onKeys = { app.link.send(Up.Keys(id, it)) },
                         onPaste = { app.link.send(Up.Paste(id, it)) },
-                        onImage = if (app.link.desktopAtLeast(PHOTOS)) {
-                            rememberPhotoPicker(app, false) { p ->
-                                p.path?.let { path -> app.link.send(Up.Paste(id, (if (' ' in path) "\"$path\"" else path) + " ")) }
-                            }
-                        } else {
-                            null
-                        },
+                        attach = if (app.link.desktopAtLeast(PHOTOS)) { onPhoto -> rememberPhotoPicker(app, true, onPhoto) } else null,
                         modifier = Modifier.weight(1f),
                     )
                 }

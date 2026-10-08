@@ -27,8 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,14 +43,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,12 +71,12 @@ import com.hyprspace.android.net.Shelf
 import com.hyprspace.android.net.SnoozeUntil
 import com.hyprspace.android.ui.AgentMark
 import com.hyprspace.android.ui.ConnStrip
-import com.hyprspace.android.ui.UpdateStrip
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.Pill
 import com.hyprspace.android.ui.SpaceTag
 import com.hyprspace.android.ui.StatusMark
+import com.hyprspace.android.ui.UpdateStrip
 import com.hyprspace.android.ui.ago
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
@@ -286,7 +287,7 @@ private fun Threads(
         }
     }
     val now = ticking(b.threads.any { it.since != null })
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)) {
+    LazyColumn(Modifier.fillMaxSize().clipToBounds(), contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)) {
         items(rows, key = { it.key }) { r ->
             when (r) {
                 is Row.Thread -> {
