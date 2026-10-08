@@ -1,21 +1,18 @@
-// Settings, Appearance, after the Tauri app's redesign: a live miniature of the app at the top,
-// drawn in the theme and side now showing, with the Light, Dark and System switch beside it; the
-// six themes as cards with a swatch for each side; the interface's font, diff colors and
-// animations; and the terminal's font, size and line height over a sample in them. Everything
-// applies the moment it is clicked and is saved at once.
+// Settings, Appearance: the six themes as cards with a swatch for each side, with the Light, Dark
+// and System switch beside them; the interface's font, diff colors and animations; and the
+// terminal's font, size and line height. Everything applies the moment it is clicked and is
+// saved at once.
 
 use std::cell::RefCell;
-use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, FontWeight, Hsla, Rgba,
-    SharedString, div, linear_color_stop, linear_gradient, prelude::*, px, relative,
+    AnyElement, ClickEvent, Context, Div, FontWeight, Hsla, Rgba, SharedString, div,
+    linear_color_stop, linear_gradient, prelude::*, px,
 };
-use hyprspace_proto::Agent;
 use hyprspace_proto::state::{Appearance, DiffColors, Scheme};
 use hyprspace_theme::{SANS, TERM, THEMES, ThemeInfo};
 
-use super::controls::{group, row, section, step};
+use super::controls::{group, row, step};
 use super::{Picker, Root};
 use crate::assets::icon;
 use crate::{colors, widgets};
@@ -271,16 +268,12 @@ impl Root {
                                     .px(px(4.))
                                     .text_size(px(13.))
                                     .text_color(colors::text3())
-                                    .child("Preview"),
+                                    .child("Theme"),
                             )
                             .child(widgets::segments().children(schemes)),
                     )
-                    .child(shell_preview()),
+                    .child(div().grid().grid_cols(3).gap(px(12.)).children(cards)),
             )
-            .child(section(
-                "Theme",
-                div().grid().grid_cols(3).gap(px(12.)).children(cards),
-            ))
             .child(group(
                 "Interface",
                 vec![
@@ -311,7 +304,6 @@ impl Root {
                     ),
                     row("Font size", "Open terminals resize to fit.", size_stepper),
                     row("Line height", "Lower is tighter, higher is airier.", line_stepper),
-                    sample(),
                 ],
             ))
             .into_any_element()
@@ -493,265 +485,6 @@ fn stepper(value: String, less: AnyElement, more: AnyElement) -> Div {
 }
 
 /// A line of colored spans, the way a terminal shows one.
-fn spans(parts: &[(&str, Hsla)]) -> Div {
-    div().flex().children(
-        parts
-            .iter()
-            .map(|(text, color)| div().text_color(*color).child(text.to_string())),
-    )
-}
-
-/// The caret at a prompt, blinking like the terminal's.
-fn caret(h: f32) -> AnyElement {
-    let t = colors::theme();
-    div()
-        .w(px(h * 0.5))
-        .h(px(h))
-        .bg(colors::hsla(t.cursor))
-        .with_animation(
-            "preview-caret",
-            Animation::new(Duration::from_millis(1100)).repeat(),
-            |d, t| d.opacity(if t < 0.5 { 1. } else { 0. }),
-        )
-        .into_any_element()
-}
-
-/// The app in miniature, painted by the live tokens, so whatever is picked is what this shows:
-/// the sidebar with three agent threads and the one on screen, a terminal with Claude in it.
-fn shell_preview() -> AnyElement {
-    let t = colors::theme();
-    let term_fg = colors::hsla(t.term_fg);
-    let (ok, busy, dim) = (colors::ok(), colors::busy(), colors::text3());
-    let line = |w: f32, strong: bool| {
-        div()
-            .h(px(5.))
-            .w(relative(w))
-            .rounded(px(3.))
-            .bg(colors::ink(if strong { 0.3 } else { 0.12 }))
-    };
-    let mark = |agent: Agent| {
-        div()
-            .flex_none()
-            .size(px(8.))
-            .rounded_full()
-            .bg(colors::brand(agent).0)
-    };
-    let threads = [
-        (Agent::Claude, 0.78, ok),
-        (Agent::Codex, 0.62, busy),
-        (Agent::Claude, 0.7, colors::ink(0.25)),
-    ];
-    let rail = div()
-        .flex_none()
-        .w(px(152.))
-        .flex()
-        .flex_col()
-        .gap(px(4.))
-        .py(px(10.))
-        .px(px(8.))
-        .bg(colors::surface1())
-        .border_r_1()
-        .border_color(colors::border0())
-        .children(threads.iter().enumerate().map(|(i, &(agent, w, state))| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .py(px(7.))
-                .px(px(8.))
-                .rounded(px(6.))
-                .when(i == 0, |d| {
-                    d.bg(colors::surface2())
-                        .border_1()
-                        .border_color(colors::border1())
-                })
-                .child(mark(agent))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(5.))
-                        .child(line(w, true))
-                        .child(line(w - 0.24, false)),
-                )
-                .child(div().flex_none().size(px(6.)).rounded_full().bg(state))
-        }));
-    let (family, _) = super::terminal_font();
-    let pane = |agent: Option<Agent>, head_w: f32, body: Vec<Div>, cursor: bool| {
-        div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .rounded(px(7.))
-            .overflow_hidden()
-            .bg(colors::hsla(t.term_bg))
-            .border_1()
-            .border_color(colors::border1())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .h(px(22.))
-                    .px(px(9.))
-                    .bg(colors::surface1())
-                    .border_b_1()
-                    .border_color(colors::border0())
-                    .child(match agent {
-                        Some(a) => mark(a),
-                        None => div().size(px(8.)).rounded(px(2.)).bg(colors::ink(0.25)),
-                    })
-                    .child(
-                        div()
-                            .h(px(5.))
-                            .w(px(head_w))
-                            .rounded(px(3.))
-                            .bg(colors::ink(0.3)),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .py(px(9.))
-                    .px(px(10.))
-                    .font_family(family.clone())
-                    .text_size(px(10.5))
-                    .line_height(px(16.))
-                    .text_color(term_fg)
-                    .children(body)
-                    .when(cursor, |d| {
-                        d.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .child(div().text_color(ok).child("\u{276f}"))
-                                .child(caret(12.)),
-                        )
-                    }),
-            )
-    };
-    let thread = pane(
-        Some(Agent::Claude),
-        46.,
-        vec![
-            spans(&[("\u{276f} ", ok), ("claude --resume", term_fg)]),
-            spans(&[("Reading src/themes.rs", dim)]),
-            spans(&[("\u{2713} ", ok), ("3 files changed", term_fg)]),
-        ],
-        true,
-    );
-    let dot = || div().size(px(6.)).rounded_full().bg(colors::ink(0.16));
-    div()
-        .h(px(236.))
-        .flex()
-        .flex_col()
-        .rounded(px(12.))
-        .overflow_hidden()
-        .bg(colors::bg())
-        .border_1()
-        .border_color(colors::border2())
-        .child(
-            div()
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .h(px(24.))
-                .px(px(10.))
-                .bg(colors::surface1())
-                .border_b_1()
-                .border_color(colors::border0())
-                .child(dot())
-                .child(dot())
-                .child(
-                    div()
-                        .ml(px(6.))
-                        .w(px(44.))
-                        .h(px(6.))
-                        .rounded(px(3.))
-                        .bg(colors::ink(0.1)),
-                )
-                .child(div().flex_1())
-                .child(
-                    div()
-                        .w(px(22.))
-                        .h(px(7.))
-                        .rounded(px(3.))
-                        .bg(colors::accent()),
-                ),
-        )
-        .child(
-            div().flex_1().min_h_0().flex().child(rail).child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .gap(px(8.))
-                    .p(px(10.))
-                    .child(thread),
-            ),
-        )
-        .into_any_element()
-}
-
-/// A build log in the terminal's own colors, font, size and line height, so a change shows
-/// before leaving Settings.
-fn sample() -> AnyElement {
-    let t = colors::theme();
-    let (family, size) = super::terminal_font();
-    let fg = colors::hsla(t.term_fg);
-    let (ok, busy, wait, dim) = (
-        colors::ok(),
-        colors::busy(),
-        colors::waiting(),
-        colors::text3(),
-    );
-    let row_h = (size * 1.35 * terminal_line_height() / 1.1).round();
-    div()
-        .my(px(12.))
-        .py(px(12.))
-        .px(px(14.))
-        .rounded(px(8.))
-        .bg(colors::hsla(t.term_bg))
-        .border_1()
-        .border_color(colors::border1())
-        .font_family(family)
-        .text_size(px(size))
-        .line_height(px(row_h))
-        .text_color(fg)
-        .child(spans(&[
-            ("\u{276f} ", ok),
-            ("cargo build -p hyprspace", fg),
-        ]))
-        .child(spans(&[(
-            &format!("   Compiling hyprspace-ui v{}", crate::update::VERSION),
-            dim,
-        )]))
-        .child(spans(&[
-            ("\u{2713} ", ok),
-            ("Finished in ", fg),
-            ("6.8s", busy),
-        ]))
-        .child(spans(&[
-            ("src/main.rs", wait),
-            ("  0O 1lI {}[] () ;:", dim),
-        ]))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(size * 0.6))
-                .child(div().text_color(ok).child("\u{276f}"))
-                .child(caret(size)),
-        )
-        .into_any_element()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
