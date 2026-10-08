@@ -1,7 +1,7 @@
-// Keeps the app's process, and with it the connection, alive in the background, so the user
-// hears when an agent needs them. Android only lets a foreground service do that, so it shows a
-// quiet notification that says where it's connected. Switched off in Settings, the connection
-// closes a minute after the app leaves the screen.
+// Keeps the app's process, and with it the connection, alive in the background while
+// notifications are on, so the user hears when an agent needs them. Android only lets a
+// foreground service do that, so it shows a quiet notification that says where it's connected.
+// With notifications off, the connection closes a minute after the app leaves the screen.
 
 package com.hyprspace.android.service
 
@@ -79,7 +79,7 @@ class LinkService : Service() {
         fun sync(ctx: Context) {
             val app = ctx.applicationContext as App
             val s = app.store.saved.value
-            val want = s.stay && s.current() != null
+            val want = s.alerts && s.current() != null
             val intent = Intent(ctx, LinkService::class.java)
             if (want) {
                 runCatching { ContextCompat.startForegroundService(ctx, intent) }

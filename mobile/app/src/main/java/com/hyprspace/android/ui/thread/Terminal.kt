@@ -1,9 +1,11 @@
 // A terminal thread on the phone. The lines come from the desktop's emulator as styled runs;
-// the phone sizes the terminal to its screen while it shows it, and typing goes straight to the
-// terminal as you type, with a row of keys a phone keyboard lacks.
+// the phone sizes the terminal to its screen while it shows it. Tapping the screen brings up the
+// keyboard, which types straight into the terminal (`KeyInput`), with a row of keys a phone
+// keyboard lacks.
 
 package com.hyprspace.android.ui.thread
 
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -23,15 +25,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,11 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -51,9 +49,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
@@ -143,11 +138,15 @@ fun Terminal(
     val cell = remember(style) { measure.measure("M", style).size }
     val density = LocalDensity.current
     var ctrl by remember { mutableStateOf(false) }
+    // whether the screen keeps its bottom line in view
+    var follow by remember { mutableStateOf(true) }
     // set by the strip's button, cleared once the fit goes out
     var fitNow by remember { mutableStateOf(false) }
     // whether this screen asked for a fit yet
     var asked by remember { mutableStateOf(false) }
-    val typing = remember { FocusRequester() }
+    // the keyboard's way into the terminal; tapping the screen brings the keyboard up
+    var input by remember { mutableStateOf<KeyInput?>(null) }
+    val clipboard = LocalContext.current.getSystemService(ClipboardManager::class.java)
 
     Column(modifier.background(h.termBg)) {
         if (view.ready && !view.fit && live) {
@@ -185,19 +184,27 @@ fun Terminal(
                     fitNow = false
                 }
             }
+            // The screen follows its bottom line, where the prompt is, unless the reader scrolled up
+            // to read. The keyboard sliding in shrinks the screen, and the bottom stays in view.
             val list = rememberLazyListState()
-            val atEnd by remember { derivedStateOf { !list.canScrollForward } }
-            LaunchedEffect(view.lines.size, view.cursor) {
-                if (view.lines.isNotEmpty() && (atEnd || list.firstVisibleItemIndex == 0)) {
-                    list.scrollToItem(view.lines.size - 1)
+            LaunchedEffect(list) {
+                snapshotFlow { list.isScrollInProgress }.collect { moving ->
+                    if (!moving) follow = !list.canScrollForward
                 }
+            }
+            LaunchedEffect(view.lines.size, view.cursor, maxHeight, follow) {
+                if (follow && view.lines.isNotEmpty()) list.scrollToItem(view.lines.size - 1, Int.MAX_VALUE / 2)
             }
             val full = maxWidth
             val wide = view.cols > cols
             val width = with(density) { (cell.width * maxOf(view.cols, cols)).toDp() } + 16.dp
             Box(Modifier.fillMaxSize().then(if (wide) Modifier.horizontalScroll(rememberScrollState()) else Modifier)) {
                 LazyColumn(
-                    Modifier.width(if (wide) width else full).fillMaxSize().clickableQuiet { typing.requestFocus() },
+                    Modifier.width(if (wide) width else full).fillMaxSize().clickableQuiet {
+                        // typing happens at the prompt, so the screen goes back to it
+                        follow = true
+                        input?.show()
+                    },
                     state = list,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                 ) {
@@ -216,13 +223,39 @@ fun Terminal(
                 )
             }
         }
-        Keys(ctrl, onCtrl = { ctrl = !ctrl }, onKeys = onKeys)
-        TypeBox(typing, ctrl, onCtrlUsed = { ctrl = false }, onKeys = onKeys, onPaste = onPaste)
+        AndroidView(
+            factory = { KeyInput(it).also { v -> input = v } },
+            update = { v ->
+                v.onKeys = { follow = true; onKeys(it) }
+                v.ctrl = { ctrl }
+                v.ctrlUsed = { ctrl = false }
+            },
+            modifier = Modifier.size(1.dp),
+        )
+        Keys(
+            ctrl,
+            onCtrl = { ctrl = !ctrl },
+            onKeys = onKeys,
+            onKeyboard = {
+                follow = true
+                input?.show()
+            },
+            onPaste = {
+                clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                    ?.takeIf { it.isNotEmpty() }?.let(onPaste)
+            },
+        )
     }
 }
 
 @Composable
-private fun Keys(ctrl: Boolean, onCtrl: () -> Unit, onKeys: (String) -> Unit) {
+private fun Keys(
+    ctrl: Boolean,
+    onCtrl: () -> Unit,
+    onKeys: (String) -> Unit,
+    onKeyboard: () -> Unit,
+    onPaste: () -> Unit,
+) {
     val h = LocalHues.current
     Row(
         Modifier
@@ -232,6 +265,7 @@ private fun Keys(ctrl: Boolean, onCtrl: () -> Unit, onKeys: (String) -> Unit) {
             .padding(horizontal = 6.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
+        Key(icon = R.drawable.ic_keyboard, onClick = onKeyboard)
         Key("Esc") { onKeys("\u001b") }
         Key("Tab") { onKeys("\t") }
         Key("Ctrl", on = ctrl, onClick = onCtrl)
@@ -241,6 +275,7 @@ private fun Keys(ctrl: Boolean, onCtrl: () -> Unit, onKeys: (String) -> Unit) {
         Key(icon = R.drawable.ic_arrow_down) { onKeys("\u001b[B") }
         Key(icon = R.drawable.ic_arrow_right) { onKeys("\u001b[C") }
         Key("Enter") { onKeys("\r") }
+        Key("Paste", onClick = onPaste)
         Key("Shift Tab") { onKeys("\u001b[Z") }
         Key("Ctrl D") { onKeys("\u0004") }
     }
@@ -263,91 +298,6 @@ private fun Key(text: String? = null, icon: Int? = null, on: Boolean = false, on
             Icon(painterResource(icon), null, Modifier.size(15.dp), tint = if (on) h.onAccent else h.text1)
         } else {
             Text(text.orEmpty(), style = MaterialTheme.typography.labelMedium, color = if (on) h.onAccent else h.text1)
-        }
-    }
-}
-
-/**
- * What the phone keyboard types goes to the terminal as it is typed: letters as they come, a
- * deleted letter as a backspace, Enter as Enter. A pasted block with line breaks goes in as one
- * paste. The box keeps only the current line, so autocorrect has something to work on.
- */
-@Composable
-private fun TypeBox(
-    focus: FocusRequester,
-    ctrl: Boolean,
-    onCtrlUsed: () -> Unit,
-    onKeys: (String) -> Unit,
-    onPaste: (String) -> Unit,
-) {
-    val h = LocalHues.current
-    var text by remember { mutableStateOf("") }
-    Row(
-        Modifier.fillMaxWidth().background(h.surface2).padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(h.surface1)
-                .border(1.dp, h.border1, RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-        ) {
-            if (text.isEmpty()) Text("Type here", style = MaterialTheme.typography.bodyMedium, color = h.text3)
-            BasicTextField(
-                value = text,
-                onValueChange = { next ->
-                    if (ctrl && next.length == text.length + 1 && next.startsWith(text)) {
-                        val c = next.last().lowercaseChar()
-                        if (c in 'a'..'z') onKeys(((c - 'a') + 1).toChar().toString())
-                        onCtrlUsed()
-                        return@BasicTextField
-                    }
-                    val common = text.commonPrefixWith(next).length
-                    val removed = text.length - common
-                    val added = next.substring(common)
-                    if (removed > 0) onKeys("\u007f".repeat(removed))
-                    when {
-                        added.contains('\n') -> {
-                            onPaste(added.trimEnd('\n'))
-                            if (added.endsWith('\n')) onKeys("\r")
-                            text = ""
-                            return@BasicTextField
-                        }
-                        added.isNotEmpty() -> onKeys(added)
-                    }
-                    text = next
-                },
-                modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = h.text1, fontFamily = TermFont),
-                cursorBrush = SolidColor(h.accent),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Ascii,
-                    imeAction = ImeAction.Send,
-                ),
-                keyboardActions = KeyboardActions(onSend = {
-                    onKeys("\r")
-                    text = ""
-                }),
-            )
-        }
-        Box(
-            Modifier
-                .padding(start = 8.dp)
-                .size(40.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(h.accent)
-                .clickableQuiet {
-                    onKeys("\r")
-                    text = ""
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(painterResource(R.drawable.ic_corner_down_left), "Enter", Modifier.size(16.dp), tint = h.onAccent)
         }
     }
 }

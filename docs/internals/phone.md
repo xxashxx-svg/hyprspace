@@ -88,9 +88,17 @@ fonts (Geist, and the terminal's Nerd Font build).
 - `Link` races every address the computer gave, a quarter second apart, and keeps the first that
   answers. It reconnects on its own, sooner when the network comes back or the app comes to the
   front.
-- A foreground service keeps the line open in the background, which is the only way Android
-  lets an app hear from a computer without a push server. Notifications come from the board's
-  changes: a thread that starts waiting, finishes or fails, unless it is on screen.
+- Notifications are off until switched on in the app's Settings. On, a foreground service keeps
+  the line open in the background, which is the only way Android lets an app hear from a
+  computer without a push server. They come from the board's changes: a thread that starts
+  waiting, and if asked, one that finishes or fails. Never while the app is open, and never while
+  someone is at the computer: the engine reads how long since the keyboard or mouse was used
+  (`GetLastInputInfo`, `CGEventSourceSecondsSinceLastEventType`) and sets the board's `present`
+  within two minutes of it.
+- Typing in a terminal goes straight in, with no text box (`KeyInput`): a view that poses to the
+  keyboard as an editor holding nothing, so whatever the keyboard commits, deletes or presses
+  becomes terminal bytes, and a Ctrl key leaves no stray letters. The screen follows its bottom
+  line unless the reader scrolled up, so the prompt stays in view when the keyboard opens.
 - The QR reader is ML Kit from Google Play services, which fetches its model once; bundling it
   would add 20 MB of native code.
 - The wire fixtures in `app/src/test/resources/wire` are written by the proto test

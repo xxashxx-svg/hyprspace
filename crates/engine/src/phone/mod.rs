@@ -4,6 +4,7 @@
 //! from an emulator of its own (`mirror`). What a phone asks the app to do goes to the UI,
 //! which does it the way a click would. Shape and reasons: docs/internals/phone.md.
 
+mod idle;
 mod mirror;
 mod net;
 mod server;
@@ -65,6 +66,8 @@ struct Hub {
     next_conn: u64,
     conns: HashMap<u64, Conn>,
     board: Board,
+    /// Frames sent since the last look at whether someone is at the computer.
+    ticks: u32,
     sessions: HashMap<u64, SessionId>,
     terms: HashMap<SessionId, Term>,
     journals: HashMap<String, Weak<Journal>>,
@@ -122,6 +125,7 @@ impl Phone {
             next_conn: 1,
             conns: HashMap::new(),
             board: Board::default(),
+            ticks: 0,
             sessions: HashMap::new(),
             terms: HashMap::new(),
             journals: HashMap::new(),
@@ -135,8 +139,9 @@ impl Phone {
     pub fn command(&self, cmd: PhoneCommand) {
         match cmd {
             PhoneCommand::Enable { on, network } => self.enable(on, network),
-            PhoneCommand::Board { board } => {
+            PhoneCommand::Board { mut board } => {
                 let mut hub = self.hub();
+                board.present = hub.board.present;
                 if hub.board != *board {
                     hub.board = (*board).clone();
                     hub.broadcast(Down::Board { board });
@@ -326,6 +331,7 @@ impl Phone {
         let _ = protocol;
         let conn = hub.next_conn;
         hub.next_conn += 1;
+        hub.board.present = idle::present();
         let board = Box::new(hub.board.clone());
         let _ = tx.unbounded_send(Down::Board { board });
         hub.conns.insert(
@@ -563,9 +569,20 @@ impl Phone {
         }
     }
 
-    /// Sends each watched terminal's changes.
+    /// Sends each watched terminal's changes, and every couple of seconds whether someone is at
+    /// the computer, when that changed.
     fn frames(&self) {
         let mut hub = self.hub();
+        hub.ticks += 1;
+        if hub.ticks >= 40 {
+            hub.ticks = 0;
+            let present = idle::present();
+            if present != hub.board.present && !hub.conns.is_empty() {
+                hub.board.present = present;
+                let board = Box::new(hub.board.clone());
+                hub.broadcast(Down::Board { board });
+            }
+        }
         let Hub {
             conns,
             sessions,

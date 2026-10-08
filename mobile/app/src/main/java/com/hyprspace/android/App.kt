@@ -47,6 +47,7 @@ class App : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 notifier.foreground = true
+                notifier.cancelAll()
                 pause?.cancel()
                 if (store.saved.value.current() != null) link.start()
                 link.nudge()
@@ -55,7 +56,7 @@ class App : Application() {
 
             override fun onStop(owner: LifecycleOwner) {
                 notifier.foreground = false
-                if (!store.saved.value.stay) {
+                if (!store.saved.value.alerts) {
                     // a quick trip to another app keeps the line; a longer one lets it go
                     pause = scope.launch {
                         delay(60_000)

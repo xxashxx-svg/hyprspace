@@ -162,6 +162,8 @@ data class Board(
     val agents: List<AgentInfo> = emptyList(),
     val start: StartPrefs = StartPrefs(),
     val theme: BoardTheme = BoardTheme(),
+    /** Someone used the computer's keyboard or mouse in the last two minutes. */
+    val present: Boolean = false,
 )
 
 @Serializable

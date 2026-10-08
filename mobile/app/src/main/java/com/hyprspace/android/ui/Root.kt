@@ -1,10 +1,6 @@
 package com.hyprspace.android.ui
 
-import android.Manifest
-import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,12 +33,7 @@ fun HyprApp(app: App) {
         val h = LocalHues.current
         val snack = remember { SnackbarHostState() }
         LaunchedEffect(Unit) { app.link.failures.collect { snack.showSnackbar(it) } }
-        val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
         val paired = saved.desktops.isNotEmpty()
-        LaunchedEffect(paired) {
-            // notifications are the point of staying connected, so ask once there is something to hear from
-            if (paired && Build.VERSION.SDK_INT >= 33) ask.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
         Box(Modifier.fillMaxSize().background(h.bg)) {
             val nav = app.nav
             val screen = nav.screen

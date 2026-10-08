@@ -1,5 +1,6 @@
-// Tells the user when an agent on the computer needs them or finishes, from the board's changes.
-// Quiet about the thread they are looking at.
+// Tells the user when an agent on the computer needs them, and if they asked, when a run ends,
+// from the board's changes. Only when it's news: never while the app is open, and never while
+// someone is at the computer, where the desktop app already shows it.
 
 package com.hyprspace.android.service
 
@@ -44,20 +45,30 @@ class Notifier(private val ctx: Context, private val store: Store) {
     fun board(b: Board) {
         val before = last
         last = b.threads.associate { it.id to it.status }
-        val shown = viewing.takeIf { foreground }
-        shown?.let { cancel(it) }
-        if (before == null || !store.saved.value.notify) return
+        val s = store.saved.value
+        // back at the computer: what the phone said is on the screen there now
+        if (b.present) cancelAll()
+        if (before == null || !s.alerts || foreground || b.present) return
         for (t in b.threads) {
             val was = before[t.id] ?: continue
-            if (t.id == shown || t.status == was) continue
+            if (t.status == was) continue
+            // a thread that stops waiting no longer needs the user
+            if (was == BoardStatus.Waiting) cancel(t.id)
             when {
                 t.status == BoardStatus.Waiting -> post(t, t.doing ?: "Waiting for your answer.")
+                !s.finished -> {}
                 t.status == BoardStatus.Done && (was == BoardStatus.Working || was == BoardStatus.Waiting) ->
                     post(t, "Finished.")
                 t.status == BoardStatus.Failed && was == BoardStatus.Working -> post(t, "Stopped with an error.")
                 else -> {}
             }
         }
+    }
+
+    /** The app came to the front: everything it would say is on its screen. */
+    fun cancelAll() {
+        val nm = NotificationManagerCompat.from(ctx)
+        last?.keys?.forEach { nm.cancel(it.toInt()) }
     }
 
     fun cancel(thread: Long) = NotificationManagerCompat.from(ctx).cancel(thread.toInt())

@@ -154,6 +154,9 @@ pub struct Board {
     pub agents: Vec<AgentInfo>,
     pub start: StartPrefs,
     pub theme: BoardTheme,
+    /// Someone used this computer's keyboard or mouse in the last two minutes, so the phone holds
+    /// back its notifications. The engine fills it in; the UI's board leaves it false.
+    pub present: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -662,6 +665,7 @@ mod tests {
                         light: palette.clone(),
                         dark: palette,
                     },
+                    present: true,
                 }),
             },
             Down::Transcript {

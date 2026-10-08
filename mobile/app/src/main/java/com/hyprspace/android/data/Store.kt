@@ -24,10 +24,13 @@ import kotlinx.serialization.Serializable
 data class Saved(
     val desktops: List<Desktop> = emptyList(),
     val active: String? = null,
-    /** Tell the user when an agent needs them or finishes. */
-    val notify: Boolean = true,
-    /** Stay connected in the background, which notifications need. */
-    val stay: Boolean = true,
+    /**
+     * Notifications, off until switched on. On, the app stays connected in the background, which
+     * is the only way it hears from the computer there.
+     */
+    val alerts: Boolean = false,
+    /** Notify when a run finishes too, not only when an agent needs an answer. */
+    val finished: Boolean = false,
     /** Ask for a terminal sized to the phone when it opens. */
     val fit: Boolean = true,
     val theme: BoardTheme? = null,

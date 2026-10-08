@@ -151,6 +151,8 @@ impl Root {
                 light: palette(&theme(&a.theme, false, a)),
                 dark: palette(&theme(&a.theme, true, a)),
             },
+            // the engine knows whether someone is at the computer, and fills it in
+            present: false,
         }
     }
 

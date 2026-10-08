@@ -1,8 +1,15 @@
-// The phone's settings: the computers it paired with (switch between them, forget one), whether
-// it stays connected and notifies, how terminals size, and the app's version.
+// The phone's settings: the computers it paired with (switch between them, forget one),
+// notifications, how terminals size, and the app's version.
 
 package com.hyprspace.android.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,6 +64,14 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
     val saved by app.store.saved.collectAsStateWithLifecycle()
     val conn by app.link.conn.collectAsStateWithLifecycle()
     var forgetting by remember { mutableStateOf<Desktop?>(null) }
+    val ctx = LocalContext.current
+    // notifications go on once Android lets the app post them
+    val allow = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            app.store.update { it.copy(alerts = true) }
+            LinkService.sync(app)
+        }
+    }
     val current = saved.current()
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -112,21 +127,30 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                 }
             }
 
-            Group("Connection") {
+            Group("Notifications") {
                 Toggle(
-                    "Stay connected",
-                    "Keeps the line to your computer open in the background, so you hear when an agent needs you. Android shows a quiet notification while it does.",
-                    saved.stay,
+                    "When an agent needs you",
+                    "Never while this app is open, and never while you're using the computer. To hear it in the background, the app stays connected and Android shows a quiet notification while it does.",
+                    saved.alerts,
                 ) { on ->
-                    app.store.update { it.copy(stay = on) }
-                    LinkService.sync(app)
+                    if (on && Build.VERSION.SDK_INT >= 33 &&
+                        ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        allow.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        app.store.update { it.copy(alerts = on) }
+                        LinkService.sync(app)
+                    }
                 }
-                HorizontalDivider(color = h.border0)
-                Toggle(
-                    "Notifications",
-                    "When an agent needs your answer, finishes, or stops with an error.",
-                    saved.notify,
-                ) { on -> app.store.update { it.copy(notify = on) } }
+                if (saved.alerts) {
+                    HorizontalDivider(color = h.border0)
+                    Toggle(
+                        "When a run finishes",
+                        "Also when an agent finishes or stops with an error.",
+                        saved.finished,
+                    ) { on -> app.store.update { it.copy(finished = on) } }
+                }
             }
 
             Group("Terminals") {
