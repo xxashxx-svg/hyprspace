@@ -157,6 +157,9 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                 Chat(
                     view = view,
                     working = t.status == BoardStatus.Working || t.status == BoardStatus.Waiting,
+                    busy = t.status == BoardStatus.Working,
+                    doing = t.doing,
+                    since = t.since,
                     canAnswer = online && t.live,
                     onSend = { app.link.ask(Ask.Send(id, it)) },
                     onStop = { app.link.ask(Ask.Interrupt(id)) },

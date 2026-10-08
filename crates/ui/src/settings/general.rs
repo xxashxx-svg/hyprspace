@@ -1,7 +1,7 @@
-// Settings, General: how a new thread starts (which agent, as a transcript or a terminal, and how
-// much it may do on its own), when threads settle, every snoozed thread and when it wakes, and
-// which app the Open button opens a folder in. The first three are
-// the composer's saved picks, so changing one here or in the composer changes both.
+// Settings, General: how a new thread starts (which agent, and how much it may do on its own),
+// when threads settle, every snoozed thread and when it wakes, and which app the Open button
+// opens a folder in. The first two are the composer's saved picks, so changing one here or in
+// the composer changes both.
 
 use gpui::{AnyElement, ClickEvent, Context, div, prelude::*, px};
 use hyprspace_proto::{Agent, Permission, Snooze};
@@ -114,7 +114,6 @@ impl Root {
             .into_any_element(),
         };
 
-        let terminal = prefs.terminal;
         let structured = prefs.structured;
         let switch = widgets::segments().children(
             [(false, "Off"), (true, "On")]
@@ -127,19 +126,6 @@ impl Root {
                         }))
                 }),
         );
-        let kinds = [
-            (false, "Structured", "sparkles"),
-            (true, "Terminal", "terminal"),
-        ];
-        let start = widgets::segments().children(kinds.into_iter().enumerate().map(
-            |(i, (value, name, glyph))| {
-                widgets::segment(("start-as", i), Some(glyph), name, terminal == value, false)
-                    .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                        r.update_prefs(|p| p.terminal = value, cx)
-                    }))
-            },
-        ));
-
         let mode = MODES
             .iter()
             .find(|m| m.0 == prefs.permission)
@@ -200,17 +186,6 @@ impl Root {
                         "New threads start with it. The composer changes it too.",
                         agent_control,
                     )),
-                    structured.then(|| {
-                        row(
-                            "Start as",
-                            if terminal {
-                                "The agent's own CLI runs in a terminal."
-                            } else {
-                                "The agent's work shows as a transcript you can read and steer."
-                            },
-                            start,
-                        )
-                    }),
                     Some(permission),
                 ]
                 .into_iter()
@@ -230,7 +205,7 @@ impl Root {
                 "Experimental",
                 vec![row(
                     "Structured sessions",
-                    "Lets Claude and Codex run as a transcript you read and steer, instead of in a terminal. Still being built.",
+                    "Adds a Structured button to the composer, which runs that one thread as a transcript you read and steer. New threads still start in a terminal. Still being built.",
                     switch,
                 )],
             ))

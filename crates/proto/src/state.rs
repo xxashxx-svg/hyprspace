@@ -379,11 +379,9 @@ pub struct ComposerPrefs {
     pub agent: Option<Agent>,
     pub permission: Permission,
     pub picks: Vec<Pick>,
-    /// Structured sessions are switched on (Settings, General). Off, every thread runs in a
-    /// terminal session. Off by default: structured sessions are still in progress.
+    /// Structured sessions are switched on (Settings, General), which lets the composer start a
+    /// thread as one. New threads still start in a terminal. Off by default: still being built.
     pub structured: bool,
-    /// With structured sessions on, start agents in a terminal session anyway.
-    pub terminal: bool,
 }
 
 /// A model and effort picked for one agent. Empty means the CLI's own default.

@@ -74,6 +74,8 @@ pub struct Composer {
     folder: Option<PathBuf>,
     agents: Vec<AgentInfo>,
     prefs: ComposerPrefs,
+    /// The next thread runs structured. It goes back to a terminal after each start.
+    structured: bool,
     images: Vec<PathBuf>,
     /// The permission menu, open where it was clicked.
     menu: Option<Point<Pixels>>,
@@ -132,6 +134,7 @@ impl Composer {
             folder: None,
             agents: Vec::new(),
             prefs: ComposerPrefs::default(),
+            structured: false,
             images: Vec::new(),
             menu: None,
             models: None,
@@ -221,15 +224,12 @@ impl Composer {
             .or_else(|| self.installed().next())
     }
 
-    /// Whether the next thread runs in a terminal: structured sessions are off, or the terminal
-    /// is picked.
     fn terminal(&self) -> bool {
-        !self.prefs.structured || self.prefs.terminal
+        !(self.prefs.structured && self.structured)
     }
 
-    fn toggle_terminal(&mut self, cx: &mut Context<Self>) {
-        self.prefs.terminal = !self.prefs.terminal;
-        cx.emit(ComposerEvent::Prefs(self.prefs.clone()));
+    fn toggle_structured(&mut self, cx: &mut Context<Self>) {
+        self.structured = !self.structured;
         cx.notify();
     }
 
@@ -350,6 +350,7 @@ impl Composer {
     }
 
     fn reset(&mut self, cx: &mut Context<Self>) {
+        self.structured = false;
         self.images.clear();
         self.clone.url.clear();
         self.clone.error = None;

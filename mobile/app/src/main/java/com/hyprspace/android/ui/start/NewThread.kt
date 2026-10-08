@@ -79,7 +79,7 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
         )
     }
     var permission by remember { mutableStateOf(board.start.permission) }
-    var terminal by remember { mutableStateOf(!board.start.structured) }
+    var terminal by remember { mutableStateOf(true) }
     var prompt by remember { mutableStateOf("") }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -139,13 +139,23 @@ fun NewThreadSheet(app: App, board: Board, space: Long, onDismiss: () -> Unit, o
                         }
                     }
                 }
-                if (board.start.structured) {
-                    Field("Runs as") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Chip(on = !terminal, onClick = { terminal = false }) { Text("Structured") }
-                            Chip(on = terminal, onClick = { terminal = true }) { Text("Terminal") }
+                Field("Runs as") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip(on = terminal, onClick = { terminal = true }) {
+                            AgentMark(null, 13.dp)
+                            Text("Terminal")
+                        }
+                        Chip(on = !terminal, onClick = { terminal = false }) {
+                            Icon(painterResource(R.drawable.ic_sparkles), null, Modifier.size(14.dp))
+                            Text("Structured")
                         }
                     }
+                    Text(
+                        if (terminal) "The agent's own CLI, as on the computer."
+                        else "Messages, tool calls and approvals, made for a phone screen. Still being built.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = h.text3,
+                    )
                 }
                 Field("Permission") {
                     Picker(permission.label, Permission.entries.map { it.label }) { permission = Permission.entries[it] }

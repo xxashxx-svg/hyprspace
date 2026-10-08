@@ -284,7 +284,7 @@ impl Root {
                 let title = crate::composer::title_of(
                     prompt.as_ref().map(|p| p.text.as_str()).unwrap_or_default(),
                 );
-                let terminal = start.terminal || !self.state.composer.structured;
+                let terminal = start.terminal;
                 self.start_thread(
                     space,
                     Start {

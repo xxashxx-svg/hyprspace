@@ -4,6 +4,10 @@
 package com.hyprspace.android.ui.thread
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +51,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hyprspace.android.R
@@ -97,6 +103,10 @@ private fun fold(items: List<Item>): List<Shown> {
 fun Chat(
     view: TranscriptView,
     working: Boolean,
+    // the agent is at it now, not waiting on an answer
+    busy: Boolean,
+    doing: String?,
+    since: Long?,
     canAnswer: Boolean,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
@@ -113,8 +123,25 @@ fun Chat(
             if (!moving) follow = !list.canScrollForward
         }
     }
-    LaunchedEffect(shown.size, view.items.lastOrNull(), follow) {
-        if (follow && shown.isNotEmpty()) list.scrollToItem(shown.size - 1, Int.MAX_VALUE / 2)
+    // what was sent or answered here shows at once, until the journal brings it back
+    var pending by remember { mutableStateOf(listOf<String>()) }
+    var answered by remember { mutableStateOf(mapOf<String, Answer>()) }
+    LaunchedEffect(view.items) {
+        val said = view.items.takeLast(8).filterIsInstance<Item.User>().map { it.text }
+        pending = pending.filter { it !in said }
+    }
+    val rows = shown.size + pending.size + (if (busy) 1 else 0)
+    LaunchedEffect(rows, view.items.lastOrNull(), follow) {
+        if (follow && rows > 0) list.scrollToItem(rows - 1, Int.MAX_VALUE / 2)
+    }
+    val send: (String) -> Unit = {
+        pending = pending + it
+        follow = true
+        onSend(it)
+    }
+    val answer: (String, Answer) -> Unit = { request, a ->
+        answered = answered + (request to a)
+        onAnswer(request, a)
     }
     Column(modifier) {
         if (!view.loaded) {
@@ -128,23 +155,35 @@ fun Chat(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (shown.isEmpty()) {
+                if (shown.isEmpty() && pending.isEmpty()) {
                     item { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
                 }
                 items(shown, key = { it.key }) { s ->
-                    when (s) {
-                        is Shown.Calls -> CallRun(s.calls)
-                        is Shown.One -> One(s.item, canAnswer, onAnswer)
+                    Box(Modifier.animateItem()) {
+                        when (s) {
+                            is Shown.Calls -> CallRun(s.calls)
+                            is Shown.One -> One(s.item, canAnswer, answered, answer)
+                        }
+                    }
+                }
+                items(pending, key = { "pending$it" }) { text ->
+                    Box(Modifier.animateItem()) {
+                        One(Item.User("pending", text, 0, steer = working), false, answered, answer)
+                    }
+                }
+                if (busy) {
+                    item(key = "working") {
+                        Box(Modifier.animateItem()) { Working(doing, since) }
                     }
                 }
             }
         }
-        Composer(working, { follow = true; onSend(it) }, onStop)
+        Composer(working, send, onStop)
     }
 }
 
 @Composable
-private fun One(item: Item, canAnswer: Boolean, onAnswer: (String, Answer) -> Unit) {
+private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, onAnswer: (String, Answer) -> Unit) {
     val h = LocalHues.current
     when (item) {
         is Item.User -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -166,7 +205,7 @@ private fun One(item: Item, canAnswer: Boolean, onAnswer: (String, Answer) -> Un
         is Item.Thinking -> Fold("Thinking", item.text, mono = false)
         is Item.Call -> CallLine(item)
         is Item.Agent -> AgentCard(item)
-        is Item.Approval -> ApprovalCard(item, canAnswer, onAnswer)
+        is Item.Approval -> ApprovalCard(item.copy(answer = item.answer ?: answered[item.request]), canAnswer, onAnswer)
         is Item.Error -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(painterResource(R.drawable.ic_circle_alert), null, Modifier.size(16.dp).padding(top = 2.dp), tint = h.error)
             Text(item.message, style = MaterialTheme.typography.bodyMedium, color = h.error)
@@ -487,6 +526,52 @@ private fun Composer(working: Boolean, onSend: (String) -> Unit, onStop: () -> U
                 Modifier.size(16.dp),
                 tint = if (stop) h.text1 else if (text.isBlank()) h.text3 else h.onAccent,
             )
+        }
+    }
+}
+
+@Composable
+private fun Working(doing: String?, since: Long?) {
+    val h = LocalHues.current
+    val now = com.hyprspace.android.ui.ticking(since != null)
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Dots(h.busy)
+        Text(
+            doing ?: "Working",
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = h.text2,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        since?.let { Text(elapsed((now - it).coerceAtLeast(0) / 1000), fontFamily = Mono, fontSize = 11.sp, color = h.text3) }
+    }
+}
+
+@Composable
+private fun Dots(color: androidx.compose.ui.graphics.Color) {
+    val t = rememberInfiniteTransition(label = "dots")
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { i ->
+            val y by t.animateFloat(
+                initialValue = 0f,
+                targetValue = 0f,
+                animationSpec = infiniteRepeatable(
+                    keyframes {
+                        durationMillis = 900
+                        0f at 0
+                        -4f at 150 + i * 120
+                        0f at 300 + i * 120
+                        0f at 900
+                    },
+                ),
+                label = "dot$i",
+            )
+            Box(Modifier.offset { IntOffset(0, y.dp.roundToPx()) }.size(5.dp).clip(CircleShape).background(color))
         }
     }
 }
