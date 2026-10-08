@@ -1,4 +1,4 @@
-// A subagent in the transcript: one bordered card for each Agent call, titled with what the
+// A subagent in the transcript: one card for each Agent call, titled with what the
 // subagent was asked to do, with a live status and a count of what it did. Opened, it shows the
 // subagent's own tool calls and then its report; the prompt it was given waits behind its own
 // small disclosure. After zeron's subagent chip, drawn in our tokens.
@@ -96,11 +96,10 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
         .flex()
         .flex_col()
         .gap(px(4.))
-        .px(px(12.))
-        .py(px(10.))
-        .rounded(px(10.))
-        .border_1()
-        .border_color(colors::border1())
+        .px(px(14.))
+        .py(px(11.))
+        .rounded(px(12.))
+        .bg(colors::ink(0.035))
         .child(head)
         .children(did)
         .when(a.open, |d| d.child(body(ix, a, cx)))

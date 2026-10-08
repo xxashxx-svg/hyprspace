@@ -89,27 +89,31 @@ fn block(b: &Block, key: &str) -> AnyElement {
 }
 
 fn table(head: &[Inline], rows: &[Vec<Inline>], key: &str) -> AnyElement {
-    let row = |cells: &[Inline], key: String, bold: bool| {
+    let row = |cells: &[Inline], key: String, head: bool| {
         div()
             .flex()
-            .border_b_1()
-            .border_color(colors::border1())
+            .mx(px(4.))
+            .when(!head, |d| d.border_t_1().border_color(colors::border1()))
             .children(cells.iter().enumerate().map(|(i, c)| {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .px_2()
-                    .py_1()
-                    .when(bold, |d| d.font_weight(FontWeight::SEMIBOLD))
+                    .px(px(10.))
+                    .py(px(7.))
+                    .when(head, |d| {
+                        d.font_weight(FontWeight::MEDIUM)
+                            .text_size(px(12.5))
+                            .text_color(colors::text2())
+                    })
                     .child(inline(c, &format!("{key}-{i}")))
             }))
     };
     div()
         .flex()
         .flex_col()
-        .rounded_md()
-        .border_1()
-        .border_color(colors::border1())
+        .py(px(2.))
+        .rounded(px(10.))
+        .bg(colors::ink(0.035))
         .child(row(head, format!("{key}-h"), true))
         .children(
             rows.iter()
@@ -133,7 +137,7 @@ pub fn inline(i: &Inline, key: &str) -> AnyElement {
                     font_weight: s.bold.then_some(FontWeight::SEMIBOLD),
                     font_style: s.italic.then_some(FontStyle::Italic),
                     // GPUI can't round a highlight's corners, so the wash stays faint
-                    background_color: s.code.then(|| colors::ink(0.08)),
+                    background_color: s.code.then(|| colors::ink(0.06)),
                     underline: link.then(|| UnderlineStyle {
                         thickness: px(1.),
                         ..Default::default()

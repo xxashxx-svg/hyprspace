@@ -140,15 +140,13 @@ impl RenderOnce for CodeBlock {
         div()
             .flex()
             .flex_col()
-            .rounded(px(8.))
-            .border_1()
-            .border_color(colors::border1())
-            .bg(colors::surface2())
+            .rounded(px(10.))
+            .bg(colors::ink(0.035))
             .when(!lang.is_empty(), |d| {
                 d.child(
                     div()
-                        .px(px(12.))
-                        .pt(px(8.))
+                        .px(px(14.))
+                        .pt(px(9.))
                         .text_size(px(11.))
                         .text_color(colors::text3())
                         .child(lang),
@@ -156,7 +154,7 @@ impl RenderOnce for CodeBlock {
             })
             .child(
                 div()
-                    .px(px(12.))
+                    .px(px(14.))
                     .py(px(10.))
                     .font_family(MONO)
                     .text_size(px(12.))

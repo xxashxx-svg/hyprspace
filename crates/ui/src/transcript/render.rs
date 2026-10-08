@@ -339,8 +339,8 @@ fn item(
                     .max_w(relative(0.8))
                     .px(px(16.))
                     .py(px(10.))
-                    .rounded(px(16.))
-                    .bg(colors::surface3())
+                    .rounded(px(18.))
+                    .bg(colors::ink(0.06))
                     .text_size(px(14.))
                     .line_height(relative(1.6))
                     .text_color(colors::text1())
@@ -440,12 +440,10 @@ fn item(
             });
             div()
                 .flex()
-                .gap_2()
-                .px(px(12.))
-                .py(px(10.))
-                .rounded(px(10.))
-                .border_1()
-                .border_color(colors::error().opacity(0.4))
+                .gap(px(10.))
+                .px(px(14.))
+                .py(px(11.))
+                .rounded(px(12.))
                 .bg(colors::error().opacity(0.08))
                 .text_size(px(13.))
                 .child(
@@ -493,7 +491,7 @@ fn item(
     }
 }
 
-/// A muted clickable line led by a fold chevron in a small square, like zeron's. `toggle` flips
+/// A muted clickable line led by a fold chevron. `toggle` flips
 /// what it opens.
 pub(super) fn fold_head(
     id: impl Into<gpui::ElementId>,
@@ -520,15 +518,13 @@ pub(super) fn fold_head(
                 .items_center()
                 .justify_center()
                 .size(px(18.))
-                .rounded(px(5.))
-                .bg(colors::ink(0.06))
                 .child(icon(
                     if open {
                         "chevron-down"
                     } else {
                         "chevron-right"
                     },
-                    11.,
+                    12.,
                     colors::text3(),
                 )),
         )
@@ -883,82 +879,24 @@ fn composer(
     centered(
         column()
             .pb(px(12.))
-            .children(limited(v, cx))
-            .children(queue(v, cx))
+            .children(tray(v, cx))
             .child(pill)
             .child(foot),
     )
     .into_any_element()
 }
 
-fn limited(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyElement> {
-    let at = v.resume_at?;
-    let when = chrono::Local
-        .timestamp_millis_opt(at as i64)
-        .single()
-        .map(|t| t.format("%-I:%M %p").to_string())
-        .unwrap_or_default();
-    Some(
+fn tray(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyElement> {
+    let held = !v.model.running();
+    let small = |b: gpui::Stateful<Div>| b.h(px(24.)).px(px(9.)).text_size(px(12.));
+    let line = |lead: AnyElement, text: String| {
         div()
-            .mb(px(8.))
             .flex()
             .items_center()
             .gap(px(10.))
-            .px(px(12.))
-            .py(px(8.))
-            .rounded(px(12.))
-            .border_1()
-            .border_color(colors::border1())
-            .bg(colors::surface1())
-            .child(icon("clock", 14., colors::busy()))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(13.))
-                    .text_color(colors::text2())
-                    .child(format!(
-                        "{} hit its usage limit. It continues at {when}.",
-                        v.launch.agent.name()
-                    )),
-            )
-            .child(
-                widgets::button("limit-now", "Continue now")
-                    .h(px(24.))
-                    .px(px(9.))
-                    .text_size(px(12.))
-                    .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.continue_now(cx))),
-            )
-            .child(
-                widgets::button("limit-cancel", "Don't continue")
-                    .h(px(24.))
-                    .px(px(9.))
-                    .text_size(px(12.))
-                    .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.cancel_resume(cx))),
-            )
-            .into_any_element(),
-    )
-}
-
-fn queue(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyElement> {
-    if v.queue.is_empty() {
-        return None;
-    }
-    let held = !v.model.running();
-    let rows = v.queue.iter().enumerate().map(|(ix, p)| {
-        let text = p.text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let text = if text.is_empty() {
-            format!("{} image(s)", p.images.len())
-        } else {
-            text
-        };
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .h(px(32.))
-            .px(px(10.))
-            .child(icon("clock", 13., colors::text3()))
+            .min_h(px(40.))
+            .py(px(6.))
+            .child(lead)
             .child(
                 div()
                     .flex_1()
@@ -968,46 +906,78 @@ fn queue(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyElem
                     .text_color(colors::text2())
                     .child(text),
             )
+    };
+    let mut rows: Vec<Div> = Vec::new();
+    if let Some(at) = v.resume_at {
+        let when = chrono::Local
+            .timestamp_millis_opt(at as i64)
+            .single()
+            .map(|t| t.format("%-I:%M %p").to_string())
+            .unwrap_or_default();
+        rows.push(
+            line(
+                icon("clock", 14., colors::busy()).into_any_element(),
+                format!(
+                    "{} hit its usage limit. It continues at {when}.",
+                    v.launch.agent.name()
+                ),
+            )
             .child(
-                widgets::button(("queue-steer", ix), if held { "Send" } else { "Steer" })
-                    .h(px(24.))
-                    .px(px(9.))
-                    .text_size(px(12.))
-                    .tooltip(widgets::tip(if held {
-                        "Send this now"
-                    } else {
-                        "Send this into the run now instead of after it"
-                    }))
-                    .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.steer(ix, cx))),
+                small(widgets::button("limit-now", "Continue now"))
+                    .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.continue_now(cx))),
+            )
+            .child(
+                widgets::icon_button("limit-cancel", "x", 24.)
+                    .tooltip(widgets::tip("Don't continue"))
+                    .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.cancel_resume(cx))),
+            ),
+        );
+    }
+    for (ix, p) in v.queue.iter().enumerate() {
+        let text = p.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = if text.is_empty() {
+            format!("{} image(s)", p.images.len())
+        } else {
+            text
+        };
+        rows.push(
+            line(
+                icon("list-checks", 14., colors::text3()).into_any_element(),
+                text,
+            )
+            .child(
+                small(widgets::button(
+                    ("queue-steer", ix),
+                    if held { "Send" } else { "Steer" },
+                ))
+                .tooltip(widgets::tip(if held {
+                    "Send this now"
+                } else {
+                    "Send this into the run now instead of after it"
+                }))
+                .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.steer(ix, cx))),
             )
             .child(
                 widgets::icon_button(("queue-drop", ix), "x", 24.)
                     .tooltip(widgets::tip("Remove from the queue"))
                     .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.unqueue(ix, cx))),
-            )
-    });
-    let head = if held {
-        "Queued. Send one to continue."
-    } else {
-        "Queued. Sends when this run finishes."
-    };
+            ),
+        );
+    }
+    if rows.is_empty() {
+        return None;
+    }
     Some(
         div()
-            .mb(px(8.))
-            .py(px(4.))
-            .rounded(px(12.))
-            .border_1()
-            .border_color(colors::border1())
-            .bg(colors::surface1())
-            .child(
-                div()
-                    .px(px(12.))
-                    .pt(px(4.))
-                    .text_size(px(11.5))
-                    .text_color(colors::text3())
-                    .child(head),
+            .mx(px(12.))
+            .px(px(12.))
+            .rounded_t(px(12.))
+            .bg(colors::ink(0.035))
+            .children(
+                rows.into_iter().enumerate().map(|(i, r)| {
+                    r.when(i > 0, |d| d.border_t_1().border_color(colors::border1()))
+                }),
             )
-            .children(rows)
             .into_any_element(),
     )
 }
