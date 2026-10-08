@@ -11,6 +11,8 @@ hyprspace-theme.workspace = true
 hyprspace-syntax.workspace = true
 gpui.workspace = true
 alacritty_terminal.workspace = true
+# the pairing code in Settings, Phone (phone/qr.rs)
+qrcode = { version = "0.14", default-features = false }
 futures.workspace = true
 pulldown-cmark.workspace = true
 unicode-segmentation.workspace = true

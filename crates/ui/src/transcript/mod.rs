@@ -169,6 +169,26 @@ impl TranscriptView {
         cx.notify();
     }
 
+    /// A message from the phone, sent the way the reply box sends one.
+    pub fn send_text(&mut self, text: String, cx: &mut Context<Self>) {
+        let prompt = Prompt::text(text);
+        if self.loading {
+            self.queued = Some(prompt);
+            return;
+        }
+        self.send(prompt, cx);
+    }
+
+    /// An approval answered from the phone.
+    pub fn approve(&mut self, request: String, answer: Answer, cx: &mut Context<Self>) {
+        self.answer(request, answer, cx);
+    }
+
+    /// Stop pressed on the phone.
+    pub fn stop(&mut self, cx: &mut Context<Self>) {
+        self.interrupt(cx);
+    }
+
     fn submit(&mut self, cx: &mut Context<Self>) {
         let text = self.input.read(cx).text().trim().to_string();
         if text.is_empty() && self.images.is_empty() {

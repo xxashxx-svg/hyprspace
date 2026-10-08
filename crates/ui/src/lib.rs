@@ -12,6 +12,7 @@ mod intro;
 mod markdown;
 mod models;
 mod palette;
+mod phone;
 mod root;
 mod settings;
 mod sidebar;

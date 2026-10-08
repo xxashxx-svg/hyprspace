@@ -245,7 +245,7 @@ impl Root {
     /// model and effort in words.
     /// The subagents a thread has running: what each was asked, and seconds since it started. A
     /// terminal thread hears of them from its hooks; a structured one reads its own transcript.
-    fn subagents(&self, id: u64, cx: &App) -> Vec<(String, u64)> {
+    pub(crate) fn subagents(&self, id: u64, cx: &App) -> Vec<(String, u64)> {
         match self.views.get(&id) {
             Some(View::Structured(v)) => v
                 .read(cx)

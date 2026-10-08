@@ -1,7 +1,8 @@
 // A thread's journal: one JSON line per prompt, answer and run event, appended as they happen,
 // so the transcript can be rebuilt after a restart. Streamed text arrives a few characters at a
 // time, so consecutive text (or thinking) pieces are joined into one line before they are
-// written; a crash loses at most the reply that was still streaming.
+// written; a crash loses at most the reply that was still streaming. A phone watching the thread
+// gets the journal so far and then each entry as it is recorded (`watch`).
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -14,10 +15,16 @@ pub struct Journal {
     inner: Mutex<Inner>,
 }
 
+/// Hears each entry as it is recorded, streamed text piece by piece. Returns false once it no
+/// longer wants to, and is dropped.
+pub type Watcher = Box<dyn FnMut(&Entry) -> bool + Send>;
+
 struct Inner {
+    path: PathBuf,
     file: Option<BufWriter<File>>,
     /// A text or thinking event still taking more pieces.
     pending: Option<RunEvent>,
+    watchers: Vec<Watcher>,
 }
 
 /// Where the journal named `name` lives under `dir`. The name is reduced to one safe token, the
@@ -40,6 +47,7 @@ impl Journal {
     /// Opens for appending. A journal that can't be opened still works, it just keeps nothing:
     /// losing history must never stop a run.
     pub fn open(file: &Path) -> Self {
+        let path = file.to_path_buf();
         let file = file
             .parent()
             .map(std::fs::create_dir_all)
@@ -49,14 +57,17 @@ impl Journal {
             .map(BufWriter::new);
         Self {
             inner: Mutex::new(Inner {
+                path,
                 file,
                 pending: None,
+                watchers: Vec::new(),
             }),
         }
     }
 
     pub fn record(&self, entry: Entry) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.watchers.retain_mut(|w| w(&entry));
         if let Entry::Run { event } = &entry {
             match (&mut inner.pending, event) {
                 (Some(RunEvent::Text { text: have }), RunEvent::Text { text })
@@ -74,6 +85,18 @@ impl Journal {
         }
         inner.flush_pending();
         inner.write(&entry);
+    }
+
+    /// Adds a watcher. With `first`, hands it every entry recorded so far, under the same lock
+    /// `record` takes, so the watcher misses nothing, hears nothing twice and hears it in order.
+    pub fn watch(&self, first: Option<Box<dyn FnOnce(Vec<Entry>) + '_>>, watcher: Watcher) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(first) = first {
+            // a reply still streaming is written out, to go on in a line of its own
+            inner.flush_pending();
+            first(load(&inner.path));
+        }
+        inner.watchers.push(watcher);
     }
 }
 
@@ -161,6 +184,34 @@ mod tests {
                 run(text("!")),
             ]
         );
+    }
+
+    #[test]
+    fn a_watcher_gets_the_history_then_every_piece() {
+        let dir = tempfile::tempdir().unwrap();
+        let j = Journal::open(&path(dir.path(), "thread-2"));
+        j.record(Entry::Prompt {
+            prompt: Prompt::text("hi"),
+        });
+        j.record(run(text("Hel")));
+        let heard = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let h = heard.clone();
+        let mut before = Vec::new();
+        j.watch(
+            Some(Box::new(|e| before = e)),
+            Box::new(move |e| {
+                h.lock().unwrap().push(e.clone());
+                true
+            }),
+        );
+        assert_eq!(before.len(), 2);
+        assert_eq!(before[1], run(text("Hel")));
+        j.record(run(text("lo")));
+        assert_eq!(*heard.lock().unwrap(), vec![run(text("lo"))]);
+        drop(j);
+        // the reply split where the watcher came in, and replays the same
+        let all = load(&path(dir.path(), "thread-2"));
+        assert_eq!(all[1..], [run(text("Hel")), run(text("lo"))]);
     }
 
     #[test]

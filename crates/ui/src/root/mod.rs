@@ -195,6 +195,9 @@ pub struct Root {
     _git_pump: Task<()>,
     /// When `git_poll` last read every open space, not just the one on screen.
     git_polled: Option<Instant>,
+    /// The phone bridge as the UI sees it (`crate::phone`).
+    pub(crate) phone: crate::phone::PhoneState,
+    _phone_pump: Task<()>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -269,6 +272,17 @@ impl Root {
                 }
             }
         });
+        // a connected phone's thread list keeps up with the sidebar
+        let phone_pump = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(400))
+                    .await;
+                if this.update(cx, |r, cx| r.phone_publish(cx)).is_err() {
+                    break;
+                }
+            }
+        });
         let limits = cx.new(|cx| crate::usage::Limits::new(client.clone(), cx));
         let skills = cx.new(|_| crate::skills::Skills::new(client.clone()));
         let updater = cx.new(|cx| crate::update::Updater::new(client.clone(), cx));
@@ -322,6 +336,8 @@ impl Root {
             _ticker: None,
             _git_pump: git_pump,
             git_polled: None,
+            phone: Default::default(),
+            _phone_pump: phone_pump,
             _pump: pump,
             _subs: subs,
         }
@@ -438,6 +454,7 @@ impl Root {
                     cx.notify();
                 }
             }
+            Event::Phone(e) => self.phone_event(e, window, cx),
             Event::AgentActivity { id, doing, subs } => {
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.activity.insert(thread, Activity { doing, subs });
@@ -533,6 +550,7 @@ impl Root {
             self.save();
         }
         self.git_poll(Duration::ZERO);
+        self.phone_enable();
         self.apply_theme(window);
         let prefs = self.state.composer.clone();
         self.composer.update(cx, |c, cx| c.set_prefs(prefs, cx));
@@ -579,7 +597,7 @@ impl Root {
                         title: title.clone(),
                         terminal: *terminal,
                     };
-                    self.start_thread(space, start, window, cx);
+                    self.start_thread(space, start, true, window, cx);
                 }
             }
             ComposerEvent::Cloned {
@@ -604,7 +622,7 @@ impl Root {
                         title,
                         terminal: *terminal,
                     };
-                    self.start_thread(space, start, window, cx);
+                    self.start_thread(space, start, true, window, cx);
                 } else {
                     self.compose(Some(space), window, cx);
                 }

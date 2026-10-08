@@ -34,6 +34,8 @@ pub struct AppState {
     pub seen_version: String,
     /// How long a thread sits untouched before it settles by itself.
     pub settle_after: SettleAfter,
+    /// Whether a paired phone can reach the app, and over which networks.
+    pub phone: PhonePrefs,
 }
 
 impl Default for AppState {
@@ -51,8 +53,17 @@ impl Default for AppState {
             intro_seen: false,
             seen_version: String::new(),
             settle_after: SettleAfter::default(),
+            phone: PhonePrefs::default(),
         }
     }
+}
+
+/// The phone bridge (`crate::phone`): off until the user switches it on in Settings.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PhonePrefs {
+    pub on: bool,
+    pub network: crate::phone::Network,
 }
 
 /// How long a thread sits untouched before it settles by itself, after T3 Code's auto-settle.

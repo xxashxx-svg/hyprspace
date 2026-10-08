@@ -395,13 +395,16 @@ impl Root {
         cx.notify();
     }
 
+    /// Makes a thread and starts it. `show` puts it on screen; a thread started from the phone
+    /// starts without taking the desktop away from what it shows.
     pub(crate) fn start_thread(
         &mut self,
         space: u64,
         start: Start,
+        show: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<u64> {
         let Start {
             mut launch,
             prompt,
@@ -429,9 +432,7 @@ impl Root {
             touched: now_ms(),
             ..Thread::default()
         };
-        let Some(s) = self.state.space_mut(space) else {
-            return;
-        };
+        let s = self.state.space_mut(space)?;
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, prompt, false, cx);
@@ -443,10 +444,23 @@ impl Root {
                 )
             });
         }
-        self.open_thread(thread.id, window, cx);
+        if show {
+            self.open_thread(thread.id, window, cx);
+        } else {
+            self.save();
+            cx.notify();
+        }
+        Some(thread.id)
     }
 
-    fn new_terminal(&mut self, space: u64, window: &mut Window, cx: &mut Context<Self>) {
+    /// A plain shell in the space's folder, on screen when `show`.
+    pub(crate) fn new_terminal(
+        &mut self,
+        space: u64,
+        show: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
         let cwd = self
             .state
             .space(space)
@@ -461,13 +475,17 @@ impl Root {
             touched: now_ms(),
             ..Thread::default()
         };
-        let Some(s) = self.state.space_mut(space) else {
-            return;
-        };
+        let s = self.state.space_mut(space)?;
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, None, false, cx);
-        self.open_thread(thread.id, window, cx);
+        if show {
+            self.open_thread(thread.id, window, cx);
+        } else {
+            self.save();
+            cx.notify();
+        }
+        Some(thread.id)
     }
 
     /// Shows an image over the whole window, zoomable and movable, until it is closed.
@@ -554,7 +572,9 @@ impl Root {
         self.menu = None;
         match action {
             Action::NewThread(space) => self.compose(Some(space), window, cx),
-            Action::NewTerminal(space) => self.new_terminal(space, window, cx),
+            Action::NewTerminal(space) => {
+                self.new_terminal(space, true, window, cx);
+            }
             Action::Rename(target) => self.start_rename(target, window, cx),
             Action::SettleSpace(id) => self.settle_space(id, window, cx),
             Action::Settle(id, on) => self.settle(id, on, window, cx),

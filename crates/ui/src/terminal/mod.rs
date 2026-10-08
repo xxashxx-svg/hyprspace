@@ -23,7 +23,7 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, Pixels, Render, Task, Window, canvas, div, prelude::*,
     px,
 };
-use hyprspace_proto::{Agent, Client, Command, Launch, SessionId};
+use hyprspace_proto::{Agent, Client, Command, Launch, PhoneCommand, SessionId};
 
 use crate::colors::{self, hsla, theme};
 use emulator::{CellColor, Emulator, Marks};
@@ -54,6 +54,8 @@ pub struct TerminalView {
     /// Relative paths in the output resolve against this.
     cwd: PathBuf,
     status: Option<String>,
+    /// A paired phone has the PTY sized for its screen. Typing here takes it back.
+    phone: bool,
     /// The geometry the last frame painted with, for mapping the pointer onto cells.
     grid: Option<Grid>,
     resize: Option<Task<()>>,
@@ -137,6 +139,7 @@ impl TerminalView {
             focus: cx.focus_handle(),
             cwd,
             status: None,
+            phone: false,
             grid: None,
             resize: None,
             after_slide: None,
@@ -167,6 +170,11 @@ impl TerminalView {
 
     /// Bytes the user sent: the view jumps back to the live bottom, like xterm.
     fn input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        if self.phone {
+            self.phone = false;
+            self.client
+                .send(Command::Phone(PhoneCommand::Take { id: self.id }));
+        }
         self.emu.scroll_to_bottom();
         self.blink_on = true;
         self.typed = Instant::now();
@@ -192,6 +200,12 @@ impl TerminalView {
         if self.find.is_some() {
             self.refind(false, cx);
         }
+        cx.notify();
+    }
+
+    /// A phone sized this terminal for its screen, or the desktop has it back.
+    pub fn set_phone(&mut self, phone: bool, cx: &mut Context<Self>) {
+        self.phone = phone;
         cx.notify();
     }
 
@@ -449,6 +463,20 @@ impl Render for TerminalView {
                             .map(|p| p.render(window.viewport_size())),
                     ),
             )
+            .when(self.phone, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .px(px(paint::PAD_X))
+                        .pb(px(6.))
+                        .text_xs()
+                        .text_color(colors::text2())
+                        .child(crate::assets::icon("smartphone", 12., colors::text2()))
+                        .child("Sized for your phone. Typing here gives it back."),
+                )
+            })
             .children(self.status.clone().map(|s| {
                 div()
                     .px(px(paint::PAD_X))

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
+use crate::phone::{PhoneCommand, PhoneEvent};
 use crate::run::{Answer, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Entry};
@@ -120,6 +121,8 @@ pub enum Command {
     Skills(SkillCommand),
     /// The app updating itself (`update.rs`).
     Update(UpdateCommand),
+    /// The bridge a paired phone reaches the app through (`phone.rs`).
+    Phone(PhoneCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -207,6 +210,7 @@ pub enum Event {
     Usage(UsageEvent),
     Skills(SkillEvent),
     Update(UpdateEvent),
+    Phone(PhoneEvent),
 }
 
 #[cfg(test)]

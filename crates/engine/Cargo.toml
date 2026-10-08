@@ -10,7 +10,7 @@ chrono.workspace = true
 hyprspace-proto.workspace = true
 hyprspace-harness.workspace = true
 hyprspace-update.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net"] }
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -18,6 +18,16 @@ anyhow.workspace = true
 portable-pty.workspace = true
 reqwest.workspace = true
 base64.workspace = true
+alacritty_terminal.workspace = true
+
+# the phone bridge (phone/): TLS under a certificate made on this machine, which the phone pins,
+# and a WebSocket over it. aws-lc-rs because rustls already builds it for reqwest
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem", "crypto"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+sha2 = "0.10"
+getrandom = "0.3"
+if-addrs = "0.15"
 
 # the processes under each terminal's shell, to see which agent runs there (running.rs); gpui's
 # screen capture already builds this crate

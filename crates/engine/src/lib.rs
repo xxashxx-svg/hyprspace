@@ -14,6 +14,7 @@ pub mod journal;
 mod legacy;
 mod open;
 pub mod persist;
+mod phone;
 pub mod providers;
 pub mod pty;
 mod requests;
@@ -40,6 +41,7 @@ use tokio::task::block_in_place;
 use folder::Folders;
 use journal::Journal;
 use persist::Store;
+use phone::Phone;
 use pty::PtyManager;
 use requests::Requests;
 use terminal::Terminals;
@@ -70,12 +72,16 @@ impl Engine {
             .thread_name("engine")
             .enable_all()
             .build()?;
-        let store = Store::open(dir)?;
+        let store = Store::open(dir.clone())?;
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
-        let (event_tx, events) = mpsc::unbounded();
+        // everything the engine says passes the phone bridge on its way to the UI
+        let (event_tx, said) = mpsc::unbounded();
+        let (ui_tx, events) = mpsc::unbounded();
         let ptys = PtyManager::default();
+        let phone = Phone::new(ui_tx.clone(), ptys.clone(), dir);
+        runtime.spawn(tap(said, ui_tx, phone.clone()));
         let terminals = Terminals::new(ptys.clone(), event_tx.clone());
-        runtime.spawn(serve(cmd_rx, event_tx, terminals.clone(), store));
+        runtime.spawn(serve(cmd_rx, event_tx, terminals.clone(), store, phone));
         let engine = Engine {
             terminals,
             #[cfg(test)]
@@ -114,6 +120,16 @@ impl Live {
     }
 }
 
+/// Hands each event to the phone bridge, then to the UI.
+async fn tap(mut said: UnboundedReceiver<Event>, ui: UnboundedSender<Event>, phone: Phone) {
+    while let Some(event) = said.next().await {
+        phone.tap(&event);
+        if ui.unbounded_send(event).is_err() {
+            break;
+        }
+    }
+}
+
 // One command at a time, in order. PTY calls block briefly (a write into a full pipe, a resize),
 // so they run under `block_in_place`: keystrokes keep their order and structured sessions keep
 // moving on the other worker. A structured session is a harness task; its commands only queue.
@@ -122,6 +138,7 @@ async fn serve(
     tx: UnboundedSender<Event>,
     terminals: Terminals,
     store: Store,
+    phone: Phone,
 ) {
     let journals = store.dir().join("journals");
     let requests = Requests::new(store, tx.clone());
@@ -138,8 +155,11 @@ async fn serve(
                 // the old session's CLI dies with it, before the new one starts
                 structured.remove(&id);
                 let agent = launch.agent;
-                let journal =
-                    journal.map(|name| Arc::new(Journal::open(&journal::path(&journals, &name))));
+                let journal = journal.map(|name| {
+                    let j = Arc::new(Journal::open(&journal::path(&journals, &name)));
+                    phone.journal_opened(&name, &j);
+                    j
+                });
                 let events = tx.clone();
                 let record = journal.clone();
                 let emit: Emit = Box::new(move |event| {
@@ -229,6 +249,8 @@ async fn serve(
                 run,
                 prompt,
             } => {
+                // before the shell starts, so the bridge keeps its first output too
+                phone.opened_terminal(id, cols, rows);
                 let opened = block_in_place(|| terminals.open(id, cwd, (cols, rows), run, prompt));
                 if let Err(e) = opened {
                     let _ = tx.unbounded_send(Event::Failed {
@@ -242,7 +264,9 @@ async fn serve(
                 let _ = block_in_place(|| terminals.ptys().write(id, &bytes));
             }
             Command::ResizeTerminal { id, cols, rows } => {
-                let _ = block_in_place(|| terminals.ptys().resize(id, cols, rows));
+                if phone.resize(id, cols, rows) {
+                    let _ = block_in_place(|| terminals.ptys().resize(id, cols, rows));
+                }
             }
             Command::Close { id } => {
                 // dropping the session kills its CLI
@@ -273,6 +297,7 @@ async fn serve(
             Command::Usage(cmd) => usage::handle(cmd, tx.clone()),
             Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
             Command::Update(cmd) => update::handle(cmd, tx.clone()),
+            Command::Phone(cmd) => phone.command(cmd),
         }
     }
 }
