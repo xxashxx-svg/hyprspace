@@ -9,7 +9,8 @@ directly, over your network or Tailscale, under a certificate it pins when it pa
 1. On the computer, open HyprSpace, then Settings, Phone, and switch on **Let your phone connect**.
 2. Press **Show code**.
 3. In the app, tap **Scan the code**. If the camera can't read it, type the address and the code
-   shown under the QR code instead, then check that the security code matches.
+   shown under the QR code instead.
+4. To remove the pairing, press **Forget** on either side. Both forget each other.
 
 ## Building
 

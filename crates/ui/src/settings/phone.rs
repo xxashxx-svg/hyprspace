@@ -90,18 +90,7 @@ impl Root {
         if prefs.on && status.on {
             page = page.child(group("Pair a phone", vec![self.pairing_row(cx)]));
         }
-        let mut paired = self.device_rows(cx);
-        if !status.security.is_empty() {
-            paired.push(row(
-                "Security code",
-                "A phone paired by typing the code shows this code too. If the two differ, forget that phone.",
-                div()
-                    .font_family(hyprspace_theme::MONO)
-                    .text_size(px(13.))
-                    .text_color(colors::text1())
-                    .child(status.security.clone()),
-            ));
-        }
+        let paired = self.device_rows(cx);
         page = page.child(group("Paired phones", paired));
         page.child(group(
             "What your phone gets",
@@ -118,7 +107,7 @@ impl Root {
                 ),
                 row(
                     "How it travels",
-                    "Over TLS under a certificate made on this computer. Your phone saves its fingerprint when it pairs and refuses any other.",
+                    "Over TLS under a certificate made on this computer. Your phone saves its fingerprint when it pairs and refuses any other. The pairing code never crosses the network: each side proves it knows the code, tied to that certificate.",
                     div(),
                 ),
                 row(
@@ -139,7 +128,7 @@ impl Root {
         let Some(p) = &self.phone.pairing else {
             return row(
                 "Show a pairing code",
-                "Open HyprSpace on your phone, tap Pair and scan the code. A code works once, for five minutes.",
+                "Open HyprSpace on your phone, tap Pair and scan the code. Each code works once.",
                 widgets::button("phone-pair", "Show code").on_click(cx.listener(
                     |r, _: &ClickEvent, _, _| r.client.send(Command::Phone(PhoneCommand::Pair)),
                 )),
@@ -179,7 +168,7 @@ impl Root {
                             .child(p.code.clone()),
                     )
                     .child(text(format!(
-                        "It works once, until {until}. To type it in, your phone also needs this address: {}.",
+                        "It works once. A new one replaces it at {until}. To type it in, your phone also needs this address: {}.",
                         self.phone
                             .status
                             .addresses
@@ -205,7 +194,7 @@ impl Root {
         if devices.is_empty() {
             return vec![row(
                 "No phones yet",
-                "A phone you pair shows here. Forget one to stop it connecting.",
+                "A phone you pair shows here. Forget one and this computer and the phone both drop the pairing.",
                 div(),
             )];
         }

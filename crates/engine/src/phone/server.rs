@@ -1,6 +1,7 @@
 // The bridge's listener: TLS under the certificate the phone pinned when it paired, a WebSocket
 // over it, one JSON message per text frame. A connection has ten seconds to say hello or pair,
-// and drops after a minute without a word (the phone pings every twenty seconds).
+// at most sixteen wait to at once, and one drops after a minute without a word (the phone pings
+// every twenty seconds).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use hyprspace_proto::phone::{Down, Up};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout};
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::ServerConfig;
@@ -20,6 +22,7 @@ use super::Phone;
 use super::store::Identity;
 
 const HANDSHAKE: Duration = Duration::from_secs(10);
+const WAITING: usize = 16;
 const SILENCE: Duration = Duration::from_secs(60);
 /// The biggest message a phone sends is a pasted prompt.
 const MAX_MESSAGE: usize = 1 << 20;
@@ -37,16 +40,20 @@ pub fn acceptor(id: &Identity) -> anyhow::Result<TlsAcceptor> {
 }
 
 pub async fn listen(phone: Phone, listener: TcpListener, tls: TlsAcceptor) {
+    let waiting = Arc::new(Semaphore::new(WAITING));
     loop {
         let Ok((tcp, _)) = listener.accept().await else {
             tokio::time::sleep(Duration::from_millis(200)).await;
             continue;
         };
-        tokio::spawn(serve(phone.clone(), tcp, tls.clone()));
+        let Ok(permit) = waiting.clone().try_acquire_owned() else {
+            continue;
+        };
+        tokio::spawn(serve(phone.clone(), tcp, tls.clone(), permit));
     }
 }
 
-async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor) {
+async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor, permit: OwnedSemaphorePermit) {
     let _ = tcp.set_nodelay(true);
     let Ok(Ok(stream)) = timeout(HANDSHAKE, tls.accept(tcp)).await else {
         return;
@@ -70,6 +77,7 @@ async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor) {
     let Some(first) = first else {
         return;
     };
+    drop(permit);
     let (tx, mut rx) = mpsc::unbounded();
     let conn = match phone.admit(first, tx) {
         Ok((conn, welcome)) => {
@@ -79,8 +87,8 @@ async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor) {
             }
             conn
         }
-        Err(message) => {
-            let _ = send(&mut sink, &Down::Denied { message }).await;
+        Err(denied) => {
+            let _ = send(&mut sink, &denied).await;
             let _ = sink.close().await;
             return;
         }

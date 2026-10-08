@@ -50,7 +50,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.hyprspace.android.App
 import com.hyprspace.android.R
-import com.hyprspace.android.net.Desktop
+import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.PairLink
 import com.hyprspace.android.service.LinkService
 import com.hyprspace.android.ui.LocalHues
@@ -66,12 +66,11 @@ fun PairScreen(app: App, onDone: () -> Unit, onCancel: (() -> Unit)?) {
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf(Mode.Intro) }
     var busy by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var trusted by remember { mutableStateOf<Desktop?>(null) }
+    // the computer removed this phone: say so where it pairs again
+    var error by remember { mutableStateOf((app.link.conn.value as? Conn.Denied)?.message) }
     val incoming = app.nav.link
 
     fun pair(link: PairLink) {
-        // the screen stays here through the security code, though a computer is now saved
         app.nav.go(Screen.Pair)
         busy = "Pairing with ${link.name}"
         error = null
@@ -81,8 +80,7 @@ fun PairScreen(app: App, onDone: () -> Unit, onCancel: (() -> Unit)?) {
             r.onSuccess { d ->
                 app.link.restart()
                 LinkService.sync(app)
-                // a typed code had no fingerprint to check; show one to compare instead
-                if (link.fingerprint == null) trusted = d else onDone()
+                onDone()
             }.onFailure {
                 error = it.message
                 mode = Mode.Intro
@@ -104,18 +102,7 @@ fun PairScreen(app: App, onDone: () -> Unit, onCancel: (() -> Unit)?) {
                 }
             }
         }
-        val trust = trusted
         when {
-            trust != null -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Paired with ${trust.name}", style = MaterialTheme.typography.headlineSmall, color = h.text1)
-                Text(
-                    "Check that this security code matches the one under Paired phones in Settings, Phone on your computer. If it doesn't, forget the computer in this app's settings.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = h.text2,
-                )
-                Text(trust.securityCode(), fontFamily = Mono, style = MaterialTheme.typography.headlineSmall, color = h.text1)
-                Primary("It matches", onClick = onDone)
-            }
             busy != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = h.text2)
@@ -235,9 +222,9 @@ private fun Typed(onPair: (PairLink) -> Unit) {
         )
         OutlinedTextField(
             value = code,
-            onValueChange = { if (it.length <= 12) code = it },
+            onValueChange = { if (it.length <= 16) code = it },
             label = { Text("Code") },
-            placeholder = { Text("K7MX-Q2RT") },
+            placeholder = { Text("K7MX-Q2RT-H9WP") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false),
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = Mono),
@@ -245,7 +232,7 @@ private fun Typed(onPair: (PairLink) -> Unit) {
             shape = RoundedCornerShape(12.dp),
             colors = colors,
         )
-        Primary("Pair", enabled = link != null && code.count { it.isLetterOrDigit() } == 8) { link?.let(onPair) }
+        Primary("Pair", enabled = link != null && code.count { it.isLetterOrDigit() } == 12) { link?.let(onPair) }
     }
 }
 

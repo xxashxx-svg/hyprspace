@@ -57,6 +57,7 @@ import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.ago
 import com.hyprspace.android.ui.clickableQuiet
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
@@ -111,7 +112,6 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                                 else -> "Connecting"
                             }
                             Text(state, style = MaterialTheme.typography.bodySmall, color = h.text3)
-                            Text("Security code ${d.securityCode()}", fontFamily = Mono, style = MaterialTheme.typography.bodySmall, color = h.text3)
                         }
                         TextButton(onClick = { forgetting = d }) { Text("Forget", color = h.error) }
                     }
@@ -189,14 +189,16 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
         AlertDialog(
             onDismissRequest = { forgetting = null },
             title = { Text("Forget ${d.name}?") },
-            text = { Text("This phone stops connecting to it. To also remove this phone on the computer, press Forget next to it in Settings, Phone there.") },
+            text = { Text("This phone and ${d.name} both forget each other. To connect again, pair again.") },
             confirmButton = {
                 TextButton(onClick = {
                     val was = d.id == current?.id
-                    app.store.forget(d.id)
                     forgetting = null
-                    if (was) app.link.restart()
-                    LinkService.sync(app)
+                    app.scope.launch {
+                        app.link.leave(d)
+                        if (was) app.link.restart()
+                        LinkService.sync(app)
+                    }
                 }) { Text("Forget", color = h.error) }
             },
             dismissButton = { TextButton(onClick = { forgetting = null }) { Text("Cancel") } },

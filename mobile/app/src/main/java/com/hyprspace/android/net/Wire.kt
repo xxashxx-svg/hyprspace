@@ -79,7 +79,10 @@ sealed interface Up {
     data class Hello(val token: String, val device: String, val protocol: Int = PROTOCOL, val app: String = APP) : Up
 
     @Serializable @SerialName("pair")
-    data class Pair(val code: String, val device: String, val protocol: Int = PROTOCOL, val app: String = APP) : Up
+    data class Pair(val proof: String, val device: String, val protocol: Int = PROTOCOL, val app: String = APP) : Up
+
+    @Serializable @SerialName("leave")
+    data object Leave : Up
 
     @Serializable @SerialName("watch")
     data class Watch(val thread: Long) : Up
@@ -139,10 +142,10 @@ data class NewThread(
 @Serializable
 sealed interface Down {
     @Serializable @SerialName("welcome")
-    data class Welcome(val desktop: String, val version: String, val token: String? = null) : Down
+    data class Welcome(val desktop: String, val version: String, val token: String? = null, val proof: String? = null) : Down
 
     @Serializable @SerialName("denied")
-    data class Denied(val message: String) : Down
+    data class Denied(val message: String, val forget: Boolean = false) : Down
 
     @Serializable @SerialName("board")
     data class BoardMsg(val board: Board) : Down

@@ -156,22 +156,23 @@ impl Phone {
                 self.hub().sessions = sessions.into_iter().collect();
             }
             PhoneCommand::Pair => {
-                let long = URL_SAFE_NO_PAD.encode(store::random(18));
+                // a code lives five minutes; while the screen shows it, a fresh one takes over
                 let mut hub = self.hub();
-                hub.pairing = Some(Secret {
-                    long: long.clone(),
-                    code: short_code(),
-                    expires: now_ms() + PAIR_FOR.as_millis() as u64,
-                    tries: 0,
-                });
+                hub.pairing = Some(Secret::new());
                 hub.send_pairing();
-                // an expired code leaves the screen, unless a newer one took its place
+                let first = hub.pairing.as_ref().map(|p| p.long.clone());
+                drop(hub);
                 let me = self.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(PAIR_FOR).await;
-                    let mut hub = me.hub();
-                    if hub.pairing.as_ref().is_some_and(|p| p.long == long) {
-                        hub.pairing = None;
+                    let mut current = first;
+                    loop {
+                        tokio::time::sleep(PAIR_FOR).await;
+                        let mut hub = me.hub();
+                        if hub.pairing.as_ref().map(|p| &p.long) != current.as_ref() {
+                            return;
+                        }
+                        hub.pairing = Some(Secret::new());
+                        current = hub.pairing.as_ref().map(|p| p.long.clone());
                         hub.send_pairing();
                     }
                 });
@@ -191,6 +192,12 @@ impl Phone {
                     .map(|(id, _)| *id)
                     .collect();
                 for id in gone {
+                    if let Some(c) = hub.conns.get(&id) {
+                        let _ = c.tx.unbounded_send(Down::Denied {
+                            message: "This computer removed this phone.".into(),
+                            forget: true,
+                        });
+                    }
                     hub.drop_conn(id);
                 }
                 hub.send_status();
@@ -268,7 +275,11 @@ impl Phone {
 
     /// The first message on a connection: a hello from a paired phone or a pairing. Returns
     /// the connection's id and what to tell the phone, or why it isn't let in.
-    fn admit(&self, up: Up, tx: UnboundedSender<Down>) -> Result<(u64, Down), String> {
+    fn admit(&self, up: Up, tx: UnboundedSender<Down>) -> Result<(u64, Down), Down> {
+        let denied = |message: &str| Down::Denied {
+            message: message.into(),
+            forget: false,
+        };
         let mut hub = self.hub();
         let now = now_ms();
         let cutoff = Instant::now() - Duration::from_secs(60);
@@ -276,9 +287,9 @@ impl Phone {
             hub.failures.pop_front();
         }
         if hub.failures.len() >= 10 {
-            return Err("Too many tries. Wait a minute and try again.".into());
+            return Err(denied("Too many tries. Wait a minute and try again."));
         }
-        let (protocol, device, token) = match up {
+        let (protocol, device, token, proof) = match up {
             Up::Hello {
                 token,
                 device,
@@ -286,57 +297,61 @@ impl Phone {
                 app,
             } => {
                 if protocol != PROTOCOL {
-                    return Err(outdated(protocol));
+                    return Err(denied(&outdated(protocol)));
                 }
                 let device = clip(&device);
                 match hub.store.check(&token, &device, &clip(&app), now) {
-                    Some(id) => (protocol, id, None),
+                    Some(id) => (protocol, id, None, None),
                     None => {
                         hub.failures.push_back(Instant::now());
-                        return Err(
-                            "This phone isn't paired anymore. Pair it again from Settings, Phone."
+                        return Err(Down::Denied {
+                            message: "This computer removed this phone. Pair again to reconnect."
                                 .into(),
-                        );
+                            forget: true,
+                        });
                     }
                 }
             }
             Up::Pair {
-                code,
+                proof,
                 device,
                 protocol,
                 app,
             } => {
                 if protocol != PROTOCOL {
-                    return Err(outdated(protocol));
+                    return Err(denied(&outdated(protocol)));
                 }
-                let typed = normalize(&code);
-                let ok = match &mut hub.pairing {
+                let fingerprint = hub.fingerprint.clone();
+                let key = match &mut hub.pairing {
                     Some(p) if p.expires > now => {
-                        let ok = code == p.long || (typed.len() == 8 && typed == p.code);
-                        if !ok {
+                        let key = [&p.long, &p.code]
+                            .into_iter()
+                            .find(|key| same(&prove(key, &fingerprint), &proof))
+                            .cloned();
+                        if key.is_none() {
                             p.tries += 1;
                         }
-                        ok
+                        key
                     }
-                    _ => false,
+                    _ => None,
                 };
-                if !ok {
+                let Some(key) = key else {
                     hub.failures.push_back(Instant::now());
                     if hub.pairing.as_ref().is_some_and(|p| p.tries >= PAIR_TRIES) {
                         hub.pairing = None;
                         hub.send_pairing();
                     }
-                    return Err(
-                        "That code didn't work. Show a new one in Settings, Phone, and try again."
-                            .into(),
-                    );
-                }
+                    return Err(denied(
+                        "That code didn't work. Check it, or show a new one in Settings, Phone.",
+                    ));
+                };
                 hub.pairing = None;
                 hub.send_pairing();
                 let (id, token) = hub.store.add(&clip(&device), &clip(&app), now);
-                (protocol, id, Some(token))
+                let ours = prove(&key, &format!("desktop {fingerprint}"));
+                (protocol, id, Some(token), Some(ours))
             }
-            _ => return Err("Say hello first.".into()),
+            _ => return Err(denied("Say hello first.")),
         };
         let _ = protocol;
         let conn = hub.next_conn;
@@ -360,6 +375,7 @@ impl Phone {
                 desktop,
                 version: env!("CARGO_PKG_VERSION").into(),
                 token,
+                proof,
             },
         ))
     }
@@ -449,6 +465,14 @@ impl Phone {
             Up::Ping => {
                 if let Some(c) = self.hub().conns.get(&conn) {
                     let _ = c.tx.unbounded_send(Down::Pong);
+                }
+            }
+            Up::Leave => {
+                let mut hub = self.hub();
+                if let Some(device) = hub.conns.get(&conn).map(|c| c.device.clone()) {
+                    hub.store.forget(&device);
+                    hub.drop_conn(conn);
+                    hub.send_status();
                 }
             }
             Up::Hello { .. } | Up::Pair { .. } => {}
@@ -669,7 +693,6 @@ impl Hub {
             },
             error: self.error.clone(),
             devices: self.store.devices(|id| online.contains(id)),
-            security: security(&self.fingerprint),
         };
         self.to_ui(PhoneEvent::Status { status });
     }
@@ -689,7 +712,7 @@ impl Hub {
                     self.fingerprint,
                     p.long
                 ),
-                code: format!("{}-{}", &p.code[..4], &p.code[4..]),
+                code: format!("{}-{}-{}", &p.code[..4], &p.code[4..8], &p.code[8..]),
                 expires: p.expires,
             }
         });
@@ -823,33 +846,37 @@ fn watcher(thread: u64, live: Arc<AtomicBool>, tx: UnboundedSender<Down>) -> jou
     })
 }
 
-/// The fingerprint as a phone shows it: its first eight letters and digits, in two groups.
-fn security(fingerprint: &str) -> String {
-    let s: String = fingerprint
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .take(8)
-        .map(|c| c.to_ascii_uppercase())
-        .collect();
-    if s.len() < 8 {
-        return String::new();
-    }
-    format!("{}-{}", &s[..4], &s[4..])
+/// What a phone sends for `key` over the certificate it saw: HMAC-SHA256, base64url.
+fn prove(key: &str, fingerprint: &str) -> String {
+    use hmac::{Hmac, Mac};
+    let mut m = Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).expect("any key fits");
+    m.update(fingerprint.as_bytes());
+    URL_SAFE_NO_PAD.encode(m.finalize().into_bytes())
 }
 
-/// Eight characters from an alphabet with no look-alikes (no 0 and O, no 1, I and L).
+/// Equal in time that doesn't depend on where they differ.
+fn same(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
+}
+
+impl Secret {
+    fn new() -> Self {
+        Self {
+            long: URL_SAFE_NO_PAD.encode(store::random(18)),
+            code: short_code(),
+            expires: now_ms() + PAIR_FOR.as_millis() as u64,
+            tries: 0,
+        }
+    }
+}
+
+/// Twelve characters from an alphabet with no look-alikes (no 0 and O, no 1, I and L): about
+/// 60 bits, past cracking a captured proof in the minutes a code lives.
 fn short_code() -> String {
     const ABC: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    store::random(8)
+    store::random(12)
         .iter()
         .map(|b| ABC[*b as usize % ABC.len()] as char)
-        .collect()
-}
-
-fn normalize(code: &str) -> String {
-    code.chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .map(|c| c.to_ascii_uppercase())
         .collect()
 }
 

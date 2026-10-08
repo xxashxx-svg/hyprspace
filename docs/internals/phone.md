@@ -32,13 +32,22 @@ A paired Android phone reaches the desktop app directly, with no server between 
 
 - Settings, Phone shows a QR code holding `hyprspace://pair?n=&h=&p=&f=&c=`: the computer's
   name, its addresses (LAN first, then Tailscale, virtual adapters left out), the port, the
-  certificate's fingerprint and a 24-character secret. An 8-character code from an alphabet with
-  no look-alikes works the same, for typing.
-- A code works once, for five minutes, and stops after five wrong tries. Ten failed hellos or
-  pairings in a minute shut the door for that minute.
-- A paired phone gets a 32-byte token; `phone.json` keeps only its hash. Forget on either side
-  ends it. A typed code has no fingerprint to check, so the phone trusts the first certificate and
-  shows a security code (eight characters of the fingerprint) to compare with Settings.
+  certificate's fingerprint and a 24-character secret. A 12-character code from an alphabet with
+  no look-alikes (about 60 bits) works the same, for typing.
+- The code never crosses the network. The phone sends `proof`, HMAC-SHA256 keyed with the code
+  over the fingerprint of the certificate it actually got; the computer checks it against its own
+  fingerprint, so a relay through someone else's certificate fails. The computer answers with
+  its own proof over `"desktop " + fingerprint`, so a typed pairing, which has no fingerprint to
+  pin yet, can't be answered by an impostor either. Cracking a proof offline means guessing 60
+  bits inside the five minutes a code lives.
+- A code works once and stops after five wrong tries. While the pairing screen is open a new one
+  replaces it every five minutes. Ten failed hellos or pairings in a minute shut the door for
+  that minute, and at most 16 connections can be waiting to say hello at once.
+- A paired phone gets a 32-byte token; `phone.json` keeps only its hash, and the phone seals its
+  copy with a key in the Android keystore. Forget on either side ends it on both: the computer
+  sends `Denied { forget: true }` (now, or at the phone's next hello) and the phone drops the
+  computer; the phone sends `Leave` and the computer drops the phone. A computer that's off when
+  the phone forgets it keeps the phone listed until it's forgotten there too.
 - `PROTOCOL` moves when a message changes shape. A phone on another protocol is told which side
   to update, not let in.
 

@@ -186,7 +186,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                         })
                     }
                 }
-                is Down.Denied -> return Conn.Denied(first.message)
+                is Down.Denied -> return denied(d, first)
                 else -> return Conn.Offline("${d.name} didn't answer", 0)
             }
             // what was open before the line dropped opens again
@@ -195,6 +195,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             for ((t, size) in fitted) send(s, Up.Fit(t, size.first, size.second))
             while (true) {
                 val down = next(s) ?: break
+                if (down is Down.Denied) return denied(d, down)
                 handle(down)
             }
             return Conn.Online("", "")
@@ -253,6 +254,35 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     private fun send(s: Socket, up: Up) {
         s.ws.send(wire.encodeToString(Up.serializer(), up))
+    }
+
+    /** The computer won't have this phone; when it removed it, the phone lets the computer go too. */
+    private fun denied(d: Desktop, why: Down.Denied): Conn {
+        if (why.forget) store.forget(d.id)
+        return Conn.Denied(why.message)
+    }
+
+    /**
+     * Forgets [d] here and tells the computer to forget this phone, over the open line or a
+     * quick one of its own. A computer that's off keeps the phone in its list until it's
+     * removed there.
+     */
+    suspend fun leave(d: Desktop) {
+        val live = socket
+        if (live != null && store.saved.value.current()?.id == d.id && _conn.value is Conn.Online) {
+            send(live, Up.Leave)
+        } else {
+            withTimeoutOrNull(6_000) {
+                val s = open(d.order(), d.port, Pinned(d.id)) ?: return@withTimeoutOrNull
+                try {
+                    send(s, Up.Hello(d.token, deviceName()))
+                    if (next(s) is Down.Welcome) send(s, Up.Leave)
+                } finally {
+                    s.ws.close(1000, null)
+                }
+            }
+        }
+        store.forget(d.id)
     }
 
     /** Sends when connected. Returns whether it went out. */
@@ -327,11 +357,15 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         val s = open(link.hosts, link.port, trust)
             ?: return Result.failure(Exception("Can't reach ${link.name}. Check that this phone is on the same network or on Tailscale, and that Phone is on in HyprSpace's Settings."))
         try {
-            send(s, Up.Pair(link.code, deviceName()))
+            val id = trust.seen ?: return Result.failure(Exception("The computer's certificate went missing."))
+            val key = link.key()
+            send(s, Up.Pair(prove(key, id), deviceName()))
             return when (val first = withTimeoutOrNull(10_000) { next(s) }) {
                 is Down.Welcome -> {
                     val token = first.token ?: return Result.failure(Exception("The computer didn't hand out a token."))
-                    val id = trust.seen ?: return Result.failure(Exception("The computer's certificate went missing."))
+                    if (first.proof != prove(key, "desktop $id")) {
+                        return Result.failure(Exception("That computer couldn't show it knows the code, so this phone didn't pair. Check that the address is your computer's."))
+                    }
                     val d = Desktop(id, first.desktop, link.hosts, link.port, token, System.currentTimeMillis(), s.host)
                     store.remember(d)
                     Result.success(d)

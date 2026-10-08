@@ -2733,6 +2733,7 @@ dependencies = [
  "chrono",
  "futures",
  "getrandom 0.3.4",
+ "hmac",
  "hyprspace-harness",
  "hyprspace-proto",
  "hyprspace-update",

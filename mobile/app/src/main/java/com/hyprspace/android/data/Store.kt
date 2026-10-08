@@ -1,6 +1,6 @@
 // What the phone keeps: the computers it paired with, which one it talks to, its own settings,
 // and the last theme a desktop sent, so the app opens in the right colors before it connects.
-// One JSON blob in DataStore, small enough to read at start.
+// One JSON blob in DataStore, small enough to read at start. Its tokens are sealed (Vault).
 
 package com.hyprspace.android.data
 
@@ -46,7 +46,10 @@ class Store(context: Context, private val scope: CoroutineScope) {
 
     private fun load(): Saved = runBlocking {
         val json = ds.data.first()[key] ?: return@runBlocking Saved()
-        runCatching { wire.decodeFromString(Saved.serializer(), json) }.getOrDefault(Saved())
+        val s = runCatching { wire.decodeFromString(Saved.serializer(), json) }.getOrDefault(Saved())
+        // a token that won't open was sealed by a key this phone lost; that computer pairs again
+        val desktops = s.desktops.mapNotNull { d -> Vault.open(d.token)?.let { d.copy(token = it) } }
+        s.copy(desktops = desktops, active = s.active?.takeIf { a -> desktops.any { it.id == a } })
     }
 
     fun update(f: (Saved) -> Saved) {
@@ -56,7 +59,8 @@ class Store(context: Context, private val scope: CoroutineScope) {
             state.value = n
             n
         }
-        scope.launch { ds.edit { it[key] = wire.encodeToString(Saved.serializer(), next) } }
+        val sealed = next.copy(desktops = next.desktops.map { it.copy(token = Vault.seal(it.token)) })
+        scope.launch { ds.edit { it[key] = wire.encodeToString(Saved.serializer(), sealed) } }
     }
 
     fun remember(d: Desktop) = update { s ->

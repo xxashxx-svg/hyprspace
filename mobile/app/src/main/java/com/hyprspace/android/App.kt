@@ -16,6 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class App : Application() {
@@ -40,6 +43,10 @@ class App : Application() {
                 ?: android.os.Build.MODEL
         }
         scope.launch { link.board.collect { b -> b?.let(notifier::board) } }
+        // a computer that removed this phone takes the background connection with it
+        scope.launch {
+            store.saved.map { it.current() != null }.distinctUntilChanged().drop(1).collect { LinkService.sync(this@App) }
+        }
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) = link.nudge()

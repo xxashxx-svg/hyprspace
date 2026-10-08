@@ -11,7 +11,7 @@ use crate::run::{Answer, Permission};
 use crate::state::{Entry, Scheme};
 
 /// Moves when a message changes shape, so an old phone is told to update rather than misread.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// The phone to the desktop, one JSON text frame each.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,15 +26,20 @@ pub enum Up {
         #[serde(default)]
         app: String,
     },
-    /// The first message from a phone pairing now, with the code from the desktop's QR or
-    /// screen. Answered with `Welcome` carrying the phone's token, or `Denied`.
+    /// The first message from a phone pairing now. The code from the desktop's QR or screen
+    /// never travels: `proof` is HMAC-SHA256 keyed with the code over the certificate's
+    /// fingerprint as the phone saw it, base64url. Someone in the middle shows another
+    /// certificate, so their relay fails and they learn nothing they can use. Answered with
+    /// `Welcome` carrying the phone's token, or `Denied`.
     Pair {
-        code: String,
+        proof: String,
         device: String,
         protocol: u32,
         #[serde(default)]
         app: String,
     },
+    /// The phone forgot this computer: the computer forgets the phone too.
+    Leave,
     /// Stream one thread: its transcript, or its terminal's screen.
     Watch {
         thread: u64,
@@ -122,10 +127,18 @@ pub enum Down {
         desktop: String,
         version: String,
         token: Option<String>,
+        /// Answering a pairing, the computer's own proof that it knows the code: HMAC-SHA256
+        /// keyed with the code over "desktop " and the fingerprint. Someone posing as the
+        /// computer can't make it.
+        #[serde(default)]
+        proof: Option<String>,
     },
-    /// The phone isn't let in. `message` is user-facing.
+    /// The phone isn't let in. `message` is user-facing. With `forget`, the computer removed
+    /// this phone, which forgets the computer in turn.
     Denied {
         message: String,
+        #[serde(default)]
+        forget: bool,
     },
     Board {
         board: Box<Board>,
@@ -405,9 +418,6 @@ pub struct PhoneStatus {
     /// Why it isn't listening. User-facing.
     pub error: Option<String>,
     pub devices: Vec<Device>,
-    /// Eight characters of the certificate's fingerprint. A phone paired by typing the code
-    /// shows the same, to compare.
-    pub security: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -612,9 +622,11 @@ mod tests {
                 desktop: "Desk".into(),
                 version: "0.25.0".into(),
                 token: Some("tok".into()),
+                proof: Some("aGk".into()),
             },
             Down::Denied {
                 message: "no".into(),
+                forget: true,
             },
             Down::Board {
                 board: Box::new(Board {
@@ -722,7 +734,7 @@ mod tests {
                 app: "0.24.4 (5321b19)".into(),
             },
             Up::Pair {
-                code: "K7MX-Q2RT".into(),
+                proof: "aGk".into(),
                 device: "Pixel".into(),
                 protocol: PROTOCOL,
                 app: "0.24.4 (5321b19)".into(),
@@ -778,6 +790,7 @@ mod tests {
                     on: false,
                 },
             },
+            Up::Leave,
             Up::Ping,
         ];
         let lines = |all: Vec<String>| all.join("\n") + "\n";

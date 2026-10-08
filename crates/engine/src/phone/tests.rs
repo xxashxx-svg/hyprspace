@@ -212,7 +212,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
         say(
             &mut ws,
             &Up::Pair {
-                code: secret.clone(),
+                proof: super::prove(&secret, &fingerprint),
                 device: "Test phone".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
@@ -220,7 +220,11 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
         )
         .await;
         let token = match hear(&mut ws).await {
-            Down::Welcome { token, .. } => token.expect("a token for a new pairing"),
+            Down::Welcome { token, proof, .. } => {
+                let ours = super::prove(&secret, &format!("desktop {fingerprint}"));
+                assert_eq!(proof, Some(ours), "the computer proves it knows the code");
+                token.expect("a token for a new pairing")
+            }
             other => panic!("{other:?}"),
         };
         assert!(matches!(hear(&mut ws).await, Down::Board { board } if board.threads.len() == 1));
@@ -317,13 +321,30 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             hear(&mut ws).await,
             Down::Welcome { token: None, .. }
         ));
+        // the phone forgets the computer, and the computer forgets it back
+        say(&mut ws, &Up::Leave).await;
+        let mut ws = connect(port, &fingerprint).await;
+        say(
+            &mut ws,
+            &Up::Hello {
+                token: token.clone(),
+                device: "Test phone".into(),
+                protocol: PROTOCOL,
+                app: String::new(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            hear(&mut ws).await,
+            Down::Denied { forget: true, .. }
+        ));
 
         // the code worked once and is spent
         let mut ws = connect(port, &fingerprint).await;
         say(
             &mut ws,
             &Up::Pair {
-                code: secret.clone(),
+                proof: super::prove(&secret, &fingerprint),
                 device: "Thief".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
@@ -347,4 +368,13 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
     });
     client.send(Command::Close { id: SessionId(1) });
     engine.shutdown();
+}
+
+#[test]
+fn proofs_match_the_phones() {
+    // the same vector as the app's ProofTest
+    assert_eq!(
+        super::prove("K7MXQ2RTH9WP", "fp-example"),
+        "Ty027fUmm9y1FhIoARQBY5b7pqndj_4jToliCUSyavk"
+    );
 }

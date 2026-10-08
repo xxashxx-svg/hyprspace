@@ -5,8 +5,8 @@ import kotlinx.serialization.Serializable
 
 /**
  * What the desktop's pairing QR code holds: `hyprspace://pair?n=name&h=host,host&p=port&f=fp&c=secret`.
- * A code typed by hand has no fingerprint; the phone then trusts the first certificate it sees
- * and shows its security code to compare with the desktop's.
+ * A code typed by hand has no fingerprint; the proofs both sides trade over the certificate
+ * stand in for it (Link.pair).
  */
 data class PairLink(
     val name: String,
@@ -44,6 +44,9 @@ data class PairLink(
             return from(null, host, port, null, code)
         }
     }
+
+    /** The key both sides prove with: the QR's secret as is, a typed code as the desktop made it. */
+    fun key(): String = if (fingerprint != null) code else code.filter { it.isLetterOrDigit() }.uppercase()
 }
 
 /** A computer this phone paired with. */
@@ -61,7 +64,4 @@ data class Desktop(
 ) {
     /** Hosts in the order to try them. */
     fun order(): List<String> = (listOfNotNull(last) + hosts).distinct()
-
-    /** Eight characters of the fingerprint, to compare with the desktop's Settings. */
-    fun securityCode(): String = id.filter { it.isLetterOrDigit() }.take(8).uppercase().chunked(4).joinToString("-")
 }
