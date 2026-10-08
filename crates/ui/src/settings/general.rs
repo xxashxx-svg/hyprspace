@@ -116,7 +116,7 @@ impl Root {
 
         let structured = prefs.structured;
         let switch = widgets::segments().children(
-            [(false, "Off"), (true, "On")]
+            [(false, "Hide"), (true, "Show")]
                 .into_iter()
                 .enumerate()
                 .map(|(i, (value, name))| {
@@ -204,8 +204,8 @@ impl Root {
             .child(group(
                 "Experimental",
                 vec![row(
-                    "Structured sessions",
-                    "Adds a Structured button to the composer, which runs that one thread as a transcript you read and steer. New threads still start in a terminal. Still being built.",
+                    "Structured option in the composer",
+                    "A Structured button that runs one thread as a transcript you read and steer, instead of in a terminal. New threads still start in a terminal. Still being built.",
                     switch,
                 )],
             ))
