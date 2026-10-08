@@ -243,21 +243,14 @@ impl Root {
                 ),
             );
         let animated = current.animations;
-        let animation_control = widgets::segments().children([false, true].into_iter().map(|on| {
-            widgets::segment(
-                ("animations", on as usize),
-                None,
-                if on { "On" } else { "Off" },
-                animated == on,
-                false,
-            )
-            .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                r.state.appearance.animations = on;
+        let animation_control = widgets::switch("animations", animated).on_click(cx.listener(
+            move |r, _: &ClickEvent, window, cx| {
+                r.state.appearance.animations = !animated;
                 r.apply_theme(window);
                 r.save();
                 cx.notify();
-            }))
-        }));
+            },
+        ));
 
         div()
             .flex()

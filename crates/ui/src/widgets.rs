@@ -346,16 +346,46 @@ pub fn status_dot(status: Status) -> Div {
     }
 }
 
-/// A segmented control's frame (defaults.css `.df-seg`). Its options are `segment`s.
+/// A segmented control's frame. Its options are `segment`s, flush against each other.
 pub fn segments() -> Div {
     div()
         .flex()
-        .gap(px(3.))
-        .p(px(3.))
-        .rounded(px(9.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::ink(0.04))
+        .flex_none()
+        .p(px(2.))
+        .rounded(px(8.))
+        .bg(colors::ink(0.045))
+}
+
+/// An on/off switch. The caller handles the click.
+pub fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .w(px(32.))
+        .h(px(18.))
+        .p(px(2.))
+        .rounded_full()
+        .cursor_pointer()
+        .bg(if on {
+            colors::text1()
+        } else {
+            colors::ink(0.14)
+        })
+        .hover(move |s| {
+            if on {
+                s.opacity(0.9)
+            } else {
+                s.bg(colors::ink(0.2))
+            }
+        })
+        .when(on, |d| d.justify_end())
+        .child(div().size(px(14.)).rounded_full().bg(if on {
+            colors::bg()
+        } else {
+            colors::text2()
+        }))
 }
 
 /// One option of a segmented control. The picked one sits on a raised neutral surface, never the
@@ -378,9 +408,9 @@ pub fn segment(
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(7.))
-        .h(px(28.))
-        .px(px(12.))
+        .gap(px(6.))
+        .h(px(26.))
+        .px(px(11.))
         .rounded(px(6.))
         .border_1()
         .border_color(gpui::transparent_black())
@@ -389,15 +419,13 @@ pub fn segment(
         .text_color(fg)
         .cursor_pointer()
         .when(on && !risky, |d| {
-            d.bg(colors::surface3()).border_color(colors::border1())
+            d.bg(colors::ink(0.1)).border_color(colors::ink(0.06))
         })
         .when(on && risky, |d| {
             d.bg(colors::error().opacity(0.14))
                 .border_color(colors::error().opacity(0.4))
         })
-        .when(!on, |d| {
-            d.hover(|s| s.bg(colors::ink(0.05)).text_color(colors::text1()))
-        })
+        .when(!on, |d| d.hover(|s| s.text_color(colors::text1())))
         .children(icon_name.map(|n| icon(n, 14., glyph)))
         .child(label.into())
 }

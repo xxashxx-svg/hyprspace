@@ -115,17 +115,9 @@ impl Root {
         };
 
         let structured = prefs.structured;
-        let switch = widgets::segments().children(
-            [(false, "Hide"), (true, "Show")]
-                .into_iter()
-                .enumerate()
-                .map(|(i, (value, name))| {
-                    widgets::segment(("structured", i), None, name, structured == value, false)
-                        .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                            r.update_prefs(|p| p.structured = value, cx)
-                        }))
-                }),
-        );
+        let switch = widgets::switch("structured", structured).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| r.update_prefs(|p| p.structured = !structured, cx),
+        ));
         let mode = MODES
             .iter()
             .find(|m| m.0 == prefs.permission)

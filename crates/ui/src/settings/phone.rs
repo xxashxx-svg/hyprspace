@@ -19,20 +19,14 @@ impl Root {
     pub(super) fn phone_page(&self, cx: &mut Context<Self>) -> AnyElement {
         let prefs = self.state.phone;
         let status = &self.phone.status;
-        let switch = widgets::segments().children(
-            [(false, "Off"), (true, "On")]
-                .into_iter()
-                .enumerate()
-                .map(|(i, (value, name))| {
-                    widgets::segment(("phone-on", i), None, name, prefs.on == value, false)
-                        .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                            r.state.phone.on = value;
-                            r.save();
-                            r.phone_enable();
-                            cx.notify();
-                        }))
-                }),
-        );
+        let switch = widgets::switch("phone-on", prefs.on).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| {
+                r.state.phone.on = !prefs.on;
+                r.save();
+                r.phone_enable();
+                cx.notify();
+            },
+        ));
         let networks = widgets::segments().children(
             [
                 (Network::Everywhere, "Wi-Fi and Tailscale"),
