@@ -36,7 +36,7 @@ on:
       android:
         description: "Also build + attach the Android app (mobile/)"
         type: boolean
-        default: false
+        default: true
 
 env:
   RELEASES_REPO: xxashxx-svg/hyprspace

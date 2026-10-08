@@ -61,6 +61,7 @@ import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.Shelf
 import com.hyprspace.android.ui.AgentMark
 import com.hyprspace.android.ui.ConnStrip
+import com.hyprspace.android.ui.UpdateStrip
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.Pill
@@ -111,6 +112,8 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit) {
             }
         }
         ConnStrip(conn) { app.link.start(); app.link.nudge() }
+        val update by app.updater.state.collectAsStateWithLifecycle()
+        UpdateStrip(update) { app.updater.install() }
         val b = board
         if (b == null) {
             Waiting(conn)

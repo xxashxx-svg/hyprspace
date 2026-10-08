@@ -46,9 +46,12 @@ worked out from it (major * 1000000 + minor * 1000 + patch), so it only goes up,
 Every build also carries the commit it came from, shown in the app's Settings and next to the
 phone in the desktop's Settings, Phone, so two builds of one version can be told apart.
 
-The app ships on a desktop release, only when asked: run `release.yml` with **android** ticked
-(or ask for it alongside a `deploy.ps1` release). The job tests and builds the APK and attaches
-it as `HyprSpace-android-<version>.apk` and `HyprSpace-android.apk`. It signs with the
+The app ships with every desktop release (`release.yml`'s **android** input, on by default). The
+job tests and builds the APK and attaches it as `HyprSpace-android-<version>.apk` and
+`HyprSpace-android.apk`. Installed apps check the latest release every six hours, download that
+APK, check its SHA-256 against GitHub's digest and its signer against their own, and install it
+with Android's package installer. The first update asks; after that, on Android 12 and newer, the
+app installs updates itself a minute after it leaves the screen. It signs with the
 `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets (key alias `hyprspace`); without
 them the APK is signed with a throwaway key and can't update an install of a real release.
 

@@ -53,6 +53,7 @@ import com.hyprspace.android.R
 import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.Desktop
 import com.hyprspace.android.service.LinkService
+import com.hyprspace.android.update.Update
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.ago
@@ -166,6 +167,8 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                     Text("This app", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = h.text1)
                     Text(APP, fontFamily = Mono, style = MaterialTheme.typography.bodyMedium, color = h.text2)
                 }
+                HorizontalDivider(color = h.border0)
+                Updates(app)
                 (conn as? Conn.Online)?.version?.takeIf { it.isNotEmpty() }?.let { desk ->
                     HorizontalDivider(color = h.border0)
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -175,7 +178,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                 }
                 HorizontalDivider(color = h.border0)
                 Text(
-                    "The app talks only to the computers paired above. The QR reader comes from Google Play services, which fetches it once.",
+                    "The app talks to the computers paired above, and to GitHub to check for updates. The QR reader comes from Google Play services.",
                     Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = h.text3,
@@ -204,6 +207,36 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
             dismissButton = { TextButton(onClick = { forgetting = null }) { Text("Cancel") } },
             containerColor = h.surface2,
         )
+    }
+}
+
+@Composable
+private fun Updates(app: App) {
+    val h = LocalHues.current
+    val u by app.updater.state.collectAsStateWithLifecycle()
+    val (line, action) = if (!app.updater.enabled) "Dev builds don't update" to null else when (val s = u) {
+        Update.Idle -> "Checks on its own" to "Check"
+        Update.Checking -> "Checking" to null
+        Update.Current -> "Up to date" to "Check"
+        is Update.Downloading -> "Downloading ${s.version}" to null
+        is Update.Ready -> "${s.version} is ready" to "Install"
+        is Update.Installing -> "Installing ${s.version}" to null
+        is Update.Failed -> s.message to "Check"
+    }
+    Row(
+        Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Updates", style = MaterialTheme.typography.bodyLarge, color = h.text1)
+            Text(line, style = MaterialTheme.typography.bodySmall, color = if (u is Update.Failed) h.error else h.text3)
+        }
+        action?.let { label ->
+            TextButton(onClick = { if (u is Update.Ready) app.updater.install() else app.updater.check(force = true) }) {
+                Text(label, color = h.accent)
+            }
+        }
     }
 }
 

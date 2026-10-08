@@ -11,6 +11,7 @@ import com.hyprspace.android.data.Store
 import com.hyprspace.android.net.Link
 import com.hyprspace.android.service.LinkService
 import com.hyprspace.android.service.Notifier
+import com.hyprspace.android.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,14 +30,18 @@ class App : Application() {
         private set
     lateinit var notifier: Notifier
         private set
+    lateinit var updater: Updater
+        private set
     val nav = com.hyprspace.android.ui.Nav()
     private var pause: Job? = null
+    private var quiet: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         store = Store(this, scope)
         link = Link(store, scope)
         notifier = Notifier(this, store)
+        updater = Updater(this, scope)
         link.finder = { fingerprint -> com.hyprspace.android.net.find(this, fingerprint) }
         Link.deviceName = {
             Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
@@ -57,6 +62,8 @@ class App : Application() {
                 notifier.foreground = true
                 notifier.cancelAll()
                 pause?.cancel()
+                quiet?.cancel()
+                updater.check()
                 if (store.saved.value.current() != null) link.start()
                 link.nudge()
                 LinkService.sync(this@App)
@@ -64,6 +71,10 @@ class App : Application() {
 
             override fun onStop(owner: LifecycleOwner) {
                 notifier.foreground = false
+                quiet = scope.launch {
+                    delay(60_000)
+                    updater.install(quiet = true)
+                }
                 if (!store.saved.value.alerts) {
                     // a quick trip to another app keeps the line; a longer one lets it go
                     pause = scope.launch {

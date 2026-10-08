@@ -44,6 +44,7 @@ import com.hyprspace.android.net.Agent
 import com.hyprspace.android.net.BoardSpace
 import com.hyprspace.android.net.BoardStatus
 import com.hyprspace.android.net.Conn
+import com.hyprspace.android.update.Update
 import kotlinx.coroutines.delay
 
 /** An agent's signature color: the same pair crates/theme gives the desktop. */
@@ -199,6 +200,37 @@ fun ConnStrip(conn: Conn, onRetry: () -> Unit) {
                 Modifier.clip(RoundedCornerShape(6.dp)).clickableQuiet(onRetry).padding(horizontal = 8.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelMedium,
                 color = h.text1,
+            )
+        }
+    }
+}
+
+@Composable
+fun UpdateStrip(update: Update, onInstall: () -> Unit) {
+    val h = LocalHues.current
+    val text = when (update) {
+        is Update.Ready -> "HyprSpace ${update.version} is ready"
+        is Update.Installing -> "Installing ${update.version}"
+        else -> return
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(h.ink(0.04f))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (update is Update.Installing) {
+            CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.6.dp, color = h.text3)
+        }
+        Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = h.text2, maxLines = 1)
+        if (update is Update.Ready) {
+            Text(
+                "Install",
+                Modifier.clip(RoundedCornerShape(6.dp)).clickableQuiet(onInstall).padding(horizontal = 8.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = h.accent,
             )
         }
     }
