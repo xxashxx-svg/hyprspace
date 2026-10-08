@@ -4,7 +4,6 @@
 package com.hyprspace.android.ui.thread
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -139,20 +138,19 @@ fun CodeBlock(code: String, lang: String?) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(h.ink(0.045f))
-            .border(1.dp, h.border1, RoundedCornerShape(10.dp)),
+            .background(h.ink(0.035f)),
     ) {
         lang?.takeIf { it.isNotBlank() }?.let {
             Text(
                 it.substringBefore(' '),
-                Modifier.padding(start = 12.dp, top = 8.dp),
+                Modifier.padding(start = 14.dp, top = 9.dp),
                 fontSize = 11.sp,
                 color = h.text3,
             )
         }
         Text(
             code,
-            Modifier.horizontalScroll(rememberScrollState()).padding(12.dp),
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp),
             fontFamily = Mono,
             fontSize = 12.5.sp,
             lineHeight = 18.sp,
@@ -173,19 +171,21 @@ private fun Table(t: TableBlock) {
     }
     Column(
         Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(h.ink(0.035f))
             .horizontalScroll(rememberScrollState())
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, h.border1, RoundedCornerShape(8.dp)),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
-        for ((head, row) in rows) {
-            Row(Modifier.background(if (head) h.ink(0.04f) else h.bg)) {
+        rows.forEachIndexed { i, (head, row) ->
+            if (i > 0) HorizontalDivider(Modifier.width(140.dp * row.children().count { it is TableCell }), color = h.border1)
+            Row {
                 for (cell in row.children().filterIsInstance<TableCell>()) {
                     Text(
                         inline(cell, h),
                         Modifier.width(140.dp).padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (head) FontWeight.SemiBold else FontWeight.Normal,
-                        color = h.text1,
+                        style = if (head) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (head) FontWeight.Medium else FontWeight.Normal,
+                        color = if (head) h.text2 else h.text1,
                     )
                 }
             }
@@ -198,7 +198,7 @@ private fun inline(n: Node, h: Hues): AnnotatedString = buildAnnotatedString {
     fun walk(node: Node) {
         for (c in node.children()) when (c) {
             is org.commonmark.node.Text -> append(c.literal)
-            is Code -> withStyle(SpanStyle(fontFamily = Mono, fontSize = 13.sp, background = h.ink(0.07f))) {
+            is Code -> withStyle(SpanStyle(fontFamily = Mono, fontSize = 13.sp, background = h.ink(0.06f))) {
                 append(" ${c.literal} ")
             }
             is Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { walk(c) }

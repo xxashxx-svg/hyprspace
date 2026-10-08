@@ -316,6 +316,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             }
             is Down.Failed -> _failures.tryEmit(d.message)
             is Down.Folders -> _folders.value = d
+            is Down.Uploaded -> uploads.remove(d.id)?.complete(d)
             is Down.Welcome, is Down.Denied, Down.Pong -> {}
         }
     }
@@ -326,6 +327,26 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     fun term(thread: Long): StateFlow<TermView> = synchronized(lock) {
         terms.getOrPut(thread) { TermBuffer() to MutableStateFlow(TermView()) }.second
+    }
+
+    private val uploads = java.util.concurrent.ConcurrentHashMap<Long, CompletableDeferred<Down.Uploaded>>()
+    private val nextUpload = java.util.concurrent.atomic.AtomicLong(1)
+
+    /** Sends a photo to the computer and returns where it saved it, or null. */
+    suspend fun upload(bytes: ByteArray): String? {
+        val id = nextUpload.getAndIncrement()
+        val done = CompletableDeferred<Down.Uploaded>()
+        uploads[id] = done
+        if (!send(Up.Upload(id, java.util.Base64.getEncoder().encodeToString(bytes)))) {
+            uploads.remove(id)
+            _failures.tryEmit("Not connected. Try again once it reconnects.")
+            return null
+        }
+        val r = withTimeoutOrNull(60_000) { done.await() }
+        uploads.remove(id)
+        r?.error?.let { _failures.tryEmit(it) }
+        if (r == null) _failures.tryEmit("The photo didn't reach the computer.")
+        return r?.path
     }
 
     fun desktopAtLeast(version: String): Boolean {

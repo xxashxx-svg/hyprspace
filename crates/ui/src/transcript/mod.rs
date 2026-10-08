@@ -200,8 +200,8 @@ impl TranscriptView {
     }
 
     /// A message from the phone, sent the way the reply box sends one.
-    pub fn send_text(&mut self, text: String, cx: &mut Context<Self>) {
-        self.offer(Prompt::text(text), cx);
+    pub fn send_prompt(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
+        self.offer(prompt, cx);
     }
 
     /// An approval answered from the phone.

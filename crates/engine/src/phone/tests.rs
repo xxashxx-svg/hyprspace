@@ -287,6 +287,58 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             },
         )
         .await;
+        // a photo goes up, comes back as a path, and only such a path can be sent
+        use base64::Engine as _;
+        let jpeg = base64::engine::general_purpose::STANDARD.encode([0xFF, 0xD8, 0xFF, 0xE0, 1, 2]);
+        say(&mut ws, &Up::Upload { id: 9, data: jpeg }).await;
+        let photo = loop {
+            if let Down::Uploaded { id: 9, path, error } = hear(&mut ws).await {
+                assert_eq!(error, None);
+                break path.expect("a saved photo");
+            }
+        };
+        say(
+            &mut ws,
+            &Up::Ask {
+                ask: Ask::Send {
+                    thread: 7,
+                    text: String::new(),
+                    images: vec![
+                        std::env::temp_dir()
+                            .join("secret.png")
+                            .display()
+                            .to_string(),
+                    ],
+                },
+            },
+        )
+        .await;
+        loop {
+            if let Down::Failed { .. } = hear(&mut ws).await {
+                break;
+            }
+        }
+        say(
+            &mut ws,
+            &Up::Ask {
+                ask: Ask::Send {
+                    thread: 7,
+                    text: "look".into(),
+                    images: vec![photo.clone()],
+                },
+            },
+        )
+        .await;
+        say(
+            &mut ws,
+            &Up::Ask {
+                ask: Ask::Snooze {
+                    thread: 7,
+                    until: hyprspace_proto::Snooze::Done,
+                },
+            },
+        )
+        .await;
         // a folder that isn't a space yet: the phone sends space 0 with it
         say(
             &mut ws,
@@ -340,6 +392,22 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 thread: 7,
                 on: true,
             },
+        }) => Some(()),
+        _ => None,
+    });
+    let sent = wait(&mut events, |e| match e {
+        Event::Phone(PhoneEvent::Ask {
+            ask: Ask::Send {
+                thread: 7, images, ..
+            },
+        }) => Some(images),
+        _ => None,
+    });
+    assert_eq!(sent.len(), 1);
+    let _ = std::fs::remove_file(&sent[0]);
+    wait(&mut events, |e| match e {
+        Event::Phone(PhoneEvent::Ask {
+            ask: Ask::Snooze { thread: 7, .. },
         }) => Some(()),
         _ => None,
     });
@@ -480,6 +548,24 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
     });
     client.send(Command::Close { id: SessionId(1) });
     engine.shutdown();
+}
+
+#[test]
+fn only_photos_are_saved_and_sent() {
+    use base64::Engine as _;
+    let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+    let png = super::save_photo(&b64(&[0x89, b'P', b'N', b'G', 1])).unwrap();
+    assert!(png.extension().is_some_and(|e| e == "png"));
+    assert!(super::is_photo(&png));
+    let _ = std::fs::remove_file(&png);
+    assert!(super::save_photo(&b64(b"MZ not a photo")).is_err());
+    assert!(super::save_photo("%%%").is_err());
+    assert!(!super::is_photo(
+        &std::env::temp_dir()
+            .join("hyprspace-images")
+            .join("other.png")
+    ));
+    assert!(!super::is_photo(&std::env::temp_dir().join("phone-x.png")));
 }
 
 #[test]

@@ -24,8 +24,8 @@ use super::store::Identity;
 const HANDSHAKE: Duration = Duration::from_secs(10);
 const WAITING: usize = 16;
 const SILENCE: Duration = Duration::from_secs(60);
-/// The biggest message a phone sends is a pasted prompt.
-const MAX_MESSAGE: usize = 1 << 20;
+/// The biggest message a phone sends is a photo, shrunk on the phone first.
+const MAX_MESSAGE: usize = 8 << 20;
 
 pub fn acceptor(id: &Identity) -> anyhow::Result<TlsAcceptor> {
     let provider = Arc::new(tokio_rustls::rustls::crypto::aws_lc_rs::default_provider());

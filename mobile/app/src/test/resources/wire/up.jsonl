@@ -6,11 +6,14 @@
 {"type":"unfit","thread":3}
 {"type":"keys","thread":3,"text":"\u001b[A"}
 {"type":"paste","thread":3,"text":"a\nb"}
-{"type":"ask","ask":{"type":"send","thread":2,"text":"go"}}
+{"type":"ask","ask":{"type":"send","thread":2,"text":"go","images":["C:\\tmp\\phone-1.jpg"]}}
 {"type":"ask","ask":{"type":"approve","thread":2,"request":"r","answer":"deny"}}
 {"type":"ask","ask":{"type":"interrupt","thread":2}}
+{"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"time","at":1760000000000}}}
+{"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"done"}}}
 {"type":"ask","ask":{"type":"new","space":0,"folder":"/home/ash/code","start":{"agent":null,"model":"","effort":"","permission":"plan","terminal":true,"prompt":""}}}
 {"type":"ask","ask":{"type":"settle","thread":2,"on":false}}
 {"type":"leave"}
 {"type":"folders","path":""}
+{"type":"upload","id":1,"data":"/9j/"}
 {"type":"ping"}

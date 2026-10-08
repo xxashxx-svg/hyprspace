@@ -110,12 +110,15 @@ sealed interface Up {
 
     @Serializable @SerialName("folders")
     data class Folders(val path: String = "") : Up
+
+    @Serializable @SerialName("upload")
+    data class Upload(val id: Long, val data: String) : Up
 }
 
 @Serializable
 sealed interface Ask {
     @Serializable @SerialName("send")
-    data class Send(val thread: Long, val text: String) : Ask
+    data class Send(val thread: Long, val text: String, val images: List<String> = emptyList()) : Ask
 
     @Serializable @SerialName("approve")
     data class Approve(val thread: Long, val request: String, val answer: Answer) : Ask
@@ -128,6 +131,18 @@ sealed interface Ask {
 
     @Serializable @SerialName("settle")
     data class Settle(val thread: Long, val on: Boolean) : Ask
+
+    @Serializable @SerialName("snooze")
+    data class Snooze(val thread: Long, val until: SnoozeUntil) : Ask
+}
+
+/** When a snoozed thread wakes: `time` at [at] (unix ms), or `done` when its turn ends. */
+@Serializable
+data class SnoozeUntil(val until: String, val at: Long? = null) {
+    companion object {
+        fun at(ms: Long) = SnoozeUntil("time", ms)
+        val Done = SnoozeUntil("done")
+    }
 }
 
 @Serializable
@@ -167,6 +182,9 @@ sealed interface Down {
 
     @Serializable @SerialName("folders")
     data class Folders(val path: String, val parent: String? = null, val dirs: List<String> = emptyList()) : Down
+
+    @Serializable @SerialName("uploaded")
+    data class Uploaded(val id: Long, val path: String? = null, val error: String? = null) : Down
 }
 
 @Serializable

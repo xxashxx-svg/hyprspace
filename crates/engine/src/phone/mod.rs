@@ -11,7 +11,7 @@ mod server;
 mod store;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
@@ -454,9 +454,12 @@ impl Phone {
                         folder: Some(_), ..
                     } => true,
                     Ask::New { space, .. } => hub.board.spaces.iter().any(|s| s.id == *space),
-                    Ask::Send { thread, .. }
-                    | Ask::Approve { thread, .. }
+                    Ask::Send { thread, images, .. } => {
+                        known(*thread) && images.iter().all(|p| is_photo(Path::new(p)))
+                    }
+                    Ask::Approve { thread, .. }
                     | Ask::Interrupt { thread }
+                    | Ask::Snooze { thread, .. }
                     | Ask::Settle { thread, .. } => known(*thread),
                 };
                 if ok {
@@ -472,6 +475,18 @@ impl Phone {
                 if let Some(c) = self.hub().conns.get(&conn) {
                     let _ = c.tx.unbounded_send(Down::Pong);
                 }
+            }
+            Up::Upload { id, data } => {
+                let me = self.clone();
+                tokio::task::spawn_blocking(move || {
+                    let (path, error) = match save_photo(&data) {
+                        Ok(p) => (Some(p.display().to_string()), None),
+                        Err(e) => (None, Some(e.to_string())),
+                    };
+                    if let Some(c) = me.hub().conns.get(&conn) {
+                        let _ = c.tx.unbounded_send(Down::Uploaded { id, path, error });
+                    }
+                });
             }
             Up::Folders { path } => {
                 let me = self.clone();
@@ -873,6 +888,53 @@ fn watcher(thread: u64, live: Arc<AtomicBool>, tx: UnboundedSender<Down>) -> jou
                 })
                 .is_ok()
     })
+}
+
+fn photos() -> PathBuf {
+    std::env::temp_dir().join("hyprspace-images")
+}
+
+fn is_photo(path: &Path) -> bool {
+    path.parent() == Some(photos().as_path())
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("phone-") && !n.contains(".."))
+}
+
+fn save_photo(data: &str) -> Result<PathBuf, &'static str> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.trim())
+        .map_err(|_| "That photo didn't arrive whole.")?;
+    let ext = match bytes.as_slice() {
+        [0xFF, 0xD8, 0xFF, ..] => "jpg",
+        [0x89, b'P', b'N', b'G', ..] => "png",
+        [
+            b'R',
+            b'I',
+            b'F',
+            b'F',
+            _,
+            _,
+            _,
+            _,
+            b'W',
+            b'E',
+            b'B',
+            b'P',
+            ..,
+        ] => "webp",
+        _ => return Err("Only photos can be sent."),
+    };
+    let dir = photos();
+    std::fs::create_dir_all(&dir).map_err(|_| "Couldn't save the photo.")?;
+    let name: String = store::random(8)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let path = dir.join(format!("phone-{name}.{ext}"));
+    std::fs::write(&path, bytes).map_err(|_| "Couldn't save the photo.")?;
+    Ok(path)
 }
 
 /// What a phone sends for `key` over the certificate it saw: HMAC-SHA256, base64url.

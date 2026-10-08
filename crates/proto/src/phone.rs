@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::{Agent, AgentInfo};
 use crate::run::{Answer, Permission};
-use crate::state::{Entry, Scheme};
+use crate::state::{Entry, Scheme, Snooze};
 
 /// Moves when a message changes shape, so an old phone is told to update rather than misread.
 pub const PROTOCOL: u32 = 2;
@@ -72,6 +72,11 @@ pub enum Up {
         ask: Ask,
     },
     Ping,
+    /// A photo from the phone, base64. Answered with `Uploaded`, whose path a `Send` can carry.
+    Upload {
+        id: u64,
+        data: String,
+    },
     /// The folders inside `path` on the computer, empty for the home folder. Answered with
     /// `Folders`.
     Folders {
@@ -88,6 +93,9 @@ pub enum Ask {
     Send {
         thread: u64,
         text: String,
+        /// Photos the phone uploaded, by the paths `Uploaded` gave back.
+        #[serde(default)]
+        images: Vec<String>,
     },
     Approve {
         thread: u64,
@@ -104,6 +112,10 @@ pub enum Ask {
         #[serde(default)]
         folder: Option<String>,
         start: NewThread,
+    },
+    Snooze {
+        thread: u64,
+        until: Snooze,
     },
     /// Settles a thread, or brings it back.
     Settle {
@@ -171,6 +183,11 @@ pub enum Down {
         path: String,
         parent: Option<String>,
         dirs: Vec<String>,
+    },
+    Uploaded {
+        id: u64,
+        path: Option<String>,
+        error: Option<String>,
     },
 }
 
@@ -742,6 +759,11 @@ mod tests {
                 message: "gone".into(),
             },
             Down::Pong,
+            Down::Uploaded {
+                id: 1,
+                path: Some("C:\\tmp\\phone-1.jpg".into()),
+                error: None,
+            },
             Down::Folders {
                 path: "C:\\Users\\ash".into(),
                 parent: Some("C:\\Users".into()),
@@ -781,6 +803,7 @@ mod tests {
                 ask: Ask::Send {
                     thread: 2,
                     text: "go".into(),
+                    images: vec!["C:\\tmp\\phone-1.jpg".into()],
                 },
             },
             Up::Ask {
@@ -792,6 +815,20 @@ mod tests {
             },
             Up::Ask {
                 ask: Ask::Interrupt { thread: 2 },
+            },
+            Up::Ask {
+                ask: Ask::Snooze {
+                    thread: 2,
+                    until: Snooze::Time {
+                        at: 1_760_000_000_000,
+                    },
+                },
+            },
+            Up::Ask {
+                ask: Ask::Snooze {
+                    thread: 2,
+                    until: Snooze::Done,
+                },
             },
             Up::Ask {
                 ask: Ask::New {
@@ -816,6 +853,10 @@ mod tests {
             Up::Leave,
             Up::Folders {
                 path: String::new(),
+            },
+            Up::Upload {
+                id: 1,
+                data: "/9j/".into(),
             },
             Up::Ping,
         ];

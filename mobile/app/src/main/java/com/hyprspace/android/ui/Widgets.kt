@@ -3,11 +3,13 @@
 
 package com.hyprspace.android.ui
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +48,9 @@ import com.hyprspace.android.net.BoardSpace
 import com.hyprspace.android.net.BoardStatus
 import com.hyprspace.android.net.Conn
 import com.hyprspace.android.update.Update
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 
 /** An agent's signature color: the same pair crates/theme gives the desktop. */
@@ -260,3 +266,25 @@ fun Modifier.clickableQuiet(onClick: () -> Unit): Modifier = this.then(
         onClick = onClick,
     ),
 )
+
+/** The desktop's working spinner: two dots circling on an ellipse seen edge on, the one behind smaller and fainter. */
+@Composable
+fun Eclipse(color: Color, modifier: Modifier = Modifier) {
+    val t by rememberInfiniteTransition(label = "eclipse").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "eclipse",
+    )
+    Canvas(modifier.size(14.dp, 12.5.dp)) {
+        val dot = 5.dp.toPx()
+        val reach = 3.5.dp.toPx()
+        listOf(0f, 0.5f)
+            .map { o -> ((t + o) * 2f * PI.toFloat()).let { sin(it) to cos(it) } }
+            .sortedBy { it.first }
+            .forEach { (near, across) ->
+                drawCircle(
+                    color.copy(alpha = color.alpha * (0.65f + 0.35f * near)),
+                    dot * (1f + 0.2f * near) / 2f,
+                    Offset(size.width / 2f + reach * across, size.height / 2f),
+                )
+            }
+    }
+}

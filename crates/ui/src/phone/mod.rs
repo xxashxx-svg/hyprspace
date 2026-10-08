@@ -236,9 +236,17 @@ impl Root {
 
     fn phone_ask(&mut self, ask: Ask, window: &mut Window, cx: &mut Context<Self>) {
         match ask {
-            Ask::Send { thread, text } => {
+            Ask::Send {
+                thread,
+                text,
+                images,
+            } => {
+                let prompt = hyprspace_proto::Prompt {
+                    text,
+                    images: images.into_iter().map(std::path::PathBuf::from).collect(),
+                };
                 if let Some(v) = self.structured_view(thread, cx) {
-                    v.update(cx, |v, cx| v.send_text(text, cx));
+                    v.update(cx, |v, cx| v.send_prompt(prompt, cx));
                 }
             }
             Ask::Approve {
@@ -255,6 +263,7 @@ impl Root {
                     v.update(cx, |v, cx| v.stop(cx));
                 }
             }
+            Ask::Snooze { thread, until } => self.snooze(thread, Some(until), window, cx),
             Ask::Settle { thread, on } => {
                 let snoozed = self
                     .state

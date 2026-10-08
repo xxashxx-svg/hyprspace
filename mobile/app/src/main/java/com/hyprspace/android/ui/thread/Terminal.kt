@@ -157,6 +157,7 @@ fun Terminal(
     onKeys: (String) -> Unit,
     onPaste: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onImage: (() -> Unit)? = null,
 ) {
     val h = LocalHues.current
     val measure = rememberTextMeasurer()
@@ -276,6 +277,7 @@ fun Terminal(
                 clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
                     ?.takeIf { it.isNotEmpty() }?.let(onPaste)
             },
+            onImage = onImage?.let { pick -> { follow = true; pick() } },
         )
     }
 }
@@ -287,6 +289,7 @@ private fun Keys(
     onKeys: (String) -> Unit,
     onKeyboard: () -> Unit,
     onPaste: () -> Unit,
+    onImage: (() -> Unit)?,
 ) {
     val h = LocalHues.current
     Row(
@@ -308,6 +311,7 @@ private fun Keys(
         Key(icon = R.drawable.ic_arrow_right) { onKeys("\u001b[C") }
         Key("Enter") { onKeys("\r") }
         Key("Paste", onClick = onPaste)
+        if (onImage != null) Key(icon = R.drawable.ic_image_plus, onClick = onImage)
         Key("Shift Tab") { onKeys("\u001b[Z") }
         Key("Ctrl D") { onKeys("\u0004") }
     }

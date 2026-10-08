@@ -161,9 +161,10 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                     doing = t.doing,
                     since = t.since,
                     canAnswer = online && t.live,
-                    onSend = { app.link.ask(Ask.Send(id, it)) },
+                    onSend = { text, images -> app.link.ask(Ask.Send(id, text, images)) },
                     onStop = { app.link.ask(Ask.Interrupt(id)) },
                     onAnswer = { request, answer -> app.link.ask(Ask.Approve(id, request, answer)) },
+                    attach = if (app.link.desktopAtLeast(PHOTOS)) { onPhoto -> rememberPhotoPicker(app, true, onPhoto) } else null,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -177,6 +178,13 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                         onFit = { cols, rows -> app.link.fit(id, cols, rows) },
                         onKeys = { app.link.send(Up.Keys(id, it)) },
                         onPaste = { app.link.send(Up.Paste(id, it)) },
+                        onImage = if (app.link.desktopAtLeast(PHOTOS)) {
+                            rememberPhotoPicker(app, false) { p ->
+                                p.path?.let { path -> app.link.send(Up.Paste(id, (if (' ' in path) "\"$path\"" else path) + " ")) }
+                            }
+                        } else {
+                            null
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -186,3 +194,4 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
     }
 }
 
+private const val PHOTOS = "0.24.12"

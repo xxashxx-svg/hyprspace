@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,8 +57,9 @@ import com.hyprspace.android.service.LinkService
 import com.hyprspace.android.update.Update
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
-import com.hyprspace.android.ui.ago
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.home.ComputerRow
+import com.hyprspace.android.ui.home.switchTo
 import kotlinx.coroutines.launch
 
 @Composable
@@ -90,30 +92,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
             Group("Computers") {
                 for (d in saved.desktops) {
                     val on = d.id == current?.id
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickableQuiet {
-                                if (!on) {
-                                    app.store.update { it.copy(active = d.id) }
-                                    app.link.restart()
-                                }
-                            }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(painterResource(R.drawable.ic_monitor), null, Modifier.size(18.dp), tint = if (on) h.accent else h.text3)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(d.name, style = MaterialTheme.typography.bodyLarge, color = h.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val state = when {
-                                !on -> "Paired ${ago(d.paired, System.currentTimeMillis())} ago. Tap to use it."
-                                conn is Conn.Online -> "Connected" + (d.last?.let { " at $it" } ?: "")
-                                conn is Conn.Denied -> (conn as Conn.Denied).message
-                                else -> "Connecting"
-                            }
-                            Text(state, style = MaterialTheme.typography.bodySmall, color = h.text3)
-                        }
+                    ComputerRow(d, on, conn, onClick = if (on) null else ({ switchTo(app, d) })) {
                         TextButton(onClick = { forgetting = d }) { Text("Forget", color = h.error) }
                     }
                     HorizontalDivider(color = h.border0)
@@ -122,7 +101,9 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                     Modifier.fillMaxWidth().clickableQuiet(onPair).padding(horizontal = 14.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(18.dp), tint = h.text2)
+                    Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(18.dp), tint = h.text2)
+                    }
                     Spacer(Modifier.width(12.dp))
                     Text("Pair another computer", style = MaterialTheme.typography.bodyLarge, color = h.text1)
                 }

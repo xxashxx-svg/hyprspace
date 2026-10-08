@@ -45,7 +45,12 @@ fun HyprApp(app: App) {
                 when (screen) {
                     is Screen.Thread -> ThreadScreen(app, screen.id, onBack = { nav.back() })
                     Screen.Settings -> SettingsScreen(app, onBack = { nav.back() }, onPair = { nav.go(Screen.Pair) })
-                    else -> HomeScreen(app, onOpen = { nav.go(Screen.Thread(it)) }, onSettings = { nav.go(Screen.Settings) })
+                    else -> HomeScreen(
+                        app,
+                        onOpen = { nav.go(Screen.Thread(it)) },
+                        onSettings = { nav.go(Screen.Settings) },
+                        onPair = { nav.go(Screen.Pair) },
+                    )
                 }
             }
             SnackbarHost(
