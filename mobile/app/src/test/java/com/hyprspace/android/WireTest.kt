@@ -11,6 +11,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +50,13 @@ class WireTest {
         is JsonObject -> JsonObject(e.filterValues { it !is JsonNull }.mapValues { bare(it.value) })
         is JsonArray -> JsonArray(e.map(::bare))
         else -> e
+    }
+
+    @Test
+    fun speaksTheDesktopsProtocol() {
+        val hello = lines("up.jsonl").first { "\"hello\"" in it }
+        val theirs = wire.parseToJsonElement(hello).jsonObject["protocol"]!!.jsonPrimitive.int
+        assertEquals(theirs, com.hyprspace.android.net.PROTOCOL)
     }
 
     @Test

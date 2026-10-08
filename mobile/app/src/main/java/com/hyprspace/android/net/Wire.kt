@@ -16,7 +16,7 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
-const val PROTOCOL = 1
+const val PROTOCOL = 2
 
 /** This build's version and the commit it came from: "0.24.4 (5321b19)". */
 val APP: String =
