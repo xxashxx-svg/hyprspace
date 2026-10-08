@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.5 — 2026-10-08
+
+- New Android app: pair your phone to follow threads, answer approvals and start threads from it. It updates itself.
+- Structured threads queue messages sent during a run and pick up again after a usage limit resets.
+- A structured thread can hand a task to another agent, which runs in its own thread under it.
+- Structured threads and Settings have a cleaner look, with shorter descriptions.
+- Terminal text stays readable on light themes.
+- Snoozed threads and threads at work keep running.
+
 ## 0.24.4 — 2026-10-07
 
 - Text files open editable in the viewer. Ctrl+S saves, and closing with unsaved edits asks whether to save or discard them.
