@@ -75,3 +75,11 @@ jobs:
           gh release upload "$tag" --repo "$RELEASES_REPO" --clobber \
             "out/HyprSpace-android-$version.apk" out/HyprSpace-android.apk
           gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false --latest=false
+          # one fixed link to the newest APK, for the desktop's QR code. A pre-release, so the
+          # app's updater, which reads android-v releases, never picks it
+          if ! gh release view android-latest --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            gh release create android-latest --repo "$RELEASES_REPO" --prerelease --latest=false \
+              --target "${{ github.sha }}" --title "HyprSpace for Android, newest" \
+              --notes "Always the newest Android app, for the QR code in the desktop's Settings, Phone."
+          fi
+          gh release upload android-latest --repo "$RELEASES_REPO" --clobber out/HyprSpace-android.apk

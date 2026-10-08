@@ -14,6 +14,8 @@ use crate::{colors, widgets};
 
 /// The Android app's releases, tagged `android-v`, each with a `HyprSpace-android.apk`.
 const APP: &str = "https://github.com/xxashxx-svg/hyprspace/releases?q=android-v&expanded=true";
+/// The newest APK, which android.yml replaces on every phone release.
+const APK: &str = "https://github.com/xxashxx-svg/hyprspace/releases/download/android-latest/HyprSpace-android.apk";
 
 impl Root {
     pub(super) fn phone_page(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -102,18 +104,52 @@ impl Root {
                     "TLS pinned to this computer's certificate. The pairing code is never sent.",
                     div(),
                 ),
-                row(
-                    "Get the app",
-                    "The Android APK is on GitHub releases.",
-                    widgets::button_frame("phone-get")
-                        .gap(px(6.))
-                        .child("Open")
-                        .child(icon("external-link", 12., colors::text3()))
-                        .on_click(|_: &ClickEvent, _, cx| cx.open_url(APP)),
-                ),
+                self.get_app(),
             ],
         ))
         .into_any_element()
+    }
+
+    fn get_app(&self) -> AnyElement {
+        let light = hyprspace_theme::build(&self.state.appearance.theme, false);
+        div()
+            .flex()
+            .gap(px(20.))
+            .py(px(14.))
+            .items_center()
+            .child(crate::phone::qr::qr(
+                APK,
+                140.,
+                colors::hsla(light.text1),
+                colors::hsla(light.bg),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .min_w_0()
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors::text1())
+                            .child("Get the app"),
+                    )
+                    .child(text(
+                        "Scan with your phone's camera to download the newest version.",
+                    ))
+                    .child(
+                        div().flex().gap(px(8.)).pt(px(4.)).child(
+                            widgets::button_frame("phone-get")
+                                .gap(px(6.))
+                                .child("All versions")
+                                .child(icon("external-link", 12., colors::text3()))
+                                .on_click(|_: &ClickEvent, _, cx| cx.open_url(APP)),
+                        ),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn pairing_row(&self, cx: &mut Context<Self>) -> AnyElement {

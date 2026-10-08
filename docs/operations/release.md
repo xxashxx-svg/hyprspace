@@ -52,6 +52,8 @@ and runs `.github/workflows/android.yml`. CI tests and builds the APK, signs it 
 attaches `HyprSpace-android-<version>.apk` and `HyprSpace-android.apk`, and publishes the release
 with `--latest=false`. The repo's latest release stays the desktop's, because the desktop updater
 reads `latest.json` from it; `release.yml` marks each desktop release latest when it publishes.
+The same run replaces the APK on `android-latest`, a standing pre-release whose fixed link is the
+QR code in the desktop's Settings, Phone. The app's updater skips it.
 `versionCode` is worked out from the version (major * 1000000 + minor * 1000 + patch), so it only
 goes up, as Android needs.
 

@@ -188,15 +188,20 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
         run: None,
         prompt: None,
     });
-    // ConPTY asks where the cursor is before the shell starts; the UI's emulator answers that
-    wait(&mut events, |e| match e {
-        Event::TerminalOutput { bytes, .. } if bytes.windows(4).any(|w| w == b"[6n") => Some(()),
-        _ => None,
-    });
-    client.send(Command::WriteTerminal {
-        id: SessionId(1),
-        bytes: b"[1;1R".to_vec(),
-    });
+    // ConPTY asks where the cursor is before the shell starts; the UI's emulator answers that.
+    // Other platforms' shells don't ask.
+    if cfg!(windows) {
+        wait(&mut events, |e| match e {
+            Event::TerminalOutput { bytes, .. } if bytes.windows(4).any(|w| w == b"[6n") => {
+                Some(())
+            }
+            _ => None,
+        });
+        client.send(Command::WriteTerminal {
+            id: SessionId(1),
+            bytes: b"[1;1R".to_vec(),
+        });
+    }
     client.send(Command::Phone(PhoneCommand::Pair));
     let link = wait(&mut events, |e| match e {
         Event::Phone(PhoneEvent::Pairing { pairing: Some(p) }) => Some(p.link),
