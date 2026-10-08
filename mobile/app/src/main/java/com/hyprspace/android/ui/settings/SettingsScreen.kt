@@ -107,7 +107,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(d.name, style = MaterialTheme.typography.bodyLarge, color = h.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val state = when {
-                                !on -> "Paired ${ago(d.paired, System.currentTimeMillis())} ago. Tap to switch to it."
+                                !on -> "Paired ${ago(d.paired, System.currentTimeMillis())} ago. Tap to use it."
                                 conn is Conn.Online -> "Connected" + (d.last?.let { " at $it" } ?: "")
                                 conn is Conn.Denied -> (conn as Conn.Denied).message
                                 else -> "Connecting"
@@ -131,7 +131,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
             Group("Notifications") {
                 Toggle(
                     "When an agent needs you",
-                    "Never while this app is open, and never while you're using the computer. To hear it in the background, the app stays connected and Android shows a quiet notification while it does.",
+                    "Not while you're in the app or at your computer. Stays connected in the background, with a quiet notification.",
                     saved.alerts,
                 ) { on ->
                     if (on && Build.VERSION.SDK_INT >= 33 &&
@@ -148,7 +148,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                     HorizontalDivider(color = h.border0)
                     Toggle(
                         "When a run finishes",
-                        "Also when an agent finishes or stops with an error.",
+                        "Errors too.",
                         saved.finished,
                     ) { on -> app.store.update { it.copy(finished = on) } }
                 }
@@ -157,7 +157,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
             Group("Terminals") {
                 Toggle(
                     "Fit to this phone",
-                    "A terminal you open takes this phone's width until someone types on the computer. Off, it stays at the computer's size and scrolls sideways.",
+                    "Terminals take this phone's width until you type on the computer.",
                     saved.fit,
                 ) { on -> app.store.update { it.copy(fit = on) } }
             }
@@ -178,7 +178,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                 }
                 HorizontalDivider(color = h.border0)
                 Text(
-                    "The app talks to the computers paired above, and to GitHub to check for updates. The QR reader comes from Google Play services.",
+                    "Talks only to your paired computers, and to GitHub for updates. The QR reader comes from Google Play services.",
                     Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = h.text3,
@@ -192,7 +192,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
         AlertDialog(
             onDismissRequest = { forgetting = null },
             title = { Text("Forget ${d.name}?") },
-            text = { Text("This phone and ${d.name} both forget each other. To connect again, pair again.") },
+            text = { Text("Both sides drop the pairing. To connect again, pair again.") },
             confirmButton = {
                 TextButton(onClick = {
                     val was = d.id == current?.id
@@ -215,7 +215,7 @@ private fun Updates(app: App) {
     val h = LocalHues.current
     val u by app.updater.state.collectAsStateWithLifecycle()
     val (line, action) = if (!app.updater.enabled) "Dev builds don't update" to null else when (val s = u) {
-        Update.Idle -> "Checks on its own" to "Check"
+        Update.Idle -> "Checks every few hours" to "Check"
         Update.Checking -> "Checking" to null
         Update.Current -> "Up to date" to "Check"
         is Update.Downloading -> "Downloading ${s.version}" to null

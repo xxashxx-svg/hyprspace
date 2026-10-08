@@ -114,12 +114,12 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
             }
             if (!matches(part, release.sha256)) {
                 part.delete()
-                return Update.Failed("The download didn't match the release. It'll try again later.")
+                return Update.Failed("The download didn't match the release. It'll try again.")
             }
             part.renameTo(file)
         }
         if (!sameSigner(file)) {
-            return Update.Failed("This install can't update itself. Uninstall it once and install the APK from GitHub, then updates come on their own.")
+            return Update.Failed("This install can't update itself. Reinstall once from GitHub.")
         }
         return Update.Ready(release.version, file)
     }
