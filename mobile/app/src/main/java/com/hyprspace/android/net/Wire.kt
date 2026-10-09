@@ -40,7 +40,7 @@ enum class Permission(val label: String, val about: String) {
     @SerialName("plan") Plan("Plan only", "Reads and plans. It changes nothing."),
     @SerialName("ask") Ask("Ask first", "Asks before every edit and command."),
     @SerialName("auto") Auto("Auto edit", "Edits files in the folder on its own. Asks before anything else."),
-    @SerialName("bypass") Bypass("Full access", "Never asks. Use it only in folders you trust."),
+    @SerialName("bypass") Bypass("Full access", "Edits files and runs commands without asking."),
 }
 
 @Serializable
@@ -112,7 +112,7 @@ sealed interface Up {
     data class Folders(val path: String = "") : Up
 
     @Serializable @SerialName("upload")
-    data class Upload(val id: Long, val data: String) : Up
+    data class Upload(val id: Long, val data: String, val name: String? = null) : Up
 }
 
 @Serializable
@@ -134,6 +134,12 @@ sealed interface Ask {
 
     @Serializable @SerialName("snooze")
     data class Snooze(val thread: Long, val until: SnoozeUntil) : Ask
+
+    @Serializable @SerialName("model")
+    data class Model(val thread: Long, val model: String, val effort: String) : Ask
+
+    @Serializable @SerialName("pin")
+    data class Pin(val thread: Long, val on: Boolean) : Ask
 }
 
 /** When a snoozed thread wakes: `time` at [at] (unix ms), or `done` when its turn ends. */
@@ -237,6 +243,8 @@ data class BoardThread(
     val kind: BoardKind = BoardKind.Terminal,
     val agent: Agent? = null,
     val model: String? = null,
+    val modelId: String = "",
+    val effort: String = "",
     val status: BoardStatus = BoardStatus.Idle,
     val doing: String? = null,
     val since: Long? = null,
@@ -247,6 +255,7 @@ data class BoardThread(
     val shelf: Shelf = Shelf.Active,
     val rank: Long = 0,
     val live: Boolean = false,
+    val pinned: Boolean = false,
 )
 
 @Serializable

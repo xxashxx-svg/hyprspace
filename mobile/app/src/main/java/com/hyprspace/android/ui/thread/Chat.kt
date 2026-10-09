@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +57,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -119,8 +121,9 @@ fun Chat(
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
     onAnswer: (String, Answer) -> Unit,
-    attach: (@Composable ((Photo) -> Unit) -> (() -> Unit))?,
+    attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     modifier: Modifier = Modifier,
+    model: (@Composable () -> Unit)? = null,
 ) {
     val h = LocalHues.current
     val shown = remember(view.items) { fold(view.items) }
@@ -171,7 +174,7 @@ fun Chat(
                     item { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
                 }
                 items(shown, key = { it.key }) { s ->
-                    Box(Modifier.animateItem(placementSpec = null)) {
+                    Box(Modifier.animateItem(fadeOutSpec = null, placementSpec = null)) {
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)
                             is Shown.One -> One(s.item, canAnswer, answered, answer)
@@ -179,13 +182,13 @@ fun Chat(
                     }
                 }
                 items(pending, key = { "pending$it" }) { text ->
-                    Box(Modifier.animateItem(placementSpec = null)) {
+                    Box(Modifier.animateItem(fadeOutSpec = null, placementSpec = null)) {
                         One(Item.User("pending", text, 0, steer = working), false, answered, answer)
                     }
                 }
                 if (busy) {
                     item(key = "working") {
-                        Box(Modifier.animateItem(placementSpec = null)) { Working(doing, since) }
+                        Box(Modifier.animateItem(fadeOutSpec = null, placementSpec = null)) { Working(doing, since) }
                     }
                 }
             }
@@ -215,7 +218,7 @@ fun Chat(
             }
             }
         }
-        Composer(working, send, onStop, attach)
+        Composer(working, send, onStop, attach, model)
     }
 }
 
@@ -250,18 +253,46 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
             Icon(painterResource(R.drawable.ic_circle_alert), null, Modifier.size(16.dp).padding(top = 2.dp), tint = h.error)
             Text(item.message, style = MaterialTheme.typography.bodyMedium, color = h.text1)
         }
-        is Item.Finished -> {
-            val text = when (item.status) {
-                RunStatus.Done -> "Done in ${elapsed(item.ms / 1000)}"
-                RunStatus.Interrupted -> "Stopped after ${elapsed(item.ms / 1000)}"
-                RunStatus.Failed -> item.error?.let { "Failed: $it" } ?: "Failed"
+        is Item.Finished -> TurnEnd(item)
+    }
+}
+
+private fun took(ms: Long): String {
+    val s = (ms / 1000).coerceAtLeast(1)
+    return when {
+        s < 60 -> "${s}s"
+        s < 3600 -> if (s % 60 == 0L) "${s / 60}m" else "${s / 60}m ${s % 60}s"
+        else -> if (s % 3600 / 60 == 0L) "${s / 3600}h" else "${s / 3600}h ${s % 3600 / 60}m"
+    }
+}
+
+@Composable
+private fun TurnEnd(item: Item.Finished) {
+    val h = LocalHues.current
+    val failed = item.status == RunStatus.Failed
+    val (icon, text) = when (item.status) {
+        RunStatus.Done -> R.drawable.ic_check to "Worked for ${took(item.ms)}"
+        RunStatus.Interrupted -> R.drawable.ic_square to "Stopped after ${took(item.ms)}"
+        RunStatus.Failed -> R.drawable.ic_circle_alert to "Failed"
+    }
+    val tint = if (failed) h.error else h.text3
+    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HorizontalDivider(Modifier.weight(1f), color = h.border0)
+            Row(
+                Modifier.padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(painterResource(icon), null, Modifier.size(if (icon == R.drawable.ic_square) 9.dp else 12.dp), tint = tint)
+                Text(text, style = MaterialTheme.typography.labelMedium, color = tint)
             }
-            Text(
-                text,
-                Modifier.fillMaxWidth(),
-                fontSize = 12.sp,
-                color = if (item.status == RunStatus.Failed) h.error else h.text3,
-            )
+            HorizontalDivider(Modifier.weight(1f), color = h.border0)
+        }
+        if (failed) {
+            item.error?.takeIf { it.isNotBlank() }?.let {
+                Text(it, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = h.text2, textAlign = TextAlign.Center)
+            }
         }
     }
 }
@@ -456,70 +487,98 @@ private fun AgentCard(a: Item.Agent) {
 
 @Composable
 private fun ApprovalCard(a: Item.Approval, canAnswer: Boolean, onAnswer: (String, Answer) -> Unit) {
+    if (a.answer == null && !a.expired) PendingApproval(a, canAnswer, onAnswer) else SettledApproval(a)
+}
+
+@Composable
+private fun PendingApproval(a: Item.Approval, canAnswer: Boolean, onAnswer: (String, Answer) -> Unit) {
     val h = LocalHues.current
-    val pending = a.answer == null && !a.expired
-    val (mark, tint) = when {
-        pending -> R.drawable.ic_hand to h.waiting
-        a.answer == Answer.Deny -> R.drawable.ic_x to h.error
-        a.answer != null -> R.drawable.ic_check to h.ok
-        else -> R.drawable.ic_clock to h.text3
-    }
-    val state = when (a.answer) {
-        Answer.Allow -> "Allowed"
-        Answer.AllowAlways -> "Allowed for this session"
-        Answer.Deny -> "Denied"
-        null -> if (a.expired) "Not answered" else null
-    }
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (pending) h.waiting.copy(alpha = 0.08f) else h.ink(0.035f))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .clip(RoundedCornerShape(14.dp))
+            .background(h.ink(0.035f))
+            .border(1.dp, h.border1, RoundedCornerShape(14.dp))
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(painterResource(mark), null, Modifier.size(15.dp), tint = tint)
-            Text(
-                label(a.tool),
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = h.text1,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            state?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = h.text3) }
-        }
-        a.reason?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = h.text2) }
-        input(a.tool)?.let { Mono(it, maxLines = 12) }
-        val tool = a.tool
-        if (tool is Tool.Edit) for (ch in tool.changes) Diff(ch.path, ch.diff)
-        if (pending && canAnswer) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Choice("Allow", primary = true) { onAnswer(a.request, Answer.Allow) }
-                if (a.always) Choice("Always allow") { onAnswer(a.request, Answer.AllowAlways) }
-                Choice("Deny") { onAnswer(a.request, Answer.Deny) }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(painterResource(R.drawable.ic_hand), null, Modifier.size(13.dp), tint = h.waiting)
+                Text("Needs your OK", style = MaterialTheme.typography.labelMedium, color = h.waiting)
             }
-        } else if (pending) {
-            Text("Waiting for an answer.", style = MaterialTheme.typography.bodySmall, color = h.text3)
+            Text(label(a.tool), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = h.text1, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            a.reason?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = h.text2) }
+        }
+        ApprovalDetail(a.tool)
+        if (canAnswer) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Choice("Deny", Modifier.weight(1f)) { onAnswer(a.request, Answer.Deny) }
+                Choice("Allow", Modifier.weight(1f), primary = true) { onAnswer(a.request, Answer.Allow) }
+            }
+            if (a.always) {
+                Text(
+                    "Always allow this session",
+                    Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickableQuiet { onAnswer(a.request, Answer.AllowAlways) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = h.text2,
+                )
+            }
+        } else {
+            Text("Answer it on the computer.", style = MaterialTheme.typography.bodySmall, color = h.text3)
         }
     }
 }
 
 @Composable
-private fun Choice(text: String, primary: Boolean = false, onClick: () -> Unit) {
+private fun SettledApproval(a: Item.Approval) {
     val h = LocalHues.current
-    Text(
-        text,
-        Modifier
-            .clip(RoundedCornerShape(9.dp))
+    var open by rememberSaveable(a.request) { mutableStateOf(false) }
+    val (mark, tint, state) = when (a.answer) {
+        Answer.Allow -> Triple(R.drawable.ic_check, h.ok, "Allowed")
+        Answer.AllowAlways -> Triple(R.drawable.ic_check, h.ok, "Allowed for this session")
+        Answer.Deny -> Triple(R.drawable.ic_x, h.error, "Denied")
+        null -> Triple(R.drawable.ic_clock, h.text3, "Not answered")
+    }
+    Column(Modifier.fillMaxWidth().animateContentSize()) {
+        Row(
+            Modifier.fillMaxWidth().clickableQuiet { open = !open }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(painterResource(mark), null, Modifier.size(14.dp), tint = tint)
+            Text(label(a.tool), Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state, style = MaterialTheme.typography.bodySmall, color = h.text3)
+        }
+        if (open) Box(Modifier.padding(start = 22.dp, top = 4.dp, bottom = 4.dp)) { ApprovalDetail(a.tool) }
+    }
+}
+
+@Composable
+private fun ApprovalDetail(tool: Tool) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        input(tool)?.let { Mono(it, maxLines = 12) }
+        if (tool is Tool.Edit) for (ch in tool.changes) Diff(ch.path, ch.diff)
+    }
+}
+
+@Composable
+private fun Choice(text: String, modifier: Modifier = Modifier, primary: Boolean = false, onClick: () -> Unit) {
+    val h = LocalHues.current
+    Box(
+        modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(if (primary) h.accent else h.ink(0.08f))
-            .clickableQuiet(onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-        style = MaterialTheme.typography.labelLarge,
-        color = if (primary) h.onAccent else h.text1,
-    )
+            .clickableQuiet(onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = if (primary) h.onAccent else h.text1)
+    }
 }
 
 @Composable
@@ -527,11 +586,12 @@ private fun Composer(
     working: Boolean,
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
-    attach: (@Composable ((Photo) -> Unit) -> (() -> Unit))?,
+    attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
+    model: (@Composable () -> Unit)?,
 ) {
     val h = LocalHues.current
     var text by rememberSaveable { mutableStateOf("") }
-    val photos = remember { mutableStateListOf<Photo>() }
+    val photos = remember { mutableStateListOf<Attachment>() }
     val pick = attach?.invoke { p ->
         val i = photos.indexOfFirst { it.key == p.key }
         if (i >= 0) photos[i] = p else photos.add(p)
@@ -550,11 +610,23 @@ private fun Composer(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            for (p in photos) PhotoThumb(p) { photos.remove(p) }
+            for (p in photos) AttachmentThumb(p) { photos.remove(p) }
         }
     }
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)) {
+        if (text.isEmpty()) {
+            Text(if (working) "Steer it, or stop it" else "Reply", style = MaterialTheme.typography.bodyLarge, color = h.text3)
+        }
+        BasicTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = h.text1),
+            cursorBrush = SolidColor(h.accent),
+        )
+    }
     Row(
-        Modifier.fillMaxWidth().padding(start = if (pick != null) 4.dp else 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (pick != null) {
@@ -562,22 +634,11 @@ private fun Composer(
                 Modifier.size(36.dp).clip(CircleShape).clickableQuiet(pick),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(painterResource(R.drawable.ic_image_plus), "Add photos", Modifier.size(18.dp), tint = h.text2)
+                Icon(painterResource(R.drawable.ic_paperclip), "Attach", Modifier.size(18.dp), tint = h.text2)
             }
-            Spacer(Modifier.width(4.dp))
         }
-        Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-            if (text.isEmpty()) {
-                Text(if (working) "Steer it, or stop it" else "Reply", style = MaterialTheme.typography.bodyLarge, color = h.text3)
-            }
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = h.text1),
-                cursorBrush = SolidColor(h.accent),
-            )
-        }
+        Spacer(Modifier.weight(1f))
+        model?.invoke()
         Spacer(Modifier.width(6.dp))
         val stop = working && text.isBlank() && photos.isEmpty()
         Box(

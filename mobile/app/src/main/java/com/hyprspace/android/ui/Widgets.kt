@@ -114,15 +114,10 @@ fun initials(name: String): String {
 
 /** Where a thread stands: a pulse when it waits on you, a spinner while it works, a check when done. */
 @Composable
-fun StatusMark(status: BoardStatus, unseen: Boolean) {
+fun StatusMark(status: BoardStatus) {
     val h = LocalHues.current
     when (status) {
-        BoardStatus.Working -> CircularProgressIndicator(
-            modifier = Modifier.size(12.dp),
-            strokeWidth = 1.6.dp,
-            color = h.busy,
-            trackColor = h.ink(0.08f),
-        )
+        BoardStatus.Working -> {}
         BoardStatus.Waiting -> {
             val pulse by rememberInfiniteTransition(label = "wait").animateFloat(
                 0.35f, 1f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "wait",
@@ -130,9 +125,12 @@ fun StatusMark(status: BoardStatus, unseen: Boolean) {
             Box(Modifier.size(9.dp).alpha(pulse).clip(CircleShape).background(h.waiting))
         }
         BoardStatus.Done -> Box(
-            Modifier.size(9.dp).clip(CircleShape).background(if (unseen) h.ok else h.ok.copy(alpha = 0.45f)),
-        )
-        BoardStatus.Failed -> Box(Modifier.size(9.dp).clip(CircleShape).background(h.error))
+            Modifier.size(14.dp).clip(CircleShape).background(h.ok),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(R.drawable.ic_check), null, Modifier.size(10.dp), tint = h.onAccent)
+        }
+        BoardStatus.Failed -> Box(Modifier.size(8.dp).clip(CircleShape).background(h.error))
         BoardStatus.Idle -> {}
     }
 }

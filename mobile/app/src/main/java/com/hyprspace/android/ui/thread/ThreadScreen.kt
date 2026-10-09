@@ -129,7 +129,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                     )
                 }
             }
-            if (t != null) StatusMark(t.status, false)
+            if (t != null) StatusMark(t.status)
             var menu by remember { mutableStateOf(false) }
             IconButton(onClick = { menu = true }) {
                 Icon(painterResource(R.drawable.ic_ellipsis), "More", Modifier.size(20.dp), tint = h.text2)
@@ -154,6 +154,8 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
         when (t?.kind) {
             BoardKind.Structured -> {
                 val view by remember(id) { app.link.transcript(id) }.collectAsStateWithLifecycle()
+                var picking by remember { mutableStateOf(false) }
+                val catalog = board?.agents?.firstOrNull { it.agent == t.agent }?.catalog?.takeIf { app.link.desktopAtLeast(MODELS) }
                 Chat(
                     view = view,
                     working = t.status == BoardStatus.Working || t.status == BoardStatus.Waiting,
@@ -164,9 +166,15 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                     onSend = { text, images -> app.link.ask(Ask.Send(id, text, images)) },
                     onStop = { app.link.ask(Ask.Interrupt(id)) },
                     onAnswer = { request, answer -> app.link.ask(Ask.Approve(id, request, answer)) },
-                    attach = if (app.link.desktopAtLeast(PHOTOS)) { onPhoto -> rememberPhotoPicker(app, true, onPhoto) } else null,
+                    attach = if (app.link.desktopAtLeast(PHOTOS)) { onPick -> rememberAttach(app, app.link.desktopAtLeast(FILES), onPick) } else null,
                     modifier = Modifier.weight(1f),
+                    model = catalog?.let {
+                        { ModelChip(t.agent, t.model ?: "Default", t.effort, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting) { picking = true } }
+                    },
                 )
+                if (picking && catalog != null) {
+                    ModelSheet(catalog, t.modelId, t.effort, onPick = { m, e -> app.link.ask(Ask.Model(id, m, e)) }, onDismiss = { picking = false })
+                }
             }
             BoardKind.Terminal -> {
                 val view by remember(id) { app.link.term(id) }.collectAsStateWithLifecycle()
@@ -178,7 +186,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                         onFit = { cols, rows -> app.link.fit(id, cols, rows) },
                         onKeys = { app.link.send(Up.Keys(id, it)) },
                         onPaste = { app.link.send(Up.Paste(id, it)) },
-                        attach = if (app.link.desktopAtLeast(PHOTOS)) { onPhoto -> rememberPhotoPicker(app, true, onPhoto) } else null,
+                        attach = if (app.link.desktopAtLeast(PHOTOS)) { onPick -> rememberAttach(app, app.link.desktopAtLeast(FILES), onPick) } else null,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -189,3 +197,5 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
 }
 
 private const val PHOTOS = "0.24.12"
+private const val MODELS = "0.24.14"
+private const val FILES = "0.24.14"

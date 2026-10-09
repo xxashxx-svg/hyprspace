@@ -332,12 +332,12 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private val uploads = java.util.concurrent.ConcurrentHashMap<Long, CompletableDeferred<Down.Uploaded>>()
     private val nextUpload = java.util.concurrent.atomic.AtomicLong(1)
 
-    /** Sends a photo to the computer and returns where it saved it, or null. */
-    suspend fun upload(bytes: ByteArray): String? {
+    /** Sends a photo, or a named file, to the computer and returns where it saved it, or null. */
+    suspend fun upload(bytes: ByteArray, name: String? = null): String? {
         val id = nextUpload.getAndIncrement()
         val done = CompletableDeferred<Down.Uploaded>()
         uploads[id] = done
-        if (!send(Up.Upload(id, java.util.Base64.getEncoder().encodeToString(bytes)))) {
+        if (!send(Up.Upload(id, java.util.Base64.getEncoder().encodeToString(bytes), name))) {
             uploads.remove(id)
             _failures.tryEmit("Not connected. Try again once it reconnects.")
             return null
@@ -345,8 +345,12 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         val r = withTimeoutOrNull(60_000) { done.await() }
         uploads.remove(id)
         r?.error?.let { _failures.tryEmit(it) }
-        if (r == null) _failures.tryEmit("The photo didn't reach the computer.")
+        if (r == null) _failures.tryEmit(if (name == null) "The photo didn't reach the computer." else "$name didn't reach the computer.")
         return r?.path
+    }
+
+    fun fail(message: String) {
+        _failures.tryEmit(message)
     }
 
     fun desktopAtLeast(version: String): Boolean {

@@ -13,7 +13,10 @@
 {"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"done"}}}
 {"type":"ask","ask":{"type":"new","space":0,"folder":"/home/ash/code","start":{"agent":null,"model":"","effort":"","permission":"plan","terminal":true,"prompt":""}}}
 {"type":"ask","ask":{"type":"settle","thread":2,"on":false}}
+{"type":"ask","ask":{"type":"pin","thread":2,"on":true}}
+{"type":"ask","ask":{"type":"model","thread":2,"model":"opus","effort":"high"}}
 {"type":"leave"}
 {"type":"folders","path":""}
-{"type":"upload","id":1,"data":"/9j/"}
+{"type":"upload","id":1,"data":"/9j/","name":null}
+{"type":"upload","id":2,"data":"aGk=","name":"notes.txt"}
 {"type":"ping"}

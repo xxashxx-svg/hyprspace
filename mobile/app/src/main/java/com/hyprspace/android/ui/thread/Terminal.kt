@@ -158,7 +158,7 @@ fun Terminal(
     onKeys: (String) -> Unit,
     onPaste: (String) -> Unit,
     modifier: Modifier = Modifier,
-    attach: (@Composable ((Photo) -> Unit) -> (() -> Unit))? = null,
+    attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))? = null,
 ) {
     val h = LocalHues.current
     val measure = rememberTextMeasurer()
@@ -266,7 +266,7 @@ fun Terminal(
             },
             modifier = Modifier.size(1.dp),
         )
-        val photos = remember { mutableStateListOf<Photo>() }
+        val photos = remember { mutableStateListOf<Attachment>() }
         val pick = attach?.invoke { p ->
             val i = photos.indexOfFirst { it.key == p.key }
             if (i >= 0) photos[i] = p else photos.add(p)
@@ -291,7 +291,7 @@ fun Terminal(
                     .padding(start = 8.dp, end = 8.dp, top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                for (p in photos) PhotoThumb(p) { photos.remove(p) }
+                for (p in photos) AttachmentThumb(p) { photos.remove(p) }
             }
         }
         Keys(
@@ -330,7 +330,7 @@ private fun Keys(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Key(icon = R.drawable.ic_keyboard, onClick = onKeyboard)
-        if (onImage != null) Key(icon = R.drawable.ic_image_plus, onClick = onImage)
+        if (onImage != null) Key(icon = R.drawable.ic_paperclip, onClick = onImage)
         Key("Esc") { onKeys("\u001b") }
         Key("Tab") { onKeys("\t") }
         Key("Ctrl", on = ctrl, onClick = onCtrl)

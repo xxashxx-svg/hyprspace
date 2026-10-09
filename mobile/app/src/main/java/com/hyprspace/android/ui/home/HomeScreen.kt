@@ -25,8 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,6 +47,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -80,7 +80,7 @@ import com.hyprspace.android.ui.UpdateStrip
 import com.hyprspace.android.ui.ago
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
-import com.hyprspace.android.ui.start.NewThreadSheet
+import com.hyprspace.android.ui.start.NewThreadScreen
 import com.hyprspace.android.ui.ticking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -150,6 +150,7 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
                     onOpen = onOpen,
                     onSettle = { t, on -> app.link.ask(Ask.Settle(t, on)) },
                     onSnooze = if (app.link.desktopAtLeast(SNOOZE)) { t, until -> app.link.ask(Ask.Snooze(t, until)) } else null,
+                    onPin = if (app.link.desktopAtLeast(PINS)) { t, on -> app.link.ask(Ask.Pin(t, on)) } else null,
                     undo = undo,
                 )
             }
@@ -196,10 +197,11 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
 
     starting?.let { space ->
         board?.let { b ->
-            NewThreadSheet(
+            NewThreadScreen(
                 app,
                 b,
                 space,
+                name,
                 onDismiss = { starting = null },
                 onStarted = { before = b.threads.map { it.id }.toSet() },
             )
@@ -230,6 +232,7 @@ private fun Waiting(conn: Conn) {
 }
 
 private const val SNOOZE = "0.24.12"
+private const val PINS = "0.24.14"
 
 private sealed interface Row {
     val key: String
@@ -248,6 +251,7 @@ private fun Threads(
     onOpen: (Long) -> Unit,
     onSettle: (Long, Boolean) -> Boolean,
     onSnooze: ((Long, SnoozeUntil) -> Boolean)?,
+    onPin: ((Long, Boolean) -> Boolean)?,
     undo: (String, () -> Unit) -> Unit,
 ) {
     val h = LocalHues.current
@@ -257,6 +261,7 @@ private fun Threads(
     val gone = remember { mutableStateMapOf<Long, Shelf>() }
     val resets = remember { mutableStateMapOf<Long, Int>() }
     var snoozing by remember { mutableStateOf<BoardThread?>(null) }
+    var holding by remember { mutableStateOf<Row.Thread?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(b) {
         val now = b.threads.associate { it.id to it.shelf }
@@ -286,6 +291,17 @@ private fun Threads(
             if (settledOpen) settled.forEach { add(Row.Thread(it, spaces[it.space], true)) }
         }
     }
+    fun settle(t: BoardThread) {
+        if (onSettle(t.id, true)) {
+            hide(t)
+            undo("Settled") { onSettle(t.id, false) }
+        } else {
+            resets[t.id] = (resets[t.id] ?: 0) + 1
+        }
+    }
+    fun bringBack(t: BoardThread) {
+        if (onSettle(t.id, false)) hide(t) else resets[t.id] = (resets[t.id] ?: 0) + 1
+    }
     val now = ticking(b.threads.any { it.since != null })
     LazyColumn(Modifier.fillMaxSize().clipToBounds(), contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)) {
         items(rows, key = { it.key }) { r ->
@@ -293,18 +309,9 @@ private fun Threads(
                 is Row.Thread -> {
                     val t = r.thread
                     val right = if (r.shelved) {
-                        Swipe("Bring back", R.drawable.ic_archive_restore, h.accent) {
-                            if (onSettle(t.id, false)) hide(t) else resets[t.id] = (resets[t.id] ?: 0) + 1
-                        }
+                        Swipe("Bring back", R.drawable.ic_archive_restore, h.accent) { bringBack(t) }
                     } else {
-                        Swipe("Settle", R.drawable.ic_archive, h.ok) {
-                            if (onSettle(t.id, true)) {
-                                hide(t)
-                                undo("Settled") { onSettle(t.id, false) }
-                            } else {
-                                resets[t.id] = (resets[t.id] ?: 0) + 1
-                            }
-                        }
+                        Swipe("Settle", R.drawable.ic_archive, h.ok) { settle(t) }
                     }
                     val left = if (!r.shelved && onSnooze != null) {
                         Swipe("Snooze", R.drawable.ic_clock, h.busy) { snoozing = t }
@@ -312,7 +319,7 @@ private fun Threads(
                         null
                     }
                     SwipeRow(left, right, resets[t.id] ?: 0, Modifier.animateItem()) {
-                        ThreadRow(t, r.space, r.shelved, now, onOpen, { id, on -> onSettle(id, on) })
+                        ThreadRow(t, r.space, r.shelved, now, onOpen) { holding = r }
                     }
                 }
                 is Row.Shelf -> Box(Modifier.animateItem()) {
@@ -328,6 +335,27 @@ private fun Threads(
                 )
             }
         }
+    }
+
+    holding?.let { r ->
+        val t = r.thread
+        val close = { holding = null }
+        val actions = if (r.shelved) {
+            listOf(Action("Bring back", R.drawable.ic_archive_restore) { close(); bringBack(t) })
+        } else {
+            listOfNotNull(
+                onPin?.let {
+                    if (t.pinned) {
+                        Action("Unpin", R.drawable.ic_pin_off) { close(); it(t.id, false) }
+                    } else {
+                        Action("Pin to top", R.drawable.ic_pin) { close(); it(t.id, true) }
+                    }
+                },
+                onSnooze?.let { Action("Snooze", R.drawable.ic_clock) { close(); snoozing = t } },
+                Action("Settle", R.drawable.ic_archive) { close(); settle(t) },
+            )
+        }
+        ThreadSheet(t, r.space, actions, close)
     }
 
     snoozing?.let { t ->
@@ -379,99 +407,88 @@ private fun ThreadRow(
     shelved: Boolean,
     now: Long,
     onOpen: (Long) -> Unit,
-    onSettle: (Long, Boolean) -> Unit,
+    onHold: () -> Unit,
 ) {
     val h = LocalHues.current
-    var menu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     val waiting = t.status == BoardStatus.Waiting
     // background work takes less attention than a thread that needs you
     val recede = t.status == BoardStatus.Working
-    Box {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 2.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(h.bg)
-                .background(if (waiting) h.waiting.copy(alpha = 0.07f) else h.bg)
-                .combinedClickable(onClick = { onOpen(t.id) }, onLongClick = { menu = true })
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .alpha(if (shelved) 0.6f else 1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (space != null) {
-                    SpaceTag(space, 16.dp)
-                    Spacer(Modifier.width(7.dp))
-                    Text(space.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
-                val since = t.since
-                if (since != null) {
-                    Text(elapsed((now - since) / 1000), fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = h.busy)
-                } else if (t.touched > 0) {
-                    Text(ago(t.touched, now), style = MaterialTheme.typography.bodySmall, color = h.text3)
-                }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(h.bg)
+            .background(if (waiting) h.waiting.copy(alpha = 0.07f) else h.bg)
+            .combinedClickable(onClick = { onOpen(t.id) }, onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onHold()
+            })
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .alpha(if (shelved) 0.6f else 1f),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (space != null) {
+                SpaceTag(space, 16.dp)
+                Spacer(Modifier.width(7.dp))
+                Text(space.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else {
+                Spacer(Modifier.weight(1f))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (t.pinned && !shelved) {
+                Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.padding(end = 6.dp).size(12.dp), tint = h.text3)
+            }
+            val since = t.since
+            if (since != null) {
+                Text(elapsed((now - since) / 1000), fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = h.busy)
+            } else if (t.touched > 0) {
+                Text(ago(t.touched, now), style = MaterialTheme.typography.bodySmall, color = h.text3)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                t.title.ifBlank { "New thread" },
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (recede) FontWeight.Normal else FontWeight.Medium,
+                color = h.text1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(8.dp))
+            StatusMark(t.status)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AgentMark(t.agent, 12.dp)
+            val doing = t.doing?.takeIf { t.status != BoardStatus.Idle }
+            if (doing != null) {
                 Text(
-                    t.title.ifBlank { "New thread" },
+                    doing,
                     Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (recede) FontWeight.Normal else FontWeight.Medium,
-                    color = h.text1,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (waiting) h.waiting else h.text2,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.width(8.dp))
-                StatusMark(t.status, t.unseen)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AgentMark(t.agent, 12.dp)
-                val doing = t.doing?.takeIf { t.status != BoardStatus.Idle }
-                if (doing != null) {
-                    Text(
-                        doing,
-                        Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (waiting) h.waiting else h.text2,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                } else {
-                    Icon(
-                        painterResource(if (t.branch) R.drawable.ic_git_branch else R.drawable.ic_folder),
-                        null,
-                        Modifier.size(11.dp),
-                        tint = h.text3,
-                    )
-                    Text(
-                        t.place,
-                        Modifier.weight(1f),
-                        fontFamily = Mono,
-                        fontSize = 11.sp,
-                        color = h.text3,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    t.model?.takeIf { t.agent != null }?.let { Pill(it) }
-                }
-            }
-        }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            if (t.shelf == Shelf.Active) {
-                DropdownMenuItem(
-                    text = { Text("Settle") },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_archive), null, Modifier.size(16.dp)) },
-                    onClick = { menu = false; onSettle(t.id, true) },
-                )
             } else {
-                DropdownMenuItem(
-                    text = { Text("Bring back") },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_archive_restore), null, Modifier.size(16.dp)) },
-                    onClick = { menu = false; onSettle(t.id, false) },
+                Icon(
+                    painterResource(if (t.branch) R.drawable.ic_git_branch else R.drawable.ic_folder),
+                    null,
+                    Modifier.size(11.dp),
+                    tint = h.text3,
                 )
+                Text(
+                    t.place,
+                    Modifier.weight(1f),
+                    fontFamily = Mono,
+                    fontSize = 11.sp,
+                    color = h.text3,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                t.model?.takeIf { t.agent != null }?.let { Pill(it) }
             }
         }
     }
