@@ -173,8 +173,8 @@ async fn approvals_wait_for_the_user() {
         })
     );
     // an answer to a request nobody asked is ignored
-    session.answer("nope".into(), Answer::Allow);
-    session.answer("r1".into(), Answer::AllowAlways);
+    session.answer("nope".into(), Answer::Allow, Vec::new());
+    session.answer("r1".into(), Answer::AllowAlways, Vec::new());
     let second = events
         .until(|e| matches!(e, RunEvent::Approval { .. }))
         .await;
@@ -191,9 +191,30 @@ async fn approvals_wait_for_the_user() {
     // no suggested rules, so nothing to remember
     assert!(!always);
     assert!(matches!(tool, Tool::Edit { changes } if changes[0].kind == ChangeKind::Add));
-    session.answer("r2".into(), Answer::Deny);
+    session.answer("r2".into(), Answer::Deny, Vec::new());
     let run = events.run().await;
     assert_eq!(text(&run), "approvals ok");
+}
+
+#[tokio::test]
+async fn a_question_is_answered_with_the_picks() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session, mut events) = start(&claude(), dir.path());
+    session.send(Prompt::text("question"));
+    let asked = events
+        .until(|e| matches!(e, RunEvent::Approval { .. }))
+        .await;
+    let Some(RunEvent::Approval { request, tool, .. }) = asked.last() else {
+        panic!()
+    };
+    assert!(matches!(tool, Tool::Other { name, .. } if name == "AskUserQuestion"));
+    session.answer(
+        request.clone(),
+        Answer::Allow,
+        vec![("Which db?".into(), "SQLite".into())],
+    );
+    let run = events.run().await;
+    assert_eq!(text(&run), "picked SQLite");
 }
 
 #[tokio::test]

@@ -166,7 +166,7 @@ async fn approvals_wait_for_the_user() {
             always: true,
         })
     );
-    session.answer("100".into(), Answer::AllowAlways);
+    session.answer("100".into(), Answer::AllowAlways, Vec::new());
     let second = events
         .until(|e| matches!(e, RunEvent::Approval { .. }))
         .await;
@@ -176,7 +176,7 @@ async fn approvals_wait_for_the_user() {
     assert_eq!(request, "req-101");
     // the request names only the item; its edits come from item/started
     assert!(matches!(tool, Tool::Edit { changes } if changes[0].path == "/b.rs"));
-    session.answer("req-101".into(), Answer::Deny);
+    session.answer("req-101".into(), Answer::Deny, Vec::new());
     assert_eq!(text(&events.run().await), "approvals ok");
 }
 

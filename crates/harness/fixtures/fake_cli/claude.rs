@@ -83,6 +83,53 @@ pub fn run(args: &[String]) {
             subagent();
         } else if text.contains("approve") {
             approve();
+        } else if text.contains("todo") {
+            emit(json!({
+                "type": "assistant", "parent_tool_use_id": null,
+                "message": { "content": [{ "type": "tool_use", "id": "td1", "name": "TodoWrite",
+                    "input": { "todos": [
+                        { "content": "Read the handler", "status": "completed", "activeForm": "Reading the handler" },
+                        { "content": "Fix the redirect", "status": "in_progress", "activeForm": "Fixing the redirect" },
+                        { "content": "Run the tests", "status": "pending", "activeForm": "Running the tests" } ] } }] },
+            }));
+            emit(json!({
+                "type": "user", "parent_tool_use_id": null,
+                "message": { "content": [{ "type": "tool_result", "tool_use_id": "td1", "content": "ok" }] },
+            }));
+            say("tasks set");
+            done("tasks set");
+        } else if text.contains("plan") {
+            let r = control(
+                "p1",
+                "ExitPlanMode",
+                json!({ "plan": "## Plan
+
+1. Read `auth/login.ts`
+2. Add a `safe()` check
+3. Cover it with a test" }),
+                Value::Null,
+            );
+            let reply = format!(
+                "plan {}",
+                r["response"]["response"]["behavior"]
+                    .as_str()
+                    .unwrap_or("?")
+            );
+            say(&reply);
+            done(&reply);
+        } else if text.contains("question") {
+            let r = control(
+                "q1",
+                "AskUserQuestion",
+                json!({ "questions": [{ "question": "Which db?", "header": "DB",
+                    "options": [{ "label": "Postgres" }, { "label": "SQLite" }],
+                    "multiSelect": false }] }),
+                Value::Null,
+            );
+            let got = &r["response"]["response"]["updatedInput"]["answers"]["Which db?"];
+            let reply = format!("picked {}", got.as_str().unwrap_or("nothing"));
+            say(&reply);
+            done(&reply);
         } else if text.contains("absorb") {
             let _steer = read();
             say("absorbed");

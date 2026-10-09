@@ -258,6 +258,15 @@ impl Root {
         if let FolderEvent::Git { cwd, status } = &e {
             self.git.insert(cwd.clone(), status.clone());
         }
+        if let FolderEvent::Files { cwd, files } = &e {
+            crate::suggest::set_files(cwd.clone(), files.clone(), cx);
+            for view in self.views.values() {
+                if let crate::root::View::Structured(v) = view {
+                    v.update(cx, |v, cx| v.refresh_suggest(cx));
+                }
+            }
+            self.composer.update(cx, |c, cx| c.refresh_suggest(cx));
+        }
         match &e {
             FolderEvent::Openers { openers } => {
                 self.work.openers = openers.clone();

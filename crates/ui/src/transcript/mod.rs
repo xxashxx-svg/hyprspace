@@ -3,6 +3,7 @@
 // as runs or steers, answers approvals, and tells the root when its status changes.
 
 mod approval;
+mod ask;
 mod branch;
 mod model;
 mod render;
@@ -24,7 +25,7 @@ use crate::attach;
 use crate::composer::model_menu::{self, Anchor, Choice, ModelMenu, Spec};
 use crate::input::{InputEvent, TextInput};
 pub use model::Status;
-use model::Transcript;
+use model::{Item, Transcript};
 
 pub enum TranscriptEvent {
     Status(Status),
@@ -57,6 +58,8 @@ pub struct TranscriptView {
     input: Entity<TextInput>,
     images: Vec<PathBuf>,
     scroll: ScrollHandle,
+    rail: std::cell::RefCell<Vec<crate::slide::Glide>>,
+    hover_tick: std::cell::Cell<Option<usize>>,
     catalog: Option<AgentCatalog>,
     menu: Option<ModelMenu>,
     /// Where the model chip sits, for its menu to open from.
@@ -71,6 +74,12 @@ pub struct TranscriptView {
     /// longer tells what the next run uses.
     repicked: bool,
     status: Status,
+    stopping: bool,
+    pub(super) suggest: crate::suggest::Suggest,
+    pub(super) picks: std::collections::HashMap<String, Vec<Vec<usize>>>,
+    pub(super) expanded: HashSet<usize>,
+    pub(super) answered: std::collections::HashMap<String, Vec<(String, String)>>,
+    pub(super) perm_menu: Option<gpui::Point<gpui::Pixels>>,
     ticker: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -98,6 +107,7 @@ impl TranscriptView {
                 cx.notify();
             }
             InputEvent::Changed => {
+                this.refresh_suggest(cx);
                 let empty = this.input.read(cx).text().is_empty();
                 if empty != this.empty {
                     this.empty = empty;
@@ -121,6 +131,8 @@ impl TranscriptView {
             input,
             images: Vec::new(),
             scroll: ScrollHandle::new(),
+            rail: Default::default(),
+            hover_tick: Default::default(),
             catalog: None,
             menu: None,
             anchor: Anchor::default(),
@@ -130,6 +142,12 @@ impl TranscriptView {
             branch,
             repicked: false,
             status: Status::Idle,
+            stopping: false,
+            suggest: Default::default(),
+            picks: Default::default(),
+            expanded: HashSet::new(),
+            answered: Default::default(),
+            perm_menu: None,
             ticker: None,
             _subs: vec![sub],
         };
@@ -288,20 +306,73 @@ impl TranscriptView {
         self.changed(cx);
     }
 
-    fn interrupt(&mut self, _: &mut Context<Self>) {
+    fn interrupt(&mut self, cx: &mut Context<Self>) {
         if self.model.running() {
             self.client.send(Command::Interrupt { id: self.id });
+            self.stopping = true;
+            cx.notify();
         }
     }
 
     fn answer(&mut self, request: String, answer: Answer, cx: &mut Context<Self>) {
+        self.answer_with(request, answer, Vec::new(), cx);
+    }
+
+    pub(super) fn answer_with(
+        &mut self,
+        request: String,
+        answer: Answer,
+        answers: Vec<(String, String)>,
+        cx: &mut Context<Self>,
+    ) {
         self.model.answered(&request, answer);
+        if !answers.is_empty() {
+            self.answered.insert(request.clone(), answers.clone());
+        }
         self.client.send(Command::Approve {
             id: self.id,
             request,
             answer,
+            answers,
         });
         self.changed(cx);
+    }
+
+    pub(super) fn pick_option(
+        &mut self,
+        request: &str,
+        question: usize,
+        option: usize,
+        multi: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let picks = self.picks.entry(request.to_string()).or_default();
+        if picks.len() <= question {
+            picks.resize(question + 1, Vec::new());
+        }
+        let chosen = &mut picks[question];
+        match (multi, chosen.contains(&option)) {
+            (true, true) => chosen.retain(|&o| o != option),
+            (true, false) => chosen.push(option),
+            (false, _) => *chosen = vec![option],
+        }
+        cx.notify();
+    }
+
+    pub(super) fn approve_plan(&mut self, request: String, cx: &mut Context<Self>) {
+        self.answer_with(request, Answer::Allow, Vec::new(), cx);
+        if self.launch.permission == hyprspace_proto::Permission::Plan {
+            self.launch.permission = hyprspace_proto::Permission::Ask;
+            cx.emit(TranscriptEvent::Launch(self.launch.clone()));
+        }
+    }
+
+    pub fn repick(&mut self, model: String, effort: String, cx: &mut Context<Self>) {
+        if self.model.running() {
+            return;
+        }
+        self.pick_model(model, cx);
+        self.pick_effort(effort, cx);
     }
 
     fn pick_model(&mut self, model: String, cx: &mut Context<Self>) {
@@ -351,6 +422,21 @@ impl TranscriptView {
 
     /// After a model or effort change: the next prompt starts a session with it, resuming this
     /// conversation.
+    pub(super) fn pick_permission(
+        &mut self,
+        permission: hyprspace_proto::Permission,
+        cx: &mut Context<Self>,
+    ) {
+        self.perm_menu = None;
+        if permission == self.launch.permission || self.model.running() {
+            cx.notify();
+            return;
+        }
+        self.launch.permission = permission;
+        let name = crate::composer::pickers::permission_label(permission);
+        self.relaunch(format!("Permission set to {name}."), cx);
+    }
+
     fn relaunch(&mut self, what: String, cx: &mut Context<Self>) {
         if self.open && !self.model.running() {
             self.client.send(Command::Close { id: self.id });
@@ -374,6 +460,9 @@ impl TranscriptView {
     }
 
     pub fn apply(&mut self, event: RunEvent, cx: &mut Context<Self>) {
+        if let RunEvent::Commands { names } = &event {
+            crate::suggest::set_commands(self.launch.agent, names.clone(), cx);
+        }
         if let RunEvent::Started { thread, cwd, .. } = &event {
             self.repicked = false;
             self.launch.resume = Some(thread.clone());
@@ -426,7 +515,16 @@ impl TranscriptView {
         for entry in entries {
             match entry {
                 Entry::Prompt { prompt } => self.model.prompt(&prompt),
-                Entry::Answer { request, answer } => self.model.answered(&request, answer),
+                Entry::Answer {
+                    request,
+                    answer,
+                    answers,
+                } => {
+                    self.model.answered(&request, answer);
+                    if !answers.is_empty() {
+                        self.answered.insert(request, answers);
+                    }
+                }
                 Entry::Run { event } => self.model.apply(event),
             }
         }
@@ -451,12 +549,65 @@ impl TranscriptView {
                 return;
             };
             let _ = this.update(cx, |v, cx| {
-                v.images
-                    .extend(paths.into_iter().filter(|p| attach::is_image(p)));
+                v.images.extend(paths.into_iter().filter(|p| p.is_file()));
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    pub fn refresh_suggest(&mut self, cx: &mut Context<Self>) {
+        let cwd = self
+            .model
+            .cwd
+            .clone()
+            .unwrap_or_else(|| self.launch.cwd.clone());
+        self.suggest
+            .refresh(&self.input, self.launch.agent, &cwd, &self.client, cx);
+        cx.notify();
+    }
+
+    pub(super) fn take_suggestion(&mut self, ix: usize, cx: &mut Context<Self>) {
+        self.suggest.accept(Some(ix), &self.input, cx);
+    }
+
+    pub(super) fn suggest_prev(
+        &mut self,
+        _: &crate::suggest::Prev,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.suggest.step(-1);
+        cx.notify();
+    }
+
+    pub(super) fn suggest_next(
+        &mut self,
+        _: &crate::suggest::Next,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.suggest.step(1);
+        cx.notify();
+    }
+
+    pub(super) fn suggest_accept(
+        &mut self,
+        _: &crate::suggest::Accept,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.suggest.accept(None, &self.input, cx);
+    }
+
+    pub(super) fn suggest_dismiss(
+        &mut self,
+        _: &crate::suggest::Dismiss,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.suggest.dismiss();
+        cx.notify();
     }
 
     fn at_bottom(&self) -> bool {
@@ -472,7 +623,22 @@ impl TranscriptView {
         } else {
             IDLE_HINT
         };
-        self.input.update(cx, |i, cx| i.set_placeholder(hint, cx));
+        let prompts: Vec<String> = self
+            .model
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::User { text, .. } if !text.trim().is_empty() => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        self.input.update(cx, |i, cx| {
+            i.set_placeholder(hint, cx);
+            i.set_history(prompts);
+        });
+        if !self.model.running() {
+            self.stopping = false;
+        }
         let status = self.model.status();
         if status != self.status {
             self.status = status;

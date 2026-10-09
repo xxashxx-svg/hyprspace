@@ -7,8 +7,8 @@ mod card;
 mod clone;
 mod effort;
 pub(crate) mod model_menu;
-mod pickers;
-mod repo;
+pub(crate) mod pickers;
+pub(crate) mod repo;
 
 use std::path::PathBuf;
 
@@ -91,6 +91,7 @@ pub struct Composer {
     error: Option<String>,
     /// The branch of the folder the thread starts in, when it is a repo.
     branch: Option<String>,
+    suggest: crate::suggest::Suggest,
     _subs: Vec<Subscription>,
 }
 
@@ -156,6 +157,7 @@ impl Composer {
             next_request: 1,
             error: None,
             branch: None,
+            suggest: Default::default(),
             _subs: subs,
         }
     }
@@ -325,8 +327,49 @@ impl Composer {
         cx.notify();
     }
 
+    pub fn refresh_suggest(&mut self, cx: &mut Context<Self>) {
+        match (self.agent().map(|a| a.agent), self.cwd()) {
+            (Some(agent), Some(cwd)) => {
+                self.suggest
+                    .refresh(&self.input, agent, &cwd, &self.client, cx)
+            }
+            _ => self.suggest = Default::default(),
+        }
+        cx.notify();
+    }
+
+    fn suggest_prev(&mut self, _: &crate::suggest::Prev, _: &mut Window, cx: &mut Context<Self>) {
+        self.suggest.step(-1);
+        cx.notify();
+    }
+
+    fn suggest_next(&mut self, _: &crate::suggest::Next, _: &mut Window, cx: &mut Context<Self>) {
+        self.suggest.step(1);
+        cx.notify();
+    }
+
+    fn suggest_accept(
+        &mut self,
+        _: &crate::suggest::Accept,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.suggest.accept(None, &self.input, cx);
+    }
+
+    fn suggest_dismiss(
+        &mut self,
+        _: &crate::suggest::Dismiss,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.suggest.dismiss();
+        cx.notify();
+    }
+
     fn text_changed(&mut self, cx: &mut Context<Self>) {
         self.error = None;
+        self.refresh_suggest(cx);
         let Some((repo, _)) = repo::split(self.input.read(cx).text()) else {
             return;
         };
@@ -479,8 +522,7 @@ impl Composer {
                 return;
             };
             let _ = this.update(cx, |c, cx| {
-                c.images
-                    .extend(paths.into_iter().filter(|p| attach::is_image(p)));
+                c.images.extend(paths.into_iter().filter(|p| p.is_file()));
                 cx.notify();
             });
         })
@@ -618,7 +660,27 @@ impl Render for Composer {
                     .flex()
                     .flex_col()
                     .child(heading)
-                    .child(card::card(self, window, cx))
+                    .child(
+                        div()
+                            .relative()
+                            .w_full()
+                            .when(self.suggest.open.is_some(), |d| d.key_context("Suggest"))
+                            .on_action(cx.listener(Self::suggest_prev))
+                            .on_action(cx.listener(Self::suggest_next))
+                            .on_action(cx.listener(Self::suggest_accept))
+                            .on_action(cx.listener(Self::suggest_dismiss))
+                            .child(card::card(self, window, cx))
+                            .children(self.suggest.open.as_ref().map(|open| {
+                                let composer = cx.entity().downgrade();
+                                crate::suggest::render(open, true, move |ix, _, cx| {
+                                    if let Some(c) = composer.upgrade() {
+                                        c.update(cx, |c, cx| {
+                                            c.suggest.accept(Some(ix), &c.input, cx)
+                                        });
+                                    }
+                                })
+                            })),
+                    )
                     .child(card::footer(self, cx))
                     .children(self.error.clone().map(|e| {
                         div()

@@ -159,6 +159,7 @@ struct Run {
     held: Option<(Value, Instant)>,
     /// When an ignored interrupt gives up and kills the CLI.
     kill_at: Option<Instant>,
+    heard: bool,
     input: u64,
     output: u64,
     limited: bool,
@@ -172,6 +173,7 @@ impl Run {
             interrupted: false,
             held: None,
             kill_at: None,
+            heard: false,
             input: 0,
             output: 0,
             limited: false,
@@ -214,7 +216,13 @@ impl Actor {
             });
             tokio::select! {
                 line = lines.next_line() => match line {
-                    Ok(Some(line)) => self.line(&line),
+                    Ok(Some(line)) => {
+                        let resend = self.first_word();
+                        self.line(&line);
+                        if resend {
+                            self.write(wire::interrupt_line("hs-interrupt")).await;
+                        }
+                    }
                     _ => break,
                 },
                 input = rx.recv() => match input {
@@ -268,8 +276,19 @@ impl Actor {
                 run.kill_at = Some(Instant::now() + self.patience);
                 self.write(wire::interrupt_line("hs-interrupt")).await;
             }
-            Input::Answer { request, answer } => {
-                if let Some((input, rules)) = self.approvals.remove(&request) {
+            Input::Answer {
+                request,
+                answer,
+                answers,
+            } => {
+                if let Some((mut input, rules)) = self.approvals.remove(&request) {
+                    if !answers.is_empty() && input.is_object() {
+                        let map: serde_json::Map<String, Value> = answers
+                            .into_iter()
+                            .map(|(q, a)| (q, Value::String(a)))
+                            .collect();
+                        input["answers"] = Value::Object(map);
+                    }
                     self.write(wire::answer_line(&request, input, rules, answer))
                         .await;
                 }
@@ -316,6 +335,19 @@ impl Actor {
         false
     }
 
+    // a CLI still starting up can drop an interrupt written before it said anything
+    fn first_word(&mut self) -> bool {
+        let patience = self.patience;
+        let Some(run) = self.run.as_mut().filter(|r| !r.heard) else {
+            return false;
+        };
+        run.heard = true;
+        if run.interrupted {
+            run.kill_at = Some(Instant::now() + patience);
+        }
+        run.interrupted
+    }
+
     fn line(&mut self, line: &str) {
         let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
             return;
@@ -344,6 +376,10 @@ impl Actor {
                     thread: text(&v["session_id"]),
                     cwd: cwd.unwrap_or_else(|| self.cwd.clone()),
                 });
+                let names = commands(&v);
+                if !names.is_empty() {
+                    (self.emit)(RunEvent::Commands { names });
+                }
             }
             // the CLI starts every turn with an init; one with no run live is a turn it took
             // on its own, after a background subagent finished
@@ -703,6 +739,22 @@ fn result_error(v: &Value) -> String {
     }
 }
 
+fn commands(init: &Value) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for list in [&init["slash_commands"], &init["skills"]] {
+        for item in list.as_array().into_iter().flatten() {
+            let name = item
+                .as_str()
+                .or_else(|| item["name"].as_str())
+                .unwrap_or_default();
+            let name = name.trim_start_matches('/');
+            if !name.is_empty() && !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
 #[cfg(test)]
 mod tests {
     #[test]

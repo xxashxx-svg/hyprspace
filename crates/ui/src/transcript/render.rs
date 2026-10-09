@@ -3,10 +3,12 @@
 // until clicked, approval prompts with their buttons, and the pill-shaped box to reply or steer.
 
 use chrono::TimeZone;
+use std::time::Duration;
+
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable, FontWeight, IntoElement,
-    MouseButton, ScrollHandle, ScrollWheelEvent, SharedString, StyledText, Window, div, prelude::*,
-    px, relative,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable,
+    FontWeight, IntoElement, MouseButton, ScrollHandle, ScrollWheelEvent, SharedString, StyledText,
+    Window, div, prelude::*, px, relative,
 };
 use hyprspace_proto::{RunStatus, Tool};
 
@@ -14,6 +16,7 @@ use super::model::Item;
 use super::{TranscriptView, tool};
 use crate::assets::{icon, mark};
 use crate::composer::model_menu::{self, Host as _, ModelMenu};
+use crate::slide::Glide;
 use crate::{attach, colors, markdown, spinner, widgets};
 
 /// The transcript and the composer share one column, so their edges line up. Text runs 768px
@@ -27,7 +30,7 @@ pub fn view(
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
     let items = items(v, cx);
-    let working = v.model.elapsed().map(working);
+    let working = v.model.elapsed().map(|secs| working(secs, v.stopping));
     let loading = v.loading.then(|| {
         div()
             .text_size(px(12.))
@@ -47,8 +50,7 @@ pub fn view(
                 folder_name(v)
             ))
     });
-    // only while a reply streams: then new text would land out of sight
-    let jump = (v.model.running() && !v.at_bottom()).then(|| jump(cx));
+    let jump = (!v.at_bottom()).then(|| jump(cx));
     // every row is its own child of the scroll, so the scroll handle knows where each prompt is
     let lead = usize::from(loading.is_some()) + usize::from(empty.is_some());
     let prompts: Vec<usize> = items
@@ -103,6 +105,7 @@ pub fn view(
         )
         .child(composer(v, window, cx))
         .children(model_menu(v, window, cx))
+        .children(permission_menu(v, window, cx))
         .into_any_element()
 }
 
@@ -127,7 +130,7 @@ fn folder_name(v: &TranscriptView) -> String {
         .unwrap_or_else(|| "this folder".into())
 }
 
-fn working(secs: u64) -> AnyElement {
+fn working(secs: u64, stopping: bool) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -135,12 +138,12 @@ fn working(secs: u64) -> AnyElement {
         .text_size(px(12.))
         .text_color(colors::text3())
         .child(spinner::eclipse("working", colors::text3()))
-        .child(
-            div()
-                .text_color(colors::text2())
-                .child(format!("Working {secs}s")),
-        )
-        .child("· Esc to stop")
+        .child(div().text_color(colors::text2()).child(if stopping {
+            "Stopping".to_string()
+        } else {
+            format!("Working {secs}s")
+        }))
+        .when(!stopping, |d| d.child("· Esc to stop"))
         .into_any_element()
 }
 
@@ -183,12 +186,25 @@ fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
 /// Each row, and whether it is one of the user's prompts.
 fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<(bool, AnyElement)> {
     let all = &v.model.items;
+    let last_todo = all.iter().rposition(|i| {
+        matches!(i, Item::Tool { tool, .. } if super::ask::named(tool).is_some_and(|(n, _)| n == super::ask::TODO))
+    });
     let mut out = Vec::new();
     let mut ix = 0;
     while ix < all.len() {
+        if super::ask::special(&all[ix]) {
+            let todo = matches!(&all[ix], Item::Tool { tool, .. } if super::ask::named(tool).is_some_and(|(n, _)| n == super::ask::TODO));
+            if !todo || Some(ix) == last_todo {
+                out.push((false, item(v, ix, &all[ix], cx)));
+            }
+            ix += 1;
+            continue;
+        }
         let quiet = all[ix..]
             .iter()
-            .take_while(|i| matches!(i, Item::Tool { .. } | Item::Thinking { .. }))
+            .take_while(|i| {
+                matches!(i, Item::Tool { .. } | Item::Thinking { .. }) && !super::ask::special(i)
+            })
             .count();
         // a run that finished fine needs no line, the way zeron's transcript has none
         if let Item::Finished {
@@ -233,11 +249,17 @@ fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<(bool, Any
     out
 }
 
-/// The prompt being read: the last one above a line a third of the way down the view, or the last
-/// one at all once the view is at the bottom, where the latest prompt can sit below the line.
+/// The prompt being read: the first at the top, the last at the bottom, and between them the last
+/// one above a line a third of the way down the view.
 fn lit(scroll: &ScrollHandle, prompts: &[usize]) -> usize {
-    if -scroll.offset().y >= scroll.max_offset().y - px(4.) {
-        return prompts.len().saturating_sub(1);
+    let last = prompts.len().saturating_sub(1);
+    let max = scroll.max_offset().y;
+    let y = -scroll.offset().y;
+    if max <= px(4.) || y >= max - px(4.) {
+        return last;
+    }
+    if y <= px(4.) {
+        return 0;
     }
     let view = scroll.bounds();
     // a row's bounds are where it sits unscrolled, so the line moves down by the scroll instead
@@ -248,8 +270,9 @@ fn lit(scroll: &ScrollHandle, prompts: &[usize]) -> usize {
         .unwrap_or(0)
 }
 
-/// One tick per prompt on the left edge, like T3 Code's and zeron's: the one for the part being
-/// read lit, a click scrolling to its prompt. `prompts` are the prompts' rows in the scroll.
+/// One tick per prompt on the left edge: the one for the part being read lit, the ones near the
+/// pointer longer the closer they are, and a card with the prompt and the start of its reply
+/// beside the hovered one. A click scrolls to its prompt. `prompts` are the prompts' rows.
 fn ticks(
     v: &TranscriptView,
     prompts: &[usize],
@@ -269,45 +292,159 @@ fn ticks(
             cx.notify();
         }
     });
-    let marks = prompts.iter().enumerate().map(|(n, &row)| {
-        let on = n == lit;
-        let group = SharedString::from(format!("tick-{n}"));
+    let hover = v.hover_tick.get().filter(|&h| h < prompts.len());
+    let previews = previews(&v.model.items);
+    let mut glides = v.rail.borrow_mut();
+    glides.resize_with(prompts.len(), Glide::default);
+    let marks: Vec<AnyElement> = prompts
+        .iter()
+        .enumerate()
+        .map(|(n, &row)| {
+            let near = hover.map(|h| h.abs_diff(n));
+            let width = match near {
+                Some(0) => 18.,
+                Some(1) => 13.,
+                Some(2) => 10.,
+                _ if n == lit => 12.,
+                _ => 6.,
+            };
+            let bar = glides[n].toward(width).apply(
+                "tick-bar",
+                div().h(px(1.5)).rounded_full(),
+                |d, w| {
+                    let k = ((w - 6.) / 12.).clamp(0., 1.);
+                    d.w(px(w)).bg(colors::text1().opacity(0.3 + 0.7 * k))
+                },
+            );
+            div()
+                .id(("tick", n))
+                .flex()
+                .items_center()
+                .w(px(24.))
+                .h(px(9.))
+                .cursor_pointer()
+                .on_hover(cx.listener(move |v, on: &bool, _, cx| {
+                    if *on {
+                        v.hover_tick.set(Some(n));
+                    } else if v.hover_tick.get() == Some(n) {
+                        v.hover_tick.set(None);
+                    }
+                    cx.notify();
+                }))
+                .child(bar)
+                .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+                    v.scroll.scroll_to_top_of_item(row);
+                    cx.notify();
+                }))
+                .into_any_element()
+        })
+        .collect();
+    let card = hover.map(|n| {
+        let (title, reply) = previews.get(n).cloned().unwrap_or_default();
         div()
-            .id(("tick", n))
-            .group(group.clone())
+            .absolute()
+            .left(px(30.))
+            .top(px(n as f32 * 9. - 18.))
+            .w(px(320.))
             .flex()
-            .items_center()
-            .w(px(16.))
-            .h(px(8.))
-            .cursor_pointer()
+            .flex_col()
+            .gap(px(4.))
+            .px(px(14.))
+            .py(px(11.))
+            .rounded(px(12.))
+            .border_1()
+            .border_color(colors::border2())
+            .bg(colors::surface2())
+            .shadow(colors::shadow())
             .child(
                 div()
-                    .h(px(1.5))
-                    .w(px(if on { 10. } else { 7. }))
-                    .rounded_full()
-                    .bg(if on {
-                        colors::text1()
-                    } else {
-                        colors::text3().opacity(0.6)
-                    })
-                    .group_hover(group, |s| s.bg(colors::text1()).w(px(10.))),
+                    .truncate()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors::text1())
+                    .child(title),
             )
-            .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
-                v.scroll.scroll_to_top_of_item(row);
-                cx.notify();
-            }))
+            .when(!reply.is_empty(), |d| {
+                d.child(
+                    div()
+                        .text_size(px(12.5))
+                        .line_height(relative(1.5))
+                        .text_color(colors::text3())
+                        .line_clamp(3)
+                        .child(reply),
+                )
+            })
+            .with_animation(
+                ("tick-card", n),
+                Animation::new(Duration::from_millis(120)).with_easing(gpui::ease_in_out),
+                |d, t| d.opacity(t),
+            )
     });
     Some(
         div()
             .absolute()
-            .left(px(14.))
+            .left(px(10.))
             .top_0()
             .bottom_0()
             .flex()
             .items_center()
-            .child(div().flex().flex_col().children(marks))
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .children(marks)
+                    .children(card),
+            )
             .into_any_element(),
     )
+}
+
+fn previews(items: &[Item]) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for item in items {
+        match item {
+            Item::User { text, .. } => {
+                let first = text
+                    .lines()
+                    .map(str::trim)
+                    .find(|l| !l.is_empty())
+                    .unwrap_or("An image");
+                out.push((first.to_string(), String::new()));
+            }
+            Item::Text { source, .. } => {
+                if let Some((_, reply)) = out.last_mut()
+                    && reply.is_empty()
+                {
+                    *reply = plain(source);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn plain(source: &str) -> String {
+    let text: String = source
+        .lines()
+        .map(|l| l.trim().trim_start_matches(['#', '-', '*', '>', ' ']))
+        .filter(|l| !l.is_empty() && !l.starts_with("```"))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(['*', '`'], "");
+    text.chars().take(240).collect()
+}
+
+fn hover_copy(ix: usize, text: &str) -> gpui::Div {
+    div()
+        .flex()
+        .opacity(0.)
+        .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
+        .child(widgets::CopyButton::new(
+            format!("copy-msg-{ix}"),
+            text.to_string(),
+        ))
 }
 
 fn item(
@@ -334,6 +471,7 @@ fn item(
                         .child("Steer"),
                 )
             })
+            .group(SharedString::from(format!("msg-{ix}")))
             .child(
                 div()
                     .max_w(relative(0.8))
@@ -348,15 +486,40 @@ fn item(
                     .flex_col()
                     .gap_2()
                     .when(!text.is_empty(), |d| {
-                        let text = SharedString::from(text.clone());
-                        let styled = StyledText::new(text.clone());
+                        let long = text.lines().count() > 10 || text.len() > 900;
+                        let open = v.expanded.contains(&ix);
+                        let body = SharedString::from(text.clone());
+                        let styled = StyledText::new(body.clone());
                         let layout = styled.layout().clone();
-                        d.child(markdown::select::wrap(
-                            &format!("u{ix}"),
-                            text,
-                            layout,
-                            styled.into_any_element(),
-                        ))
+                        let shown = div()
+                            .when(long && !open, |d| d.max_h(px(220.)).overflow_hidden())
+                            .child(markdown::select::wrap(
+                                &format!("u{ix}"),
+                                body,
+                                layout,
+                                styled.into_any_element(),
+                            ));
+                        d.child(shown).when(long, |d| {
+                            d.child(
+                                div()
+                                    .id(("show-full", ix))
+                                    .text_size(px(12.))
+                                    .text_color(colors::text3())
+                                    .cursor_pointer()
+                                    .hover(|s| s.text_color(colors::text1()))
+                                    .child(if open {
+                                        "Show less"
+                                    } else {
+                                        "Show full message"
+                                    })
+                                    .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+                                        if !v.expanded.remove(&ix) {
+                                            v.expanded.insert(ix);
+                                        }
+                                        cx.notify();
+                                    })),
+                            )
+                        })
                     })
                     .when(!images.is_empty(), |d| {
                         d.child(
@@ -368,13 +531,19 @@ fn item(
                         )
                     }),
             )
+            .when(!text.is_empty(), |d| d.child(hover_copy(ix, text)))
             .into_any_element(),
-        Item::Text { blocks, .. } => match blocks {
+        Item::Text { blocks, source } => match blocks {
             Some(b) => div()
+                .group(SharedString::from(format!("msg-{ix}")))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
                 .text_size(px(14.))
                 .line_height(relative(1.65))
                 .text_color(colors::text1())
                 .child(markdown::render(b, &format!("t{ix}")))
+                .child(hover_copy(ix, source))
                 .into_any_element(),
             None => div().into_any_element(),
         },
@@ -408,6 +577,15 @@ fn item(
                     )
                 })
                 .into_any_element()
+        }
+        Item::Tool { tool, .. } if super::ask::special(&v.model.items[ix]) => {
+            match super::ask::named(tool) {
+                Some((super::ask::PLAN, input)) => {
+                    super::ask::plan_card(v, None, input, None, false, ix, cx)
+                }
+                Some((super::ask::TODO, input)) => super::ask::todo_card(input),
+                _ => main_tool(ix, tool, None, false, cx),
+            }
         }
         Item::Tool {
             tool, done, open, ..
@@ -841,6 +1019,7 @@ fn composer(
                         .flex_none()
                         .items_center()
                         .gap(px(4.))
+                        .child(permission_chip(v, running, cx))
                         .child(model_chip)
                         .children(effort_chip)
                         .child(action),
@@ -881,10 +1060,52 @@ fn composer(
                 }))
                 .children(v.model.context.map(context)),
         );
+    let suggestions = v.suggest.open.as_ref().map(|open| {
+        let view = cx.entity().downgrade();
+        crate::suggest::render(open, false, move |ix, _, cx| {
+            if let Some(v) = view.upgrade() {
+                v.update(cx, |v, cx| v.take_suggestion(ix, cx));
+            }
+        })
+    });
+    let pill = div()
+        .relative()
+        .w_full()
+        .when(v.suggest.open.is_some(), |d| d.key_context("Suggest"))
+        .on_action(cx.listener(TranscriptView::suggest_prev))
+        .on_action(cx.listener(TranscriptView::suggest_next))
+        .on_action(cx.listener(TranscriptView::suggest_accept))
+        .on_action(cx.listener(TranscriptView::suggest_dismiss))
+        .child(pill)
+        .children(suggestions);
+    let tasks = super::ask::progress(&v.model.items)
+        .filter(|_| running)
+        .map(|(done, total, now)| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(12.))
+                .pb(px(8.))
+                .text_size(px(12.))
+                .text_color(colors::text3())
+                .child(icon("list-checks", 12., colors::text3()))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(colors::text2())
+                        .child(format!("Tasks {done} of {total}")),
+                )
+                .when(!now.is_empty(), |d| {
+                    d.child("\u{b7}")
+                        .child(div().min_w_0().truncate().child(now))
+                })
+        });
     centered(
         column()
             .pb(px(12.))
             .children(tray(v, cx))
+            .children(tasks)
             .child(pill)
             .child(foot),
     )
@@ -1004,6 +1225,82 @@ fn context((used, window): (u64, u64)) -> AnyElement {
         .child(crate::usage::ring(pct, color))
         .child(format!("{}% context", pct.round()))
         .into_any_element()
+}
+
+fn permission_chip(
+    v: &TranscriptView,
+    running: bool,
+    cx: &mut Context<TranscriptView>,
+) -> AnyElement {
+    use hyprspace_proto::Permission;
+    let p = v.launch.permission;
+    let glyph = match p {
+        Permission::Plan => "list-checks",
+        Permission::Ask => "hand",
+        Permission::Auto => "file-pen-line",
+        Permission::Bypass => "lock-open",
+    };
+    div()
+        .id("thread-permission")
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .h(px(26.))
+        .px(px(8.))
+        .rounded(px(8.))
+        .text_size(px(12.5))
+        .text_color(colors::text3())
+        .when(!running, |d| {
+            d.cursor_pointer()
+                .hover(|s| s.bg(colors::ink(0.06)))
+                .on_click(cx.listener(|v, e: &ClickEvent, _, cx| {
+                    let at = e.position();
+                    v.perm_menu = Some(gpui::point(at.x - px(240.), at.y));
+                    cx.notify();
+                }))
+        })
+        .child(icon(glyph, 12., colors::text3()))
+        .child(crate::composer::pickers::permission_label(p))
+        .into_any_element()
+}
+
+pub(super) fn permission_menu(
+    v: &TranscriptView,
+    window: &mut Window,
+    cx: &mut Context<TranscriptView>,
+) -> Option<AnyElement> {
+    use hyprspace_proto::Permission;
+    let at = v.perm_menu?;
+    let rows = div().w(px(280.)).flex().flex_col().gap(px(1.)).children(
+        [
+            Permission::Plan,
+            Permission::Ask,
+            Permission::Auto,
+            Permission::Bypass,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, mode)| {
+            widgets::menu_item(
+                ("thread-perm", i),
+                crate::composer::pickers::permission_label(mode),
+                Some(crate::composer::pickers::permission_note(mode).into()),
+                mode == v.launch.permission,
+            )
+            .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.pick_permission(mode, cx)))
+        }),
+    );
+    let close = cx.listener(|v, _: &(), _, cx| {
+        v.perm_menu = None;
+        cx.notify();
+    });
+    Some(widgets::popup(
+        at,
+        widgets::Open::Up,
+        window,
+        move |w, cx| close(&(), w, cx),
+        rows,
+    ))
 }
 
 fn model_menu(

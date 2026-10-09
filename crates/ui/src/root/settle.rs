@@ -11,8 +11,8 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window, div,
-    prelude::*, px,
+    AnimationExt, AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window,
+    div, prelude::*, px,
 };
 use hyprspace_proto::{Agent, Snooze, Thread, ThreadKind};
 
@@ -114,6 +114,7 @@ impl Root {
             t.settled = on;
             if on {
                 t.snooze = None;
+                t.pinned = None;
             } else {
                 // back in the active list for a full window before it can settle again
                 t.touched = now_ms();
@@ -127,27 +128,18 @@ impl Root {
         cx.notify();
     }
 
-    /// Settles every thread at work in a space, for a project that is done for now.
-    pub(crate) fn settle_space(&mut self, space: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let threads: Vec<u64> = self
+    pub(crate) fn toggle_pin(&mut self, thread: u64, cx: &mut Context<Self>) {
+        let pinned = self
             .state
-            .space(space)
-            .map(|s| {
-                s.threads
-                    .iter()
-                    .filter(|t| t.active())
-                    .map(|t| t.id)
-                    .collect()
-            })
-            .unwrap_or_default();
-        for id in threads {
-            if let Some(t) = self.state.thread_mut(id) {
-                t.settled = true;
-                t.snooze = None;
-            }
-            self.free(id);
+            .thread(thread)
+            .is_some_and(|(_, t)| t.pinned.is_some());
+        self.pin(thread, !pinned, cx);
+    }
+
+    pub(crate) fn pin(&mut self, thread: u64, on: bool, cx: &mut Context<Self>) {
+        if let Some(t) = self.state.thread_mut(thread) {
+            t.pinned = on.then(now_ms);
         }
-        self.leave(window, cx);
         self.save();
         cx.notify();
     }
@@ -417,51 +409,111 @@ impl Root {
     /// The toast after a settle or a snooze, with Undo, for a few seconds.
     pub(crate) fn undo_toast(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let u = self.undo.as_ref().filter(|u| u.at.elapsed() < UNDO_FOR)?;
-        let title = self
+        let (title, snooze) = self
             .state
             .thread(u.thread)
-            .map(|(_, t)| t.title.clone())
+            .map(|(_, t)| (t.title.clone(), t.snooze))
             .unwrap_or_default();
+        let (glyph, what) = match snooze.filter(|_| u.what == "Snoozed") {
+            Some(s) => ("clock", format!("Snoozed until {}", self.wake_text(s))),
+            None => ("archive", u.what.to_string()),
+        };
+        let tint = colors::accent();
+        let bar = div()
+            .absolute()
+            .left_0()
+            .bottom_0()
+            .h(px(2.))
+            .bg(tint.opacity(0.7))
+            .with_animation(
+                ("undo-bar", u.serial),
+                gpui::Animation::new(UNDO_FOR),
+                move |d, t| d.w(gpui::relative(1. - t)),
+            );
         let toast = div()
+            .id("undo-toast")
+            .occlude()
+            .relative()
+            .overflow_hidden()
             .flex()
             .items_center()
-            .gap(px(12.))
-            .pl(px(14.))
+            .gap(px(10.))
+            .min_w(px(300.))
+            .max_w(px(460.))
+            .pl(px(10.))
             .pr(px(6.))
-            .py(px(6.))
-            .rounded(px(10.))
-            .bg(colors::surface3())
+            .py(px(8.))
+            .rounded(px(12.))
+            .bg(colors::surface2())
             .border_1()
             .border_color(colors::border2())
             .shadow(colors::shadow())
-            .text_size(px(12.5))
             .child(
                 div()
-                    .max_w(px(320.))
-                    .truncate()
-                    .text_color(colors::text2())
-                    .child(format!("{} \"{title}\"", u.what)),
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .size(px(26.))
+                    .rounded_full()
+                    .bg(tint.opacity(0.14))
+                    .child(icon(glyph, 13., tint)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_baseline()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors::text1())
+                            .child(what),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(12.5))
+                            .text_color(colors::text3())
+                            .child(title),
+                    ),
             )
             .child(
                 div()
                     .id("undo")
+                    .flex_none()
                     .px(px(10.))
                     .py(px(4.))
-                    .rounded(px(6.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors::text1())
+                    .rounded(px(7.))
+                    .text_size(px(12.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(tint)
                     .cursor_pointer()
-                    .hover(|s| s.bg(colors::ink(0.08)))
+                    .hover(|s| s.bg(tint.opacity(0.12)))
                     .child("Undo")
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.undo(window, cx))),
-            );
-        let toast = crate::slide::ease_in(toast, ("undo-toast", u.serial), 160, |d, t| {
-            d.opacity(t).mb(px(8. * (1. - t)))
+            )
+            .child(
+                widgets::icon_button("undo-close", "x", 24.).on_click(cx.listener(
+                    |r, _: &ClickEvent, _, cx| {
+                        r.undo = None;
+                        cx.notify();
+                    },
+                )),
+            )
+            .child(bar);
+        let toast = crate::slide::ease_in(toast, ("undo-toast", u.serial), 180, |d, t| {
+            d.opacity(t).mt(px(-8. * (1. - t)))
         });
         Some(
             div()
                 .absolute()
-                .bottom(px(18.))
+                .top(px(52.))
                 .left_0()
                 .right_0()
                 .flex()

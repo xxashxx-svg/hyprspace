@@ -97,16 +97,29 @@ fn thread_request(launch: &Launch, mcp: Option<&crate::Mcp>) -> (&'static str, V
     }
 }
 
-/// Prompts as app-server input: each one's text, then its images as local files.
+/// Prompts as app-server input: each one's text, then its images as local files. Any other
+/// attached file is named in the text, for the agent to open itself.
 fn input(prompts: &[Prompt]) -> Value {
     let mut out = Vec::new();
     for p in prompts {
-        out.push(json!({ "type": "text", "text": p.text, "text_elements": [] }));
-        for image in &p.images {
+        let (images, files): (Vec<_>, Vec<_>) = p.images.iter().partition(|f| image(f));
+        let mut text = p.text.clone();
+        for f in files {
+            text.push_str(&format!("\n\nAttached file: {}", f.display()));
+        }
+        out.push(json!({ "type": "text", "text": text, "text_elements": [] }));
+        for image in images {
             out.push(json!({ "type": "localImage", "path": image }));
         }
     }
     Value::Array(out)
+}
+
+fn image(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp"))
 }
 
 impl Harness for Codex {
@@ -289,7 +302,9 @@ impl Actor {
                     drop(self.rpc.request("turn/interrupt", params));
                 }
             }
-            Input::Answer { request, answer } => {
+            Input::Answer {
+                request, answer, ..
+            } => {
                 if let Some((id, elicit)) = self.approvals.remove(&request) {
                     let reply = match (elicit, answer) {
                         (true, Answer::Deny) => json!({ "action": "decline" }),
@@ -625,7 +640,7 @@ mod tests {
         let v = input(&[
             Prompt {
                 text: "look".into(),
-                images: vec![PathBuf::from("/a.png")],
+                images: vec![PathBuf::from("/a.png"), PathBuf::from("/notes.pdf")],
             },
             Prompt::text("and this"),
         ]);
@@ -637,6 +652,11 @@ mod tests {
             .collect();
         assert_eq!(kinds, ["text", "localImage", "text"]);
         assert_eq!(v[1]["path"], "/a.png");
+        let text = v[0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("look") && text.ends_with("notes.pdf"),
+            "{text}"
+        );
         assert_eq!(key(&json!(7)), "7");
         assert_eq!(key(&json!("r-1")), "r-1");
         // codex 0.159.3 passes a rejected model's API error through as JSON text

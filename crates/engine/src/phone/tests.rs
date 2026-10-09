@@ -290,7 +290,15 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
         // a photo goes up, comes back as a path, and only such a path can be sent
         use base64::Engine as _;
         let jpeg = base64::engine::general_purpose::STANDARD.encode([0xFF, 0xD8, 0xFF, 0xE0, 1, 2]);
-        say(&mut ws, &Up::Upload { id: 9, data: jpeg }).await;
+        say(
+            &mut ws,
+            &Up::Upload {
+                id: 9,
+                data: jpeg,
+                name: None,
+            },
+        )
+        .await;
         let photo = loop {
             if let Down::Uploaded { id: 9, path, error } = hear(&mut ws).await {
                 assert_eq!(error, None);
@@ -551,21 +559,28 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
 }
 
 #[test]
-fn only_photos_are_saved_and_sent() {
+fn uploads_are_photos_or_named_files() {
     use base64::Engine as _;
     let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
-    let png = super::save_photo(&b64(&[0x89, b'P', b'N', b'G', 1])).unwrap();
+    let png = super::save_upload(&b64(&[0x89, b'P', b'N', b'G', 1]), None).unwrap();
     assert!(png.extension().is_some_and(|e| e == "png"));
-    assert!(super::is_photo(&png));
+    assert!(super::is_upload(&png));
     let _ = std::fs::remove_file(&png);
-    assert!(super::save_photo(&b64(b"MZ not a photo")).is_err());
-    assert!(super::save_photo("%%%").is_err());
-    assert!(!super::is_photo(
+    assert!(super::save_upload(&b64(b"MZ not a photo"), None).is_err());
+    assert!(super::save_upload("%%%", None).is_err());
+    let doc = super::save_upload(&b64(b"hi"), Some("../My notes (1).txt")).unwrap();
+    let name = doc.file_name().unwrap().to_string_lossy().to_string();
+    assert!(name.starts_with("phone-") && name.ends_with("-My_notes__1_.txt"));
+    assert!(super::is_upload(&doc));
+    let _ = std::fs::remove_file(&doc);
+    assert_eq!(super::clean(".."), "file");
+    assert_eq!(super::clean("C:\\x\\a..b.pdf"), "a_b.pdf");
+    assert!(!super::is_upload(
         &std::env::temp_dir()
             .join("hyprspace-images")
             .join("other.png")
     ));
-    assert!(!super::is_photo(&std::env::temp_dir().join("phone-x.png")));
+    assert!(!super::is_upload(&std::env::temp_dir().join("phone-x.png")));
 }
 
 #[test]

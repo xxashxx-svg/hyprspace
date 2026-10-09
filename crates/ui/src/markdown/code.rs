@@ -137,25 +137,30 @@ impl RenderOnce for CodeBlock {
             None => Vec::new(),
         };
         let lang = self.lang;
+        let copy = crate::widgets::CopyButton::new(format!("{key}-copy"), self.text.clone());
         div()
             .flex()
             .flex_col()
             .rounded(px(10.))
             .bg(colors::ink(0.035))
-            .when(!lang.is_empty(), |d| {
-                d.child(
-                    div()
-                        .px(px(14.))
-                        .pt(px(9.))
-                        .text_size(px(11.))
-                        .text_color(colors::text3())
-                        .child(lang),
-                )
-            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .pl(px(14.))
+                    .pr(px(6.))
+                    .pt(px(5.))
+                    .text_size(px(11.))
+                    .text_color(colors::text3())
+                    .child(lang)
+                    .child(copy),
+            )
             .child(
                 div()
                     .px(px(14.))
-                    .py(px(10.))
+                    .pt(px(2.))
+                    .pb(px(10.))
                     .font_family(MONO)
                     .text_size(px(12.))
                     .line_height(px(19.))

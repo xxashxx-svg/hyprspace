@@ -15,6 +15,10 @@ pub enum FolderCommand {
     ListDir {
         path: PathBuf,
     },
+    /// Every file under `cwd`, as paths relative to it, for mentions. Answered with `Files`.
+    ListFiles {
+        cwd: PathBuf,
+    },
     /// A text file for the viewer. Answered with `File`.
     ReadFile {
         path: PathBuf,
@@ -70,6 +74,10 @@ pub enum FolderEvent {
     File {
         path: PathBuf,
         text: Result<String, String>,
+    },
+    Files {
+        cwd: PathBuf,
+        files: Vec<String>,
     },
     Saved {
         path: PathBuf,

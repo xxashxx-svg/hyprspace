@@ -192,6 +192,7 @@ pub struct Thread {
     pub queue: Vec<Prompt>,
     pub resume_at: Option<u64>,
     pub parent: Option<u64>,
+    pub pinned: Option<u64>,
 }
 
 /// When a snoozed thread comes back.
@@ -221,6 +222,7 @@ impl Default for Thread {
             queue: Vec::new(),
             resume_at: None,
             parent: None,
+            pinned: None,
         }
     }
 }
@@ -254,6 +256,7 @@ impl Thread {
     /// screen or working. One with no known time has nothing to count from, so it stays.
     pub fn settles(&self, now: u64, after: SettleAfter) -> bool {
         self.active()
+            && self.pinned.is_none()
             && self.last_touch() > 0
             && after
                 .ms()
@@ -429,6 +432,8 @@ pub enum Entry {
     Answer {
         request: String,
         answer: crate::run::Answer,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        answers: Vec<(String, String)>,
     },
     Run {
         event: RunEvent,
@@ -461,7 +466,7 @@ mod tests {
     #[test]
     fn a_thread_settles_after_sitting_untouched() {
         const DAY: u64 = 24 * 60 * 60 * 1000;
-        let t = Thread {
+        let mut t = Thread {
             created: 0,
             touched: DAY,
             ..Thread::default()
@@ -469,6 +474,8 @@ mod tests {
         assert!(!t.settles(3 * DAY, SettleAfter::ThreeDays));
         assert!(t.settles(4 * DAY, SettleAfter::ThreeDays));
         assert!(!t.settles(40 * DAY, SettleAfter::Never));
+        t.pinned = Some(DAY);
+        assert!(!t.settles(40 * DAY, SettleAfter::ThreeDays));
         // settled or snoozed already, nothing to do
         let settled = Thread {
             settled: true,

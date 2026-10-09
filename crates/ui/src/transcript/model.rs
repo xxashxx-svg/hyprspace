@@ -293,6 +293,7 @@ impl Transcript {
                 self.thread = Some(thread);
                 self.cwd = Some(cwd);
             }
+            RunEvent::Commands { .. } => {}
             RunEvent::Text { text } => {
                 if let Some(run) = self.run.as_mut() {
                     run.said = true;

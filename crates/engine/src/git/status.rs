@@ -7,6 +7,15 @@ use hyprspace_proto::git::{BranchInfo, FileChange};
 
 use super::{Result, empty, git, git_cmd};
 
+pub fn ls_files(cwd: &Path) -> Result<Vec<String>> {
+    let out = git(cwd, &["ls-files", "-co", "--exclude-standard", "-z"])?;
+    Ok(out
+        .split('\0')
+        .filter(|f| !f.is_empty())
+        .map(String::from)
+        .collect())
+}
+
 /// Whether `cwd` is inside a git work tree.
 pub fn is_repo(cwd: &Path) -> bool {
     !empty(cwd) && git(cwd, &["rev-parse", "--is-inside-work-tree"]).is_ok()

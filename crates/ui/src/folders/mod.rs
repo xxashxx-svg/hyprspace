@@ -18,6 +18,9 @@ use crate::assets::icon;
 use crate::colors;
 use crate::input::{InputEvent, TextInput};
 
+mod sources;
+use sources::Stage;
+
 actions!(folders, [Prev, Next, OpenPicked]);
 
 pub fn bind_keys(cx: &mut gpui::App) {
@@ -114,7 +117,17 @@ pub struct FolderPicker {
     sel: usize,
     scroll: ScrollHandle,
     pub(crate) back: Option<FocusHandle>,
-    _sub: Subscription,
+    stage: Stage,
+    query: Entity<TextInput>,
+    field: Entity<TextInput>,
+    pick: usize,
+    parent: PathBuf,
+    refocus: bool,
+    for_parent: Option<Stage>,
+    request: Option<u64>,
+    line: Option<String>,
+    error: Option<String>,
+    _subs: Vec<Subscription>,
 }
 
 impl EventEmitter<PickerEvent> for FolderPicker {}
@@ -128,12 +141,34 @@ impl FolderPicker {
         cx: &mut Context<Self>,
     ) -> Self {
         let input = cx.new(|cx| TextInput::new("A folder's path", false, cx));
-        let sub = cx.subscribe(&input, |p, _, e: &InputEvent, cx| match e {
-            InputEvent::Changed => p.refresh(cx),
-            InputEvent::Submit => p.enter(cx),
-            InputEvent::Cancel => cx.emit(PickerEvent::Close),
-            InputEvent::Images(_) => {}
-        });
+        let query = cx.new(|cx| TextInput::new("Search", false, cx));
+        let field = cx.new(|cx| TextInput::new("", false, cx));
+        let subs = vec![
+            cx.subscribe(&input, |p, _, e: &InputEvent, cx| match e {
+                InputEvent::Changed => p.refresh(cx),
+                InputEvent::Submit => p.enter(cx),
+                InputEvent::Cancel => p.back(cx),
+                InputEvent::Images(_) => {}
+            }),
+            cx.subscribe(&query, |p, _, e: &InputEvent, cx| match e {
+                InputEvent::Changed => {
+                    p.pick = 0;
+                    cx.notify();
+                }
+                InputEvent::Submit => p.choose_picked(cx),
+                InputEvent::Cancel => cx.emit(PickerEvent::Close),
+                InputEvent::Images(_) => {}
+            }),
+            cx.subscribe(&field, |p, _, e: &InputEvent, cx| match e {
+                InputEvent::Changed => {
+                    p.error = None;
+                    cx.notify();
+                }
+                InputEvent::Submit => p.submit(cx),
+                InputEvent::Cancel => p.choose(Stage::Sources, cx),
+                InputEvent::Images(_) => {}
+            }),
+        ];
         let mut p = Self {
             client,
             input,
@@ -145,7 +180,17 @@ impl FolderPicker {
             sel: 0,
             scroll: ScrollHandle::new(),
             back,
-            _sub: sub,
+            stage: Stage::Sources,
+            query,
+            field,
+            pick: 0,
+            parent: start.clone(),
+            refocus: false,
+            for_parent: None,
+            request: None,
+            line: None,
+            error: None,
+            _subs: subs,
         };
         p.go(&start, cx);
         p
@@ -227,6 +272,29 @@ impl FolderPicker {
         }
     }
 
+    fn open(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        match self.for_parent.take() {
+            Some(form) => {
+                self.parent = path;
+                self.stage = form;
+                self.refocus = true;
+                cx.notify();
+            }
+            None => cx.emit(PickerEvent::Open(path)),
+        }
+    }
+
+    fn back(&mut self, cx: &mut Context<Self>) {
+        match self.for_parent.take() {
+            Some(form) => {
+                self.stage = form;
+                self.refocus = true;
+                cx.notify();
+            }
+            None => self.choose(Stage::Sources, cx),
+        }
+    }
+
     fn open_typed(&mut self, cx: &mut Context<Self>) {
         let text = self.text(cx);
         let (dir, partial) = split(&text, &self.home);
@@ -236,7 +304,7 @@ impl FolderPicker {
             dir.join(partial)
         };
         if path.is_dir() {
-            cx.emit(PickerEvent::Open(path));
+            self.open(path, cx);
         }
     }
 
@@ -244,18 +312,29 @@ impl FolderPicker {
         // the highlighted folder, or the one listed when that is going up or nothing
         let up = self.up.is_some() && self.sel == 0;
         match self.row_path(self.sel).filter(|_| !up) {
-            Some(path) => cx.emit(PickerEvent::Open(path)),
-            None => cx.emit(PickerEvent::Open(self.dir.clone())),
+            Some(path) => self.open(path, cx),
+            None => self.open(self.dir.clone(), cx),
         }
     }
 
     fn prev(&mut self, _: &Prev, _: &mut Window, cx: &mut Context<Self>) {
+        if self.stage == Stage::Sources {
+            self.pick = self.pick.saturating_sub(1);
+            cx.notify();
+            return;
+        }
         self.sel = self.sel.saturating_sub(1);
         self.scroll.scroll_to_item(self.sel);
         cx.notify();
     }
 
     fn next(&mut self, _: &Next, _: &mut Window, cx: &mut Context<Self>) {
+        if self.stage == Stage::Sources {
+            let last = self.sources_shown(cx).len().saturating_sub(1);
+            self.pick = (self.pick + 1).min(last);
+            cx.notify();
+            return;
+        }
         self.sel = (self.sel + 1).min(self.rows().saturating_sub(1));
         self.scroll.scroll_to_item(self.sel);
         cx.notify();
@@ -264,7 +343,11 @@ impl FolderPicker {
 
 impl Focusable for FolderPicker {
     fn focus_handle(&self, cx: &gpui::App) -> FocusHandle {
-        self.input.read(cx).focus_handle(cx)
+        match self.stage {
+            Stage::Sources => self.query.read(cx).focus_handle(cx),
+            Stage::Browse => self.input.read(cx).focus_handle(cx),
+            Stage::Create | Stage::Clone { .. } => self.field.read(cx).focus_handle(cx),
+        }
     }
 }
 
@@ -290,6 +373,15 @@ fn keycap(label: &str) -> AnyElement {
 
 impl Render for FolderPicker {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.refocus {
+            self.refocus = false;
+            let focus = self.focus_handle(cx);
+            window.focus(&focus, cx);
+        }
+        if self.stage != Stage::Browse {
+            return self.render_sources(cx);
+        }
+        let picking_parent = self.for_parent.is_some();
         let accent = colors::accent();
         let mut list = div()
             .id("folders-list")
@@ -384,12 +476,12 @@ impl Render for FolderPicker {
                                 .when(!on, |d| {
                                     d.opacity(0.).group_hover("folder-row", |s| s.opacity(1.))
                                 })
-                                .child("Open")
+                                .child(if picking_parent { "Use" } else { "Open" })
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                                .on_click(cx.listener(move |p, _: &ClickEvent, _, cx| {
                                     cx.stop_propagation();
                                     if let Some(path) = &open_path {
-                                        cx.emit(PickerEvent::Open(path.clone()));
+                                        p.open(path.clone(), cx);
                                     }
                                 })),
                         )
@@ -441,7 +533,11 @@ impl Render for FolderPicker {
                     .text_size(px(12.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors::text3())
-                    .child("Open a folder"),
+                    .child(if picking_parent {
+                        "Choose a location"
+                    } else {
+                        "Open a folder"
+                    }),
             )
             .child(
                 div()
@@ -453,6 +549,20 @@ impl Render for FolderPicker {
                     .pr(px(14.))
                     .border_b_1()
                     .border_color(colors::border1())
+                    .child(
+                        div()
+                            .id("folders-back")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size(px(24.))
+                            .ml(px(-6.))
+                            .rounded(px(6.))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(colors::ink(0.08)))
+                            .on_click(cx.listener(|p, _: &ClickEvent, _, cx| p.back(cx)))
+                            .child(icon("arrow-left", 15., colors::text2())),
+                    )
                     .child(icon("folder-open", 16., accent))
                     .child(
                         div()
@@ -524,12 +634,16 @@ impl Render for FolderPicker {
                             .text_color(colors::on_accent())
                             .cursor_pointer()
                             .hover(|s| s.bg(colors::accent_hover()))
-                            .child(format!("Open {here}"))
-                            .on_click(cx.listener(|p, _: &ClickEvent, _, cx| {
-                                cx.emit(PickerEvent::Open(p.dir.clone()))
-                            })),
+                            .child(format!(
+                                "{} {here}",
+                                if picking_parent { "Use" } else { "Open" }
+                            ))
+                            .on_click(
+                                cx.listener(|p, _: &ClickEvent, _, cx| p.open(p.dir.clone(), cx)),
+                            ),
                     ),
             )
+            .into_any_element()
     }
 }
 

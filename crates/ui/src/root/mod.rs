@@ -56,10 +56,9 @@ pub enum Action {
     NewThread(u64),
     NewTerminal(u64),
     Rename(Rename),
-    /// Settle every thread at work in a space.
-    SettleSpace(u64),
     /// Settles a thread, or brings it back.
     Settle(u64, bool),
+    Pin(u64, bool),
     /// Snoozes a thread until a time, in ms since the epoch.
     SnoozeUntil(u64, u64),
     /// Snoozes a thread until its agent finishes its turn.
@@ -68,8 +67,6 @@ pub enum Action {
     RemoveThread(u64),
     /// Opens the space's folder in an editor or the file manager.
     OpenIn(hyprspace_proto::Opener, u64),
-    /// Narrows the sidebar to a space's threads, by its name in the search box.
-    Filter(u64),
     CopyTitle(u64),
     CopyPath(u64),
     CopyConversation(u64),
@@ -370,12 +367,20 @@ impl Root {
             } => self
                 .composer
                 .update(cx, |c, cx| c.resumable(agent, cwd, sessions, cx)),
-            Event::CloneProgress { request, line } => self
-                .composer
-                .update(cx, |c, cx| c.clone_progress(request, line, cx)),
-            Event::Cloned { request, result } => self
-                .composer
-                .update(cx, |c, cx| c.cloned(request, result, cx)),
+            Event::CloneProgress { request, line } => {
+                if let Some(p) = &self.folder_picker {
+                    p.update(cx, |p, cx| p.clone_progress(request, line.clone(), cx));
+                }
+                self.composer
+                    .update(cx, |c, cx| c.clone_progress(request, line, cx))
+            }
+            Event::Cloned { request, result } => {
+                if let Some(p) = &self.folder_picker {
+                    p.update(cx, |p, cx| p.cloned(request, result.clone(), cx));
+                }
+                self.composer
+                    .update(cx, |c, cx| c.cloned(request, result, cx))
+            }
             Event::Run { id, event } => {
                 if let Some(View::Structured(v)) = self.view_of(id) {
                     v.update(cx, |v, cx| v.apply(event, cx));
@@ -439,7 +444,18 @@ impl Root {
             } => self.delegate(request, parent, ask, cx),
             Event::Folder(e) => self.folder_event(e, cx),
             Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
-            Event::Skills(e) => self.skills.update(cx, |s, cx| s.event(e, window, cx)),
+            Event::Skills(e) => {
+                if let hyprspace_proto::SkillEvent::List { cwd, items } = &e {
+                    crate::suggest::set_skills(cwd.clone(), items.clone(), cx);
+                    for view in self.views.values() {
+                        if let View::Structured(v) = view {
+                            v.update(cx, |v, cx| v.refresh_suggest(cx));
+                        }
+                    }
+                    self.composer.update(cx, |c, cx| c.refresh_suggest(cx));
+                }
+                self.skills.update(cx, |s, cx| s.event(e, window, cx))
+            }
             Event::Update(e) => {
                 let quit = e == hyprspace_proto::UpdateEvent::Quit;
                 self.updater.update(cx, |u, cx| u.event(e, cx));

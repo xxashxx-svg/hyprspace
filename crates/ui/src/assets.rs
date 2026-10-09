@@ -14,6 +14,10 @@ macro_rules! files {
 
 const FILES: &[(&str, &[u8])] = files!(
     "icons/search.svg",
+    "icons/pin.svg",
+    "icons/pin-off.svg",
+    "icons/link.svg",
+    "icons/github.svg",
     "icons/paperclip.svg",
     "icons/arrow-down.svg",
     "icons/square-pen.svg",
@@ -49,7 +53,7 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/list-checks.svg",
     "icons/hand.svg",
     "icons/file-pen-line.svg",
-    "icons/shield-off.svg",
+    "icons/lock-open.svg",
     "brand/claude.svg",
     "brand/openai.svg",
     // the main area, the dock, the viewer and the Open button

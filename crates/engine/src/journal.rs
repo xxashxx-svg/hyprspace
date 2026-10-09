@@ -165,6 +165,7 @@ mod tests {
         j.record(Entry::Answer {
             request: "r1".into(),
             answer: Answer::Allow,
+            answers: Vec::new(),
         });
         j.record(run(text("!")));
         drop(j);
@@ -179,7 +180,8 @@ mod tests {
                 run(text("Hello")),
                 Entry::Answer {
                     request: "r1".into(),
-                    answer: Answer::Allow
+                    answer: Answer::Allow,
+                    answers: Vec::new(),
                 },
                 run(text("!")),
             ]

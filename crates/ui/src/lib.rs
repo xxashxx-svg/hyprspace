@@ -19,6 +19,7 @@ mod sidebar;
 mod skills;
 mod slide;
 mod spinner;
+mod suggest;
 mod terminal;
 mod time;
 mod transcript;
@@ -38,4 +39,5 @@ pub fn init(cx: &mut gpui::App) {
     workbench::bind_keys(cx);
     palette::bind_keys(cx);
     folders::bind_keys(cx);
+    suggest::bind_keys(cx);
 }

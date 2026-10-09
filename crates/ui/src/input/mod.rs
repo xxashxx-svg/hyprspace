@@ -118,6 +118,8 @@ pub struct TextInput {
     layout: Vec<(usize, WrappedLine)>,
     bounds: Option<Bounds<Pixels>>,
     line_height: Pixels,
+    history: Vec<String>,
+    recall: Option<usize>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -140,7 +142,36 @@ impl TextInput {
             layout: Vec::new(),
             bounds: None,
             line_height: Pixels::ZERO,
+            history: Vec::new(),
+            recall: None,
         }
+    }
+
+    pub fn set_history(&mut self, entries: Vec<String>) {
+        if entries != self.history {
+            self.history = entries;
+            self.recall = None;
+        }
+    }
+
+    fn recall_step(&mut self, back: bool, cx: &mut Context<Self>) -> bool {
+        let at = self
+            .recall
+            .filter(|&i| self.history.get(i).is_some_and(|h| *h == self.content));
+        if self.history.is_empty() || (at.is_none() && !self.content.is_empty()) {
+            return false;
+        }
+        let next = match (at, back) {
+            (None, true) => Some(self.history.len() - 1),
+            (None, false) => return false,
+            (Some(i), true) => Some(i.saturating_sub(1)),
+            (Some(i), false) if i + 1 < self.history.len() => Some(i + 1),
+            (Some(_), false) => None,
+        };
+        self.recall = next;
+        let text = next.map(|i| self.history[i].clone()).unwrap_or_default();
+        self.set_text(text, cx);
+        true
     }
 
     pub fn text(&self) -> &str {
@@ -175,6 +206,14 @@ impl TextInput {
         self.selected = 0..self.content.len();
         self.reversed = false;
         cx.notify();
+    }
+
+    pub fn cursor_offset(&self) -> usize {
+        self.cursor()
+    }
+
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        self.replace(range, text, cx);
     }
 
     fn cursor(&self) -> usize {
@@ -310,13 +349,30 @@ impl TextInput {
     }
 
     fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        if self.at_edge(-1) && self.recall_step(true, cx) {
+            return;
+        }
         let to = self.vertical(-1).unwrap_or(0);
         self.move_to(to, cx);
     }
 
     fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        if self.at_edge(1) && self.recall_step(false, cx) {
+            return;
+        }
         let to = self.vertical(1).unwrap_or(self.content.len());
         self.move_to(to, cx);
+    }
+
+    fn at_edge(&self, rows: i32) -> bool {
+        let Some(at) = self.position_of(self.cursor()) else {
+            return true;
+        };
+        let y = at.y + self.line_height * rows as f32 + self.line_height / 2.;
+        let height = self.layout.iter().fold(Pixels::ZERO, |h, (_, line)| {
+            h + self.line_height * (line.wrap_boundaries().len() + 1) as f32
+        });
+        y < Pixels::ZERO || y >= height
     }
 
     fn word_left_action(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {

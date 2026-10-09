@@ -59,7 +59,11 @@ pub struct Session {
 pub(crate) enum Input {
     Send(Prompt),
     Interrupt,
-    Answer { request: String, answer: Answer },
+    Answer {
+        request: String,
+        answer: Answer,
+        answers: Vec<(String, String)>,
+    },
 }
 
 impl Session {
@@ -79,8 +83,12 @@ impl Session {
     }
 
     /// Answers the `RunEvent::Approval` named `request`. An unknown request is ignored.
-    pub fn answer(&self, request: String, answer: Answer) {
-        let _ = self.tx.send(Input::Answer { request, answer });
+    pub fn answer(&self, request: String, answer: Answer, answers: Vec<(String, String)>) {
+        let _ = self.tx.send(Input::Answer {
+            request,
+            answer,
+            answers,
+        });
     }
 
     /// True once the CLI is gone and the last event was sent.

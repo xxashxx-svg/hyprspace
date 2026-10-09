@@ -209,6 +209,8 @@ impl Root {
             },
             agent: t.agent().map(|l| l.agent),
             model: t.agent().map(|l| self.model_label(l)),
+            model_id: t.agent().and_then(|l| l.model.clone()).unwrap_or_default(),
+            effort: t.agent().and_then(|l| l.effort.clone()).unwrap_or_default(),
             status: match status {
                 Status::Idle => BoardStatus::Idle,
                 Status::Working => BoardStatus::Working,
@@ -229,8 +231,9 @@ impl Root {
             } else {
                 Shelf::Active
             },
-            rank: t.rank(),
+            rank: t.pinned.map_or(t.rank(), |at| i64::MAX - at as i64),
             live: self.views.contains_key(&id),
+            pinned: t.pinned.is_some(),
         }
     }
 
@@ -256,6 +259,16 @@ impl Root {
             } => {
                 if let Some(v) = self.structured_view(thread, cx) {
                     v.update(cx, |v, cx| v.approve(request, answer, cx));
+                }
+            }
+            Ask::Pin { thread, on } => self.pin(thread, on, cx),
+            Ask::Model {
+                thread,
+                model,
+                effort,
+            } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.repick(model, effort, cx));
                 }
             }
             Ask::Interrupt { thread } => {

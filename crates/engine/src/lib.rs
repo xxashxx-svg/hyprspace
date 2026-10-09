@@ -35,7 +35,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use hyprspace_harness::{Emit, Session};
-use hyprspace_proto::{Client, Command, Entry, Event, Events, SessionId};
+use hyprspace_proto::{Client, Command, Entry, Event, Events, RunEvent, SessionId};
 use tokio::runtime::Runtime;
 use tokio::task::block_in_place;
 
@@ -167,7 +167,10 @@ async fn serve(
                 let events = tx.clone();
                 let record = journal.clone();
                 let emit: Emit = Box::new(move |event| {
-                    if let Some(j) = &record {
+                    if let Some(j) = record
+                        .as_ref()
+                        .filter(|_| !matches!(event, RunEvent::Commands { .. }))
+                    {
                         j.record(Entry::Run {
                             event: event.clone(),
                         });
@@ -217,13 +220,15 @@ async fn serve(
                 id,
                 request,
                 answer,
+                answers,
             } => {
                 if let Some(live) = structured.get(&id) {
                     live.record(Entry::Answer {
                         request: request.clone(),
                         answer,
+                        answers: answers.clone(),
                     });
-                    live.session.answer(request, answer);
+                    live.session.answer(request, answer, answers);
                 }
             }
             Command::LoadJournal { id, journal } => {
@@ -245,6 +250,7 @@ async fn serve(
                 name,
                 here,
             } => requests.clone_repo(request, url, parent, name, here),
+            Command::NewProject { request, path } => requests.new_project(request, path),
             Command::OpenTerminal {
                 id,
                 cwd,

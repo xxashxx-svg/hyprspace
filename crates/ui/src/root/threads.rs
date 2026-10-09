@@ -415,6 +415,7 @@ impl Root {
                 {
                     launch.model = l.model.clone();
                     launch.effort = l.effort.clone();
+                    launch.permission = l.permission;
                 }
                 self.save();
             }
@@ -616,8 +617,8 @@ impl Root {
                 self.new_terminal(space, true, window, cx);
             }
             Action::Rename(target) => self.start_rename(target, window, cx),
-            Action::SettleSpace(id) => self.settle_space(id, window, cx),
             Action::Settle(id, on) => self.settle(id, on, window, cx),
+            Action::Pin(id, on) => self.pin(id, on, cx),
             Action::Wake(id) => self.snooze(id, None, window, cx),
             Action::RemoveThread(id) => {
                 self.drop_view(id);
@@ -636,11 +637,6 @@ impl Root {
             }
             Action::SnoozeDone(id) => {
                 self.snooze(id, Some(hyprspace_proto::Snooze::Done), window, cx)
-            }
-            Action::Filter(space) => {
-                if let Some(name) = self.state.space(space).map(|s| s.name.clone()) {
-                    self.search.update(cx, |i, cx| i.set_text(&name, cx));
-                }
             }
             Action::CopyTitle(thread) => {
                 if let Some((_, t)) = self.state.thread(thread) {

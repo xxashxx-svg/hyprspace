@@ -124,6 +124,14 @@ impl Requests {
             Self::send(&tx, Event::Cloned { request, result });
         });
     }
+
+    pub fn new_project(&self, request: u64, path: PathBuf) {
+        let tx = self.tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = crate::git::new_project(&path).map(|_| path);
+            Self::send(&tx, Event::Cloned { request, result });
+        });
+    }
 }
 
 /// Gemini was removed in October 2026. A state saved before then can name it: a terminal thread that ran

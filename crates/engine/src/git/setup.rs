@@ -30,6 +30,15 @@ pub fn create_project_dir(
     Ok(())
 }
 
+pub fn new_project(path: &Path) -> Result<()> {
+    let used = std::fs::read_dir(path).is_ok_and(|mut d| d.next().is_some());
+    if used {
+        return Err("That folder already exists and isn't empty.".to_string());
+    }
+    create_project_dir(path, None, None)?;
+    init(path).map(|_| ())
+}
+
 /// `git init` for a folder that isn't a repo yet.
 pub fn init(cwd: &Path) -> Result<String> {
     if empty(cwd) {
@@ -264,6 +273,20 @@ mod tests {
             std::fs::read_to_string(p.join(".gitignore")).unwrap(),
             "target\n"
         );
+    }
+
+    #[test]
+    fn a_new_project_is_an_empty_repo_and_never_an_existing_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("fresh");
+        new_project(&p).unwrap();
+        assert!(is_repo(&p));
+        std::fs::write(p.join("a.txt"), "hi").unwrap();
+        assert!(new_project(&p).is_err());
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        new_project(&empty).unwrap();
+        assert!(is_repo(&empty));
     }
 
     #[test]

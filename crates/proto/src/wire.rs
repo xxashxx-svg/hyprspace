@@ -43,11 +43,14 @@ pub enum Command {
     Interrupt {
         id: SessionId,
     },
-    /// Answer a `RunEvent::Approval`.
+    /// Answer a `RunEvent::Approval`. `answers` replies to the questions an agent asked, by
+    /// question text.
     Approve {
         id: SessionId,
         request: String,
         answer: Answer,
+        #[serde(default)]
+        answers: Vec<(String, String)>,
     },
     /// Read a journal back. Answered with `Event::Journal` for `id`.
     LoadJournal {
@@ -114,6 +117,11 @@ pub enum Command {
         parent: PathBuf,
         name: String,
         here: bool,
+    },
+    /// A new empty folder at `path` with `git init` run in it. Answered with `Cloned`.
+    NewProject {
+        request: u64,
+        path: PathBuf,
     },
     /// The file tree, the git tab, the viewer and the open-in actions (`folder.rs`).
     Folder(FolderCommand),
@@ -208,7 +216,7 @@ pub enum Event {
         request: u64,
         line: String,
     },
-    /// The new folder, or why the clone failed.
+    /// The new folder, or why the clone or `NewProject` failed.
     Cloned {
         request: u64,
         result: Result<PathBuf, String>,
@@ -265,6 +273,7 @@ mod tests {
                 id: SessionId(1),
                 request: "r1".into(),
                 answer: Answer::AllowAlways,
+                answers: vec![("Which one?".into(), "The first".into())],
             },
             Command::LoadJournal {
                 id: SessionId(1),
@@ -409,6 +418,7 @@ mod tests {
                     Entry::Answer {
                         request: "r1".into(),
                         answer: Answer::Deny,
+                        answers: Vec::new(),
                     },
                 ],
             },

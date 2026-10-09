@@ -40,8 +40,7 @@ fn permission_icon(p: Permission) -> (&'static str, gpui::Hsla) {
         Permission::Plan => ("list-checks", colors::text3()),
         Permission::Ask => ("hand", colors::text3()),
         Permission::Auto => ("zap", colors::text3()),
-        // never asks: marked, so it isn't picked by accident
-        Permission::Bypass => ("shield-off", colors::busy()),
+        Permission::Bypass => ("lock-open", colors::text3()),
     }
 }
 

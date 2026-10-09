@@ -225,7 +225,16 @@ impl Root {
                 .into_any_element(),
             ]
         } else {
+            let pinned = t.pinned.is_some();
             vec![
+                self.row_button(
+                    id,
+                    "pin",
+                    if pinned { "pin-off" } else { "pin" },
+                    cx,
+                    |r, id, _, _, cx| r.toggle_pin(id, cx),
+                )
+                .into_any_element(),
                 self.row_button(id, "snooze", "clock", cx, |r, id, e, _, cx| {
                     r.open_snooze_menu(e.position(), id, cx)
                 })
@@ -332,17 +341,6 @@ impl Root {
         let id = t.id;
         let space = self.state.thread(id).map(|(s, _)| s);
         let mut menu = Vec::new();
-        if let Some(s) = space {
-            menu.push(MenuEntry::item(
-                format!("New thread in {}", s.name),
-                Action::NewThread(s.id),
-            ));
-            menu.push(MenuEntry::item(
-                format!("New terminal in {}", s.name),
-                Action::NewTerminal(s.id),
-            ));
-        }
-        menu.push(MenuEntry::Divider);
         if t.snooze.is_some() {
             menu.push(MenuEntry::item("Wake now", Action::Wake(id)));
         } else if t.settled {
@@ -351,6 +349,14 @@ impl Root {
                 Action::Settle(id, false),
             ));
         } else {
+            menu.push(MenuEntry::item(
+                if t.pinned.is_some() {
+                    "Unpin thread"
+                } else {
+                    "Pin thread"
+                },
+                Action::Pin(id, t.pinned.is_none()),
+            ));
             menu.push(MenuEntry::item("Settle thread", Action::Settle(id, true)));
             let now = local_now();
             let mut times: Vec<MenuEntry> = presets(now)
@@ -374,12 +380,6 @@ impl Root {
             "Rename thread",
             Action::Rename(Rename::Thread(id)),
         ));
-        if let Some(s) = space {
-            menu.push(MenuEntry::item(
-                format!("Filter by {}", s.name),
-                Action::Filter(s.id),
-            ));
-        }
         menu.push(MenuEntry::Divider);
         if let Some(s) = space.filter(|s| s.cwd.is_some() && !self.work.openers.is_empty()) {
             menu.push(MenuEntry::Sub {
@@ -407,12 +407,6 @@ impl Root {
             entries: copy,
         });
         menu.push(MenuEntry::Divider);
-        if let Some(s) = space {
-            menu.push(MenuEntry::item(
-                format!("Settle all in {}", s.name),
-                Action::SettleSpace(s.id),
-            ));
-        }
         menu.push(MenuEntry::item("Delete thread", Action::RemoveThread(id)));
         menu
     }
@@ -607,6 +601,9 @@ impl Root {
                             .text_color(colors::text3())
                             .child(space.clone()),
                     )
+                    .when(t.pinned.is_some() && t.active(), |d| {
+                        d.child(icon("pin", 11., colors::text3()))
+                    })
                     .child(right),
             )
             .child(title)

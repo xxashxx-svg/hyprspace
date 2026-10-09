@@ -19,12 +19,12 @@ pub fn permission_label(p: Permission) -> &'static str {
     }
 }
 
-fn permission_note(p: Permission) -> &'static str {
+pub fn permission_note(p: Permission) -> &'static str {
     match p {
         Permission::Plan => "Reads and plans. Changes nothing.",
         Permission::Ask => "Asks before edits and commands.",
         Permission::Auto => "Edits files on its own, asks before the rest.",
-        Permission::Bypass => "Never asks. Only for folders you trust.",
+        Permission::Bypass => "Edits files and runs commands without asking.",
     }
 }
 
@@ -72,7 +72,7 @@ fn permission_rows(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         (Permission::Plan, "list-checks"),
         (Permission::Ask, "hand"),
         (Permission::Auto, "file-pen-line"),
-        (Permission::Bypass, "shield-off"),
+        (Permission::Bypass, "lock-open"),
     ];
     div()
         .w(px(300.))

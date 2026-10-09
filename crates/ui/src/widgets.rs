@@ -495,3 +495,56 @@ impl gpui::Render for Tip {
             .child(self.0.clone())
     }
 }
+
+#[derive(IntoElement)]
+pub struct CopyButton {
+    id: SharedString,
+    text: SharedString,
+}
+
+impl CopyButton {
+    pub fn new(id: impl Into<SharedString>, text: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            text: text.into(),
+        }
+    }
+}
+
+impl gpui::RenderOnce for CopyButton {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let copied = window.use_keyed_state(
+            SharedString::from(format!("{}-copied", self.id)),
+            cx,
+            |_, _| None::<std::time::Instant>,
+        );
+        let fresh = copied
+            .read(cx)
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(1500));
+        if fresh {
+            window.request_animation_frame();
+        }
+        let text = self.text;
+        div()
+            .id(ElementId::Name(self.id))
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .size(px(24.))
+            .rounded(px(6.))
+            .cursor_pointer()
+            .hover(|s| s.bg(colors::ink(0.08)))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
+                copied.update(cx, |c, _| *c = Some(std::time::Instant::now()));
+            })
+            .tooltip(tip(if fresh { "Copied" } else { "Copy" }))
+            .child(if fresh {
+                icon("check", 13., colors::ok())
+            } else {
+                icon("copy", 13., colors::text3())
+            })
+    }
+}

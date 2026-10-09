@@ -16,6 +16,52 @@ use crate::{git, open};
 
 /// The viewer reads text up to this size; past it the file goes to an editor.
 const MAX_FILE: u64 = 2_000_000;
+const MAX_LISTED: usize = 20_000;
+const SKIPPED: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".venv",
+    "__pycache__",
+];
+
+fn list_files(cwd: &Path) -> Vec<String> {
+    if let Ok(mut files) = git::ls_files(cwd)
+        && !files.is_empty()
+    {
+        files.truncate(MAX_LISTED);
+        return files;
+    }
+    let mut files = Vec::new();
+    let mut dirs = vec![(cwd.to_path_buf(), String::new())];
+    while let Some((dir, rel)) = dirs.pop() {
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in read.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let path = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            match entry.file_type() {
+                Ok(t) if t.is_dir() && !SKIPPED.contains(&name.as_str()) => {
+                    dirs.push((entry.path(), path));
+                }
+                Ok(t) if t.is_file() => files.push(path),
+                _ => {}
+            }
+            if files.len() >= MAX_LISTED {
+                return files;
+            }
+        }
+    }
+    files.sort();
+    files
+}
 
 #[derive(Clone, Default)]
 pub struct Folders {
@@ -39,6 +85,10 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
         FolderCommand::ListDir { path } => {
             let entries = list_dir(&path);
             vec![FolderEvent::Dir { path, entries }]
+        }
+        FolderCommand::ListFiles { cwd } => {
+            let files = list_files(&cwd);
+            vec![FolderEvent::Files { cwd, files }]
         }
         FolderCommand::ReadFile { path } => {
             let text = read_file(&path);

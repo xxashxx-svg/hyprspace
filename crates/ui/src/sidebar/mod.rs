@@ -57,6 +57,8 @@ const EDGE_SPEED: f32 = 14.;
 const ARRIVE: Duration = Duration::from_millis(150);
 /// More rows than this joining at once, like a search cleared, just appear.
 const MAX_ARRIVALS: usize = 40;
+const MOVE: Duration = Duration::from_millis(240);
+const MAX_MOVES: usize = 3;
 
 /// How far the list scrolls this frame for a drag at `y` in a list spanning `top..bottom`:
 /// negative up, positive down, nothing away from the edges.
@@ -71,7 +73,7 @@ fn edge_scroll(y: f32, top: f32, bottom: f32) -> f32 {
 }
 
 /// One line of the sidebar's list.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Item {
     /// A thread at work.
     Thread(u64),
@@ -111,6 +113,73 @@ fn changed(old: &[Item], new: &[Item]) -> (Range<usize>, usize) {
         .take_while(|(a, b)| a.same(b))
         .count();
     (head..old.len() - tail, new.len() - head - tail)
+}
+
+fn moved(old: &[Item], new: &[Item]) -> Vec<u64> {
+    let ids = |l: &[Item]| -> Vec<u64> {
+        l.iter()
+            .filter_map(|i| match i {
+                Item::Thread(id) => Some(*id),
+                _ => None,
+            })
+            .collect()
+    };
+    let before: HashMap<u64, usize> = ids(old)
+        .into_iter()
+        .enumerate()
+        .map(|(i, id)| (id, i))
+        .collect();
+    let seq: Vec<(u64, usize)> = ids(new)
+        .into_iter()
+        .filter_map(|id| before.get(&id).map(|&p| (id, p)))
+        .collect();
+    let mut best = vec![1usize; seq.len()];
+    let mut prev = vec![usize::MAX; seq.len()];
+    for i in 0..seq.len() {
+        for j in 0..i {
+            if seq[j].1 < seq[i].1 && best[j] + 1 > best[i] {
+                best[i] = best[j] + 1;
+                prev[i] = j;
+            }
+        }
+    }
+    let mut kept = HashSet::new();
+    let mut at = (0..seq.len()).max_by_key(|&i| best[i]);
+    while let Some(i) = at {
+        kept.insert(seq[i].0);
+        at = (prev[i] != usize::MAX).then_some(prev[i]);
+    }
+    seq.iter()
+        .map(|(id, _)| *id)
+        .filter(|id| !kept.contains(id))
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct Slide {
+    from: Pixels,
+    since: Instant,
+    lift: bool,
+}
+
+impl Slide {
+    fn draw(self, row: AnyElement, window: &mut Window) -> AnyElement {
+        let t = (self.since.elapsed().as_secs_f32() / MOVE.as_secs_f32()).min(1.);
+        if t >= 1. {
+            return row;
+        }
+        window.request_animation_frame();
+        let moved = div()
+            .relative()
+            .top(self.from * (1. - ease_out(t)))
+            .when(self.lift, |d| d.bg(colors::bg()))
+            .child(row);
+        if self.lift {
+            gpui::deferred(moved).with_priority(1).into_any_element()
+        } else {
+            moved.into_any_element()
+        }
+    }
 }
 
 /// The threads in `new` that `old` didn't list.
@@ -176,6 +245,7 @@ pub struct SidebarView {
     edge: f32,
     /// Threads growing into the list.
     arrivals: Rc<RefCell<HashMap<u64, Arrival>>>,
+    slides: Rc<RefCell<HashMap<Item, Slide>>>,
     /// The rows last listed were the saved state's, not the empty list before it loaded, which
     /// would make every row at launch look new.
     loaded: bool,
@@ -193,6 +263,7 @@ impl SidebarView {
             stepped: None,
             edge: 0.,
             arrivals: Rc::default(),
+            slides: Rc::default(),
             loaded: false,
             _watch: cx.observe(root, |v: &mut Self, _, cx| {
                 v.stale = true;
@@ -227,6 +298,50 @@ impl SidebarView {
 
     /// Takes the wheel over the list before the list sees it, so it can be eased. A popup over
     /// the sidebar keeps its own wheel: the hitbox only counts while nothing covers it.
+    fn plan_slides(&mut self, items: &[Item]) {
+        let same_rows = {
+            let mut a: Vec<&Item> = self.items.iter().collect();
+            let mut b: Vec<&Item> = items.iter().collect();
+            a.sort_by_key(|i| format!("{i:?}"));
+            b.sort_by_key(|i| format!("{i:?}"));
+            a == b
+        };
+        let moves = moved(&self.items, items);
+        if !same_rows || moves.is_empty() || moves.len() > MAX_MOVES {
+            return;
+        }
+        let was: HashMap<&Item, (Pixels, Pixels)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, i)| {
+                let b = self.list.bounds_for_item(ix)?;
+                Some((i, (b.top(), b.size.height)))
+            })
+            .collect();
+        let Some(anchor) = self.items.get(self.list.logical_scroll_top().item_ix) else {
+            return;
+        };
+        let (Some(&(mut y, _)), Some(first)) =
+            (was.get(anchor), items.iter().position(|i| i == anchor))
+        else {
+            return;
+        };
+        let since = Instant::now();
+        let mut slides = self.slides.borrow_mut();
+        for item in &items[first..] {
+            let Some(&(top, height)) = was.get(item) else {
+                break;
+            };
+            let from = top - y;
+            if from.abs() > px(0.5) {
+                let lift = matches!(item, Item::Thread(id) if moves.contains(id));
+                slides.insert(item.clone(), Slide { from, since, lift });
+            }
+            y += height;
+        }
+    }
+
     fn wheel(&self, cx: &mut Context<Self>) -> AnyElement {
         let pending = self.pending.clone();
         let view = cx.weak_entity();
@@ -259,6 +374,12 @@ impl gpui::Render for SidebarView {
         self.arrivals
             .borrow_mut()
             .retain(|_, a| a.since.elapsed() < ARRIVE);
+        self.slides
+            .borrow_mut()
+            .retain(|_, sl| sl.since.elapsed() < MOVE);
+        if self.loaded && animations() && items != *self.items {
+            self.plan_slides(&items);
+        }
         if items != *self.items {
             let new = arrived(&self.items, &items);
             if self.loaded && animations() && new.len() <= MAX_ARRIVALS {
@@ -332,8 +453,10 @@ impl gpui::Render for SidebarView {
         let wheel = self.wheel(cx);
         let (items, weak, now) = (self.items.clone(), self.root.clone(), now_ms());
         let arrivals = self.arrivals.clone();
+        let slides = self.slides.clone();
         let rows = list(self.list.clone(), move |ix, window, cx| {
             let item = items.get(ix).cloned();
+            let slide = item.as_ref().and_then(|i| slides.borrow().get(i).copied());
             let arrival = match item {
                 Some(Item::Thread(id) | Item::Shelved(id)) => arrivals.borrow().get(&id).cloned(),
                 _ => None,
@@ -344,8 +467,12 @@ impl gpui::Render for SidebarView {
                     None => div().into_any_element(),
                 })
                 .unwrap_or_else(|_| div().into_any_element());
-            match arrival {
+            let row = match arrival {
                 Some(a) => a.draw(row, window),
+                None => row,
+            };
+            match slide {
+                Some(sl) => sl.draw(row, window),
                 None => row,
             }
         })
@@ -416,7 +543,11 @@ impl Root {
         };
         let recent = |t: &Thread| t.last_touch() as i64;
         let mut items = vec![Item::Gap(2)];
-        let active = threads(Thread::active, Thread::rank);
+        let mut active = threads(Thread::active, Thread::rank);
+        active.sort_by_key(|t| match t.pinned {
+            Some(at) => (0, at),
+            None => (1, 0),
+        });
         if active.is_empty() {
             items.push(Item::Nothing {
                 searching: !q.is_empty(),
@@ -845,6 +976,16 @@ mod tests {
         ];
         assert_eq!(arrived(&old, &settled), [2]);
         assert!(arrived(&old, &old).is_empty());
+    }
+
+    #[test]
+    fn only_the_row_that_changed_place_counts_as_moved() {
+        let list = |ids: &[u64]| -> Vec<Item> { ids.iter().map(|&i| Item::Thread(i)).collect() };
+        let old = list(&[1, 2, 3, 4, 5]);
+        assert_eq!(moved(&old, &list(&[4, 1, 2, 3, 5])), vec![4]);
+        assert_eq!(moved(&old, &list(&[2, 3, 4, 5, 1])), vec![1]);
+        assert!(moved(&old, &old).is_empty());
+        assert!(moved(&old, &list(&[9, 1, 2, 3, 4, 5])).is_empty());
     }
 
     #[test]

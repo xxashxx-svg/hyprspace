@@ -455,12 +455,14 @@ impl Phone {
                     } => true,
                     Ask::New { space, .. } => hub.board.spaces.iter().any(|s| s.id == *space),
                     Ask::Send { thread, images, .. } => {
-                        known(*thread) && images.iter().all(|p| is_photo(Path::new(p)))
+                        known(*thread) && images.iter().all(|p| is_upload(Path::new(p)))
                     }
                     Ask::Approve { thread, .. }
                     | Ask::Interrupt { thread }
                     | Ask::Snooze { thread, .. }
-                    | Ask::Settle { thread, .. } => known(*thread),
+                    | Ask::Settle { thread, .. }
+                    | Ask::Model { thread, .. }
+                    | Ask::Pin { thread, .. } => known(*thread),
                 };
                 if ok {
                     let _ = hub.ui.unbounded_send(Event::Phone(PhoneEvent::Ask { ask }));
@@ -476,10 +478,10 @@ impl Phone {
                     let _ = c.tx.unbounded_send(Down::Pong);
                 }
             }
-            Up::Upload { id, data } => {
+            Up::Upload { id, data, name } => {
                 let me = self.clone();
                 tokio::task::spawn_blocking(move || {
-                    let (path, error) = match save_photo(&data) {
+                    let (path, error) = match save_upload(&data, name.as_deref()) {
                         Ok(p) => (Some(p.display().to_string()), None),
                         Err(e) => (None, Some(e.to_string())),
                     };
@@ -894,7 +896,7 @@ fn photos() -> PathBuf {
     std::env::temp_dir().join("hyprspace-images")
 }
 
-fn is_photo(path: &Path) -> bool {
+fn is_upload(path: &Path) -> bool {
     path.parent() == Some(photos().as_path())
         && path
             .file_name()
@@ -902,11 +904,12 @@ fn is_photo(path: &Path) -> bool {
             .is_some_and(|n| n.starts_with("phone-") && !n.contains(".."))
 }
 
-fn save_photo(data: &str) -> Result<PathBuf, &'static str> {
+fn save_upload(data: &str, name: Option<&str>) -> Result<PathBuf, &'static str> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.trim())
-        .map_err(|_| "That photo didn't arrive whole.")?;
+        .map_err(|_| "That file didn't arrive whole.")?;
     let ext = match bytes.as_slice() {
+        _ if name.is_some() => "",
         [0xFF, 0xD8, 0xFF, ..] => "jpg",
         [0x89, b'P', b'N', b'G', ..] => "png",
         [
@@ -927,14 +930,36 @@ fn save_photo(data: &str) -> Result<PathBuf, &'static str> {
         _ => return Err("Only photos can be sent."),
     };
     let dir = photos();
-    std::fs::create_dir_all(&dir).map_err(|_| "Couldn't save the photo.")?;
-    let name: String = store::random(8)
+    std::fs::create_dir_all(&dir).map_err(|_| "Couldn't save the file.")?;
+    let tag: String = store::random(8)
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let path = dir.join(format!("phone-{name}.{ext}"));
-    std::fs::write(&path, bytes).map_err(|_| "Couldn't save the photo.")?;
+    let path = match name {
+        Some(n) => dir.join(format!("phone-{tag}-{}", clean(n))),
+        None => dir.join(format!("phone-{tag}.{ext}")),
+    };
+    std::fs::write(&path, bytes).map_err(|_| "Couldn't save the file.")?;
     Ok(path)
+}
+
+fn clean(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or_default();
+    let safe: String = base
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || "._-".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    match safe.trim_matches('.') {
+        "" => "file".into(),
+        s => s.replace("..", "_"),
+    }
 }
 
 /// What a phone sends for `key` over the certificate it saw: HMAC-SHA256, base64url.

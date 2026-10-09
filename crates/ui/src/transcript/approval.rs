@@ -19,6 +19,15 @@ pub fn card(
     expired: bool,
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
+    match super::ask::named(t) {
+        Some((super::ask::QUESTION, input)) => {
+            return super::ask::question_card(v, request, input, answer, expired, cx);
+        }
+        Some((super::ask::PLAN, input)) => {
+            return super::ask::plan_card(v, Some(request), input, answer, expired, 0, cx);
+        }
+        _ => {}
+    }
     let pending = answer.is_none() && !expired;
     let detail = match t {
         Tool::Edit { changes } => Some(tool::diffs(changes)),

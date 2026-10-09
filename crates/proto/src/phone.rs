@@ -73,9 +73,12 @@ pub enum Up {
     },
     Ping,
     /// A photo from the phone, base64. Answered with `Uploaded`, whose path a `Send` can carry.
+    /// With a `name` it can be any file.
     Upload {
         id: u64,
         data: String,
+        #[serde(default)]
+        name: Option<String>,
     },
     /// The folders inside `path` on the computer, empty for the home folder. Answered with
     /// `Folders`.
@@ -121,6 +124,16 @@ pub enum Ask {
     Settle {
         thread: u64,
         on: bool,
+    },
+    Pin {
+        thread: u64,
+        on: bool,
+    },
+    /// Sets a structured thread's model and effort for its next message. Empty means the default.
+    Model {
+        thread: u64,
+        model: String,
+        effort: String,
     },
 }
 
@@ -227,6 +240,9 @@ pub struct BoardThread {
     pub agent: Option<Agent>,
     /// The model's label, as the sidebar shows it.
     pub model: Option<String>,
+    /// The picked model's id and effort, empty for the default.
+    pub model_id: String,
+    pub effort: String,
     pub status: BoardStatus,
     /// One line on what it does now, or what it said last.
     pub doing: Option<String>,
@@ -244,6 +260,7 @@ pub struct BoardThread {
     pub rank: i64,
     /// Its session is running on the desktop.
     pub live: bool,
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -611,6 +628,7 @@ mod tests {
             Entry::Answer {
                 request: "r".into(),
                 answer: Answer::AllowAlways,
+                answers: Vec::new(),
             },
             run(RunEvent::Steered),
             run(RunEvent::Limited {
@@ -677,6 +695,8 @@ mod tests {
                         kind: BoardKind::Structured,
                         agent: Some(Agent::Codex),
                         model: Some("GPT-5.5".into()),
+                        model_id: "gpt-5.5".into(),
+                        effort: "high".into(),
                         status: BoardStatus::Waiting,
                         doing: Some("Run tests".into()),
                         since: Some(9),
@@ -687,6 +707,7 @@ mod tests {
                         shelf: Shelf::Snoozed,
                         rank: -3,
                         live: true,
+                        pinned: true,
                     }],
                     agents: vec![AgentInfo {
                         agent: Agent::Claude,
@@ -850,6 +871,19 @@ mod tests {
                     on: false,
                 },
             },
+            Up::Ask {
+                ask: Ask::Pin {
+                    thread: 2,
+                    on: true,
+                },
+            },
+            Up::Ask {
+                ask: Ask::Model {
+                    thread: 2,
+                    model: "opus".into(),
+                    effort: "high".into(),
+                },
+            },
             Up::Leave,
             Up::Folders {
                 path: String::new(),
@@ -857,6 +891,12 @@ mod tests {
             Up::Upload {
                 id: 1,
                 data: "/9j/".into(),
+                name: None,
+            },
+            Up::Upload {
+                id: 2,
+                data: "aGk=".into(),
+                name: Some("notes.txt".into()),
             },
             Up::Ping,
         ];

@@ -2817,6 +2817,7 @@ dependencies = [
  "image",
  "pulldown-cmark",
  "qrcode",
+ "serde_json",
  "unicode-segmentation",
  "uuid",
 ]

@@ -42,8 +42,8 @@ const MODES: [(Permission, &str, &str, &str); 4] = [
     (
         Permission::Bypass,
         "Full access",
-        "shield-off",
-        "Never asks. Use it only in folders you trust.",
+        "lock-open",
+        "Edits files and runs commands without asking.",
     ),
 ];
 
@@ -476,12 +476,7 @@ impl Root {
         let current = self.state.composer.permission;
         let perms = MODES.iter().map(|&(mode, name, glyph, says)| {
             let on = mode == current;
-            let risky = mode == Permission::Bypass;
-            let fg = if risky && on {
-                colors::error()
-            } else {
-                colors::text1()
-            };
+            let fg = colors::text1();
             div()
                 .id(("intro-perm", mode as usize))
                 .flex()
@@ -491,12 +486,9 @@ impl Root {
                 .rounded(px(10.))
                 .border_1()
                 .cursor_pointer()
-                .map(|d| match (on, risky) {
-                    (true, true) => d
-                        .border_color(colors::error().opacity(0.4))
-                        .bg(colors::error().opacity(0.1)),
-                    (true, false) => d.border_color(colors::text3()).bg(colors::surface3()),
-                    _ => d
+                .map(|d| match on {
+                    true => d.border_color(colors::text3()).bg(colors::surface3()),
+                    false => d
                         .border_color(colors::border1())
                         .bg(colors::surface1())
                         .hover(|s| s.border_color(colors::border2())),

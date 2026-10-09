@@ -37,16 +37,16 @@ pub fn path_text(path: &Path) -> String {
     }
 }
 
-/// Files dropped on a prompt box: the images, to go in as images, and the paths of the rest to
-/// type in, as a terminal types a dropped file.
+/// Paths dropped on a prompt box: the files, to go in with the message, and the folders' paths
+/// to type in, as a terminal types a dropped folder.
 pub fn split_drop(paths: &[PathBuf]) -> (Vec<PathBuf>, String) {
-    let images = paths.iter().filter(|p| is_image(p)).cloned().collect();
+    let files = paths.iter().filter(|p| !p.is_dir()).cloned().collect();
     let text = paths
         .iter()
-        .filter(|p| !is_image(p))
+        .filter(|p| p.is_dir())
         .map(|p| path_text(p))
         .collect();
-    (images, text)
+    (files, text)
 }
 
 /// Writes a pasted image to `hyprspace-images` in the temp folder and returns its path.
@@ -90,14 +90,62 @@ fn to_png(bmp: &[u8]) -> std::io::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// A thumbnail of an attached image.
+/// A thumbnail of an attached image, or a tile with the name of any other file.
 pub fn thumb(path: &Path, size: f32) -> AnyElement {
-    img(path.to_path_buf())
+    if is_image(path) {
+        return img(path.to_path_buf())
+            .size(px(size))
+            .object_fit(ObjectFit::Cover)
+            .rounded_md()
+            .border_1()
+            .border_color(colors::border2())
+            .into_any_element();
+    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_uppercase())
+        .unwrap_or_else(|| "FILE".into());
+    div()
         .size(px(size))
-        .object_fit(ObjectFit::Cover)
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(3.))
+        .px(px(5.))
         .rounded_md()
+        .bg(colors::ink(0.05))
         .border_1()
         .border_color(colors::border2())
+        .child(crate::assets::icon(
+            "file-text",
+            (size * 0.28).clamp(14., 24.),
+            colors::text2(),
+        ))
+        .child(
+            div()
+                .text_size(px(9.5))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(colors::text2())
+                .child(ext),
+        )
+        .when(size >= 80., |d| {
+            d.child(
+                div()
+                    .w_full()
+                    .text_size(px(10.5))
+                    .text_color(colors::text3())
+                    .text_center()
+                    .truncate()
+                    .child(name.clone()),
+            )
+        })
+        .id(ElementId::Name(format!("file-{name}").into()))
+        .tooltip(crate::widgets::tip_text(name))
         .into_any_element()
 }
 
@@ -154,15 +202,15 @@ mod tests {
     }
 
     #[test]
-    fn a_drop_keeps_images_and_types_the_rest() {
-        let paths = [
-            PathBuf::from("/w/a.png"),
-            PathBuf::from("/w/src"),
-            PathBuf::from("/w/b.rs"),
-        ];
-        let (images, text) = split_drop(&paths);
-        assert_eq!(images, [PathBuf::from("/w/a.png")]);
-        assert_eq!(text, "/w/src /w/b.rs ");
+    fn a_drop_attaches_files_and_types_folders() {
+        let dir = std::env::temp_dir().join(format!("hs-drop-{}", std::process::id()));
+        let folder = dir.join("src");
+        std::fs::create_dir_all(&folder).unwrap();
+        let paths = [dir.join("a.png"), folder.clone(), dir.join("b.rs")];
+        let (files, text) = split_drop(&paths);
+        assert_eq!(files, [dir.join("a.png"), dir.join("b.rs")]);
+        assert_eq!(text, path_text(&folder));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

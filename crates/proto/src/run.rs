@@ -92,6 +92,8 @@ pub enum RunEvent {
         thread: String,
         cwd: PathBuf,
     },
+    /// The slash commands and skills the CLI takes, without their slash. Not journaled.
+    Commands { names: Vec<String> },
     /// A piece of the reply.
     Text { text: String },
     /// A piece of the model's visible reasoning.

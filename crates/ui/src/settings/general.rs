@@ -31,7 +31,7 @@ pub(super) const MODES: [(Permission, &str, &str); 4] = [
     (
         Permission::Bypass,
         "Full access",
-        "Never asks. Trusted folders only.",
+        "Edits files and runs commands without asking.",
     ),
 ];
 
@@ -122,17 +122,12 @@ impl Root {
             .iter()
             .find(|m| m.0 == prefs.permission)
             .unwrap_or(&MODES[1]);
-        let risky = mode.0 == Permission::Bypass;
         let permission = row_with(
             None,
             "Permission",
             div()
                 .text_size(px(12.))
-                .text_color(if risky {
-                    colors::error()
-                } else {
-                    colors::text3()
-                })
+                .text_color(colors::text3())
                 .child(mode.2),
             self.dropdown(Picker::Permission, mode.1, cx),
         );

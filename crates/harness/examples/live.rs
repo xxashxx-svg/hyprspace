@@ -46,7 +46,7 @@ async fn main() {
         println!("{}", serde_json::to_string(&event).unwrap());
         // a tool approval would wait forever here; this check never allows one
         if let RunEvent::Approval { request, .. } = &event {
-            session.answer(request.clone(), hyprspace_proto::Answer::Deny);
+            session.answer(request.clone(), hyprspace_proto::Answer::Deny, Vec::new());
         }
         if matches!(event, RunEvent::Finished { .. } | RunEvent::Failed { .. }) {
             break;
