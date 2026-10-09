@@ -4,6 +4,17 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.14 — 2026-10-09
+
+- Type / for commands and skills, and @ to mention a file, in a structured thread
+- Questions, plans and task lists from Claude get their own cards you can answer
+- Esc stops a run, and the Up arrow brings back your last prompt
+- Attach or drop any file, not just images
+- Pin threads to keep them at the top of the sidebar
+- New project can make an empty folder, open a local one or clone a repository
+- Full access no longer shows a red warning
+- The phone app can change a thread's model, send any file and pin threads
+
 ## 0.24.13 — 2026-10-08
 
 - The usage popover is smaller: one line per limit, with how much is left and when it resets
