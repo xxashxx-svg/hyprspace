@@ -43,11 +43,12 @@ impl Root {
         let Some(id) = d.pane.thread() else {
             return;
         };
+        // a host keeps its own threads' order
         let mut list: Vec<(u64, i64)> = self
             .state
             .spaces
             .iter()
-            .filter(|s| !s.archived)
+            .filter(|s| !s.archived && s.machine.is_none())
             .flat_map(|s| s.threads.iter().filter(|t| t.active()))
             .map(|t| (t.id, t.rank()))
             .collect();

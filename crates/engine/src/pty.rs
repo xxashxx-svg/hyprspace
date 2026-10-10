@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::mpsc::{RecvTimeoutError, sync_channel};
+use std::sync::mpsc::{RecvTimeoutError, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -41,11 +41,11 @@ pub struct Spawn {
     pub input: Option<String>,
 }
 
-type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
-
 struct Session {
     master: Box<dyn MasterPty + Send>,
-    writer: SharedWriter,
+    /// Bytes for the shell, written in order on the session's own thread, so a long paste into
+    /// a full pipe never holds up the caller.
+    input: Sender<Vec<u8>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     /// The shell's process id, where the processes it starts hang from.
     pid: Option<u32>,
@@ -109,7 +109,22 @@ impl PtyManager {
         drop(pair.slave);
 
         let mut reader = pair.master.try_clone_reader()?;
-        let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer()?));
+        let mut writer = pair.master.take_writer()?;
+        let (input, keys) = channel::<Vec<u8>>();
+        thread::spawn(move || {
+            while let Ok(mut bytes) = keys.recv() {
+                while let Ok(more) = keys.try_recv() {
+                    bytes.extend(more);
+                }
+                if writer
+                    .write_all(&bytes)
+                    .and_then(|_| writer.flush())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
         let killer = child.clone_killer();
         let pid = child.process_id();
 
@@ -130,15 +145,13 @@ impl PtyManager {
         });
 
         let data_out = out.clone();
-        let mut input = spawn.input.map(|cmd| (writer.clone(), cmd));
+        let mut launch = spawn.input.map(|cmd| (input.clone(), cmd));
         thread::spawn(move || {
             coalesce(rx, |bytes| {
                 let _ = data_out.unbounded_send(Event::TerminalOutput { id, bytes });
                 // the shell is up enough to buffer keystrokes; it reads them when it is ready
-                if let Some((writer, cmd)) = input.take() {
-                    let mut w = writer.lock().unwrap_or_else(|e| e.into_inner());
-                    let _ = w.write_all(format!("{cmd}\r").as_bytes());
-                    let _ = w.flush();
+                if let Some((input, cmd)) = launch.take() {
+                    let _ = input.send(format!("{cmd}\r").into_bytes());
                 }
             })
         });
@@ -153,7 +166,7 @@ impl PtyManager {
             id,
             Session {
                 master: pair.master,
-                writer,
+                input,
                 killer,
                 pid,
             },
@@ -161,14 +174,10 @@ impl PtyManager {
         Ok(())
     }
 
-    pub fn write(&self, id: SessionId, data: &[u8]) -> std::io::Result<()> {
-        // clone the writer and drop the map lock first, so a slow write never blocks other sessions
-        let Some(writer) = self.sessions().get(&id).map(|s| s.writer.clone()) else {
-            return Ok(());
-        };
-        let mut w = writer.lock().unwrap_or_else(|e| e.into_inner());
-        w.write_all(data)?;
-        w.flush()
+    pub fn write(&self, id: SessionId, data: &[u8]) {
+        if let Some(s) = self.sessions().get(&id) {
+            let _ = s.input.send(data.to_vec());
+        }
     }
 
     pub fn resize(&self, id: SessionId, cols: u16, rows: u16) -> anyhow::Result<()> {
@@ -374,7 +383,7 @@ mod tests {
                         // ConPTY asks where the cursor is and waits for the answer, which the
                         // UI's emulator gives in the app
                         if bytes.windows(4).any(|w| w == b"[6n") {
-                            answer.write(id, b"[1;1R").unwrap();
+                            answer.write(id, b"[1;1R");
                         }
                         s.0.extend(bytes)
                     }
@@ -444,7 +453,7 @@ mod tests {
     #[test]
     fn writes_to_an_unknown_session_are_ignored() {
         let ptys = PtyManager::default();
-        assert!(ptys.write(SessionId(9), b"x").is_ok());
+        ptys.write(SessionId(9), b"x");
         assert!(ptys.resize(SessionId(9), 10, 10).is_ok());
         ptys.kill(SessionId(9));
     }

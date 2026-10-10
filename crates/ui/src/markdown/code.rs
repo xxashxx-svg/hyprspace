@@ -4,8 +4,11 @@
 // the colors of the last pass stay valid for the part already there and the block doesn't
 // flicker back to plain on every chunk.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Context, IntoElement, RenderOnce, SharedString, StyledText, Task, Window, div, prelude::*,
@@ -60,6 +63,20 @@ fn path_for(lang: &str) -> Option<PathBuf> {
     hyprspace_syntax::language(&path).map(|_| path)
 }
 
+thread_local! {
+    static DONE: RefCell<HashMap<(PathBuf, String), Vec<Line>>> = RefCell::default();
+}
+
+fn remember(path: PathBuf, text: String, lines: Vec<Line>) {
+    DONE.with(|d| {
+        let mut d = d.borrow_mut();
+        if d.len() > 300 {
+            d.clear();
+        }
+        d.insert((path, text), lines);
+    });
+}
+
 /// The colored ranges of one block, kept across frames for as long as the block is drawn.
 #[derive(Default)]
 struct Colors {
@@ -69,6 +86,7 @@ struct Colors {
     /// The text the block shows now, which may be ahead of `text` while a pass runs.
     wanted: String,
     job: Option<Task<()>>,
+    last: Option<Instant>,
 }
 
 impl Colors {
@@ -79,17 +97,30 @@ impl Colors {
         if self.job.is_some() || self.text == text {
             return;
         }
-        let source = text.to_string();
-        let work = cx.background_spawn({
-            let (path, source) = (path.clone(), source.clone());
-            async move { hyprspace_syntax::highlight(&path, &source).unwrap_or_default() }
+        // a block streaming in changes every frame, and each pass that lands draws one more
+        let wait = self.last.map_or(Duration::ZERO, |l| {
+            Duration::from_millis(100).saturating_sub(l.elapsed())
         });
         self.job = Some(cx.spawn(async move |this, cx| {
-            let lines = work.await;
+            cx.background_executor().timer(wait).await;
+            let Ok(source) = this.read_with(cx, |c, _| c.wanted.clone()) else {
+                return;
+            };
+            let lines = cx
+                .background_executor()
+                .spawn({
+                    let (path, source) = (path.clone(), source.clone());
+                    async move { hyprspace_syntax::highlight(&path, &source).unwrap_or_default() }
+                })
+                .await;
             let _ = this.update(cx, |c, cx| {
+                if c.wanted == source {
+                    remember(path.clone(), source.clone(), lines.clone());
+                }
                 c.text = source;
                 c.lines = lines;
                 c.job = None;
+                c.last = Some(Instant::now());
                 if c.wanted != c.text {
                     let wanted = c.wanted.clone();
                     c.want(path, &wanted, cx);
@@ -125,7 +156,18 @@ impl RenderOnce for CodeBlock {
         let path = path_for(&self.lang);
         let highlights = match path {
             Some(path) => {
-                let colors = window.use_keyed_state(self.key, cx, |_, _| Colors::default());
+                let colors = window.use_keyed_state(self.key, cx, |_, _| {
+                    let key = (path.clone(), self.text.clone());
+                    let lines = DONE.with(|d| d.borrow().get(&key).cloned());
+                    match lines {
+                        Some(lines) => Colors {
+                            text: key.1,
+                            lines,
+                            ..Colors::default()
+                        },
+                        None => Colors::default(),
+                    }
+                });
                 colors.update(cx, |c, cx| c.want(path, &self.text, cx));
                 colors
                     .read(cx)

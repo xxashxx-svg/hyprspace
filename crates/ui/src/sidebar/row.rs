@@ -5,12 +5,10 @@
 // off screen, fades back; a waiting one a tint. Hovering shows snooze and Settle. On a shelf a thread is one quiet line.
 // Click to open it, right-click for its menu.
 
-use std::time::Duration;
-
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, Context, DragMoveEvent, ElementId,
-    FontWeight, Hsla, IntoElement, MouseButton, Pixels, SharedString, Transformation, canvas, div,
-    linear_color_stop, linear_gradient, percentage, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Context, DragMoveEvent, FontWeight, Hsla, IntoElement,
+    MouseButton, Pixels, SharedString, Transformation, canvas, div, linear_color_stop,
+    linear_gradient, percentage, prelude::*, px, relative,
 };
 use hyprspace_proto::{Agent, Pane, Thread, ThreadKind};
 
@@ -21,6 +19,7 @@ use hyprspace_theme::MONO;
 use super::row_hover;
 use crate::assets::{icon, mark};
 use crate::colors;
+use crate::pace::Looping;
 use crate::root::{Action, MenuEntry, MenuItems, Rename, Root, Screen, View};
 use crate::time::{ago, local_now, now_ms, presets, to_ms, wake_short};
 use crate::transcript::Status;
@@ -36,23 +35,21 @@ fn elapsed(secs: u64) -> String {
 }
 
 /// A ring turning around a mark `size` across, `inset` pixels outside it.
-pub(super) fn ring(key: impl Into<ElementId>, size: f32, inset: f32) -> AnyElement {
+pub(super) fn ring(size: f32, inset: f32) -> AnyElement {
     div()
         .absolute()
         .top(px(-inset))
         .left(px(-inset))
         .child(
-            icon("ring", size + 2. * inset, colors::busy()).with_animation(
-                key,
-                Animation::new(Duration::from_millis(900)).repeat(),
-                |s, t| s.with_transformation(Transformation::rotate(percentage(t))),
-            ),
+            icon("ring", size + 2. * inset, colors::busy()).looping(900, |s, t| {
+                s.with_transformation(Transformation::rotate(percentage(t)))
+            }),
         )
         .into_any_element()
 }
 
 /// A band of light sweeping slowly across a working row.
-fn sheen(key: impl Into<ElementId>) -> AnyElement {
+fn sheen() -> AnyElement {
     let glow = colors::busy().opacity(0.035);
     let clear = colors::busy().opacity(0.);
     let half = |from: Hsla, to: Hsla| {
@@ -70,11 +67,7 @@ fn sheen(key: impl Into<ElementId>) -> AnyElement {
         .flex()
         .child(half(clear, glow))
         .child(half(glow, clear))
-        .with_animation(
-            key,
-            Animation::new(Duration::from_millis(2600)).repeat(),
-            |d, t| d.left(relative(1.0 - 1.6 * t)),
-        )
+        .looping(2600, |d, t| d.left(relative(1.0 - 1.6 * t)))
         .into_any_element()
 }
 
@@ -128,7 +121,7 @@ pub(crate) fn tag(name: &str, dim: bool) -> AnyElement {
 
 /// A thread's agent: its mark, with a ring turning around it while it works. A terminal with no
 /// agent shows the terminal glyph.
-fn agent_mark(agent: Option<Agent>, ring_key: Option<ElementId>) -> AnyElement {
+fn agent_mark(agent: Option<Agent>, working: bool) -> AnyElement {
     let badge = match agent {
         Some(a) => mark(a, 13., colors::brand(a).0).into_any_element(),
         None => icon("terminal", 12., colors::text3()).into_any_element(),
@@ -141,7 +134,7 @@ fn agent_mark(agent: Option<Agent>, ring_key: Option<ElementId>) -> AnyElement {
         .justify_center()
         .size(px(16.))
         .child(badge)
-        .children(ring_key.map(|k| ring(k, 16., 3.)))
+        .when(working, |d| d.child(ring(16., 3.)))
         .into_any_element()
 }
 
@@ -312,15 +305,22 @@ impl Root {
             ThreadKind::Terminal { cwd, .. } => cwd.clone(),
             ThreadKind::Structured { launch } => launch.cwd.clone(),
         };
-        let branch = self
-            .git
-            .get(&cwd)
-            .map(|g| &g.branch)
-            .filter(|b| b.is_repo && !b.branch.is_empty() && b.branch != "HEAD")
-            .map(|b| b.branch.clone().into());
+        let branch = match self.machines.place(id) {
+            Some((place, branch)) => branch.then(|| place.clone().into()),
+            None => self
+                .git
+                .get(&cwd)
+                .map(|g| &g.branch)
+                .filter(|b| b.is_repo && !b.branch.is_empty() && b.branch != "HEAD")
+                .map(|b| b.branch.clone().into()),
+        };
         Some(RowCard {
             title: t.title.clone().into(),
             space: space.name.clone().into(),
+            machine: space
+                .machine
+                .as_deref()
+                .map(|m| self.machines.name(m).into()),
             path: super::card::tidy(&cwd).into(),
             branch,
             agent: t.agent().map(|l| l.agent),
@@ -381,7 +381,10 @@ impl Root {
             Action::Rename(Rename::Thread(id)),
         ));
         menu.push(MenuEntry::Divider);
-        if let Some(s) = space.filter(|s| s.cwd.is_some() && !self.work.openers.is_empty()) {
+        let mirrored = space.is_some_and(|s| s.machine.is_some());
+        if let Some(s) =
+            space.filter(|s| s.cwd.is_some() && !mirrored && !self.work.openers.is_empty())
+        {
             menu.push(MenuEntry::Sub {
                 label: format!("Open {} in", s.name).into(),
                 entries: self
@@ -406,8 +409,10 @@ impl Root {
             label: "Copy".into(),
             entries: copy,
         });
-        menu.push(MenuEntry::Divider);
-        menu.push(MenuEntry::item("Delete thread", Action::RemoveThread(id)));
+        if !mirrored {
+            menu.push(MenuEntry::Divider);
+            menu.push(MenuEntry::item("Delete thread", Action::RemoveThread(id)));
+        }
         menu
     }
 
@@ -452,17 +457,27 @@ impl Root {
             n => Some(format!("{n} subagents running")),
         };
         let agent = t.agent().map(|l| l.agent);
-        let space = self
+        let (space, machine) = self
             .state
             .thread(id)
-            .map(|(s, _)| s.name.clone())
+            .map(|(s, _)| {
+                (
+                    s.name.clone(),
+                    s.machine.as_deref().map(|m| self.machines.name(m)),
+                )
+            })
             .unwrap_or_default();
         let cwd = match &t.kind {
             ThreadKind::Terminal { cwd, .. } => cwd.clone(),
             ThreadKind::Structured { launch } => launch.cwd.clone(),
         };
         // a branch when the folder is a repo, otherwise the folder; the icon says which
+        let host = self.machines.place(id).map(|(place, branch)| {
+            let icon = if *branch { "git-branch" } else { "folder" };
+            (icon, place.clone())
+        });
         let place = match self.git.get(&cwd).map(|g| &g.branch) {
+            _ if let Some(host) = host => host,
             Some(b) if b.is_repo && !b.branch.is_empty() => ("git-branch", b.branch.clone()),
             _ => (
                 "folder",
@@ -508,11 +523,7 @@ impl Root {
             }
             Status::Waiting => Some(
                 widgets::status_dot(status)
-                    .with_animation(
-                        ("waiting", id),
-                        Animation::new(Duration::from_millis(1000)).repeat(),
-                        |d, t| d.opacity(0.35 + 0.65 * (t * 2.0 - 1.0).abs()),
-                    )
+                    .looping(1000, |d, t| d.opacity(0.35 + 0.65 * (t * 2.0 - 1.0).abs()))
                     .into_any_element(),
             ),
             Status::Done if background == 0 => Some(
@@ -584,7 +595,7 @@ impl Root {
                     if recede { s.opacity(1.) } else { s }
                 })
             })
-            .when(working, |d| d.child(sheen(("row-sheen", id))))
+            .when(working, |d| d.child(sheen()))
             .child(
                 div()
                     .flex()
@@ -601,6 +612,20 @@ impl Root {
                             .text_color(colors::text3())
                             .child(space.clone()),
                     )
+                    .when_some(machine, |d, name| {
+                        d.child(
+                            div()
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .gap(px(4.))
+                                .max_w(px(110.))
+                                .text_size(px(11.))
+                                .text_color(colors::text3())
+                                .child(icon("monitor", 11., colors::text3()))
+                                .child(div().min_w_0().truncate().child(name)),
+                        )
+                    })
                     .when(t.pinned.is_some() && t.active(), |d| {
                         d.child(icon("pin", 11., colors::text3()))
                     })
@@ -617,7 +642,7 @@ impl Root {
                     .text_color(colors::text3())
                     .child(foot)
                     .children(state)
-                    .child(agent_mark(agent, working.then(|| ("row-ring", id).into()))),
+                    .child(agent_mark(agent, working)),
             )
             .child(
                 div()

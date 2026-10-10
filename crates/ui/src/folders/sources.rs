@@ -12,6 +12,12 @@ use crate::assets::icon;
 use crate::colors;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Row {
+    Source(usize),
+    Project(usize),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stage {
     Sources,
     Browse,
@@ -104,15 +110,19 @@ pub(super) fn project_path(parent: &Path, text: &str) -> Result<PathBuf, &'stati
 }
 
 impl FolderPicker {
-    pub(super) fn sources_shown(&self, cx: &gpui::App) -> Vec<usize> {
+    pub(super) fn sources_shown(&self, cx: &gpui::App) -> Vec<Row> {
         let q = self.query.read(cx).text().trim().to_lowercase();
-        (0..SOURCES.len())
+        let sources = (0..SOURCES.len())
             .filter(|&i| {
                 q.is_empty()
                     || SOURCES[i].title.to_lowercase().contains(&q)
                     || SOURCES[i].about.to_lowercase().contains(&q)
             })
-            .collect()
+            .map(Row::Source);
+        let projects = (0..self.projects.len())
+            .filter(|&i| self.projects[i].0.to_lowercase().contains(&q))
+            .map(Row::Project);
+        sources.chain(projects).collect()
     }
 
     pub(super) fn choose(&mut self, stage: Stage, cx: &mut Context<Self>) {
@@ -144,9 +154,18 @@ impl FolderPicker {
         cx.notify();
     }
 
+    pub(super) fn reveal_pick(&self, cx: &gpui::App) {
+        let shown = self.sources_shown(cx);
+        let sources = shown.iter().filter(|r| matches!(r, Row::Source(_))).count();
+        let labels = (sources > 0) as usize + (self.pick >= sources) as usize;
+        self.list_scroll.scroll_to_item(self.pick + labels);
+    }
+
     pub(super) fn choose_picked(&mut self, cx: &mut Context<Self>) {
-        if let Some(&i) = self.sources_shown(cx).get(self.pick) {
-            self.choose(SOURCES[i].stage, cx);
+        match self.sources_shown(cx).get(self.pick) {
+            Some(Row::Source(i)) => self.choose(SOURCES[*i].stage, cx),
+            Some(Row::Project(i)) => cx.emit(PickerEvent::Open(self.projects[*i].1.clone())),
+            None => {}
         }
     }
 
@@ -231,7 +250,7 @@ impl FolderPicker {
 
     fn render_list(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let accent = colors::accent();
-        let mut body = div().flex().flex_col().py(px(6.)).px(px(8.)).child(
+        let label = |text: &'static str| {
             div()
                 .px(px(10.))
                 .pt(px(6.))
@@ -239,9 +258,21 @@ impl FolderPicker {
                 .text_size(px(11.5))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors::text3())
-                .child("Sources"),
-        );
+                .child(text)
+        };
+        let mut body = div()
+            .id("sources-list")
+            .track_scroll(&self.list_scroll)
+            .max_h(px(440.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .py(px(6.))
+            .px(px(8.));
         let shown = self.sources_shown(cx);
+        if shown.iter().any(|r| matches!(r, Row::Source(_))) {
+            body = body.child(label("Sources"));
+        }
         if shown.is_empty() {
             body = body.child(
                 div()
@@ -253,7 +284,51 @@ impl FolderPicker {
                     .child("Nothing matches."),
             );
         }
-        for (row, &i) in shown.iter().enumerate() {
+        let mut projects = false;
+        for (row, &r) in shown.iter().enumerate() {
+            let i = match r {
+                Row::Source(i) => i,
+                Row::Project(i) => {
+                    if !projects {
+                        projects = true;
+                        body = body.child(label("Projects"));
+                    }
+                    let (name, path) = &self.projects[i];
+                    let on = row == self.pick;
+                    let path = path.clone();
+                    body = body.child(
+                        div()
+                            .id(("project", i))
+                            .flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .h(px(36.))
+                            .px(px(10.))
+                            .rounded(px(8.))
+                            .cursor_pointer()
+                            .when(on, |d| d.bg(accent.opacity(0.14)))
+                            .on_mouse_move(cx.listener(move |p, _, _, cx| {
+                                if p.pick != row {
+                                    p.pick = row;
+                                    cx.notify();
+                                }
+                            }))
+                            .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                                cx.emit(PickerEvent::Open(path.clone()))
+                            }))
+                            .child(crate::sidebar::tag(name, false))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(13.))
+                                    .text_color(colors::text1())
+                                    .child(name.clone()),
+                            ),
+                    );
+                    continue;
+                }
+            };
             let s = &SOURCES[i];
             let on = row == self.pick;
             let stage = s.stage;

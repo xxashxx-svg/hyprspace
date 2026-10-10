@@ -30,6 +30,7 @@ const PATH_CHARS: usize = 30;
 pub struct RowCard {
     pub title: SharedString,
     pub space: SharedString,
+    pub machine: Option<SharedString>,
     pub path: SharedString,
     pub branch: Option<SharedString>,
     pub agent: Option<Agent>,
@@ -137,6 +138,18 @@ impl RowCard {
                     .child(super::row::tag(&self.space, false))
                     .child(div().min_w_0().truncate().child(self.space.clone())),
             ))
+            .children(self.machine.clone().map(|m| {
+                field(
+                    "Computer",
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .min_w_0()
+                        .child(icon("monitor", 12., colors::text2()))
+                        .child(div().min_w_0().truncate().child(m)),
+                )
+            }))
             .child(field(
                 "Folder",
                 div()
@@ -208,40 +221,38 @@ impl RowCard {
                             n => format!("{n} subagents running"),
                         }),
                 )
-                .children(self.subagents.iter().take(SUBS_SHOWN).enumerate().map(
-                    |(i, (label, took))| {
-                        // the agent's mark with the ring the rows turn while they work
-                        let badge = match self.agent {
-                            Some(a) => mark(a, 10., colors::brand(a).0).into_any_element(),
-                            None => icon("bot", 10., colors::text3()).into_any_element(),
-                        };
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .relative()
-                                    .flex()
-                                    .flex_none()
-                                    .items_center()
-                                    .justify_center()
-                                    .size(px(16.))
-                                    .child(badge)
-                                    .child(super::row::ring(("card-sub-ring", i), 16., 2.)),
-                            )
-                            .child(div().flex_1().min_w_0().truncate().child(label.clone()))
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .font_family(MONO)
-                                    .text_size(px(10.5))
-                                    .text_color(colors::text3())
-                                    .child(took.clone()),
-                            )
-                    },
-                ))
+                .children(self.subagents.iter().take(SUBS_SHOWN).map(|(label, took)| {
+                    // the agent's mark with the ring the rows turn while they work
+                    let badge = match self.agent {
+                        Some(a) => mark(a, 10., colors::brand(a).0).into_any_element(),
+                        None => icon("bot", 10., colors::text3()).into_any_element(),
+                    };
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .min_w_0()
+                        .child(
+                            div()
+                                .relative()
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .justify_center()
+                                .size(px(16.))
+                                .child(badge)
+                                .child(super::row::ring(16., 2.)),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                        .child(
+                            div()
+                                .flex_none()
+                                .font_family(MONO)
+                                .text_size(px(10.5))
+                                .text_color(colors::text3())
+                                .child(took.clone()),
+                        )
+                }))
                 .when(more > 0, |d| {
                     d.child(
                         div()

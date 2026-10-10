@@ -15,6 +15,7 @@ adding one.
 - [Usage and activity](./internals/usage.md)
 - [Updates and installers](./internals/updates.md)
 - [The phone](./internals/phone.md): the bridge, pairing, the board, terminal frames
+- [Other computers](./internals/machines.md): threads that run on another computer you own
 
 Runbooks:
 

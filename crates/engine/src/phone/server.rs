@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
-use hyprspace_proto::phone::{Down, Up};
+use hyprspace_proto::phone::{Down, INPUT, OUTPUT, Up, frame, unframe};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout};
@@ -19,6 +19,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 use super::Phone;
+use super::squeeze::Squeeze;
 use super::store::Identity;
 
 const HANDSHAKE: Duration = Duration::from_secs(10);
@@ -95,6 +96,7 @@ async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor, permit: OwnedSema
     };
     let mut heard = Instant::now();
     let mut every = tokio::time::interval(Duration::from_secs(15));
+    let mut squeeze = Squeeze::default();
     loop {
         tokio::select! {
             msg = stream.next() => match msg {
@@ -104,10 +106,22 @@ async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor, permit: OwnedSema
                         phone.handle(conn, up);
                     }
                 }
+                Some(Ok(Message::Binary(b))) => {
+                    heard = Instant::now();
+                    if let Some((INPUT, thread, bytes)) = unframe(&b) {
+                        phone.input(conn, thread, bytes);
+                    }
+                }
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 Some(Ok(_)) => heard = Instant::now(),
             },
             down = rx.next() => match down {
+                Some(Down::Bytes { thread, data }) => {
+                    let squeezed = frame(OUTPUT, thread, &squeeze.run(&data));
+                    if sink.send(Message::Binary(squeezed.into())).await.is_err() {
+                        break;
+                    }
+                }
                 Some(down) => {
                     if send(&mut sink, &down).await.is_err() {
                         break;

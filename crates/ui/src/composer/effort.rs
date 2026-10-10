@@ -9,18 +9,18 @@
 use std::cell::Cell;
 use std::f32::consts::PI;
 use std::rc::Rc;
-use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, Bounds, ClickEvent, Context, DispatchPhase, FontWeight,
-    Hsla, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Window, canvas, div, linear_color_stop, linear_gradient, prelude::*, px, relative,
+    AnyElement, Bounds, ClickEvent, Context, DispatchPhase, FontWeight, Hsla, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Window,
+    canvas, div, linear_color_stop, linear_gradient, prelude::*, px, relative,
 };
 
 use super::model_menu::{Choice, Host, ModelMenu, Spec, close, to_models};
 use super::pickers::effort_label;
 use crate::assets::icon;
 use crate::colors;
+use crate::pace::Looping;
 use crate::slide::Glide;
 
 /// The card is a fixed width, so the track's length is known before it is first painted.
@@ -179,14 +179,10 @@ fn sparkle() -> AnyElement {
             .size(px(size))
             .rounded_full()
             .bg(colors::on_accent())
-            .with_animation(
-                ("spark", k),
-                Animation::new(Duration::from_millis(2200 + k as u64 * 310)).repeat(),
-                move |d, t| {
-                    d.left(relative((x + t * 0.18).fract()))
-                        .opacity(0.15 + 0.75 * (t * PI).sin())
-                },
-            )
+            .looping(2200 + k as u64 * 310, move |d, t| {
+                d.left(relative((x + t * 0.18).fract()))
+                    .opacity(0.15 + 0.75 * (t * PI).sin())
+            })
             .into_any_element()
     });
     let glint = |from: f32, to: f32| {
@@ -204,13 +200,9 @@ fn sparkle() -> AnyElement {
         .flex()
         .child(div().flex_1().h_full().bg(glint(0., 0.22)))
         .child(div().flex_1().h_full().bg(glint(0.22, 0.)))
-        .with_animation(
-            "effort-shine",
-            Animation::new(Duration::from_millis(2600))
-                .repeat()
-                .with_easing(crate::slide::ease_out),
-            |d, t| d.left(relative(t * 1.3 - 0.3)),
-        );
+        .looping(2600, |d, t| {
+            d.left(relative(crate::slide::ease_out(t) * 1.3 - 0.3))
+        });
     div()
         .absolute()
         .top_0()

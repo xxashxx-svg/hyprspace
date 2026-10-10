@@ -62,7 +62,7 @@ impl Intro {
 impl Root {
     /// Opens the intro from the start, over everything.
     pub(crate) fn show_intro(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        self.intro = Some(Intro::new(self.state.spaces.len()));
+        self.intro = Some(Intro::new(self.local_spaces()));
         self.menu = None;
         cx.notify();
     }
@@ -116,7 +116,7 @@ impl Root {
     ) -> Option<AnyElement> {
         let intro = self.intro.as_ref()?;
         // a folder picked on the last step: the space is there, so the intro is done
-        if intro.leaving.is_none() && self.state.spaces.len() > intro.spaces {
+        if intro.leaving.is_none() && self.local_spaces() > intro.spaces {
             self.finish_intro(cx);
         }
         let intro = self.intro.as_ref()?;

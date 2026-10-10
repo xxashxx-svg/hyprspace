@@ -221,6 +221,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Test phone".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;
@@ -361,7 +362,9 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                         permission: hyprspace_proto::Permission::Ask,
                         terminal: true,
                         prompt: String::new(),
+                        images: Vec::new(),
                     },
+                    request: None,
                 },
             },
         )
@@ -400,6 +403,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 thread: 7,
                 on: true,
             },
+            ..
         }) => Some(()),
         _ => None,
     });
@@ -408,6 +412,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             ask: Ask::Send {
                 thread: 7, images, ..
             },
+            ..
         }) => Some(images),
         _ => None,
     });
@@ -416,6 +421,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
     wait(&mut events, |e| match e {
         Event::Phone(PhoneEvent::Ask {
             ask: Ask::Snooze { thread: 7, .. },
+            ..
         }) => Some(()),
         _ => None,
     });
@@ -424,6 +430,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             ask: Ask::New {
                 folder: Some(f), ..
             },
+            ..
         }) if f == "/somewhere/new" => Some(()),
         _ => None,
     });
@@ -442,6 +449,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Test phone".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;
@@ -459,6 +467,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Test phone".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;
@@ -476,6 +485,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Thief".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;
@@ -489,6 +499,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Thief".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;
@@ -511,6 +522,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Second phone".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;
@@ -546,6 +558,7 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
                 device: "Second phone".into(),
                 protocol: PROTOCOL,
                 app: String::new(),
+                computer: false,
             },
         )
         .await;

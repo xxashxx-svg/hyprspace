@@ -32,6 +32,8 @@ struct Saved1 {
     seen: u64,
     #[serde(default)]
     app: String,
+    #[serde(default)]
+    computer: bool,
 }
 
 pub struct Store {
@@ -113,7 +115,7 @@ impl Store {
     }
 
     /// Pairs a phone and returns its id and the token it keeps.
-    pub fn add(&mut self, name: &str, app: &str, now: u64) -> (String, String) {
+    pub fn add(&mut self, name: &str, app: &str, now: u64, computer: bool) -> (String, String) {
         let id = URL_SAFE_NO_PAD.encode(random(9));
         let token = URL_SAFE_NO_PAD.encode(random(32));
         self.saved.devices.push(Saved1 {
@@ -123,6 +125,7 @@ impl Store {
             paired: now,
             seen: now,
             app: app.to_string(),
+            computer,
         });
         self.save();
         (id, token)
@@ -158,6 +161,7 @@ impl Store {
                 seen: d.seen,
                 online: online(&d.id),
                 app: d.app.clone(),
+                computer: d.computer,
             })
             .collect()
     }
@@ -184,7 +188,7 @@ mod tests {
     fn a_token_works_until_its_phone_is_forgotten() {
         let dir = tempfile::tempdir().unwrap();
         let mut s = Store::load(dir.path());
-        let (id, token) = s.add("Pixel", "0.24.4", 1);
+        let (id, token) = s.add("Pixel", "0.24.4", 1, false);
         assert!(
             !std::fs::read_to_string(dir.path().join("phone.json"))
                 .unwrap()

@@ -31,6 +31,7 @@ pub enum DockEvent {
 
 pub struct Dock {
     client: Client,
+    machine: Option<String>,
     folder: Option<PathBuf>,
     open: bool,
     tab: DockTab,
@@ -56,6 +57,7 @@ impl Dock {
         });
         Self {
             client: client.clone(),
+            machine: None,
             folder: None,
             open: false,
             tab: DockTab::Files,
@@ -70,12 +72,17 @@ impl Dock {
     pub fn sync(
         &mut self,
         folder: Option<PathBuf>,
+        machine: Option<String>,
         open: bool,
         tab: DockTab,
         viewing: Option<PathBuf>,
         cx: &mut Context<Self>,
     ) {
-        let moved = folder != self.folder;
+        let moved = folder != self.folder || machine != self.machine;
+        if machine != self.machine {
+            self.client = self.client.via(machine.clone());
+            self.machine = machine;
+        }
         let opened = open && !self.open;
         self.folder = folder;
         self.open = open;
@@ -92,6 +99,10 @@ impl Dock {
             self.refresh_git();
         }
         cx.notify();
+    }
+
+    pub fn machine(&self) -> Option<&str> {
+        self.machine.as_deref()
     }
 
     fn refresh_git(&self) {

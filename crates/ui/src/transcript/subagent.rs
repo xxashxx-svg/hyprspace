@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use super::model::{AgentState, Item, Subagent};
-use super::render::{fold_head, tool_card};
+use super::render::{fold_head, fold_key, tool_card, twist, unfold};
 use super::{TranscriptView, tool};
 use crate::assets::icon;
 use crate::{colors, markdown, spinner};
@@ -29,6 +29,7 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
             .into_any_element(),
         AgentState::Stopped => div().child("Stopped").into_any_element(),
     };
+    let key = fold_key(cx, &("agent", ix).into());
     let head = div()
         .id(("agent", ix))
         .flex()
@@ -36,15 +37,7 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
         .gap(px(8.))
         .min_w_0()
         .cursor_pointer()
-        .child(icon(
-            if a.open {
-                "chevron-down"
-            } else {
-                "chevron-right"
-            },
-            12.,
-            colors::text3(),
-        ))
+        .child(twist(&key, a.open))
         .child(icon("bot", 14., colors::text2()))
         .child(
             div()
@@ -77,6 +70,7 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
                 .child(state),
         )
         .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+            crate::slide::flip(key.clone());
             if let Some(Item::Agent(a)) = v.model.items.get_mut(ix) {
                 a.open = !a.open;
             }
@@ -102,7 +96,10 @@ pub fn card(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyEle
         .bg(colors::ink(0.035))
         .child(head)
         .children(did)
-        .when(a.open, |d| d.child(body(ix, a, cx)))
+        .when(a.open, |d| {
+            let body = body(ix, a, cx);
+            d.child(unfold(cx, ("agent", ix), body))
+        })
         .into_any_element()
 }
 
@@ -135,7 +132,9 @@ fn body(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyElement
             .gap(px(6.))
             .child(head)
             .when(a.prompt_open, |d| {
-                d.child(
+                d.child(unfold(
+                    cx,
+                    ("agent-prompt", ix),
                     div()
                         .ml(px(26.))
                         .px(px(10.))
@@ -146,7 +145,7 @@ fn body(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyElement
                         .line_height(relative(1.55))
                         .text_color(colors::text2())
                         .child(a.prompt.trim().to_string()),
-                )
+                ))
             })
     });
     // a call still open when its subagent stopped will never end

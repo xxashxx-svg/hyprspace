@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
+use crate::peer::{PeerCommand, PeerEvent};
 use crate::phone::{PhoneCommand, PhoneEvent};
 use crate::run::{Answer, Delegation, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
@@ -133,6 +134,7 @@ pub enum Command {
     Update(UpdateCommand),
     /// The bridge a paired phone reaches the app through (`phone.rs`).
     Phone(PhoneCommand),
+    Peer(PeerCommand),
     Delegated {
         request: u64,
         ok: bool,
@@ -198,6 +200,11 @@ pub enum Event {
         id: SessionId,
         entries: Vec<Entry>,
     },
+    /// Entries a host recorded after the journal it sent, for a thread on another computer.
+    Recorded {
+        id: SessionId,
+        entries: Vec<Entry>,
+    },
     /// The saved state, or the default on a first run. A file that would not parse was moved
     /// aside first, so nothing is lost by saving over it.
     State {
@@ -226,6 +233,7 @@ pub enum Event {
     Skills(SkillEvent),
     Update(UpdateEvent),
     Phone(PhoneEvent),
+    Peer(PeerEvent),
     Delegate {
         request: u64,
         parent: SessionId,

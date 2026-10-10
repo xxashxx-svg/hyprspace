@@ -20,7 +20,7 @@ use crate::{attach, colors, time, widgets};
 /// The picked model's label, or "Default".
 pub fn model_label(c: &Composer, pick: &Pick) -> String {
     let catalog = c
-        .agents
+        .all_agents()
         .iter()
         .find(|a| a.agent == pick.agent)
         .map(|a| &a.catalog);
@@ -58,7 +58,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .on_click(cx.listener(|c, _: &ClickEvent, window, cx| c.open_models(window, cx))),
         )
         .into_any_element(),
-        None if c.agents.is_empty() => div()
+        None if c.all_agents().is_empty() => div()
             .text_size(px(12.))
             .text_color(colors::text3())
             .child("Checking agents...")
@@ -198,6 +198,7 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .gap(px(4.))
         .mt(px(8.))
         .px(px(6.))
+        .children(super::machine::chip(c, cx))
         .child(folder_picker(c, cx))
         .children(c.branch.clone().map(|b| {
             div()
@@ -250,12 +251,13 @@ pub fn folder_picker(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .text_color(colors::text2())
         .child(icon("folder", 13., colors::text3()))
         .child(div().max_w(px(260.)).truncate().child(label))
-        .when_some(pick, |d, pick| {
-            d.cursor_pointer()
-                .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
-                .child(icon("chevron-down", 12., colors::text3()))
-                .on_click(cx.listener(move |c, _: &ClickEvent, _, cx| c.pick_folder(pick, cx)))
-        })
+        .cursor_pointer()
+        .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
+        .child(icon("chevron-down", 12., colors::text3()))
+        .on_click(cx.listener(move |c, e: &ClickEvent, _, cx| match pick {
+            Some(pick) => c.pick_folder(pick, cx),
+            None => c.open_places(e, cx),
+        }))
         .into_any_element()
 }
 

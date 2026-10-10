@@ -5,9 +5,9 @@
 // Approach from zeron's terminal view (MIT, see THIRD_PARTY_NOTICES.md).
 
 use gpui::{
-    App, Bounds, Font, FontFeatures, FontStyle, FontWeight, Hsla, PaintQuad, Pixels, Point,
-    ShapedLine, SharedString, TextAlign, TextRun, UnderlineStyle, Window, fill, font, point, px,
-    size,
+    App, Bounds, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla, PaintQuad, Pixels,
+    Point, ShapedLine, SharedString, TextAlign, TextRun, UnderlineStyle, Window, fill, font, point,
+    px, size,
 };
 
 use super::emulator::{Cell, CellColor, Cursor, Mark, Shape};
@@ -350,12 +350,32 @@ fn drawn_glyphs(
     }
 }
 
+// a symbol the mono font lacks would otherwise fall back to the color emoji font, so a spinner's
+// ✳ drew as a green tile where other terminals draw a glyph
+#[cfg(windows)]
+const SYMBOLS: &str = "Segoe UI Symbol";
+#[cfg(not(windows))]
+const SYMBOLS: &str = "Apple Symbols";
+
+fn emoji(c: char) -> bool {
+    matches!(c as u32,
+        0x231A..=0x231B | 0x23E9..=0x23EC | 0x23F0 | 0x23F3 | 0x25FD..=0x25FE | 0x2614..=0x2615
+        | 0x2648..=0x2653 | 0x267F | 0x2693 | 0x26A1 | 0x26AA..=0x26AB | 0x26BD..=0x26BE
+        | 0x26C4..=0x26C5 | 0x26CE | 0x26D4 | 0x26EA | 0x26F2..=0x26F3 | 0x26F5 | 0x26FA | 0x26FD
+        | 0x2705 | 0x270A..=0x270B | 0x2728 | 0x274C | 0x274E | 0x2753..=0x2755 | 0x2757
+        | 0x2795..=0x2797 | 0x27B0 | 0x27BF | 0x2B1B..=0x2B1C | 0x2B50 | 0x2B55 | 0x1F000..)
+}
+
 // ASCII runs shape together because a mono font keeps them on the grid. Any other glyph may come
 // from a fallback font with its own advance (box drawing, emoji, CJK), so it gets its own segment
 // pinned at its column; otherwise the rest of the row drifts off the grid. `cursor` is the column
 // a block cursor covers, whose glyph is drawn in the background color.
 fn shape_row(line: &[Cell], cursor: Option<usize>, window: &Window) -> Vec<(usize, ShapedLine)> {
     let base = mono();
+    let symbols = Font {
+        fallbacks: Some(FontFallbacks::from_fonts(vec![SYMBOLS.into()])),
+        ..base.clone()
+    };
     let mut segments = Vec::new();
     let mut text = String::new();
     let mut runs: Vec<TextRun> = Vec::new();
@@ -396,7 +416,11 @@ fn shape_row(line: &[Cell], cursor: Option<usize>, window: &Window) -> Vec<(usiz
             start = col;
         }
         let color = text_color(cell, cursor == Some(col));
-        let mut f = base.clone();
+        let mut f = if pinned && !emoji(cell.ch) {
+            symbols.clone()
+        } else {
+            base.clone()
+        };
         if cell.bold {
             f.weight = FontWeight::BOLD;
         }
@@ -443,6 +467,16 @@ mod tests {
             line_h: px(18.),
             cols: 40,
             rows: 10,
+        }
+    }
+
+    #[test]
+    fn spinner_symbols_draw_as_text_and_emoji_stay_emoji() {
+        for c in ['✳', '✶', '✻', '✽', '✢', '⏺', '●', '⎿'] {
+            assert!(!emoji(c), "{c}");
+        }
+        for c in ['⚡', '✅', '⭐', '😀', '🚀'] {
+            assert!(emoji(c), "{c}");
         }
     }
 

@@ -4,6 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use gpui::{AppContext, Context, Entity, FocusHandle, Focusable, PathPromptOptions, Window};
+use hyprspace_proto::peer::PeerCommand;
+use hyprspace_proto::phone::Ask;
 use hyprspace_proto::{Agent, Command, Prompt, SessionId, Space, Thread, ThreadKind};
 
 use super::{Action, Rename, Root, Screen, Start, View};
@@ -16,7 +18,7 @@ use crate::transcript::{Status, TranscriptEvent, TranscriptView};
 const RETRY_LIMIT: u64 = 30 * 60 * 1000;
 
 /// Two paths name the same folder. Windows paths are case-blind.
-fn same_folder(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
     let norm = |p: &Path| {
         let s = p
             .to_string_lossy()
@@ -71,12 +73,9 @@ impl Root {
     /// The space for `path`, made if the sidebar has none yet.
     pub(crate) fn add_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> u64 {
         let path = trim_separator(path);
-        if let Some(s) = self
-            .state
-            .spaces
-            .iter_mut()
-            .find(|s| s.cwd.as_deref().is_some_and(|c| same_folder(c, &path)))
-        {
+        if let Some(s) = self.state.spaces.iter_mut().find(|s| {
+            s.machine.is_none() && s.cwd.as_deref().is_some_and(|c| same_folder(c, &path))
+        }) {
             s.archived = false;
             return s.id;
         }
@@ -110,7 +109,18 @@ impl Root {
         let start = near.unwrap_or_else(|| home.clone());
         let back = window.focused(cx);
         let client = self.client.clone();
-        let picker = cx.new(|cx| crate::folders::FolderPicker::new(client, start, home, back, cx));
+        let projects = self
+            .state
+            .spaces
+            .iter()
+            .filter(|s| !s.archived && s.machine.is_none())
+            .filter_map(|s| Some((s.name.clone(), s.cwd.clone()?)))
+            .collect();
+        let picker = cx.new(|cx| {
+            let mut p = crate::folders::FolderPicker::new(client, None, start, home, back, cx);
+            p.set_projects(projects);
+            p
+        });
         cx.subscribe_in(
             &picker,
             window,
@@ -203,10 +213,27 @@ impl Root {
                 self.compose(Some(id), window, cx)
             }
             _ => {
-                let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
+                let first = self.first_space();
                 self.compose(first, window, cx);
             }
         }
+    }
+
+    /// The space to show when none is asked for: one of this computer's, else any.
+    pub(crate) fn first_space(&self) -> Option<u64> {
+        let open = self.state.spaces.iter().filter(|s| !s.archived);
+        open.clone()
+            .find(|s| s.machine.is_none())
+            .or_else(|| open.clone().next())
+            .map(|s| s.id)
+    }
+
+    pub(crate) fn local_spaces(&self) -> usize {
+        self.state
+            .spaces
+            .iter()
+            .filter(|s| s.machine.is_none())
+            .count()
     }
 
     pub(crate) fn compose(
@@ -216,15 +243,57 @@ impl Root {
         cx: &mut Context<Self>,
     ) {
         self.screen = Screen::Compose(space);
+        self.refresh_composer(cx);
+        let focus = self.composer.focus_handle(cx);
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    /// Hands the composer the space on screen, and its computer's agents when that is another.
+    pub(crate) fn refresh_composer(&mut self, cx: &mut Context<Self>) {
+        let Screen::Compose(space) = self.screen else {
+            return;
+        };
         let target = space.and_then(|id| self.state.space(id)).map(|s| Target {
             space: s.id,
             name: s.name.clone(),
             cwd: s.cwd.clone(),
+            machine: s.machine.clone(),
         });
-        self.composer.update(cx, |c, cx| c.set_target(target, cx));
-        let focus = self.composer.focus_handle(cx);
-        window.focus(&focus, cx);
-        cx.notify();
+        let host = target
+            .as_ref()
+            .and_then(|t| t.machine.as_deref())
+            .map(|m| self.machines.agents(m).to_vec());
+        let machine = target.as_ref().and_then(|t| t.machine.clone());
+        let places = self
+            .state
+            .spaces
+            .iter()
+            .filter(|s| !s.archived && s.cwd.is_some() && s.machine == machine)
+            .map(|s| crate::composer::spaces::Place {
+                space: s.id,
+                name: s.name.clone(),
+            })
+            .collect();
+        self.composer.update(cx, |c, cx| {
+            c.set_target(target, host, cx);
+            c.set_places(places, cx);
+        });
+    }
+
+    /// The composer's "Open another folder": the folder browser on the computer it is on.
+    pub(crate) fn other_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let space = match self.screen {
+            Screen::Compose(space) => space.and_then(|s| self.state.space(s)),
+            _ => None,
+        };
+        match space.and_then(|s| s.machine.clone().zip(s.cwd.clone())) {
+            Some((peer, cwd)) => {
+                let start = cwd.parent().map(Path::to_path_buf).unwrap_or(cwd);
+                self.browse_at(peer, start, window, cx);
+            }
+            None => self.pick_thread_folder(window, cx),
+        }
     }
 
     fn session_id(&mut self, thread: u64) -> SessionId {
@@ -246,17 +315,32 @@ impl Root {
         let id = thread.id;
         let session = self.session_id(id);
         let client = self.client.clone();
+        let remote = self.machines.remote(id);
+        if let Some((peer, thread)) = remote.clone() {
+            client.send(Command::Peer(PeerCommand::Bind {
+                id: session,
+                peer,
+                thread,
+            }));
+        }
+        let history = history || remote.is_some();
         let view = match &thread.kind {
             ThreadKind::Structured { launch } => {
                 let launch = launch.clone();
-                let catalog = self
-                    .agents
+                let agents = match &remote {
+                    Some((peer, _)) => self.machines.agents(peer),
+                    None => self.agents.as_slice(),
+                };
+                let catalog = agents
                     .iter()
                     .find(|a| a.agent == launch.agent)
                     .map(|a| a.catalog.clone());
                 let v = cx.new(|cx| {
                     let mut v =
                         TranscriptView::new(session, launch, thread, history, first, client, cx);
+                    if remote.is_some() {
+                        v.set_remote();
+                    }
                     if let Some(c) = catalog {
                         v.set_catalog(c, cx);
                     }
@@ -352,6 +436,28 @@ impl Root {
     }
 
     fn on_transcript(&mut self, thread: u64, e: &TranscriptEvent, cx: &mut Context<Self>) {
+        if self.machines.remote(thread).is_some() {
+            match e {
+                TranscriptEvent::Status(s) => {
+                    self.set_status(thread, *s);
+                    self.tick(cx);
+                }
+                TranscriptEvent::Launch(l) => {
+                    let model = l.model.clone().unwrap_or_default();
+                    let effort = l.effort.clone().unwrap_or_default();
+                    let permission = l.permission;
+                    self.ask_host(thread, |thread| Ask::Model {
+                        thread,
+                        model,
+                        effort,
+                    });
+                    self.ask_host(thread, |thread| Ask::Permission { thread, permission });
+                }
+                _ => {}
+            }
+            cx.notify();
+            return;
+        }
         match e {
             TranscriptEvent::Status(s) => {
                 self.set_status(thread, *s);
@@ -603,7 +709,7 @@ impl Root {
                     .map(|(s, _)| s.id),
                 _ => None,
             };
-            let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
+            let first = self.first_space();
             self.compose(own.or(first), window, cx);
         }
     }
@@ -613,6 +719,9 @@ impl Root {
         self.menu = None;
         match action {
             Action::NewThread(space) => self.compose(Some(space), window, cx),
+            Action::NewTerminal(space) if self.machines.space(space).is_some() => {
+                self.remote_terminal(space, cx);
+            }
             Action::NewTerminal(space) => {
                 self.new_terminal(space, true, window, cx);
             }
@@ -726,7 +835,11 @@ impl Root {
             && let Some(t) = self.state.thread_mut(thread)
             && t.title != name
         {
-            t.title = name;
+            t.title = name.clone();
+            self.ask_host(thread, |thread| Ask::Rename {
+                thread,
+                title: name,
+            });
             self.save();
         }
         self.rename = None;

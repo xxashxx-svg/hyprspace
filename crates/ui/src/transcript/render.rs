@@ -3,70 +3,93 @@
 // until clicked, approval prompts with their buttons, and the pill-shaped box to reply or steer.
 
 use chrono::TimeZone;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, ExternalPaths, Focusable,
-    FontWeight, IntoElement, MouseButton, ScrollHandle, ScrollWheelEvent, SharedString, StyledText,
-    Window, div, prelude::*, px, relative,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, ElementId, ExternalPaths,
+    Focusable, FontWeight, IntoElement, MouseButton, ScrollWheelEvent, SharedString, StyledText,
+    Transformation, Window, div, list, percentage, prelude::*, px, relative,
 };
 use hyprspace_proto::{RunStatus, Tool};
 
 use super::model::Item;
+use super::rows::{self, Row};
 use super::{TranscriptView, tool};
 use crate::assets::{icon, mark};
 use crate::composer::model_menu::{self, Host as _, ModelMenu};
-use crate::slide::Glide;
+use crate::pace::Looping;
+use crate::slide::{self, Glide, ease_out};
 use crate::{attach, colors, markdown, spinner, widgets};
 
 /// The transcript and the composer share one column, so their edges line up. Text runs 768px
 /// wide, as T3 Code's chat does.
 const COLUMN: f32 = 816.;
 const GUTTER: f32 = 24.;
+const ENTER: Duration = Duration::from_millis(280);
+const UNFOLD: Duration = Duration::from_millis(200);
+const WORKING_IN: Duration = Duration::from_millis(240);
 
 pub fn view(
     v: &mut TranscriptView,
     window: &mut Window,
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
-    let items = items(v, cx);
-    let working = v.model.elapsed().map(|secs| working(secs, v.stopping));
-    let loading = v.loading.then(|| {
-        div()
-            .text_size(px(12.))
-            .text_color(colors::text3())
-            .child("Loading the conversation...")
+    if v._focus.is_empty() {
+        let input = v.input.focus_handle(cx);
+        v._focus = vec![
+            cx.on_focus(&input, window, |_, _, cx| cx.notify()),
+            cx.on_blur(&input, window, |_, _, cx| cx.notify()),
+        ];
+    }
+    v.follow.step(&v.list, window, cx);
+    // rows measure taller than estimated once laid out, which only shows after this frame
+    cx.on_next_frame(window, |v, _, cx| {
+        if v.follow.behind(&v.list) {
+            cx.notify();
+        }
     });
-    let empty = (!v.loading && v.model.items.is_empty()).then(|| {
-        div()
-            .pt(px(80.))
-            .flex()
-            .justify_center()
-            .text_size(px(13.))
-            .text_color(colors::text3())
-            .child(format!(
-                "Send a message to start {} in {}.",
-                v.launch.agent.name(),
-                folder_name(v)
-            ))
-    });
-    let jump = (!v.at_bottom()).then(|| jump(cx));
-    // every row is its own child of the scroll, so the scroll handle knows where each prompt is
-    let lead = usize::from(loading.is_some()) + usize::from(empty.is_some());
-    let prompts: Vec<usize> = items
+    v.partial = v
+        .reveal
+        .as_mut()
+        .and_then(|r| match v.model.items.get(r.ix) {
+            Some(Item::Text { source, .. }) => r
+                .step(source, window, cx)
+                .map(|end| (r.ix, markdown::parse(&source[..end]))),
+            _ => None,
+        });
+    let now = Instant::now();
+    for ix in v.seen.max(v.fresh)..v.model.items.len() {
+        v.born.insert(ix, now);
+    }
+    v.seen = v.model.items.len();
+    v.born.retain(|_, at| at.elapsed() < ENTER);
+    if !v.born.is_empty() {
+        crate::pace::next(window, cx);
+    }
+    let live = v.model.elapsed().is_some();
+    v.working = live.then(|| v.working.unwrap_or(now));
+    if v.working.is_some_and(|at| at.elapsed() < WORKING_IN) {
+        crate::pace::next(window, cx);
+    }
+    let rows = rows::plan(&v.model.items, v.loading, live);
+    v.sync_rows(rows);
+    let prompts: Vec<usize> = v
+        .rows
         .iter()
         .enumerate()
-        .filter(|(_, (user, _))| *user)
-        .map(|(i, _)| lead + i)
+        .filter(|(_, r)| matches!(r, Row::Item { user: true, .. }))
+        .map(|(i, _)| i)
         .collect();
-    let rows = loading
-        .map(IntoElement::into_any_element)
-        .into_iter()
-        .chain(empty.map(IntoElement::into_any_element))
-        .chain(items.into_iter().map(|(_, row)| row))
-        .chain(working)
-        .map(|row| centered(column().child(row)));
+    let surface: Arc<str> = format!("t{}", v.id.0).into();
+    edge_scroll(v, &surface, window);
+    let jump = v.follow.away(&v.list).then(|| jump(cx));
     let ticks = ticks(v, &prompts, window, cx);
+    let rows = list(
+        v.list.clone(),
+        cx.processor(|v, ix: usize, _, cx| list_row(v, ix, cx)),
+    )
+    .size_full();
     div()
         .id("transcript")
         .size_full()
@@ -79,33 +102,97 @@ pub fn view(
         )
         .child(
             div()
+                .id("transcript-scroll")
                 .relative()
                 .flex_1()
                 .min_h_0()
+                .on_scroll_wheel(cx.listener(|v, e: &ScrollWheelEvent, _, cx| {
+                    v.follow.wheel(e.delta.pixel_delta(px(20.)).y > px(0.));
+                    cx.notify();
+                }))
                 // before any text, so selection knows this transcript's elements
-                .child(markdown::select::reset(format!("t{}", v.id.0).into()))
-                .child(
-                    div()
-                        .id("transcript-scroll")
-                        .size_full()
-                        .overflow_y_scroll()
-                        .track_scroll(&v.scroll)
-                        .flex()
-                        .flex_col()
-                        .pt(px(24.))
-                        .pb(px(24.))
-                        .gap(px(20.))
-                        // repaint as the user scrolls, so the jump button comes and goes and
-                        // the ticks follow
-                        .on_scroll_wheel(cx.listener(|_, _: &ScrollWheelEvent, _, cx| cx.notify()))
-                        .children(rows),
-                )
+                .child(markdown::select::reset(surface.clone()))
+                .child(rows)
+                .child(markdown::select::tail(surface))
                 .children(ticks)
                 .children(jump),
         )
         .child(composer(v, window, cx))
         .children(model_menu(v, window, cx))
         .children(permission_menu(v, window, cx))
+        .into_any_element()
+}
+
+fn edge_scroll(v: &mut TranscriptView, surface: &Arc<str>, window: &mut Window) {
+    let Some(at) = markdown::select::dragging(surface) else {
+        v.drag_step = None;
+        return;
+    };
+    let b = v.list.viewport_bounds();
+    let edge = px(32.);
+    let over = if at.y < b.top() + edge {
+        at.y - (b.top() + edge)
+    } else if at.y > b.bottom() - edge {
+        at.y - (b.bottom() - edge)
+    } else {
+        px(0.)
+    };
+    let now = Instant::now();
+    let dt = v
+        .drag_step
+        .replace(now)
+        .map_or(0., |t| (now - t).as_secs_f32().min(0.05));
+    if over != px(0.) {
+        v.list.scroll_by(over.clamp(px(-80.), px(80.)) * (dt * 12.));
+        if over < px(0.) {
+            v.follow.wheel(true);
+        }
+        window.request_animation_frame();
+    }
+}
+
+fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>) -> AnyElement {
+    let Some(&row) = v.rows.get(ix) else {
+        return div().into_any_element();
+    };
+    let body = match row {
+        Row::Loading => div()
+            .text_size(px(12.))
+            .text_color(colors::text3())
+            .child("Loading the conversation...")
+            .into_any_element(),
+        Row::Empty => div()
+            .pt(px(80.))
+            .flex()
+            .justify_center()
+            .text_size(px(13.))
+            .text_color(colors::text3())
+            .child(format!(
+                "Send a message to start {} in {}.",
+                v.launch.agent.name(),
+                folder_name(v)
+            ))
+            .into_any_element(),
+        Row::Item { ix, .. } => {
+            let el = item(v, ix, &v.model.items[ix], cx);
+            enter(v, ix, el)
+        }
+        Row::Quiet(start) => quiet(v, start, cx),
+        Row::Working => {
+            let t = v.working.filter(|_| slide::animations()).map_or(1., |at| {
+                ease_out((at.elapsed().as_secs_f32() / WORKING_IN.as_secs_f32()).min(1.))
+            });
+            div()
+                .relative()
+                .top(px(4. * (1. - t)))
+                .opacity(t)
+                .child(working(v))
+                .into_any_element()
+        }
+    };
+    centered(column().child(body))
+        .when(ix == 0, |d| d.pt(px(24.)))
+        .pb(px(20.))
         .into_any_element()
 }
 
@@ -130,25 +217,54 @@ fn folder_name(v: &TranscriptView) -> String {
         .unwrap_or_else(|| "this folder".into())
 }
 
-fn working(secs: u64, stopping: bool) -> AnyElement {
+fn working(v: &TranscriptView) -> AnyElement {
+    let secs = v.model.elapsed().unwrap_or(0);
+    let took = if secs < 60 {
+        format!("{secs}s")
+    } else {
+        format!("{}m {}s", secs / 60, secs % 60)
+    };
+    let doing = v
+        .model
+        .running_tool()
+        .filter(|_| !v.stopping)
+        .map(tool::label);
+    let label = div()
+        .flex_none()
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors::text2())
+        .child(if v.stopping { "Stopping" } else { "Working" })
+        .looping(1800, |d, t| {
+            d.opacity(0.55 + 0.45 * (0.5 + 0.5 * (t * std::f32::consts::TAU).cos()))
+        });
     div()
         .flex()
         .items_center()
         .gap(px(8.))
-        .text_size(px(12.))
+        .h(px(22.))
+        .text_size(px(12.5))
         .text_color(colors::text3())
-        .child(spinner::eclipse("working", colors::text3()))
-        .child(div().text_color(colors::text2()).child(if stopping {
-            "Stopping".to_string()
-        } else {
-            format!("Working {secs}s")
-        }))
-        .when(!stopping, |d| d.child("· Esc to stop"))
+        .child(spinner::eclipse("working", colors::text2()))
+        .child(label)
+        .children(doing.map(|d| div().min_w_0().truncate().child(d)))
+        .child(div().flex_1())
+        .child(div().flex_none().child(took))
+        .when(!v.stopping, |d| {
+            d.child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(5.))
+                    .child(widgets::keycap("Esc"))
+                    .child("to stop"),
+            )
+        })
         .into_any_element()
 }
 
 fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
-    div()
+    let pill = div()
         .absolute()
         .bottom(px(12.))
         .left_0()
@@ -174,99 +290,75 @@ fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
                 .child(icon("arrow-down", 12., colors::text2()))
                 .child("Scroll to bottom")
                 .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
-                    v.scroll.scroll_to_bottom();
+                    v.follow.down(&v.list);
                     cx.notify();
                 })),
-        )
+        );
+    slide::ease_in(pill, "jump-in", 180, |d, t| {
+        d.opacity(t).bottom(px(4. + 8. * t))
+    })
+}
+
+fn enter(v: &TranscriptView, ix: usize, row: AnyElement) -> AnyElement {
+    let Some(at) = v.born.get(&ix) else {
+        return row;
+    };
+    let t = ease_out((at.elapsed().as_secs_f32() / ENTER.as_secs_f32()).min(1.));
+    div()
+        .relative()
+        .top(px(10. * (1. - t)))
+        .opacity(t)
+        .child(row)
         .into_any_element()
 }
 
-/// Every item. Thinking and tool calls in a row sit together as one quiet block, and each run
-/// of two or more tool calls in it folds into one line.
-/// Each row, and whether it is one of the user's prompts.
-fn items(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Vec<(bool, AnyElement)> {
+fn quiet(v: &TranscriptView, start: usize, cx: &mut Context<TranscriptView>) -> AnyElement {
     let all = &v.model.items;
-    let last_todo = all.iter().rposition(|i| {
-        matches!(i, Item::Tool { tool, .. } if super::ask::named(tool).is_some_and(|(n, _)| n == super::ask::TODO))
-    });
+    let end = rows::quiet_end(all, start);
     let mut out = Vec::new();
-    let mut ix = 0;
-    while ix < all.len() {
-        if super::ask::special(&all[ix]) {
-            let todo = matches!(&all[ix], Item::Tool { tool, .. } if super::ask::named(tool).is_some_and(|(n, _)| n == super::ask::TODO));
-            if !todo || Some(ix) == last_todo {
-                out.push((false, item(v, ix, &all[ix], cx)));
-            }
-            ix += 1;
-            continue;
-        }
-        let quiet = all[ix..]
+    let mut ix = start;
+    while ix < end {
+        let calls = all[ix..end]
             .iter()
-            .take_while(|i| {
-                matches!(i, Item::Tool { .. } | Item::Thinking { .. }) && !super::ask::special(i)
-            })
+            .take_while(|i| matches!(i, Item::Tool { .. }))
             .count();
-        // a run that finished fine needs no line, the way zeron's transcript has none
-        if let Item::Finished {
-            status: RunStatus::Done,
-            ..
-        } = all[ix]
-        {
+        if calls > 1 {
+            let row = tool_run(v, ix, ix + calls, cx);
+            out.push(enter(v, ix, row));
+            ix += calls;
+        } else {
+            let row = item(v, ix, &all[ix], cx);
+            out.push(enter(v, ix, row));
             ix += 1;
-            continue;
         }
-        if quiet == 0 {
-            let user = matches!(all[ix], Item::User { .. });
-            out.push((user, item(v, ix, &all[ix], cx)));
-            ix += 1;
-            continue;
-        }
-        let mut rows = Vec::new();
-        let end = ix + quiet;
-        while ix < end {
-            let calls = all[ix..end]
-                .iter()
-                .take_while(|i| matches!(i, Item::Tool { .. }))
-                .count();
-            if calls > 1 {
-                rows.push(tool_run(v, ix, ix + calls, cx));
-                ix += calls;
-            } else {
-                rows.push(item(v, ix, &all[ix], cx));
-                ix += 1;
-            }
-        }
-        out.push((
-            false,
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(8.))
-                .children(rows)
-                .into_any_element(),
-        ));
     }
-    out
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .children(out)
+        .into_any_element()
 }
 
-/// The prompt being read: the first at the top, the last at the bottom, and between them the last
-/// one above a line a third of the way down the view.
-fn lit(scroll: &ScrollHandle, prompts: &[usize]) -> usize {
-    let last = prompts.len().saturating_sub(1);
-    let max = scroll.max_offset().y;
-    let y = -scroll.offset().y;
+fn lit(v: &TranscriptView, prompts: &[usize]) -> usize {
+    let (list, last) = (&v.list, prompts.len().saturating_sub(1));
+    if v.follow.stick {
+        return last;
+    }
+    let max = list.max_offset_for_scrollbar().y;
+    let y = -list.scroll_px_offset_for_scrollbar().y;
     if max <= px(4.) || y >= max - px(4.) {
         return last;
     }
     if y <= px(4.) {
         return 0;
     }
-    let view = scroll.bounds();
-    // a row's bounds are where it sits unscrolled, so the line moves down by the scroll instead
-    let line = view.top() + view.size.height / 3. - scroll.offset().y;
+    let view = list.viewport_bounds();
+    let line = view.top() + view.size.height / 3.;
+    let top = list.logical_scroll_top().item_ix;
     prompts
         .iter()
-        .rposition(|&row| scroll.bounds_for_item(row).is_some_and(|b| b.top() <= line))
+        .rposition(|&row| row < top || list.bounds_for_item(row).is_some_and(|b| b.top() <= line))
         .unwrap_or(0)
 }
 
@@ -280,15 +372,15 @@ fn ticks(
     cx: &mut Context<TranscriptView>,
 ) -> Option<AnyElement> {
     // two prompts at least, and room beside the column so the ticks don't sit on the text
-    if prompts.len() < 2 || v.scroll.bounds().size.width < px(COLUMN + 80.) {
+    if prompts.len() < 2 || v.list.viewport_bounds().size.width < px(COLUMN + 80.) {
         return None;
     }
     // positions come from the last layout, and a scroll set during this one (to the bottom, say)
     // only shows in the next, so check again then and redraw if the lit tick moved
-    let lit = lit(&v.scroll, prompts);
+    let lit = lit(v, prompts);
     let rows = prompts.to_vec();
     cx.on_next_frame(window, move |v, _, cx| {
-        if self::lit(&v.scroll, &rows) != lit {
+        if self::lit(v, &rows) != lit {
             cx.notify();
         }
     });
@@ -333,7 +425,7 @@ fn ticks(
                 }))
                 .child(bar)
                 .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
-                    v.scroll.scroll_to_top_of_item(row);
+                    v.follow.seek(&v.list, row);
                     cx.notify();
                 }))
                 .into_any_element()
@@ -533,7 +625,13 @@ fn item(
             )
             .when(!text.is_empty(), |d| d.child(hover_copy(ix, text)))
             .into_any_element(),
-        Item::Text { blocks, source } => match blocks {
+        Item::Text { blocks, source } => match v
+            .partial
+            .as_ref()
+            .filter(|(p, _)| *p == ix)
+            .map(|(_, b)| b)
+            .or(blocks.as_ref())
+        {
             Some(b) => div()
                 .group(SharedString::from(format!("msg-{ix}")))
                 .flex()
@@ -566,7 +664,9 @@ fn item(
                 .gap(px(6.))
                 .child(head)
                 .when(*open, |d| {
-                    d.child(
+                    d.child(unfold(
+                        cx,
+                        ("thinking", ix),
                         div()
                             .pl(px(26.))
                             .text_size(px(12.5))
@@ -574,7 +674,7 @@ fn item(
                             .italic()
                             .text_color(colors::text3())
                             .child(text.trim().to_string()),
-                    )
+                    ))
                 })
                 .into_any_element()
         }
@@ -679,6 +779,8 @@ pub(super) fn fold_head(
     cx: &mut Context<TranscriptView>,
     toggle: impl Fn(&mut TranscriptView) + 'static,
 ) -> AnyElement {
+    let id: ElementId = id.into();
+    let key = fold_key(cx, &id);
     div()
         .id(id)
         .flex()
@@ -696,23 +798,56 @@ pub(super) fn fold_head(
                 .items_center()
                 .justify_center()
                 .size(px(18.))
-                .child(icon(
-                    if open {
-                        "chevron-down"
-                    } else {
-                        "chevron-right"
-                    },
-                    12.,
-                    colors::text3(),
-                )),
+                .child(twist(&key, open)),
         )
         .child(div().min_w_0().truncate().child(label))
         .children(right)
         .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+            slide::flip(key.clone());
             toggle(v);
             cx.notify();
         }))
         .into_any_element()
+}
+
+pub(super) fn fold_key(cx: &Context<TranscriptView>, id: &ElementId) -> String {
+    format!("{}:{id:?}", cx.entity_id())
+}
+
+pub(super) fn twist(key: &str, open: bool) -> AnyElement {
+    let turn = move |t: f32| percentage(if open { 0.25 * t } else { 0.25 * (1. - t) });
+    let chevron = icon("chevron-right", 12., colors::text3());
+    match slide::flipped(key, UNFOLD) {
+        Some(n) => chevron
+            .with_animation(
+                ("twist", n),
+                Animation::new(UNFOLD).with_easing(ease_out),
+                move |c, t| c.with_transformation(Transformation::rotate(turn(t))),
+            )
+            .into_any_element(),
+        None => chevron
+            .with_transformation(Transformation::rotate(turn(1.)))
+            .into_any_element(),
+    }
+}
+
+pub(super) fn unfold(
+    cx: &Context<TranscriptView>,
+    id: impl Into<ElementId>,
+    body: impl IntoElement,
+) -> AnyElement {
+    let key = fold_key(cx, &id.into());
+    let body = div().relative().child(body);
+    match slide::flipped(&key, UNFOLD) {
+        Some(n) => body
+            .with_animation(
+                ("unfold", n),
+                Animation::new(UNFOLD).with_easing(ease_out),
+                |d, t| d.opacity(t).top(px(-6. * (1. - t))),
+            )
+            .into_any_element(),
+        None => body.into_any_element(),
+    }
 }
 
 /// A run of tool calls as one line counting them, opening to the single calls.
@@ -776,13 +911,23 @@ fn tool_run(
         .gap(px(6.))
         .child(head)
         .when(open, |d| {
-            d.child(div().pl(px(26.)).flex().flex_col().gap(px(6.)).children(
-                (start..end).filter_map(|ix| match &v.model.items[ix] {
+            let calls: Vec<AnyElement> = (start..end)
+                .filter_map(|ix| match &v.model.items[ix] {
                     Item::Tool {
                         tool, done, open, ..
                     } => Some(main_tool(ix, tool, done.as_ref(), *open, cx)),
                     _ => None,
-                }),
+                })
+                .collect();
+            d.child(unfold(
+                cx,
+                ("tool-run", start),
+                div()
+                    .pl(px(26.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .children(calls),
             ))
         })
         .into_any_element()
@@ -839,6 +984,7 @@ pub(super) fn tool_card(
         }
         _ => None,
     };
+    let body_id: ElementId = (key.clone(), 0usize).into();
     let head = fold_head(
         (key, 0),
         open,
@@ -862,7 +1008,9 @@ pub(super) fn tool_card(
         .gap(px(6.))
         .child(head)
         .when(open, |d| {
-            d.child(
+            d.child(unfold(
+                cx,
+                body_id,
                 div()
                     .pl(px(26.))
                     .flex()
@@ -880,7 +1028,7 @@ pub(super) fn tool_card(
                         done.filter(|(_, out)| !out.trim().is_empty())
                             .map(|(_, out)| tool::mono(out)),
                     ),
-            )
+            ))
         })
         .into_any_element()
 }

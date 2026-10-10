@@ -3,7 +3,8 @@
 // slides in and out past the window's edge rather than being wiped. `Glide` eases anything that
 // moves between spots, like a menu's highlight or a slider's knob.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -17,6 +18,35 @@ thread_local! {
     static ANIMATIONS: Cell<bool> = const { Cell::new(true) };
     /// When the last panel slide ends.
     static SLIDE_END: Cell<Option<Instant>> = const { Cell::new(None) };
+    static FLIPS: RefCell<Turns> = RefCell::default();
+}
+
+#[derive(Default)]
+struct Turns {
+    count: usize,
+    at: HashMap<String, (usize, Instant)>,
+}
+
+pub fn flip(key: String) {
+    FLIPS.with(|f| {
+        let Turns { count, at: flips } = &mut *f.borrow_mut();
+        *count += 1;
+        flips.retain(|_, (_, at)| at.elapsed() < Duration::from_secs(2));
+        flips.insert(key, (*count, Instant::now()));
+    });
+}
+
+pub fn flipped(key: &str, within: Duration) -> Option<usize> {
+    if !animations() {
+        return None;
+    }
+    FLIPS.with(|f| {
+        f.borrow()
+            .at
+            .get(key)
+            .filter(|(_, at)| at.elapsed() < within)
+            .map(|(n, _)| *n)
+    })
 }
 
 /// How much is left of a panel sliding open or shut, if one is. A terminal holds its size until

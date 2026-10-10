@@ -8,7 +8,7 @@ mod settle;
 mod threads;
 pub mod titlebar;
 
-pub(crate) use threads::folder_name;
+pub(crate) use threads::{folder_name, same_folder};
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -196,6 +196,7 @@ pub struct Root {
     git_polled: Option<Instant>,
     /// The phone bridge as the UI sees it (`crate::phone`).
     pub(crate) phone: crate::phone::PhoneState,
+    pub(crate) machines: crate::machines::Machines,
     _phone_pump: Task<()>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
@@ -337,6 +338,7 @@ impl Root {
             _git_pump: git_pump,
             git_polled: None,
             phone: Default::default(),
+            machines: Default::default(),
             _phone_pump: phone_pump,
             _pump: pump,
             _subs: subs,
@@ -391,6 +393,12 @@ impl Root {
                     v.update(cx, |v, cx| v.replay(entries, cx));
                 }
             }
+            Event::Recorded { id, entries } => {
+                if let Some(View::Structured(v)) = self.view_of(id) {
+                    v.update(cx, |v, cx| v.recorded(entries, cx));
+                }
+            }
+            Event::Peer(e) => self.peer_event(e, window, cx),
             Event::Failed { id, message } => match self.view_of(id) {
                 Some(View::Structured(v)) => v.update(cx, |v, cx| v.fail(message, cx)),
                 Some(View::Terminal(v)) => v.update(cx, |v, cx| v.fail(message, cx)),
@@ -499,12 +507,9 @@ impl Root {
         }
         let here = self.current_space();
         let mut folders: Vec<PathBuf> = Vec::new();
-        for s in self
-            .state
-            .spaces
-            .iter()
-            .filter(|s| !s.archived && !s.folded && (all || Some(s.id) == here))
-        {
+        for s in self.state.spaces.iter().filter(|s| {
+            !s.archived && !s.folded && s.machine.is_none() && (all || Some(s.id) == here)
+        }) {
             folders.extend(s.cwd.clone());
             for t in s.threads.iter().filter(|t| t.active()) {
                 if let hyprspace_proto::ThreadKind::Terminal { cwd, .. } = &t.kind {
@@ -594,7 +599,7 @@ impl Root {
         {
             self.open_thread(id, window, cx);
         } else {
-            let first = self.state.spaces.iter().find(|s| !s.archived).map(|s| s.id);
+            let first = self.first_space();
             self.compose(first, window, cx);
         }
         cx.notify();
@@ -621,7 +626,11 @@ impl Root {
                         title: title.clone(),
                         terminal: *terminal,
                     };
-                    self.start_thread(space, start, true, window, cx);
+                    if self.machines.space(space).is_some() {
+                        self.start_remote(space, start, cx);
+                    } else {
+                        self.start_thread(space, start, true, window, cx);
+                    }
                 }
             }
             ComposerEvent::Cloned {
@@ -659,6 +668,9 @@ impl Root {
                 let space = self.add_project(path.clone(), cx);
                 self.compose(Some(space), window, cx);
             }
+            ComposerEvent::Machine(machine) => self.pick_machine(machine.clone(), window, cx),
+            ComposerEvent::Space(space) => self.compose(Some(*space), window, cx),
+            ComposerEvent::OtherFolder => self.other_folder(window, cx),
         }
     }
 
@@ -691,9 +703,12 @@ impl Root {
 
     pub(crate) fn save(&self) {
         if self.loaded {
-            self.client.send(Command::SaveState {
-                state: self.state.clone(),
-            });
+            let mut state = self.state.clone();
+            state.spaces.retain(|s| s.machine.is_none());
+            if state.active.is_some_and(|id| id >= crate::machines::FIRST) {
+                state.active = None;
+            }
+            self.client.send(Command::SaveState { state });
         }
     }
 }

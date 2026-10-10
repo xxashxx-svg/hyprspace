@@ -14,6 +14,7 @@ use gpui::{
     AnimationExt, AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, Point, Window,
     div, prelude::*, px,
 };
+use hyprspace_proto::phone::Ask;
 use hyprspace_proto::{Agent, Snooze, Thread, ThreadKind};
 
 use super::{Root, Screen};
@@ -106,6 +107,7 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.ask_host(thread, |thread| Ask::Settle { thread, on });
         if on {
             self.remember(thread, "Settled", cx);
             self.unpeek(thread);
@@ -137,6 +139,7 @@ impl Root {
     }
 
     pub(crate) fn pin(&mut self, thread: u64, on: bool, cx: &mut Context<Self>) {
+        self.ask_host(thread, |thread| Ask::Pin { thread, on });
         if let Some(t) = self.state.thread_mut(thread) {
             t.pinned = on.then(now_ms);
         }
@@ -153,6 +156,10 @@ impl Root {
         cx: &mut Context<Self>,
     ) {
         self.snooze_menu = None;
+        self.ask_host(thread, |thread| match until {
+            Some(until) => Ask::Snooze { thread, until },
+            None => Ask::Settle { thread, on: false },
+        });
         if until.is_some() {
             self.remember(thread, "Snoozed", cx);
             self.unpeek(thread);
@@ -175,6 +182,13 @@ impl Root {
         let Some(u) = self.undo.take() else {
             return;
         };
+        self.ask_host(u.thread, |thread| match u.snooze {
+            Some(until) => Ask::Snooze { thread, until },
+            None => Ask::Settle {
+                thread,
+                on: u.settled,
+            },
+        });
         if let Some(t) = self.state.thread_mut(u.thread) {
             t.settled = u.settled;
             t.snooze = u.snooze;
@@ -314,7 +328,7 @@ impl Root {
         }
         self.resume_due(now, cx);
         woke.extend(self.state.wake_due(now, false));
-        for s in &mut self.state.spaces {
+        for s in self.state.spaces.iter_mut().filter(|s| s.machine.is_none()) {
             for t in &mut s.threads {
                 if t.settles(now, after) && !busy.contains(&t.id) && shown != Some(t.id) {
                     t.settled = true;

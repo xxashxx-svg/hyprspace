@@ -106,6 +106,7 @@ fn with_sep(path: &Path) -> String {
 
 pub struct FolderPicker {
     client: Client,
+    machine: Option<(String, String)>,
     input: Entity<TextInput>,
     home: PathBuf,
     /// The folder listed, and what is in it once the engine answered.
@@ -117,6 +118,8 @@ pub struct FolderPicker {
     sel: usize,
     scroll: ScrollHandle,
     pub(crate) back: Option<FocusHandle>,
+    projects: Vec<(String, PathBuf)>,
+    list_scroll: ScrollHandle,
     stage: Stage,
     query: Entity<TextInput>,
     field: Entity<TextInput>,
@@ -135,6 +138,7 @@ impl EventEmitter<PickerEvent> for FolderPicker {}
 impl FolderPicker {
     pub fn new(
         client: Client,
+        machine: Option<(String, String)>,
         start: PathBuf,
         home: PathBuf,
         back: Option<FocusHandle>,
@@ -170,7 +174,15 @@ impl FolderPicker {
             }),
         ];
         let mut p = Self {
-            client,
+            client: client.via(machine.as_ref().map(|m| m.0.clone())),
+            stage: if machine.is_some() {
+                Stage::Browse
+            } else {
+                Stage::Sources
+            },
+            machine,
+            projects: Vec::new(),
+            list_scroll: ScrollHandle::new(),
             input,
             home,
             dir: PathBuf::new(),
@@ -180,7 +192,6 @@ impl FolderPicker {
             sel: 0,
             scroll: ScrollHandle::new(),
             back,
-            stage: Stage::Sources,
             query,
             field,
             pick: 0,
@@ -194,6 +205,15 @@ impl FolderPicker {
         };
         p.go(&start, cx);
         p
+    }
+
+    pub fn set_projects(&mut self, projects: Vec<(String, PathBuf)>) {
+        self.projects = projects;
+    }
+
+    /// The paired computer whose folders this browses, None for this one.
+    pub fn machine(&self) -> Option<&str> {
+        self.machine.as_ref().map(|m| m.0.as_str())
     }
 
     fn text(&self, cx: &gpui::App) -> String {
@@ -291,6 +311,7 @@ impl FolderPicker {
                 self.refocus = true;
                 cx.notify();
             }
+            None if self.machine.is_some() => cx.emit(PickerEvent::Close),
             None => self.choose(Stage::Sources, cx),
         }
     }
@@ -303,7 +324,7 @@ impl FolderPicker {
         } else {
             dir.join(partial)
         };
-        if path.is_dir() {
+        if self.machine.is_some() || path.is_dir() {
             self.open(path, cx);
         }
     }
@@ -320,6 +341,7 @@ impl FolderPicker {
     fn prev(&mut self, _: &Prev, _: &mut Window, cx: &mut Context<Self>) {
         if self.stage == Stage::Sources {
             self.pick = self.pick.saturating_sub(1);
+            self.reveal_pick(cx);
             cx.notify();
             return;
         }
@@ -332,6 +354,7 @@ impl FolderPicker {
         if self.stage == Stage::Sources {
             let last = self.sources_shown(cx).len().saturating_sub(1);
             self.pick = (self.pick + 1).min(last);
+            self.reveal_pick(cx);
             cx.notify();
             return;
         }
@@ -533,10 +556,10 @@ impl Render for FolderPicker {
                     .text_size(px(12.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors::text3())
-                    .child(if picking_parent {
-                        "Choose a location"
-                    } else {
-                        "Open a folder"
+                    .child(match &self.machine {
+                        _ if picking_parent => "Choose a location".to_string(),
+                        Some((_, name)) => format!("Open a folder on {name}"),
+                        None => "Open a folder".to_string(),
                     }),
             )
             .child(
@@ -603,23 +626,23 @@ impl Render for FolderPicker {
                             .child("open"),
                     )
                     .child(div().flex_1())
-                    .child(
-                        div()
-                            .id("folders-system")
-                            .px(px(10.))
-                            .py(px(5.))
-                            .rounded(px(7.))
-                            .text_size(px(12.))
-                            .text_color(colors::text2())
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors::ink(0.08)).text_color(colors::text1()))
-                            .child(format!("Open in {}", file_manager()))
-                            .on_click(
-                                cx.listener(|_, _: &ClickEvent, _, cx| {
+                    .when(self.machine.is_none(), |d| {
+                        d.child(
+                            div()
+                                .id("folders-system")
+                                .px(px(10.))
+                                .py(px(5.))
+                                .rounded(px(7.))
+                                .text_size(px(12.))
+                                .text_color(colors::text2())
+                                .cursor_pointer()
+                                .hover(|s| s.bg(colors::ink(0.08)).text_color(colors::text1()))
+                                .child(format!("Open in {}", file_manager()))
+                                .on_click(cx.listener(|_, _: &ClickEvent, _, cx| {
                                     cx.emit(PickerEvent::System)
-                                }),
-                            ),
-                    )
+                                })),
+                        )
+                    })
                     .child(
                         div()
                             .id("folders-open-here")

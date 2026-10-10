@@ -80,19 +80,32 @@ impl TerminalView {
     }
 
     fn paste_image(&mut self, item: &ClipboardItem, cx: &mut Context<Self>) -> bool {
-        let saved = item.entries().iter().find_map(|e| match e {
-            ClipboardEntry::Image(image) => attach::save(image).ok(),
+        let Some(image) = item.entries().iter().find_map(|e| match e {
+            ClipboardEntry::Image(image) => Some(image.clone()),
             _ => None,
-        });
-        match saved {
-            Some(path) => {
-                let before = self.before_paste();
-                self.paste_text(&attach::path_text(&path), cx);
-                self.pasted(path, before, cx);
-                true
+        }) else {
+            return false;
+        };
+        self.saving += 1;
+        self.held.get_or_insert_default();
+        attach::save_later(vec![image], cx, |v, saved, cx| {
+            v.saving -= 1;
+            let held = v.held.take();
+            for path in saved {
+                let before = v.before_paste();
+                v.paste_text(&attach::path_text(&path), cx);
+                v.pasted(path, before, cx);
             }
-            None => false,
-        }
+            match held {
+                Some(held) if v.saving == 0 => {
+                    for bytes in held {
+                        v.input(bytes, cx);
+                    }
+                }
+                held => v.held = held,
+            }
+        });
+        true
     }
 
     pub(super) fn paste_text(&mut self, text: &str, cx: &mut Context<Self>) {

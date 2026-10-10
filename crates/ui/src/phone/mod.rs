@@ -59,7 +59,7 @@ impl Root {
                 }
             }
             PhoneEvent::Pairing { pairing } => self.phone.pairing = pairing,
-            PhoneEvent::Ask { ask } => self.phone_ask(ask, window, cx),
+            PhoneEvent::Ask { ask, from } => self.phone_ask(ask, from, window, cx),
             PhoneEvent::Watching { threads } => {
                 // a terminal a phone watches needs its session running
                 for id in threads {
@@ -73,11 +73,17 @@ impl Root {
                 }
                 self.phone_publish(cx);
             }
-            PhoneEvent::Fit { id, phone } => {
+            PhoneEvent::Fit { id, phone, by } => {
+                let computer = self
+                    .phone
+                    .status
+                    .devices
+                    .iter()
+                    .any(|d| d.computer && d.name == by);
                 if let Some(View::Terminal(v)) =
                     self.sessions.get(&id).and_then(|t| self.views.get(t))
                 {
-                    v.update(cx, |v, cx| v.set_phone(phone, cx));
+                    v.update(cx, |v, cx| v.set_phone(phone.then_some((by, computer)), cx));
                 }
             }
         }
@@ -111,7 +117,12 @@ impl Root {
         let now = now_ms();
         let mut spaces = Vec::new();
         let mut threads = Vec::new();
-        for s in self.state.spaces.iter().filter(|s| !s.archived) {
+        for s in self
+            .state
+            .spaces
+            .iter()
+            .filter(|s| !s.archived && s.machine.is_none())
+        {
             let (lf, li) = hyprspace_theme::tag(&s.name, false);
             let (df, di) = hyprspace_theme::tag(&s.name, true);
             spaces.push(BoardSpace {
@@ -211,6 +222,7 @@ impl Root {
             model: t.agent().map(|l| self.model_label(l)),
             model_id: t.agent().and_then(|l| l.model.clone()).unwrap_or_default(),
             effort: t.agent().and_then(|l| l.effort.clone()).unwrap_or_default(),
+            permission: t.agent().map(|l| l.permission).unwrap_or_default(),
             status: match status {
                 Status::Idle => BoardStatus::Idle,
                 Status::Working => BoardStatus::Working,
@@ -237,7 +249,7 @@ impl Root {
         }
     }
 
-    fn phone_ask(&mut self, ask: Ask, window: &mut Window, cx: &mut Context<Self>) {
+    fn phone_ask(&mut self, ask: Ask, from: u64, window: &mut Window, cx: &mut Context<Self>) {
         match ask {
             Ask::Send {
                 thread,
@@ -256,9 +268,24 @@ impl Root {
                 thread,
                 request,
                 answer,
+                answers,
             } => {
                 if let Some(v) = self.structured_view(thread, cx) {
-                    v.update(cx, |v, cx| v.approve(request, answer, cx));
+                    v.update(cx, |v, cx| v.approve(request, answer, answers, cx));
+                }
+            }
+            Ask::Permission { thread, permission } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.set_permission(permission, cx));
+                }
+            }
+            Ask::Rename { thread, title } => {
+                let title = line(&title, 200);
+                if !title.is_empty()
+                    && let Some(t) = self.state.thread_mut(thread)
+                {
+                    t.title = title;
+                    self.save();
                 }
             }
             Ask::Pin { thread, on } => self.pin(thread, on, cx),
@@ -292,6 +319,7 @@ impl Root {
                 space,
                 folder,
                 start,
+                request,
             } => {
                 let space = match folder.map(std::path::PathBuf::from) {
                     Some(f) if f.is_dir() => self.add_project(f, cx),
@@ -301,22 +329,40 @@ impl Root {
                 let Some(cwd) = self.state.space(space).and_then(|s| s.cwd.clone()) else {
                     return;
                 };
+                let started = |root: &mut Self, thread: Option<u64>| {
+                    if let (Some(request), Some(thread)) = (request, thread) {
+                        root.client.send(Command::Phone(PhoneCommand::Started {
+                            to: from,
+                            request,
+                            thread,
+                        }));
+                    }
+                };
                 let Some(agent) = start.agent else {
-                    self.new_terminal(space, false, window, cx);
+                    let thread = self.new_terminal(space, false, window, cx);
+                    self.phone_publish(cx);
+                    started(self, thread);
                     return;
                 };
                 let mut launch = Launch::new(agent, cwd);
                 launch.model = Some(start.model).filter(|m| !m.is_empty());
                 launch.effort = Some(start.effort).filter(|e| !e.is_empty());
                 launch.permission = start.permission;
-                let prompt = Some(start.prompt.trim().to_string())
-                    .filter(|p| !p.is_empty())
-                    .map(hyprspace_proto::Prompt::text);
+                let prompt = hyprspace_proto::Prompt {
+                    text: start.prompt.trim().to_string(),
+                    images: start
+                        .images
+                        .into_iter()
+                        .map(std::path::PathBuf::from)
+                        .collect(),
+                };
+                let prompt =
+                    (!prompt.text.is_empty() || !prompt.images.is_empty()).then_some(prompt);
                 let title = crate::composer::title_of(
                     prompt.as_ref().map(|p| p.text.as_str()).unwrap_or_default(),
                 );
                 let terminal = start.terminal;
-                self.start_thread(
+                let thread = self.start_thread(
                     space,
                     Start {
                         launch,
@@ -328,6 +374,8 @@ impl Root {
                     window,
                     cx,
                 );
+                self.phone_publish(cx);
+                started(self, thread);
             }
         }
         self.phone_publish(cx);

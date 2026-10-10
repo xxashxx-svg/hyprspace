@@ -14,6 +14,7 @@
 mod card;
 mod drag;
 mod row;
+pub(crate) use row::tag;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};

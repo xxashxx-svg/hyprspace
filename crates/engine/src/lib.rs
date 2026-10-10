@@ -14,6 +14,7 @@ mod images;
 pub mod journal;
 mod legacy;
 mod open;
+mod peers;
 pub mod persist;
 mod phone;
 pub mod providers;
@@ -41,6 +42,7 @@ use tokio::task::block_in_place;
 
 use folder::Folders;
 use journal::Journal;
+use peers::Peers;
 use persist::Store;
 use phone::Phone;
 use pty::PtyManager;
@@ -79,10 +81,21 @@ impl Engine {
         let (event_tx, said) = mpsc::unbounded();
         let (ui_tx, events) = mpsc::unbounded();
         let ptys = PtyManager::default();
-        let phone = Phone::new(ui_tx.clone(), ptys.clone(), dir);
+        let folders = Folders::default();
+        let peers = Peers::new(ui_tx.clone(), &dir);
+        let phone = Phone::new(ui_tx.clone(), ptys.clone(), folders.clone(), dir);
         runtime.spawn(tap(said, ui_tx, phone.clone()));
         let terminals = Terminals::new(ptys.clone(), event_tx.clone());
-        runtime.spawn(serve(cmd_rx, event_tx, terminals.clone(), store, phone));
+        runtime.spawn(serve(
+            cmd_rx,
+            event_tx,
+            terminals.clone(),
+            store,
+            phone,
+            folders,
+            peers.clone(),
+        ));
+        runtime.spawn(async move { peers.start() });
         let engine = Engine {
             terminals,
             #[cfg(test)]
@@ -140,13 +153,17 @@ async fn serve(
     terminals: Terminals,
     store: Store,
     phone: Phone,
+    folders: Folders,
+    peers: Peers,
 ) {
     let journals = store.dir().join("journals");
     let requests = Requests::new(store, tx.clone());
-    let folders = Folders::default();
     let delegates = delegate::Delegates::default();
     let mut structured: HashMap<SessionId, Live> = HashMap::new();
     while let Some(cmd) = rx.next().await {
+        let Some(cmd) = peers.route(cmd) else {
+            continue;
+        };
         match cmd {
             Command::OpenStructured {
                 id,
@@ -270,8 +287,7 @@ async fn serve(
                 }
             }
             Command::WriteTerminal { id, bytes } => {
-                // a write to a session that just exited is not worth reporting
-                let _ = block_in_place(|| terminals.ptys().write(id, &bytes));
+                terminals.ptys().write(id, &bytes);
             }
             Command::ResizeTerminal { id, cols, rows } => {
                 if phone.resize(id, cols, rows) {
@@ -308,6 +324,7 @@ async fn serve(
             Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
             Command::Update(cmd) => update::handle(cmd, tx.clone()),
             Command::Phone(cmd) => phone.command(cmd),
+            Command::Peer(cmd) => peers.command(cmd),
             Command::Delegated { request, ok, text } => delegates.answer(request, ok, text),
         }
     }

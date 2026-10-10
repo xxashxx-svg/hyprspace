@@ -40,7 +40,7 @@ impl Ring {
         self.0.extend(bytes);
     }
 
-    fn bytes(&self) -> Vec<u8> {
+    pub fn bytes(&self) -> Vec<u8> {
         self.0.iter().copied().collect()
     }
 }

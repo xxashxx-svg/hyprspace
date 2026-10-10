@@ -103,6 +103,7 @@ mod tests {
                 m("", "Default"),
                 m("claude-opus-5-5", "Opus 5.5"),
                 m("claude-opus-5", "Opus 5"),
+                m("claude-haiku-5-5", "Haiku 5.5"),
                 m("claude-haiku-4-5-20251001", "Haiku 4.5"),
             ],
             efforts: Vec::new(),
@@ -124,7 +125,7 @@ mod tests {
     #[test]
     fn aliases_take_the_newest_of_their_family() {
         let c = catalog();
-        assert_eq!(name(Some(&c), "haiku"), "Haiku 4.5");
+        assert_eq!(name(Some(&c), "haiku"), "Haiku 5.5");
         assert_eq!(name(Some(&c), "opus"), "Opus 5.5");
         // a family the catalog doesn't list still reads as a word, not an id
         assert_eq!(name(Some(&c), "sonnet"), "Sonnet");
@@ -135,6 +136,7 @@ mod tests {
         assert!(takes_long(Agent::Claude, "claude-opus-5-5"));
         assert!(takes_long(Agent::Claude, "claude-sonnet-5-5[1m]"));
         assert!(!takes_long(Agent::Claude, "claude-haiku-4-5"));
+        assert!(!takes_long(Agent::Claude, "claude-haiku-5-5"));
         assert!(!takes_long(Agent::Claude, ""));
         assert!(!takes_long(Agent::Codex, "gpt-5.5"));
         assert_eq!(windowed("claude-opus-5-5", true), "claude-opus-5-5[1m]");

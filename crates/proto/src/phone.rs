@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agents::{Agent, AgentInfo};
+use crate::folder::{FolderCommand, FolderEvent};
 use crate::run::{Answer, Permission};
 use crate::state::{Entry, Scheme, Snooze};
 
@@ -25,6 +26,9 @@ pub enum Up {
         /// The app's version and the commit it was built from, "0.24.4 (5321b19)".
         #[serde(default)]
         app: String,
+        /// Another computer rather than a phone.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        computer: bool,
     },
     /// The first message from a phone pairing now. The code from the desktop's QR or screen
     /// never travels: `proof` is HMAC-SHA256 keyed with the code over the certificate's
@@ -37,6 +41,8 @@ pub enum Up {
         protocol: u32,
         #[serde(default)]
         app: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        computer: bool,
     },
     /// The phone forgot this computer: the computer forgets the phone too.
     Leave,
@@ -85,6 +91,44 @@ pub enum Up {
     Folders {
         path: String,
     },
+    /// From another computer: a terminal thread's raw output, the last 512 KB it printed and
+    /// then everything as it comes, in `OUTPUT` frames. Its keystrokes go up in `INPUT` frames.
+    Attach {
+        thread: u64,
+    },
+    Detach {
+        thread: u64,
+    },
+    /// From another computer: size the thread's terminal for it, both ways, until someone types
+    /// at the host or it detaches.
+    Size {
+        thread: u64,
+        cols: u16,
+        rows: u16,
+    },
+    /// From another computer: a request about a folder on the host, answered with `Folder`.
+    Folder {
+        cmd: FolderCommand,
+    },
+}
+
+/// Binary frames between computers: a kind, the thread as eight little-endian bytes, then the
+/// bytes. `OUTPUT` frames come down through one deflate stream per connection.
+pub const OUTPUT: u8 = 1;
+pub const INPUT: u8 = 2;
+
+pub fn frame(kind: u8, thread: u64, bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(9 + bytes.len());
+    out.push(kind);
+    out.extend_from_slice(&thread.to_le_bytes());
+    out.extend_from_slice(bytes);
+    out
+}
+
+pub fn unframe(frame: &[u8]) -> Option<(u8, u64, &[u8])> {
+    let kind = *frame.first()?;
+    let thread = u64::from_le_bytes(frame.get(1..9)?.try_into().ok()?);
+    Some((kind, thread, &frame[9..]))
 }
 
 /// What the phone asks the desktop's UI to do. Each one goes through the same code as the
@@ -104,6 +148,9 @@ pub enum Ask {
         thread: u64,
         request: String,
         answer: Answer,
+        /// Answers to the questions an agent asked, by question.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        answers: Vec<(String, String)>,
     },
     Interrupt {
         thread: u64,
@@ -115,6 +162,18 @@ pub enum Ask {
         #[serde(default)]
         folder: Option<String>,
         start: NewThread,
+        /// Answered with `Started` naming the new thread, so the asker can open it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request: Option<u64>,
+    },
+    /// Sets a structured thread's permission for its next message.
+    Permission {
+        thread: u64,
+        permission: Permission,
+    },
+    Rename {
+        thread: u64,
+        title: String,
     },
     Snooze {
         thread: u64,
@@ -149,6 +208,9 @@ pub struct NewThread {
     /// Run the agent in a terminal session rather than a structured one.
     pub terminal: bool,
     pub prompt: String,
+    /// Files another computer uploaded, by the paths `Uploaded` gave back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<String>,
 }
 
 /// The desktop to the phone.
@@ -201,6 +263,27 @@ pub enum Down {
         id: u64,
         path: Option<String>,
         error: Option<String>,
+    },
+    /// The thread an `Ask::New` with a `request` made.
+    Started {
+        request: u64,
+        thread: u64,
+    },
+    /// An attached terminal's shell exited.
+    Exited {
+        thread: u64,
+        code: i32,
+    },
+    /// The host's answer to a `Folder` request.
+    Folder {
+        event: Box<FolderEvent>,
+    },
+    /// A terminal's output for an attached computer. It goes out as an `OUTPUT` frame, never
+    /// as JSON.
+    #[serde(skip)]
+    Bytes {
+        thread: u64,
+        data: Vec<u8>,
     },
 }
 
@@ -261,6 +344,7 @@ pub struct BoardThread {
     /// Its session is running on the desktop.
     pub live: bool,
     pub pinned: bool,
+    pub permission: Permission,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -417,6 +501,8 @@ pub enum PhoneCommand {
     Sessions {
         sessions: Vec<(u64, crate::wire::SessionId)>,
     },
+    /// The thread an asking connection's `Ask::New` made.
+    Started { to: u64, request: u64, thread: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -429,18 +515,22 @@ pub enum PhoneEvent {
     Pairing {
         pairing: Option<Pairing>,
     },
-    /// A phone asked for something; the UI does it.
+    /// A phone asked for something; the UI does it. `from` is the connection, for an answer.
     Ask {
         ask: Ask,
+        #[serde(default)]
+        from: u64,
     },
     /// The threads phones are watching. The UI starts the session of any that isn't running.
     Watching {
         threads: Vec<u64>,
     },
-    /// Who sizes a terminal now: the phone, or the desktop again.
+    /// Who sizes a terminal now: the phone, or the desktop again. `by` names who.
     Fit {
         id: crate::wire::SessionId,
         phone: bool,
+        #[serde(default)]
+        by: String,
     },
 }
 
@@ -478,6 +568,8 @@ pub struct Device {
     pub online: bool,
     /// The app version it last connected with.
     pub app: String,
+    /// Another computer rather than a phone.
+    pub computer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -508,7 +600,9 @@ mod tests {
                     permission: Permission::Ask,
                     terminal: true,
                     prompt: "fix it".into(),
+                    images: Vec::new(),
                 },
+                request: None,
             },
         };
         let json = serde_json::to_string(&up).unwrap();
@@ -697,6 +791,7 @@ mod tests {
                         model: Some("GPT-5.5".into()),
                         model_id: "gpt-5.5".into(),
                         effort: "high".into(),
+                        permission: Permission::Ask,
                         status: BoardStatus::Waiting,
                         doing: Some("Run tests".into()),
                         since: Some(9),
@@ -797,12 +892,14 @@ mod tests {
                 device: "Pixel".into(),
                 protocol: PROTOCOL,
                 app: "0.24.4 (5321b19)".into(),
+                computer: false,
             },
             Up::Pair {
                 proof: "aGk".into(),
                 device: "Pixel".into(),
                 protocol: PROTOCOL,
                 app: "0.24.4 (5321b19)".into(),
+                computer: false,
             },
             Up::Watch { thread: 2 },
             Up::Unwatch { thread: 2 },
@@ -832,6 +929,7 @@ mod tests {
                     thread: 2,
                     request: "r".into(),
                     answer: Answer::Deny,
+                    answers: Vec::new(),
                 },
             },
             Up::Ask {
@@ -862,7 +960,9 @@ mod tests {
                         permission: Permission::Plan,
                         terminal: true,
                         prompt: String::new(),
+                        images: Vec::new(),
                     },
+                    request: None,
                 },
             },
             Up::Ask {

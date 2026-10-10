@@ -50,6 +50,7 @@ enum Body {
 
 pub struct Viewer {
     client: Client,
+    machine: Option<String>,
     focus: FocusHandle,
     pane: Option<Pane>,
     body: Body,
@@ -73,6 +74,7 @@ impl Viewer {
     pub fn new(client: Client, cx: &mut Context<Self>) -> Self {
         Self {
             client,
+            machine: None,
             focus: cx.focus_handle(),
             pane: None,
             body: Body::Loading,
@@ -81,6 +83,17 @@ impl Viewer {
             _work: None,
             _edit: None,
         }
+    }
+
+    pub fn set_machine(&mut self, machine: Option<String>) {
+        if self.machine != machine {
+            self.client = self.client.via(machine.clone());
+            self.machine = machine;
+        }
+    }
+
+    pub fn machine(&self) -> Option<&str> {
+        self.machine.as_deref()
     }
 
     /// The repo root a diff's path is relative to, once known.

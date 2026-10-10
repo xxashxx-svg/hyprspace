@@ -2,11 +2,10 @@
 // one passing behind the other.
 
 use std::f32::consts::TAU;
-use std::time::Duration;
 
-use gpui::{
-    Animation, AnimationExt, AnyElement, ElementId, Hsla, IntoElement, div, prelude::*, px,
-};
+use gpui::{AnyElement, ElementId, Hsla, IntoElement, div, prelude::*, px};
+
+use crate::pace::Looping;
 
 /// Two dots circling each other on an ellipse seen edge on: the one going behind shrinks and
 /// fades, so they read as passing. Sized to sit on a 12.5px line. `id` must be unique among its
@@ -23,10 +22,11 @@ pub fn eclipse(id: impl Into<ElementId>, color: Hsla) -> AnyElement {
         .w(px(W))
         .h(px(H))
         .children([0., 0.5].map(|offset: f32| {
-            div().absolute().rounded_full().bg(color).with_animation(
-                ("eclipse", (offset * 2.) as usize),
-                Animation::new(Duration::from_millis(1200)).repeat(),
-                move |d, t| {
+            div()
+                .absolute()
+                .rounded_full()
+                .bg(color)
+                .looping(1200, move |d, t| {
                     let a = (t + offset) * TAU;
                     // depth: 1 nearest, -1 furthest
                     let near = a.sin();
@@ -35,8 +35,7 @@ pub fn eclipse(id: impl Into<ElementId>, color: Hsla) -> AnyElement {
                         .left(px(W / 2. + REACH * a.cos() - size / 2.))
                         .top(px((H - size) / 2.))
                         .opacity(0.65 + 0.35 * near)
-                },
-            )
+                })
         }))
         .into_any_element()
 }

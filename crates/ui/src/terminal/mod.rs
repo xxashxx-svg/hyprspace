@@ -56,7 +56,7 @@ pub struct TerminalView {
     cwd: PathBuf,
     status: Option<String>,
     /// A paired phone has the PTY sized for its screen. Typing here takes it back.
-    phone: bool,
+    phone: Option<(String, bool)>,
     /// The geometry the last frame painted with, for mapping the pointer onto cells.
     grid: Option<Grid>,
     resize: Option<Task<()>>,
@@ -75,6 +75,8 @@ pub struct TerminalView {
     find: Option<Find>,
     /// IME text not committed yet.
     preedit: String,
+    saving: usize,
+    held: Option<Vec<Vec<u8>>>,
     focused: bool,
     /// Whether the window is the one in front; the cursor blinks only then.
     active: bool,
@@ -140,7 +142,7 @@ impl TerminalView {
             focus: cx.focus_handle(),
             cwd,
             status: None,
-            phone: false,
+            phone: None,
             grid: None,
             resize: None,
             after_slide: None,
@@ -153,6 +155,8 @@ impl TerminalView {
             exists: HashMap::new(),
             find: None,
             preedit: String::new(),
+            saving: 0,
+            held: None,
             focused: false,
             active: false,
             refocus: false,
@@ -171,8 +175,11 @@ impl TerminalView {
 
     /// Bytes the user sent: the view jumps back to the live bottom, like xterm.
     fn input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
-        if self.phone {
-            self.phone = false;
+        if let Some(held) = self.held.as_mut() {
+            held.push(bytes);
+            return;
+        }
+        if self.phone.take().is_some() {
             self.client
                 .send(Command::Phone(PhoneCommand::Take { id: self.id }));
         }
@@ -205,7 +212,7 @@ impl TerminalView {
     }
 
     /// A phone sized this terminal for its screen, or the desktop has it back.
-    pub fn set_phone(&mut self, phone: bool, cx: &mut Context<Self>) {
+    pub fn set_phone(&mut self, phone: Option<(String, bool)>, cx: &mut Context<Self>) {
         self.phone = phone;
         cx.notify();
     }
@@ -464,7 +471,12 @@ impl Render for TerminalView {
                             .map(|p| p.render(window.viewport_size())),
                     ),
             )
-            .when(self.phone, |d| {
+            .when_some(self.phone.clone(), |d, (by, computer)| {
+                let by = if by.is_empty() {
+                    "your phone".to_string()
+                } else {
+                    by
+                };
                 d.child(
                     div()
                         .flex()
@@ -474,8 +486,12 @@ impl Render for TerminalView {
                         .pb(px(6.))
                         .text_xs()
                         .text_color(colors::text2())
-                        .child(crate::assets::icon("smartphone", 12., colors::text2()))
-                        .child("Sized for your phone. Typing here gives it back."),
+                        .child(crate::assets::icon(
+                            if computer { "monitor" } else { "smartphone" },
+                            12.,
+                            colors::text2(),
+                        ))
+                        .child(format!("Sized for {by}. Typing here gives it back.")),
                 )
             })
             .children(self.status.clone().map(|s| {

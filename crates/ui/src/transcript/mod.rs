@@ -6,17 +6,19 @@ mod approval;
 mod ask;
 mod branch;
 mod model;
+mod motion;
 mod render;
+mod rows;
 mod subagent;
 mod tool;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     AppContext, Context, Entity, EventEmitter, ExternalPaths, Focusable, IntoElement,
-    PathPromptOptions, Render, ScrollHandle, Subscription, Task, Window, px,
+    ListAlignment, ListState, PathPromptOptions, Render, Subscription, Task, Window, px,
 };
 use hyprspace_proto::agents::AgentCatalog;
 use hyprspace_proto::{Answer, Client, Command, Entry, Launch, Prompt, RunEvent, SessionId};
@@ -57,7 +59,11 @@ pub struct TranscriptView {
     resume_at: Option<u64>,
     input: Entity<TextInput>,
     images: Vec<PathBuf>,
-    scroll: ScrollHandle,
+    saving: usize,
+    send_saved: bool,
+    list: ListState,
+    rows: Vec<rows::Row>,
+    remeasure: bool,
     rail: std::cell::RefCell<Vec<crate::slide::Glide>>,
     hover_tick: std::cell::Cell<Option<usize>>,
     catalog: Option<AgentCatalog>,
@@ -80,8 +86,19 @@ pub struct TranscriptView {
     pub(super) expanded: HashSet<usize>,
     pub(super) answered: std::collections::HashMap<String, Vec<(String, String)>>,
     pub(super) perm_menu: Option<gpui::Point<gpui::Pixels>>,
+    follow: motion::Follow,
+    reveal: Option<motion::Reveal>,
+    partial: Option<(usize, Vec<crate::markdown::Block>)>,
+    fresh: usize,
+    seen: usize,
+    born: HashMap<usize, Instant>,
+    working: Option<Instant>,
+    drag_step: Option<Instant>,
     ticker: Option<Task<()>>,
     _subs: Vec<Subscription>,
+    _focus: Vec<Subscription>,
+    remote: bool,
+    echoed: VecDeque<String>,
 }
 
 impl EventEmitter<TranscriptEvent> for TranscriptView {}
@@ -102,9 +119,15 @@ impl TranscriptView {
             InputEvent::Submit => this.submit(cx),
             InputEvent::Cancel => this.interrupt(cx),
             InputEvent::Images(images) => {
-                this.images
-                    .extend(images.iter().filter_map(|i| attach::save(i).ok()));
-                cx.notify();
+                this.saving += 1;
+                attach::save_later(images.clone(), cx, |this, saved, cx| {
+                    this.saving -= 1;
+                    this.images.extend(saved);
+                    if this.saving == 0 && std::mem::take(&mut this.send_saved) {
+                        this.submit(cx);
+                    }
+                    cx.notify();
+                })
             }
             InputEvent::Changed => {
                 this.refresh_suggest(cx);
@@ -130,7 +153,11 @@ impl TranscriptView {
             resume_at: thread.resume_at,
             input,
             images: Vec::new(),
-            scroll: ScrollHandle::new(),
+            saving: 0,
+            send_saved: false,
+            list: ListState::new(0, ListAlignment::Top, px(600.)),
+            rows: Vec::new(),
+            remeasure: false,
             rail: Default::default(),
             hover_tick: Default::default(),
             catalog: None,
@@ -148,8 +175,19 @@ impl TranscriptView {
             expanded: HashSet::new(),
             answered: Default::default(),
             perm_menu: None,
+            follow: Default::default(),
+            reveal: None,
+            partial: None,
+            fresh: 0,
+            seen: 0,
+            born: HashMap::new(),
+            working: None,
+            drag_step: None,
             ticker: None,
             _subs: vec![sub],
+            _focus: Vec::new(),
+            remote: false,
+            echoed: VecDeque::new(),
         };
         if history {
             view.client.send(Command::LoadJournal {
@@ -223,8 +261,27 @@ impl TranscriptView {
     }
 
     /// An approval answered from the phone.
-    pub fn approve(&mut self, request: String, answer: Answer, cx: &mut Context<Self>) {
-        self.answer(request, answer, cx);
+    pub fn approve(
+        &mut self,
+        request: String,
+        answer: Answer,
+        answers: Vec<(String, String)>,
+        cx: &mut Context<Self>,
+    ) {
+        self.answer_with(request, answer, answers, cx);
+    }
+
+    /// The thread runs on another computer, which keeps its journal and sends what it records.
+    pub fn set_remote(&mut self) {
+        self.remote = true;
+    }
+
+    pub fn set_permission(
+        &mut self,
+        permission: hyprspace_proto::Permission,
+        cx: &mut Context<Self>,
+    ) {
+        self.pick_permission(permission, cx);
     }
 
     /// Stop pressed on the phone.
@@ -233,6 +290,10 @@ impl TranscriptView {
     }
 
     fn submit(&mut self, cx: &mut Context<Self>) {
+        if self.saving > 0 {
+            self.send_saved = true;
+            return;
+        }
         let text = self.input.read(cx).text().trim().to_string();
         if text.is_empty() && self.images.is_empty() {
             return;
@@ -287,6 +348,9 @@ impl TranscriptView {
     fn send(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
         self.cancel_resume(cx);
         self.model.prompt(&prompt);
+        if self.remote {
+            self.echoed.push_back(prompt.text.clone());
+        }
         if self.open {
             self.client.send(Command::Send {
                 id: self.id,
@@ -302,7 +366,7 @@ impl TranscriptView {
                 delegate: self.delegate,
             });
         }
-        self.scroll.scroll_to_bottom();
+        self.follow.down(&self.list);
         self.changed(cx);
     }
 
@@ -438,7 +502,7 @@ impl TranscriptView {
     }
 
     fn relaunch(&mut self, what: String, cx: &mut Context<Self>) {
-        if self.open && !self.model.running() {
+        if self.open && !self.model.running() && !self.remote {
             self.client.send(Command::Close { id: self.id });
             self.open = false;
         }
@@ -489,10 +553,21 @@ impl TranscriptView {
                 ..
             }
         );
-        let follow = self.at_bottom();
+        let n = self.model.items.len();
+        let had = match self.model.items.last() {
+            Some(Item::Text { source, .. }) => source.len(),
+            _ => 0,
+        };
         self.model.apply(event);
-        if follow {
-            self.scroll.scroll_to_bottom();
+        let text = self.model.items[n.saturating_sub(1)..]
+            .iter()
+            .rposition(|i| matches!(i, Item::Text { .. }))
+            .map(|i| i + n.saturating_sub(1));
+        if let Some(ix) = text
+            && self.reveal.as_ref().is_none_or(|r| r.ix != ix)
+        {
+            let from = if ix + 1 == n { had } else { 0 };
+            self.reveal = Some(motion::Reveal::new(ix, from));
         }
         self.changed(cx);
         if done {
@@ -504,13 +579,24 @@ impl TranscriptView {
     pub fn fail(&mut self, message: String, cx: &mut Context<Self>) {
         self.open = false;
         self.model.fail(message);
-        self.scroll.scroll_to_bottom();
+        self.follow.down(&self.list);
         self.changed(cx);
     }
 
     pub fn replay(&mut self, entries: Vec<Entry>, cx: &mut Context<Self>) {
-        if !self.loading {
+        // a host sends its whole journal again after the connection comes back
+        if !self.loading && !self.remote {
             return;
+        }
+        if !self.loading {
+            self.model = Transcript::default();
+            self.rows.clear();
+            self.list.reset(0);
+            self.reveal = None;
+            self.partial = None;
+            self.seen = 0;
+            self.born.clear();
+            self.echoed.clear();
         }
         for entry in entries {
             match entry {
@@ -528,9 +614,12 @@ impl TranscriptView {
                 Entry::Run { event } => self.model.apply(event),
             }
         }
-        self.model.settle();
+        if !self.remote {
+            self.model.settle();
+        }
         self.loading = false;
-        self.scroll.scroll_to_bottom();
+        self.fresh = self.model.items.len();
+        self.follow.snap(&self.list);
         if let Some(prompt) = self.queued.take() {
             self.send(prompt, cx);
         }
@@ -554,6 +643,38 @@ impl TranscriptView {
             });
         })
         .detach();
+    }
+
+    /// What a host recorded after the journal it sent: its own copy of a prompt sent from here
+    /// is already showing.
+    pub fn recorded(&mut self, entries: Vec<Entry>, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
+        for entry in entries {
+            match entry {
+                Entry::Prompt { prompt } => {
+                    if self.echoed.front() == Some(&prompt.text) {
+                        self.echoed.pop_front();
+                    } else {
+                        self.model.prompt(&prompt);
+                        self.changed(cx);
+                    }
+                }
+                Entry::Answer {
+                    request,
+                    answer,
+                    answers,
+                } => {
+                    self.model.answered(&request, answer);
+                    if !answers.is_empty() {
+                        self.answered.insert(request, answers);
+                    }
+                    self.changed(cx);
+                }
+                Entry::Run { event } => self.apply(event, cx),
+            }
+        }
     }
 
     pub fn refresh_suggest(&mut self, cx: &mut Context<Self>) {
@@ -610,11 +731,6 @@ impl TranscriptView {
         cx.notify();
     }
 
-    fn at_bottom(&self) -> bool {
-        let max = self.scroll.max_offset().y;
-        -self.scroll.offset().y >= max - px(48.)
-    }
-
     /// After anything that can move the status: tell the root, and keep a one-second tick
     /// going while a run or a subagent is live so their timers count.
     fn changed(&mut self, cx: &mut Context<Self>) {
@@ -639,6 +755,7 @@ impl TranscriptView {
         if !self.model.running() {
             self.stopping = false;
         }
+        self.remeasure = true;
         let status = self.model.status();
         if status != self.status {
             self.status = status;
@@ -663,6 +780,22 @@ impl TranscriptView {
             self.ticker = None;
         }
         cx.notify();
+    }
+
+    fn sync_rows(&mut self, rows: Vec<rows::Row>) {
+        let same = self
+            .rows
+            .iter()
+            .zip(&rows)
+            .take_while(|(a, b)| a == b)
+            .count();
+        if same < self.rows.len() || rows.len() > same {
+            self.list.splice(same..self.rows.len(), rows.len() - same);
+        }
+        if std::mem::take(&mut self.remeasure) && same > 0 {
+            self.list.remeasure_items(0..same);
+        }
+        self.rows = rows;
     }
 
     /// Files dropped on the thread: images go in with the next message, anything else has its

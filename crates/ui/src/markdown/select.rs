@@ -5,8 +5,9 @@
 // Ctrl+C in the reply box copies the spans joined by newlines.
 //
 // Adapted from zeron's crates/ui/src/markdown/selection.rs and the selection half of its
-// render.rs (MIT, see THIRD_PARTY_NOTICES.md), without its handling for a virtualized list: our
-// transcript paints every item.
+// render.rs (MIT, see THIRD_PARTY_NOTICES.md). The transcript is a virtual list that only paints
+// the rows on screen, so a selection keeps every element it has passed over, and a drag near an
+// edge scrolls the list along.
 
 use std::cell::RefCell;
 use std::ops::Range;
@@ -28,6 +29,8 @@ struct Selection {
     dragging: bool,
     /// Each selected element's key, the byte range picked out of it, and its text.
     spans: Vec<(Arc<str>, Range<usize>, SharedString)>,
+    seen: Vec<(Arc<str>, SharedString)>,
+    at: Option<Point<Pixels>>,
 }
 
 struct Painted {
@@ -50,13 +53,36 @@ thread_local! {
 pub fn reset(surface: Arc<str>) -> impl IntoElement {
     canvas(
         |_, _, _| {},
-        move |_, _, _, _| {
+        move |_, _, window, _| {
             PAINTED.with(|p| p.borrow_mut().retain(|e| e.surface != surface));
             SURFACE.with(|s| *s.borrow_mut() = surface.clone());
+            track(window, surface.clone());
         },
     )
     .absolute()
     .size_0()
+}
+
+pub fn tail(surface: Arc<str>) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |_, _, window, _| {
+            if drag_to(&surface) {
+                window.refresh();
+            }
+        },
+    )
+    .absolute()
+    .size_0()
+}
+
+pub fn dragging(surface: &Arc<str>) -> Option<Point<Pixels>> {
+    SELECTION.with(|s| {
+        s.borrow()
+            .as_ref()
+            .filter(|s| s.surface == *surface && s.dragging)
+            .and_then(|s| s.at)
+    })
 }
 
 /// `body`, the element drawing `text` through `layout`, made selectable. `key` must be unique in
@@ -106,8 +132,6 @@ pub fn selected_text() -> Option<String> {
     })
 }
 
-/// Window-wide listeners for one element, registered each frame as it paints. Window-wide so a
-/// drag keeps tracking outside the element; only the anchor's listeners move the drag.
 fn listen(
     window: &mut gpui::Window,
     hitbox: gpui::Hitbox,
@@ -116,40 +140,48 @@ fn listen(
     text: SharedString,
     layout: TextLayout,
 ) {
+    window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _| {
+        if phase != DispatchPhase::Bubble || e.button != MouseButton::Left {
+            return;
+        }
+        if hitbox.is_hovered(window) && layout.bounds().contains(&e.position) {
+            let ix = index(&layout, e.position);
+            let range = match e.click_count {
+                1 => ix..ix,
+                2 => word(&text, ix),
+                _ => 0..text.len(),
+            };
+            begin(&surface, &key, &text, range);
+            window.refresh();
+        }
+    });
+}
+
+// elements hear a press before this, so a press that started no selection clears a settled one
+fn track(window: &mut gpui::Window, surface: Arc<str>) {
     {
-        let (surface, key) = (surface.clone(), key.clone());
+        let surface = surface.clone();
         window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _| {
-            if phase != DispatchPhase::Bubble || e.button != MouseButton::Left {
-                return;
-            }
-            if hitbox.is_hovered(window) && layout.bounds().contains(&e.position) {
-                let ix = index(&layout, e.position);
-                let range = match e.click_count {
-                    1 => ix..ix,
-                    2 => word(&text, ix),
-                    _ => 0..text.len(),
-                };
-                begin(&surface, &key, &text, range);
-                window.refresh();
-            } else if clear_if_owner(&surface, &key) {
+            if phase == DispatchPhase::Bubble && e.button == MouseButton::Left && clear(&surface) {
                 window.refresh();
             }
         });
     }
     {
-        let (surface, key) = (surface.clone(), key.clone());
+        let surface = surface.clone();
         window.on_mouse_event(move |e: &MouseMoveEvent, phase, window, _| {
-            if phase != DispatchPhase::Bubble || !e.dragging() || !anchored(&surface, &key, true) {
-                return;
-            }
-            if drag_to(&surface, e.position) {
+            if phase == DispatchPhase::Bubble
+                && e.dragging()
+                && aim(&surface, e.position)
+                && drag_to(&surface)
+            {
                 window.refresh();
             }
         });
     }
     window.on_mouse_event(move |_: &MouseUpEvent, phase, _, _| {
-        if phase == DispatchPhase::Bubble && anchored(&surface, &key, true) {
-            end();
+        if phase == DispatchPhase::Bubble {
+            end(&surface);
         }
     });
 }
@@ -161,6 +193,13 @@ fn index(layout: &TextLayout, at: Point<Pixels>) -> usize {
 }
 
 fn begin(surface: &Arc<str>, key: &Arc<str>, text: &SharedString, range: Range<usize>) {
+    let seen = PAINTED.with(|p| {
+        p.borrow()
+            .iter()
+            .filter(|e| e.surface == *surface)
+            .map(|e| (e.key.clone(), e.text.clone()))
+            .collect()
+    });
     SELECTION.with(|s| {
         *s.borrow_mut() = Some(Selection {
             surface: surface.clone(),
@@ -168,26 +207,18 @@ fn begin(surface: &Arc<str>, key: &Arc<str>, text: &SharedString, range: Range<u
             anchor_ix: range.start,
             dragging: true,
             spans: vec![(key.clone(), range, text.clone())],
+            seen,
+            at: None,
         })
     });
 }
 
-/// Whether `key` in `surface` holds the selection, and is still dragging it when `dragging`.
-fn anchored(surface: &Arc<str>, key: &Arc<str>, dragging: bool) -> bool {
-    SELECTION.with(|s| {
-        s.borrow()
-            .as_ref()
-            .is_some_and(|s| s.surface == *surface && s.anchor == *key && (s.dragging || !dragging))
-    })
-}
-
-/// A press outside a settled selection's anchor clears it. True if it did.
-fn clear_if_owner(surface: &Arc<str>, key: &Arc<str>) -> bool {
+fn clear(surface: &Arc<str>) -> bool {
     SELECTION.with(|s| {
         let mut s = s.borrow_mut();
         let owns = s
             .as_ref()
-            .is_some_and(|s| s.surface == *surface && s.anchor == *key && !s.dragging);
+            .is_some_and(|s| s.surface == *surface && !s.dragging);
         if owns {
             *s = None;
         }
@@ -195,11 +226,25 @@ fn clear_if_owner(surface: &Arc<str>, key: &Arc<str>) -> bool {
     })
 }
 
-fn end() {
+fn aim(surface: &Arc<str>, at: Point<Pixels>) -> bool {
     SELECTION.with(|s| {
         let mut s = s.borrow_mut();
-        if let Some(sel) = s.as_mut() {
+        match s.as_mut().filter(|s| s.surface == *surface && s.dragging) {
+            Some(sel) => {
+                sel.at = Some(at);
+                true
+            }
+            None => false,
+        }
+    })
+}
+
+fn end(surface: &Arc<str>) {
+    SELECTION.with(|s| {
+        let mut s = s.borrow_mut();
+        if let Some(sel) = s.as_mut().filter(|s| s.surface == *surface && s.dragging) {
             sel.dragging = false;
+            sel.seen.clear();
             if sel.spans.iter().all(|(_, r, _)| r.is_empty()) {
                 *s = None;
             }
@@ -207,10 +252,37 @@ fn end() {
     });
 }
 
-/// Moves the drag's head to `at`: the transcript's element under it, or the nearest one, vertical
-/// distance first so dragging past the end of a short line keeps that line. True if the
-/// selection changed.
-fn drag_to(surface: &Arc<str>, at: Point<Pixels>) -> bool {
+fn item(key: &str) -> Option<usize> {
+    key.trim_start_matches(|c: char| !c.is_ascii_digit())
+        .split('-')
+        .next()?
+        .parse()
+        .ok()
+}
+
+fn merge(seen: &mut Vec<(Arc<str>, SharedString)>, painted: &[(Arc<str>, SharedString)]) {
+    if painted.iter().any(|(k, _)| item(k).is_none()) {
+        *seen = painted.to_vec();
+        return;
+    }
+    let mut rest = painted;
+    while let Some((first, _)) = rest.first() {
+        let n = item(first);
+        let len = rest.iter().take_while(|(k, _)| item(k) == n).count();
+        seen.retain(|(k, _)| item(k) != n);
+        let at = seen
+            .iter()
+            .position(|(k, _)| item(k) > n)
+            .unwrap_or(seen.len());
+        seen.splice(at..at, rest[..len].iter().cloned());
+        rest = &rest[len..];
+    }
+}
+
+/// Moves the drag's head to where the pointer is: the transcript's element under it, or the
+/// nearest one, vertical distance first so dragging past the end of a short line keeps that line.
+/// True if the selection changed.
+fn drag_to(surface: &Arc<str>) -> bool {
     PAINTED.with(|p| {
         let painted = p.borrow();
         let mine: Vec<&Painted> = painted.iter().filter(|e| e.surface == *surface).collect();
@@ -223,32 +295,44 @@ fn drag_to(surface: &Arc<str>, at: Point<Pixels>) -> bool {
                 0.
             }
         };
-        let Some((head, _)) = mine.iter().enumerate().min_by(|(_, a), (_, b)| {
-            let d = |e: &Painted| {
-                let b = e.layout.bounds();
-                (
-                    gap(b.top(), b.bottom(), at.y),
-                    gap(b.left(), b.right(), at.x),
-                )
-            };
-            d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
-        }) else {
-            return false;
-        };
         SELECTION.with(|s| {
             let mut s = s.borrow_mut();
-            let Some(sel) = s.as_mut() else {
+            let Some(sel) = s.as_mut().filter(|s| s.surface == *surface && s.dragging) else {
                 return false;
             };
-            let Some(anchor) = mine.iter().position(|e| e.key == sel.anchor) else {
+            let Some(at) = sel.at else {
                 return false;
             };
-            let texts: Vec<&str> = mine.iter().map(|e| e.text.as_ref()).collect();
-            let head_ix = index(&mine[head].layout, at);
-            let spans: Vec<_> = resolve(&texts, (anchor, sel.anchor_ix), (head, head_ix))
-                .into_iter()
-                .map(|(i, r)| (mine[i].key.clone(), r, mine[i].text.clone()))
+            let Some(head) = mine.iter().min_by(|a, b| {
+                let d = |e: &Painted| {
+                    let b = e.layout.bounds();
+                    (
+                        gap(b.top(), b.bottom(), at.y),
+                        gap(b.left(), b.right(), at.x),
+                    )
+                };
+                d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
+            }) else {
+                return false;
+            };
+            let now: Vec<_> = mine
+                .iter()
+                .map(|e| (e.key.clone(), e.text.clone()))
                 .collect();
+            merge(&mut sel.seen, &now);
+            let find = |key: &Arc<str>| sel.seen.iter().position(|(k, _)| k == key);
+            let (Some(anchor), Some(to)) = (find(&sel.anchor), find(&head.key)) else {
+                return false;
+            };
+            let texts: Vec<&str> = sel.seen.iter().map(|(_, t)| t.as_ref()).collect();
+            let spans: Vec<_> = resolve(
+                &texts,
+                (anchor, sel.anchor_ix),
+                (to, index(&head.layout, at)),
+            )
+            .into_iter()
+            .map(|(i, r)| (sel.seen[i].0.clone(), r, sel.seen[i].1.clone()))
+            .collect();
             if spans == sel.spans {
                 return false;
             }
@@ -405,6 +489,20 @@ mod tests {
             .map(|(i, r)| (Arc::from(""), r, SharedString::from(texts[i])))
             .collect();
         assert_eq!(join(&spans), "first\n\nthird");
+    }
+
+    #[test]
+    fn rows_that_scroll_away_stay_in_the_selection_in_order() {
+        let el = |k: &str| (Arc::<str>::from(k), SharedString::from(k.to_string()));
+        let mut seen = vec![el("t3-0"), el("t3-1"), el("u4")];
+        merge(&mut seen, &[el("u4"), el("t5-0"), el("t6-0")]);
+        merge(&mut seen, &[el("t1-0"), el("t2-0")]);
+        let keys: Vec<&str> = seen.iter().map(|(k, _)| k.as_ref()).collect();
+        assert_eq!(keys, ["t1-0", "t2-0", "t3-0", "t3-1", "u4", "t5-0", "t6-0"]);
+        merge(&mut seen, &[el("t5-0"), el("t5-1")]);
+        assert_eq!(seen.len(), 8);
+        assert_eq!(item("plan12-0"), Some(12));
+        assert_eq!(item("agent3"), Some(3));
     }
 
     #[test]

@@ -59,10 +59,14 @@ pub struct Work {
     /// A path a terminal asked to open, waiting for the next draw to have the window.
     pub(crate) pending: Option<(PathBuf, Option<u32>, Option<u32>)>,
     /// What the dock was last told, so it is only told again when that changes.
-    dock_sync: Option<(Option<PathBuf>, bool, Option<PathBuf>)>,
+    dock_sync: Option<DockSync>,
     /// The dock's slide (`crate::slide`).
     pub(crate) dock_flips: crate::slide::Flips,
 }
+
+/// The folder the dock follows, the computer it is on, whether the dock is out, and the file the
+/// viewer shows.
+type DockSync = (Option<PathBuf>, Option<String>, bool, Option<PathBuf>);
 
 impl Work {
     pub fn new(
@@ -107,13 +111,18 @@ impl Root {
             return;
         };
         let viewer = self.viewer(window, cx);
+        let machine = self.machine_of(space);
         // another file over unsaved edits: the edits come first
-        let other = self.work.viewing.as_ref().is_some_and(|v| v.pane != pane);
+        let other = self.work.viewing.as_ref().is_some_and(|v| v.pane != pane)
+            || viewer.read(cx).machine() != machine.as_deref();
         if other && viewer.read(cx).dirty(cx) {
             viewer.update(cx, |v, cx| v.may_close(cx));
             return;
         }
-        viewer.update(cx, |v, cx| v.show(pane.clone(), cx));
+        viewer.update(cx, |v, cx| {
+            v.set_machine(machine);
+            v.show(pane.clone(), cx)
+        });
         // a card already open hands on the focus it was keeping
         let back = match self.work.viewing.take() {
             Some(open) => open.back,
@@ -177,7 +186,10 @@ impl Root {
         cx: &mut Context<Self>,
     ) {
         if crate::viewer::is_media(&path) {
-            self.client.send(Command::OpenFile { path, line, col });
+            let remote = self.current_space().and_then(|s| self.machine_of(s));
+            if remote.is_none() {
+                self.client.send(Command::OpenFile { path, line, col });
+            }
             return;
         }
         self.show_viewer(Pane::File { path, line, col }, window, cx);
@@ -231,28 +243,68 @@ impl Root {
             .or_else(|| s.cwd.clone())
     }
 
+    pub(crate) fn machine_of(&self, space: u64) -> Option<String> {
+        self.state.space(space).and_then(|s| s.machine.clone())
+    }
+
     /// Tells the dock what to follow, when that changed.
     fn sync_dock(&mut self, space: u64, cx: &mut Context<Self>) {
         let folder = self.dock_folder(space);
+        let machine = self.machine_of(space);
         let viewing = self.work.viewing.as_ref().and_then(|v| match &v.pane {
             Pane::File { path, .. } => Some(path.clone()),
             _ => None,
         });
-        let want = (folder, self.state.dock.open, viewing);
+        let want = (folder, machine, self.state.dock.open, viewing);
         if self.work.dock_sync.as_ref() == Some(&want) {
             return;
         }
         self.work.dock_sync = Some(want.clone());
         let tab = self.state.dock.tab;
-        let (folder, open, viewing) = want;
+        let (folder, machine, open, viewing) = want;
         self.work
             .dock
-            .update(cx, |d, cx| d.sync(folder, open, tab, viewing, cx));
+            .update(cx, |d, cx| d.sync(folder, machine, open, tab, viewing, cx));
     }
 
     /// Answers to folder requests, for the dock, the viewer and the Open button.
+    /// What a paired computer answered about its folders, for the dock, the viewer or the folder
+    /// picker that asked.
+    pub(crate) fn peer_folder(&mut self, peer: String, e: FolderEvent, cx: &mut Context<Self>) {
+        let peer = Some(peer.as_str());
+        if let FolderEvent::OpenFailed { message } = &e {
+            self.notify(message.clone(), cx);
+        }
+        if matches!(
+            e,
+            FolderEvent::File { .. }
+                | FolderEvent::Saved { .. }
+                | FolderEvent::Diff { .. }
+                | FolderEvent::Git { .. }
+        ) && let Some(v) = &self.work.viewer
+            && v.read(cx).machine() == peer
+        {
+            v.update(cx, |v, cx| v.event(&e, cx));
+        }
+        if let (FolderEvent::Dir { path, entries }, Some(picker)) = (&e, &self.folder_picker)
+            && picker.read(cx).machine() == peer
+        {
+            picker.update(cx, |p, cx| p.listed(path, entries, cx));
+        }
+        if matches!(
+            e,
+            FolderEvent::Dir { .. } | FolderEvent::Git { .. } | FolderEvent::GitDone { .. }
+        ) && self.work.dock.read(cx).machine() == peer
+        {
+            self.work.dock.update(cx, |d, cx| d.event(&e, cx));
+        }
+        cx.notify();
+    }
+
     pub(crate) fn folder_event(&mut self, e: FolderEvent, cx: &mut Context<Self>) {
-        if let (FolderEvent::Dir { path, entries }, Some(picker)) = (&e, &self.folder_picker) {
+        if let (FolderEvent::Dir { path, entries }, Some(picker)) = (&e, &self.folder_picker)
+            && picker.read(cx).machine().is_none()
+        {
             picker.update(cx, |p, cx| p.listed(path, entries, cx));
         }
         if let FolderEvent::Git { cwd, status } = &e {
@@ -282,7 +334,9 @@ impl Root {
             | FolderEvent::Saved { .. }
             | FolderEvent::Diff { .. }
             | FolderEvent::Git { .. } => {
-                if let Some(v) = &self.work.viewer {
+                if let Some(v) = &self.work.viewer
+                    && v.read(cx).machine().is_none()
+                {
                     v.update(cx, |v, cx| v.event(&e, cx));
                 }
             }
@@ -291,7 +345,8 @@ impl Root {
         if matches!(
             e,
             FolderEvent::Dir { .. } | FolderEvent::Git { .. } | FolderEvent::GitDone { .. }
-        ) {
+        ) && self.work.dock.read(cx).machine().is_none()
+        {
             self.work.dock.update(cx, |d, cx| d.event(&e, cx));
         }
         cx.notify();

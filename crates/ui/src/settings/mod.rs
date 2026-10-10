@@ -8,6 +8,7 @@ mod agents;
 mod appearance;
 mod controls;
 mod general;
+mod machines;
 mod phone;
 mod picker;
 mod shortcuts;
@@ -36,6 +37,7 @@ pub(crate) enum Tab {
     Agents,
     Usage,
     Phone,
+    Computers,
     Skills,
     Shortcuts,
     About,
@@ -130,6 +132,12 @@ pub(crate) const TABS: &[Entry] = &[
         icon: "smartphone",
     },
     Entry {
+        tab: Tab::Computers,
+        label: "Computers",
+        desc: "Run threads on your other computers",
+        icon: "monitor",
+    },
+    Entry {
         tab: Tab::Skills,
         label: "Skills",
         desc: "Reusable instructions for Claude",
@@ -162,6 +170,7 @@ impl Root {
             Tab::Agents => self.agents_page(cx),
             Tab::Usage => self.usage_page(cx),
             Tab::Phone => self.phone_page(cx),
+            Tab::Computers => self.machines_page(cx),
             Tab::Skills => self.skills_page(window, cx),
             Tab::Shortcuts => shortcuts::page(),
             Tab::About => self.about(cx),

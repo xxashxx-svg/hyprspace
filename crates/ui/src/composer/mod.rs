@@ -6,9 +6,11 @@
 mod card;
 mod clone;
 mod effort;
+pub(crate) mod machine;
 pub(crate) mod model_menu;
 pub(crate) mod pickers;
 pub(crate) mod repo;
+pub(crate) mod spaces;
 
 use std::path::PathBuf;
 
@@ -32,6 +34,8 @@ pub struct Target {
     pub space: u64,
     pub name: String,
     pub cwd: Option<PathBuf>,
+    /// The paired computer the space is on, None for this one.
+    pub machine: Option<String>,
 }
 
 pub enum ComposerEvent {
@@ -55,6 +59,10 @@ pub enum ComposerEvent {
     Prefs(ComposerPrefs),
     /// With no space yet, a folder was picked to become the first one.
     AddProject(PathBuf),
+    /// The next thread runs on another computer, or on this one with None.
+    Machine(Option<String>),
+    Space(u64),
+    OtherFolder,
 }
 
 #[derive(Clone, Copy)]
@@ -73,10 +81,18 @@ pub struct Composer {
     /// The folder picked for a thread in an open space.
     folder: Option<PathBuf>,
     agents: Vec<AgentInfo>,
+    /// A paired computer's agents, while the target is on it.
+    host_agents: Option<Vec<AgentInfo>>,
+    machines: Vec<machine::Machine>,
+    machine_menu: Option<Point<Pixels>>,
+    places: Vec<spaces::Place>,
+    places_menu: Option<Point<Pixels>>,
     prefs: ComposerPrefs,
     /// The next thread runs structured. It goes back to a terminal after each start.
     structured: bool,
     images: Vec<PathBuf>,
+    saving: usize,
+    send_saved: bool,
     /// The permission menu, open where it was clicked.
     menu: Option<Point<Pixels>>,
     models: Option<ModelMenu>,
@@ -112,9 +128,15 @@ impl Composer {
                 InputEvent::Submit => this.submit(cx),
                 InputEvent::Changed => this.text_changed(cx),
                 InputEvent::Images(images) => {
-                    this.images
-                        .extend(images.iter().filter_map(|i| attach::save(i).ok()));
-                    cx.notify();
+                    this.saving += 1;
+                    attach::save_later(images.clone(), cx, |this, saved, cx| {
+                        this.saving -= 1;
+                        this.images.extend(saved);
+                        if this.saving == 0 && std::mem::take(&mut this.send_saved) {
+                            this.submit(cx);
+                        }
+                        cx.notify();
+                    })
                 }
                 InputEvent::Cancel => {
                     this.menu = None;
@@ -134,9 +156,16 @@ impl Composer {
             target: None,
             folder: None,
             agents: Vec::new(),
+            host_agents: None,
+            machines: Vec::new(),
+            machine_menu: None,
+            places: Vec::new(),
+            places_menu: None,
             prefs: ComposerPrefs::default(),
             structured: false,
             images: Vec::new(),
+            saving: 0,
+            send_saved: false,
             menu: None,
             models: None,
             anchor: Anchor::default(),
@@ -164,17 +193,28 @@ impl Composer {
 
     /// Shows the composer for `target`. The resume list is read again every time, since the
     /// agent may have saved a conversation since the last look.
-    pub fn set_target(&mut self, target: Option<Target>, cx: &mut Context<Self>) {
+    pub fn set_target(
+        &mut self,
+        target: Option<Target>,
+        host_agents: Option<Vec<AgentInfo>>,
+        cx: &mut Context<Self>,
+    ) {
         if self.target != target {
             self.folder = None;
             self.error = None;
             self.target = target;
             self.clone.open_here = false;
+            self.branch = None;
         }
+        self.host_agents = host_agents;
+        self.machine_menu = None;
+        self.places_menu = None;
         self.asked = None;
         self.ask_resumable();
         // the branch for the line under the box
-        if let Some(cwd) = self.cwd() {
+        if !self.remote()
+            && let Some(cwd) = self.cwd()
+        {
             self.client
                 .send(Command::Folder(hyprspace_proto::FolderCommand::GitStatus {
                     cwd,
@@ -214,8 +254,16 @@ impl Composer {
             .or_else(|| self.folder.clone())
     }
 
+    fn remote(&self) -> bool {
+        self.target.as_ref().is_some_and(|t| t.machine.is_some())
+    }
+
+    fn all_agents(&self) -> &[AgentInfo] {
+        self.host_agents.as_deref().unwrap_or(&self.agents)
+    }
+
     fn installed(&self) -> impl Iterator<Item = &AgentInfo> {
-        self.agents.iter().filter(|a| a.status.installed)
+        self.all_agents().iter().filter(|a| a.status.installed)
     }
 
     /// The agent the next thread runs: the last pick if it is installed, else the first one.
@@ -261,7 +309,9 @@ impl Composer {
     }
 
     fn ask_resumable(&mut self) {
-        let (Some(agent), Some(cwd)) = (self.agent().map(|a| a.agent), self.cwd()) else {
+        let remote = self.remote();
+        let agent = self.agent().map(|a| a.agent);
+        let (Some(agent), Some(cwd)) = (agent, self.cwd().filter(|_| !remote)) else {
             self.resumable.clear();
             self.asked = None;
             return;
@@ -329,7 +379,7 @@ impl Composer {
 
     pub fn refresh_suggest(&mut self, cx: &mut Context<Self>) {
         match (self.agent().map(|a| a.agent), self.cwd()) {
-            (Some(agent), Some(cwd)) => {
+            (Some(agent), Some(cwd)) if !self.remote() => {
                 self.suggest
                     .refresh(&self.input, agent, &cwd, &self.client, cx)
             }
@@ -370,7 +420,8 @@ impl Composer {
     fn text_changed(&mut self, cx: &mut Context<Self>) {
         self.error = None;
         self.refresh_suggest(cx);
-        let Some((repo, _)) = repo::split(self.input.read(cx).text()) else {
+        let Some((repo, _)) = repo::split(self.input.read(cx).text()).filter(|_| !self.remote())
+        else {
             return;
         };
         if repo.url != self.clone.url {
@@ -401,10 +452,14 @@ impl Composer {
     }
 
     fn submit(&mut self, cx: &mut Context<Self>) {
+        if self.saving > 0 {
+            self.send_saved = true;
+            return;
+        }
         self.menu = None;
         self.models = None;
         let text = self.input.read(cx).text().trim().to_string();
-        if repo::split(&text).is_some() {
+        if !self.remote() && repo::split(&text).is_some() {
             self.start_clone(cx);
             return;
         }
@@ -598,7 +653,9 @@ impl Focusable for Composer {
 impl Render for Composer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.input.read(cx).text().to_string();
-        let repo = repo::split(&text).map(|(r, _)| r);
+        let repo = repo::split(&text)
+            .map(|(r, _)| r)
+            .filter(|_| !self.remote());
         // a clone says what it will do
         let heading = div()
             .flex()
@@ -625,6 +682,12 @@ impl Render for Composer {
         let menu = self
             .menu
             .map(|at| pickers::permission_menu(self, at, window, cx));
+        let machines = self
+            .machine_menu
+            .map(|at| machine::menu(self, at, window, cx));
+        let places = self
+            .places_menu
+            .map(|at| spaces::menu(self, at, window, cx));
         let models = self
             .models
             .as_ref()
@@ -692,6 +755,8 @@ impl Render for Composer {
                     .children(below),
             )
             .children(menu)
+            .children(machines)
+            .children(places)
             .children(models)
     }
 }
@@ -737,7 +802,7 @@ impl model_menu::Host for Composer {
                 let old = self.prefs.pick(agent);
                 // keep the effort when the new model takes it
                 let takes = self
-                    .agents
+                    .all_agents()
                     .iter()
                     .find(|a| a.agent == agent)
                     .is_some_and(|a| a.catalog.efforts_for(&model).contains(&old.effort));

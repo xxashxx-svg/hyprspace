@@ -218,13 +218,19 @@ impl Root {
     }
 
     fn device_rows(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let devices = &self.phone.status.devices;
+        let devices: Vec<_> = self
+            .phone
+            .status
+            .devices
+            .iter()
+            .filter(|d| !d.computer)
+            .collect();
         if devices.is_empty() {
             return vec![row("No phones yet", "", div())];
         }
         let now = now_ms();
         devices
-            .iter()
+            .into_iter()
             .map(|d| {
                 let id = d.id.clone();
                 let mut seen = if d.online {

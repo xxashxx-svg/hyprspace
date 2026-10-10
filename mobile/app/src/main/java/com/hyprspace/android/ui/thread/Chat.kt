@@ -3,11 +3,22 @@
 
 package com.hyprspace.android.ui.thread
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -41,18 +53,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
@@ -78,8 +94,9 @@ import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** What the list shows: the transcript's items, with runs of calls in a row folded together. */
 private sealed interface Shown {
@@ -127,29 +144,40 @@ fun Chat(
 ) {
     val h = LocalHues.current
     val shown = remember(view.items) { fold(view.items) }
-    // opens at the newest message and keeps up with the reply, unless the reader scrolled up
-    val list = rememberLazyListState(initialFirstVisibleItemIndex = (shown.size - 1).coerceAtLeast(0))
-    var follow by remember { mutableStateOf(true) }
+    // laid out from the bottom, so a growing reply stays pinned to the box without scrolling
+    val list = rememberLazyListState()
+    var stuck by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(list) {
-        snapshotFlow { list.isScrollInProgress }.drop(1).collect { moving ->
-            if (!moving) follow = !list.canScrollForward
+        snapshotFlow { list.isScrollInProgress }.collect { moving ->
+            if (!moving) stuck = list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 24
         }
     }
     // what was sent or answered here shows at once, until the journal brings it back
-    var pending by remember { mutableStateOf(listOf<String>()) }
+    var pending by remember { mutableStateOf(listOf<Pending>()) }
     var answered by remember { mutableStateOf(mapOf<String, Answer>()) }
     LaunchedEffect(view.items) {
-        val said = view.items.takeLast(8).filterIsInstance<Item.User>().map { it.text }
-        pending = pending.filter { it !in said }
+        val users = view.items.filterIsInstance<Item.User>()
+        val used = mutableSetOf<String>()
+        pending = pending.filter { p ->
+            val from = users.indexOfFirst { it.key == p.after } + 1
+            val hit = users.drop(from).firstOrNull { it.key !in used && it.text == p.text }
+            if (hit != null) used += hit.key
+            hit == null
+        }
     }
-    val rows = shown.size + pending.size + (if (busy) 1 else 0)
-    LaunchedEffect(rows, view.items.lastOrNull(), follow) {
-        if (follow && rows > 0) list.scrollToItem(rows - 1, Int.MAX_VALUE / 2)
+    val newest = if (busy) "working" else pending.lastOrNull()?.let { "pending${it.id}" } ?: shown.lastOrNull()?.key
+    LaunchedEffect(newest) {
+        if (stuck && newest != null) list.animateScrollToItem(0)
     }
+    val live = if (working) (shown.lastOrNull() as? Shown.One)?.item?.takeIf { it is Item.Reply }?.key else null
     val send: (String, List<String>) -> Unit = { text, images ->
-        if (text.isNotBlank()) pending = pending + text
-        follow = true
+        if (text.isNotBlank()) {
+            val after = view.items.lastOrNull { it is Item.User }?.key
+            pending = pending + Pending(System.nanoTime(), text, after)
+        }
+        stuck = true
+        scope.launch { list.animateScrollToItem(0) }
         onSend(text, images)
     }
     val answer: (String, Answer) -> Unit = { request, a ->
@@ -166,33 +194,34 @@ fun Chat(
             LazyColumn(
                 Modifier.fillMaxSize().clipToBounds(),
                 state = list,
+                reverseLayout = true,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 overscrollEffect = null,
             ) {
-                if (shown.isEmpty() && pending.isEmpty()) {
-                    item { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
+                if (busy) {
+                    item(key = "working") {
+                        Box(rise()) { Working(doing, since) }
+                    }
                 }
-                items(shown, key = { it.key }) { s ->
-                    Box(Modifier.animateItem(fadeOutSpec = null, placementSpec = null)) {
+                items(pending.asReversed(), key = { "pending${it.id}" }) { p ->
+                    Box(rise()) {
+                        One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false)
+                    }
+                }
+                items(shown.asReversed(), key = { it.key }) { s ->
+                    Box(rise()) {
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)
-                            is Shown.One -> One(s.item, canAnswer, answered, answer)
+                            is Shown.One -> One(s.item, canAnswer, answered, answer, live = s.key == live)
                         }
                     }
                 }
-                items(pending, key = { "pending$it" }) { text ->
-                    Box(Modifier.animateItem(fadeOutSpec = null, placementSpec = null)) {
-                        One(Item.User("pending", text, 0, steer = working), false, answered, answer)
-                    }
-                }
-                if (busy) {
-                    item(key = "working") {
-                        Box(Modifier.animateItem(fadeOutSpec = null, placementSpec = null)) { Working(doing, since) }
-                    }
+                if (shown.isEmpty() && pending.isEmpty()) {
+                    item(key = "empty") { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
-            val away by remember { derivedStateOf { list.canScrollForward } }
+            val away by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 48 } }
             androidx.compose.animation.AnimatedVisibility(
                 away,
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
@@ -206,10 +235,8 @@ fun Chat(
                         .background(h.surface2)
                         .border(1.dp, h.border1, CircleShape)
                         .clickableQuiet {
-                            scope.launch {
-                                list.animateScrollToItem((rows - 1).coerceAtLeast(0), Int.MAX_VALUE / 2)
-                                follow = true
-                            }
+                            stuck = true
+                            scope.launch { list.animateScrollToItem(0) }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -223,7 +250,7 @@ fun Chat(
 }
 
 @Composable
-private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, onAnswer: (String, Answer) -> Unit) {
+private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, onAnswer: (String, Answer) -> Unit, live: Boolean) {
     val h = LocalHues.current
     when (item) {
         is Item.User -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -241,7 +268,7 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
                 }
             }
         }
-        is Item.Reply -> Markdown(item.text)
+        is Item.Reply -> Markdown(revealed(item.key, item.text, live))
         is Item.Thinking -> Fold("Thinking", item.text, mono = false)
         is Item.Call -> CallLine(item)
         is Item.Agent -> AgentCard(item)
@@ -255,6 +282,54 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
         }
         is Item.Finished -> TurnEnd(item)
     }
+}
+
+private data class Pending(val id: Long, val text: String, val after: String?)
+
+private fun LazyItemScope.rise(): Modifier = Modifier.animateItem(
+    fadeInSpec = tween(220),
+    fadeOutSpec = null,
+    placementSpec = spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
+)
+
+@Composable
+private fun revealed(key: String, text: String, live: Boolean): String {
+    var shown by rememberSaveable(key) { mutableIntStateOf(if (live) 0 else text.length) }
+    val target by rememberUpdatedState(text)
+    LaunchedEffect(key) {
+        snapshotFlow { target.length }.collect {
+            var prev = 0L
+            while (shown < target.length) {
+                withFrameNanos { now ->
+                    val dt = if (prev == 0L) 0.016f else ((now - prev) / 1e9f).coerceAtMost(0.05f)
+                    prev = now
+                    val left = target.length - shown
+                    // text that piles up runs out faster, so the reveal never trails for long
+                    val step = max(1, (max(120f, left / 0.2f) * dt).roundToInt())
+                    var end = (shown + step).coerceAtMost(target.length)
+                    if (end < target.length && Character.isHighSurrogate(target[end - 1])) end++
+                    shown = end
+                }
+            }
+        }
+    }
+    return if (shown >= text.length) text else text.substring(0, shown)
+}
+
+@Composable
+private fun Opens(open: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        open,
+        enter = fadeIn(tween(180)) + expandVertically(spring(stiffness = Spring.StiffnessMediumLow)),
+        exit = fadeOut(tween(120)) + shrinkVertically(spring(stiffness = Spring.StiffnessMedium)),
+    ) { content() }
+}
+
+@Composable
+private fun Twist(open: Boolean, size: Int = 14) {
+    val h = LocalHues.current
+    val turn by animateFloatAsState(if (open) 90f else 0f, spring(stiffness = Spring.StiffnessMedium), label = "twist")
+    Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(size.dp).rotate(turn), tint = h.text3)
 }
 
 private fun took(ms: Long): String {
@@ -306,7 +381,7 @@ private fun FoldHead(label: String, open: Boolean, trailing: @Composable () -> U
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(painterResource(if (open) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right), null, Modifier.size(14.dp), tint = h.text3)
+        Twist(open)
         Text(label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
         trailing()
     }
@@ -316,9 +391,9 @@ private fun FoldHead(label: String, open: Boolean, trailing: @Composable () -> U
 private fun Fold(title: String, body: String, mono: Boolean) {
     val h = LocalHues.current
     var open by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.animateContentSize()) {
+    Column {
         FoldHead(title, open) { open = !open }
-        if (open) {
+        Opens(open) {
             Text(
                 body,
                 Modifier.padding(start = 22.dp, top = 4.dp),
@@ -337,12 +412,12 @@ private fun CallRun(calls: List<Item.Call>) {
     var open by rememberSaveable { mutableStateOf(false) }
     val live = calls.any { it.done == null }
     val failed = calls.count { it.done?.ok == false }
-    Column(Modifier.fillMaxWidth().animateContentSize()) {
+    Column(Modifier.fillMaxWidth()) {
         FoldHead(summary(calls.map { it.tool }), open, trailing = {
             if (failed > 0) Text("$failed failed", style = MaterialTheme.typography.bodySmall, color = h.text3)
             if (live) Eclipse(h.text3)
         }) { open = !open }
-        if (open) {
+        Opens(open) {
             Column(Modifier.padding(start = 22.dp, top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 for (c in calls) CallLine(c)
             }
@@ -356,7 +431,7 @@ private fun CallLine(c: Item.Call) {
     var open by rememberSaveable(c.key) { mutableStateOf(false) }
     val tool = c.tool
     val failed = c.done?.ok == false
-    Column(Modifier.fillMaxWidth().animateContentSize()) {
+    Column(Modifier.fillMaxWidth()) {
         FoldHead(label(tool), open, trailing = {
             if (tool is Tool.Edit) {
                 val (add, del) = counts(tool.changes)
@@ -366,7 +441,7 @@ private fun CallLine(c: Item.Call) {
             if (failed) Text("Failed", style = MaterialTheme.typography.bodySmall, color = if (tool is Tool.Edit) h.error else h.text3)
             if (c.done == null) Eclipse(h.text3)
         }) { open = !open }
-        if (open) {
+        Opens(open) {
             Column(Modifier.padding(start = 22.dp, top = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 input(tool)?.let { Mono(it) }
                 if (tool is Tool.Edit) for (ch in tool.changes) Diff(ch.path, ch.diff)
@@ -444,15 +519,14 @@ private fun AgentCard(a: Item.Agent) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(h.ink(0.035f))
-            .animateContentSize(),
+            .background(h.ink(0.035f)),
     ) {
         Row(
             Modifier.fillMaxWidth().clickableQuiet { open = !open }.padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(painterResource(if (open) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right), null, Modifier.size(14.dp), tint = h.text3)
+            Twist(open)
             Icon(painterResource(R.drawable.ic_bot), null, Modifier.size(15.dp), tint = h.text2)
             Text(
                 a.description.ifBlank { a.agentType.ifBlank { "Subagent" } },
@@ -475,7 +549,7 @@ private fun AgentCard(a: Item.Agent) {
             Text(it, Modifier.padding(start = 57.dp, end = 14.dp), style = MaterialTheme.typography.bodySmall, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(11.dp))
-        if (open) {
+        Opens(open) {
             Column(Modifier.padding(start = 34.dp, end = 14.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (a.prompt.isNotBlank()) Fold("Prompt", a.prompt, mono = false)
                 for (c in a.calls) CallLine(c)
@@ -544,7 +618,7 @@ private fun SettledApproval(a: Item.Approval) {
         Answer.Deny -> Triple(R.drawable.ic_x, h.error, "Denied")
         null -> Triple(R.drawable.ic_clock, h.text3, "Not answered")
     }
-    Column(Modifier.fillMaxWidth().animateContentSize()) {
+    Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().clickableQuiet { open = !open }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -554,7 +628,7 @@ private fun SettledApproval(a: Item.Approval) {
             Text(label(a.tool), Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(state, style = MaterialTheme.typography.bodySmall, color = h.text3)
         }
-        if (open) Box(Modifier.padding(start = 22.dp, top = 4.dp, bottom = 4.dp)) { ApprovalDetail(a.tool) }
+        Opens(open) { Box(Modifier.padding(start = 22.dp, top = 4.dp, bottom = 4.dp)) { ApprovalDetail(a.tool) } }
     }
 }
 
@@ -676,17 +750,21 @@ private fun Composer(
 private fun Working(doing: String?, since: Long?) {
     val h = LocalHues.current
     val now = com.hyprspace.android.ui.ticking(since != null)
+    val pulse by rememberInfiniteTransition(label = "working").animateFloat(
+        0.55f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "working",
+    )
     Row(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Eclipse(h.text3)
+        Eclipse(h.text2)
+        Text("Working", Modifier.alpha(pulse), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = h.text2)
         Text(
-            doing ?: "Working",
+            doing.orEmpty(),
             Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
-            color = h.text2,
+            color = h.text3,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

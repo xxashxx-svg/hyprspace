@@ -395,9 +395,9 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// Types `prompt`, then Enter a beat later.
 fn type_prompt(ptys: &PtyManager, id: SessionId, prompt: &str) {
-    let _ = ptys.write(id, prompt.as_bytes());
+    ptys.write(id, prompt.as_bytes());
     thread::sleep(ENTER_AFTER);
-    let _ = ptys.write(id, b"\r");
+    ptys.write(id, b"\r");
 }
 
 impl Terminals {

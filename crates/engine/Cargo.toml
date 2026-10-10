@@ -32,6 +32,7 @@ if-addrs = "0.15"
 # the bridge says where it is on the local network, so a paired phone finds it after the
 # computer's address or port changed (phone/net.rs)
 mdns-sd = "0.21"
+flate2 = "1"
 
 # the processes under each terminal's shell, to see which agent runs there (running.rs); gpui's
 # screen capture already builds this crate

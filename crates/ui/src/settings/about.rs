@@ -1,16 +1,14 @@
 // Settings, About: the version and its updates (the same updater the corner card uses), this
 // version's notes and the intro again, and where the code and the issue tracker live.
 
-use std::time::Duration;
-
 use gpui::{
-    Animation, AnimationExt as _, AnyElement, ClickEvent, Context, Transformation, div, percentage,
-    prelude::*, px, relative,
+    AnyElement, ClickEvent, Context, Transformation, div, percentage, prelude::*, px, relative,
 };
 
 use super::Root;
 use super::controls::{group, row, row_with, text};
 use crate::assets::{icon, logo};
+use crate::pace::Looping;
 use crate::update::{Phase, VERSION};
 use crate::{colors, widgets};
 
@@ -102,11 +100,9 @@ impl Root {
             let glyph = icon("refresh-cw", 13., colors::text2());
             let glyph = if busy {
                 glyph
-                    .with_animation(
-                        "about-spin",
-                        Animation::new(Duration::from_millis(800)).repeat(),
-                        |s, t| s.with_transformation(Transformation::rotate(percentage(t))),
-                    )
+                    .looping(800, |s, t| {
+                        s.with_transformation(Transformation::rotate(percentage(t)))
+                    })
                     .into_any_element()
             } else {
                 glyph.into_any_element()
@@ -134,11 +130,7 @@ impl Root {
                 None => fill
                     .absolute()
                     .w(relative(0.35))
-                    .with_animation(
-                        "about-slide",
-                        Animation::new(Duration::from_millis(1100)).repeat(),
-                        |d, t| d.left(relative(-0.35 + 1.35 * t)),
-                    )
+                    .looping(1100, |d, t| d.left(relative(-0.35 + 1.35 * t)))
                     .into_any_element(),
             };
             div()

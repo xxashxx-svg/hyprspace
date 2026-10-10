@@ -50,7 +50,10 @@ impl Root {
             self.make_view(&t, None, true, cx);
         }
         let body = match self.views.get(&thread) {
-            Some(View::Structured(v)) => v.clone().into_any_element(),
+            Some(View::Structured(v)) => v
+                .clone()
+                .cached(StyleRefinement::default().size_full())
+                .into_any_element(),
             Some(View::Terminal(v)) => {
                 // laid out again only when it changes: output, input, a resize
                 let terminal = v.clone().cached(StyleRefinement::default().size_full());

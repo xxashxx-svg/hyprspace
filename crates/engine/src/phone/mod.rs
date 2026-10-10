@@ -8,6 +8,7 @@ mod idle;
 mod mirror;
 mod net;
 mod server;
+pub(crate) mod squeeze;
 mod store;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -23,12 +24,14 @@ use hyprspace_proto::phone::{
     Ask, Board, BoardKind, Down, Network, PROTOCOL, Pairing, PhoneCommand, PhoneEvent, PhoneStatus,
     Up,
 };
-use hyprspace_proto::{Entry, Event, SessionId};
+use hyprspace_proto::{Entry, Event, FolderCommand, SessionId};
 use tokio::task::JoinHandle;
 
+use crate::folder::Folders;
 use crate::journal::{self, Journal};
 use crate::pty::PtyManager;
 use mirror::{Mirror, Ring, Sent};
+pub(crate) use net::SERVICE;
 use store::Store;
 
 /// How long a pairing code works.
@@ -54,6 +57,7 @@ pub struct Phone(Arc<Mutex<Hub>>);
 struct Hub {
     ui: UnboundedSender<Event>,
     ptys: PtyManager,
+    folders: Folders,
     store: Store,
     journals_dir: PathBuf,
     on: bool,
@@ -73,6 +77,7 @@ struct Hub {
     /// Frames sent since the last look at whether someone is at the computer.
     ticks: u32,
     sessions: HashMap<u64, SessionId>,
+    threads: HashMap<SessionId, u64>,
     terms: HashMap<SessionId, Term>,
     journals: HashMap<String, Weak<Journal>>,
 }
@@ -86,8 +91,13 @@ struct Secret {
 
 struct Conn {
     device: String,
+    name: String,
+    computer: bool,
     tx: UnboundedSender<Down>,
     watching: HashMap<u64, Watch>,
+    attached: HashSet<u64>,
+    /// The size a computer last asked for each terminal, which it gets back when it types.
+    sizes: HashMap<u64, (u16, u16)>,
 }
 
 #[derive(Default)]
@@ -107,15 +117,23 @@ struct Term {
     /// The size the PTY has.
     size: (u16, u16),
     mirror: Option<Mirror>,
-    /// The connection the PTY is sized for, when a phone is.
+    /// The connection the PTY is sized for, when a phone or another computer is.
     fit: Option<u64>,
+    /// A computer has both sides of the size; a phone only the width.
+    full: bool,
 }
 
 impl Phone {
-    pub fn new(ui: UnboundedSender<Event>, ptys: PtyManager, dir: PathBuf) -> Self {
+    pub fn new(
+        ui: UnboundedSender<Event>,
+        ptys: PtyManager,
+        folders: Folders,
+        dir: PathBuf,
+    ) -> Self {
         Self(Arc::new(Mutex::new(Hub {
             ui,
             ptys,
+            folders,
             store: Store::load(&dir),
             journals_dir: dir.join("journals"),
             on: false,
@@ -132,6 +150,7 @@ impl Phone {
             board: Board::default(),
             ticks: 0,
             sessions: HashMap::new(),
+            threads: HashMap::new(),
             terms: HashMap::new(),
             journals: HashMap::new(),
         })))
@@ -153,7 +172,18 @@ impl Phone {
                 }
             }
             PhoneCommand::Sessions { sessions } => {
-                self.hub().sessions = sessions.into_iter().collect();
+                let mut hub = self.hub();
+                hub.threads = sessions.iter().map(|(t, s)| (*s, *t)).collect();
+                hub.sessions = sessions.into_iter().collect();
+            }
+            PhoneCommand::Started {
+                to,
+                request,
+                thread,
+            } => {
+                if let Some(c) = self.hub().conns.get(&to) {
+                    let _ = c.tx.unbounded_send(Down::Started { request, thread });
+                }
             }
             PhoneCommand::Pair => {
                 // a code lives five minutes; while the screen shows it, a fresh one takes over
@@ -291,12 +321,22 @@ impl Phone {
         if hub.failures.len() >= 10 {
             return Err(denied("Too many tries. Wait a minute and try again."));
         }
+        let (name, computer) = match &up {
+            Up::Hello {
+                device, computer, ..
+            }
+            | Up::Pair {
+                device, computer, ..
+            } => (clip(device), *computer),
+            _ => (String::new(), false),
+        };
         let (protocol, device, token, proof) = match up {
             Up::Hello {
                 token,
                 device,
                 protocol,
                 app,
+                ..
             } => {
                 if protocol != PROTOCOL {
                     return Err(denied(&outdated(protocol)));
@@ -320,6 +360,7 @@ impl Phone {
                 device,
                 protocol,
                 app,
+                ..
             } => {
                 if protocol != PROTOCOL {
                     return Err(denied(&outdated(protocol)));
@@ -350,7 +391,7 @@ impl Phone {
                 };
                 hub.pairing = None;
                 hub.send_pairing();
-                let (id, token) = hub.store.add(&clip(&device), &clip(&app), now);
+                let (id, token) = hub.store.add(&clip(&device), &clip(&app), now, computer);
                 let ours = prove(&key, &format!("desktop {fingerprint}"));
                 (protocol, id, Some(token), Some(ours))
             }
@@ -366,8 +407,12 @@ impl Phone {
             conn,
             Conn {
                 device,
+                name,
+                computer,
                 tx,
                 watching: HashMap::new(),
+                attached: HashSet::new(),
+                sizes: HashMap::new(),
             },
         );
         hub.send_status();
@@ -398,24 +443,20 @@ impl Phone {
                 hub.unwatch(conn, thread, true);
                 hub.send_watching();
                 drop(hub);
-                // A phone hopping between threads mustn't resize the terminal each time, so the
-                // width it asked for holds a little while after it leaves.
-                let me = self.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(LEAVE).await;
-                    let mut hub = me.hub();
-                    let back = hub
-                        .conns
-                        .get(&conn)
-                        .is_some_and(|c| c.watching.contains_key(&thread));
-                    if let Some(&id) = hub.sessions.get(&thread)
-                        && !back
-                        && hub.terms.get(&id).is_some_and(|t| t.fit == Some(conn))
-                    {
-                        hub.unfit(id);
-                    }
-                });
+                self.release_later(conn, thread);
             }
+            Up::Attach { thread } => self.attach(conn, thread),
+            Up::Detach { thread } => {
+                let mut hub = self.hub();
+                if let Some(c) = hub.conns.get_mut(&conn) {
+                    c.attached.remove(&thread);
+                }
+                hub.send_watching();
+                drop(hub);
+                self.release_later(conn, thread);
+            }
+            Up::Size { thread, cols, rows } => self.hub().size(conn, thread, cols, rows),
+            Up::Folder { cmd } => self.folder(conn, cmd),
             Up::Fit { thread, cols, rows } => self.hub().fit(conn, thread, cols, rows),
             Up::Unfit { thread } => {
                 let mut hub = self.hub();
@@ -462,10 +503,14 @@ impl Phone {
                     | Ask::Snooze { thread, .. }
                     | Ask::Settle { thread, .. }
                     | Ask::Model { thread, .. }
+                    | Ask::Permission { thread, .. }
+                    | Ask::Rename { thread, .. }
                     | Ask::Pin { thread, .. } => known(*thread),
                 };
                 if ok {
-                    let _ = hub.ui.unbounded_send(Event::Phone(PhoneEvent::Ask { ask }));
+                    let _ = hub
+                        .ui
+                        .unbounded_send(Event::Phone(PhoneEvent::Ask { ask, from: conn }));
                 } else if let Some(c) = hub.conns.get(&conn) {
                     let _ = c.tx.unbounded_send(Down::Failed {
                         thread: None,
@@ -525,6 +570,117 @@ impl Phone {
         }
     }
 
+    /// A phone hopping between threads mustn't resize the terminal each time, so the size it
+    /// asked for holds a little while after it leaves.
+    fn release_later(&self, conn: u64, thread: u64) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(LEAVE).await;
+            let mut hub = me.hub();
+            let back = hub
+                .conns
+                .get(&conn)
+                .is_some_and(|c| c.watching.contains_key(&thread) || c.attached.contains(&thread));
+            if let Some(&id) = hub.sessions.get(&thread)
+                && !back
+                && hub.terms.get(&id).is_some_and(|t| t.fit == Some(conn))
+            {
+                hub.unfit(id);
+            }
+        });
+    }
+
+    /// Keystrokes from a computer attached to the thread. It takes the terminal's size back if
+    /// someone at the host took it.
+    pub(super) fn input(&self, conn: u64, thread: u64, bytes: &[u8]) {
+        let (ptys, id) = {
+            let mut hub = self.hub();
+            if !hub
+                .conns
+                .get(&conn)
+                .is_some_and(|c| c.computer && c.attached.contains(&thread))
+            {
+                return;
+            }
+            let Some(&id) = hub.sessions.get(&thread) else {
+                return;
+            };
+            if hub.terms.get(&id).is_some_and(|t| t.fit != Some(conn)) {
+                hub.take_size(conn, thread);
+            }
+            (hub.ptys.clone(), id)
+        };
+        ptys.write(id, bytes);
+    }
+
+    fn attach(&self, conn: u64, thread: u64) {
+        let mut hub = self.hub();
+        let terminal = hub
+            .board
+            .threads
+            .iter()
+            .any(|t| t.id == thread && t.kind == BoardKind::Terminal);
+        let Hub {
+            conns,
+            sessions,
+            terms,
+            ..
+        } = &mut *hub;
+        let Some(c) = conns.get_mut(&conn).filter(|c| c.computer) else {
+            return;
+        };
+        if !terminal {
+            let _ = c.tx.unbounded_send(Down::Failed {
+                thread: Some(thread),
+                message: "That thread is gone.".into(),
+            });
+            return;
+        }
+        // what it printed so far and what it prints from now on, under one lock, so nothing is
+        // missed or sent twice
+        c.attached.insert(thread);
+        if let Some(t) = sessions.get(&thread).and_then(|id| terms.get(id)) {
+            let data = t.ring.bytes();
+            if !data.is_empty() {
+                let _ = c.tx.unbounded_send(Down::Bytes { thread, data });
+            }
+        }
+        hub.send_watching();
+    }
+
+    fn folder(&self, conn: u64, cmd: FolderCommand) {
+        if matches!(cmd, FolderCommand::Openers | FolderCommand::OpenIn { .. }) {
+            return;
+        }
+        let hub = self.hub();
+        let Some(down) = hub
+            .conns
+            .get(&conn)
+            .filter(|c| c.computer)
+            .map(|c| c.tx.clone())
+        else {
+            return;
+        };
+        let folders = hub.folders.clone();
+        drop(hub);
+        let (tx, mut rx) = futures::channel::mpsc::unbounded();
+        folders.handle(cmd, tx);
+        tokio::spawn(async move {
+            use futures::StreamExt;
+            while let Some(e) = rx.next().await {
+                if let Event::Folder(event) = e
+                    && down
+                        .unbounded_send(Down::Folder {
+                            event: Box::new(event),
+                        })
+                        .is_err()
+                {
+                    break;
+                }
+            }
+        });
+    }
+
     fn keys(&self, thread: u64, bytes: Vec<u8>) {
         let (ptys, id) = {
             let hub = self.hub();
@@ -533,10 +689,7 @@ impl Phone {
             };
             (hub.ptys.clone(), id)
         };
-        // a full pipe can block a write for a moment; the hub stays free meanwhile
-        tokio::task::spawn_blocking(move || {
-            let _ = ptys.write(id, &bytes);
-        });
+        ptys.write(id, &bytes);
     }
 
     fn watch(&self, conn: u64, thread: u64) {
@@ -626,6 +779,7 @@ impl Phone {
                 size: (cols, rows),
                 mirror: None,
                 fit: None,
+                full: false,
             },
         );
     }
@@ -639,6 +793,9 @@ impl Phone {
             return true;
         };
         t.desktop = (cols, rows);
+        if t.fit.is_some() && t.full {
+            return false;
+        }
         if t.fit.is_some() {
             if t.size.1 != rows {
                 t.size.1 = rows;
@@ -667,9 +824,26 @@ impl Phone {
                         m.feed(bytes);
                     }
                 }
+                if let Some(&thread) = hub.threads.get(id) {
+                    for c in hub.conns.values().filter(|c| c.attached.contains(&thread)) {
+                        let _ = c.tx.unbounded_send(Down::Bytes {
+                            thread,
+                            data: bytes.clone(),
+                        });
+                    }
+                }
             }
-            Event::TerminalExit { id, .. } => {
-                self.hub().terms.remove(id);
+            Event::TerminalExit { id, code } => {
+                let mut hub = self.hub();
+                hub.terms.remove(id);
+                if let Some(&thread) = hub.threads.get(id) {
+                    for c in hub.conns.values().filter(|c| c.attached.contains(&thread)) {
+                        let _ = c.tx.unbounded_send(Down::Exited {
+                            thread,
+                            code: *code,
+                        });
+                    }
+                }
             }
             _ => {}
         }
@@ -775,6 +949,7 @@ impl Hub {
                     .iter()
                     .filter(|(_, w)| !w.journal)
                     .map(|(t, _)| *t)
+                    .chain(c.attached.iter().copied())
             })
             .collect();
         threads.sort();
@@ -803,7 +978,7 @@ impl Hub {
         let threads: Vec<u64> = self
             .conns
             .get(&conn)
-            .map(|c| c.watching.keys().copied().collect())
+            .map(|c| c.watching.keys().chain(&c.attached).copied().collect())
             .unwrap_or_default();
         for t in threads {
             self.unwatch(conn, t, false);
@@ -825,8 +1000,9 @@ impl Hub {
         // down from scrollback, so every height change lost lines. The phone scrolls instead.
         let _ = rows;
         let (cols, rows) = (cols.clamp(20, 500), t.desktop.1.max(5));
-        let first = t.fit.is_none();
+        let first = t.fit != Some(conn);
         t.fit = Some(conn);
+        t.full = false;
         if t.size != (cols, rows) {
             t.size = (cols, rows);
             if let Some(m) = &mut t.mirror {
@@ -835,7 +1011,59 @@ impl Hub {
             let _ = self.ptys.resize(id, cols, rows);
         }
         if first {
-            self.to_ui(PhoneEvent::Fit { id, phone: true });
+            let by = self.name(conn);
+            self.to_ui(PhoneEvent::Fit {
+                id,
+                phone: true,
+                by,
+            });
+        }
+    }
+
+    fn name(&self, conn: u64) -> String {
+        self.conns
+            .get(&conn)
+            .map(|c| c.name.clone())
+            .unwrap_or_default()
+    }
+
+    fn size(&mut self, conn: u64, thread: u64, cols: u16, rows: u16) {
+        let Some(c) = self.conns.get_mut(&conn).filter(|c| c.computer) else {
+            return;
+        };
+        c.sizes
+            .insert(thread, (cols.clamp(20, 500), rows.clamp(5, 300)));
+        self.take_size(conn, thread);
+    }
+
+    /// The terminal at the size `conn` last asked for, both ways.
+    fn take_size(&mut self, conn: u64, thread: u64) {
+        let Some(&(cols, rows)) = self.conns.get(&conn).and_then(|c| c.sizes.get(&thread)) else {
+            return;
+        };
+        let by = self.name(conn);
+        let Some(&id) = self.sessions.get(&thread) else {
+            return;
+        };
+        let Some(t) = self.terms.get_mut(&id) else {
+            return;
+        };
+        let first = t.fit != Some(conn);
+        t.fit = Some(conn);
+        t.full = true;
+        if t.size != (cols, rows) {
+            t.size = (cols, rows);
+            if let Some(m) = &mut t.mirror {
+                m.resize(cols, rows);
+            }
+            let _ = self.ptys.resize(id, cols, rows);
+        }
+        if first {
+            self.to_ui(PhoneEvent::Fit {
+                id,
+                phone: true,
+                by,
+            });
         }
     }
 
@@ -852,8 +1080,13 @@ impl Hub {
         if let Some(m) = &mut t.mirror {
             m.resize(cols, rows);
         }
+        t.full = false;
         let _ = self.ptys.resize(id, cols, rows);
-        self.to_ui(PhoneEvent::Fit { id, phone: false });
+        self.to_ui(PhoneEvent::Fit {
+            id,
+            phone: false,
+            by: String::new(),
+        });
     }
 
     /// Drops every connection and listener. Paired phones stay paired.
@@ -963,7 +1196,7 @@ fn clean(name: &str) -> String {
 }
 
 /// What a phone sends for `key` over the certificate it saw: HMAC-SHA256, base64url.
-fn prove(key: &str, fingerprint: &str) -> String {
+pub(crate) fn prove(key: &str, fingerprint: &str) -> String {
     use hmac::{Hmac, Mac};
     let mut m = Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).expect("any key fits");
     m.update(fingerprint.as_bytes());
@@ -1012,7 +1245,7 @@ fn outdated(protocol: u32) -> String {
     }
 }
 
-fn host_name() -> String {
+pub(crate) fn host_name() -> String {
     sysinfo::System::host_name().unwrap_or_else(|| "This computer".into())
 }
 

@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
-    AnyElement, ElementId, Image, ImageFormat, IntoElement, ObjectFit, div, img, prelude::*, px,
+    AnyElement, Context, ElementId, Image, ImageFormat, IntoElement, ObjectFit, div, img,
+    prelude::*, px,
 };
 
 use crate::colors;
@@ -68,6 +69,21 @@ pub fn save(image: &Image) -> std::io::Result<PathBuf> {
     let path = dir.join(format!("paste-{ms}-{n}.{ext}"));
     std::fs::write(&path, bytes)?;
     Ok(path)
+}
+
+pub fn save_later<T: 'static>(
+    images: Vec<Image>,
+    cx: &mut Context<T>,
+    done: impl FnOnce(&mut T, Vec<PathBuf>, &mut Context<T>) + 'static,
+) {
+    // a screenshot arrives as a bitmap, and turning it into a png froze the window for a moment
+    let saving =
+        cx.background_spawn(async move { images.iter().filter_map(|i| save(i).ok()).collect() });
+    cx.spawn(async move |this, cx| {
+        let saved = saving.await;
+        let _ = this.update(cx, |this, cx| done(this, saved, cx));
+    })
+    .detach();
 }
 
 /// Fast compression and no filter search: the file is read once by the agent, and the default

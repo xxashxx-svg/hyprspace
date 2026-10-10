@@ -2,16 +2,15 @@
 // spinner and progress bar while it installs, the error with Retry, and What's new after an
 // update. It shows only when there is something to act on or read.
 
-use std::time::Duration;
-
 use gpui::{
-    Animation, AnimationExt as _, AnyElement, App, ClickEvent, Div, Entity, FontWeight,
-    Transformation, div, percentage, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Div, Entity, FontWeight, Transformation, div, percentage,
+    prelude::*, px, relative,
 };
 use hyprspace_proto::update::Step;
 
 use super::{Phase, Updater, VERSION, step_text};
 use crate::assets::icon;
+use crate::pace::Looping;
 use crate::{colors, widgets};
 
 /// The cards for the window's bottom right corner, or None when there is nothing to show.
@@ -123,11 +122,9 @@ fn failed(updater: &Entity<Updater>, message: &str) -> AnyElement {
 }
 
 fn busy(step: Step, progress: Option<f32>) -> AnyElement {
-    let spinner = icon("ring", 13., colors::accent()).with_animation(
-        "update-spin",
-        Animation::new(Duration::from_millis(700)).repeat(),
-        |s, t| s.with_transformation(Transformation::rotate(percentage(t))),
-    );
+    let spinner = icon("ring", 13., colors::accent()).looping(700, |s, t| {
+        s.with_transformation(Transformation::rotate(percentage(t)))
+    });
     let bar = match progress {
         Some(p) => div()
             .h_full()
@@ -142,11 +139,7 @@ fn busy(step: Step, progress: Option<f32>) -> AnyElement {
             .w(relative(0.35))
             .rounded_full()
             .bg(colors::accent())
-            .with_animation(
-                "update-slide",
-                Animation::new(Duration::from_millis(1100)).repeat(),
-                |d, t| d.left(relative(-0.35 + 1.35 * t)),
-            )
+            .looping(1100, |d, t| d.left(relative(-0.35 + 1.35 * t)))
             .into_any_element(),
     };
     frame()

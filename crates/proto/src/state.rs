@@ -125,7 +125,12 @@ impl AppState {
     /// finish will never come.
     pub fn wake_due(&mut self, now: u64, restart: bool) -> Vec<u64> {
         let mut woke = Vec::new();
-        for t in self.spaces.iter_mut().flat_map(|s| s.threads.iter_mut()) {
+        for t in self
+            .spaces
+            .iter_mut()
+            .filter(|s| s.machine.is_none())
+            .flat_map(|s| s.threads.iter_mut())
+        {
             let due = match t.snooze {
                 Some(Snooze::Time { at }) => at <= now,
                 Some(Snooze::Done) => restart,
@@ -167,6 +172,9 @@ pub struct Space {
     pub folded: bool,
     /// Newest first.
     pub threads: Vec<Thread>,
+    /// Another computer's space, mirrored from it while it is paired: never saved here.
+    #[serde(skip)]
+    pub machine: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -382,15 +390,28 @@ pub enum Scheme {
 }
 
 /// The composer's last picks, so the next thread starts the same way.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ComposerPrefs {
     pub agent: Option<Agent>,
     pub permission: Permission,
     pub picks: Vec<Pick>,
     /// Structured sessions are switched on (Settings, General), which lets the composer start a
-    /// thread as one. New threads still start in a terminal. Off by default: still being built.
+    /// thread as one. New threads still start in a terminal. On by default; saved under a new
+    /// name, since the old `structured` was written as off before anyone could have chosen it.
+    #[serde(rename = "structuredThreads")]
     pub structured: bool,
+}
+
+impl Default for ComposerPrefs {
+    fn default() -> Self {
+        Self {
+            agent: None,
+            permission: Permission::default(),
+            picks: Vec::new(),
+            structured: true,
+        }
+    }
 }
 
 /// A model and effort picked for one agent. Empty means the CLI's own default.
@@ -489,6 +510,19 @@ mod tests {
         assert!(!snoozed.settles(40 * DAY, SettleAfter::Day));
         // no known time at all: nothing to count from
         assert!(!Thread::default().settles(40 * DAY, SettleAfter::Day));
+    }
+
+    #[test]
+    fn structured_threads_start_on_and_keep_a_later_choice() {
+        let old: ComposerPrefs = serde_json::from_str(r#"{"structured":false}"#).unwrap();
+        assert!(old.structured);
+        let off = ComposerPrefs {
+            structured: false,
+            ..ComposerPrefs::default()
+        };
+        let back: ComposerPrefs =
+            serde_json::from_str(&serde_json::to_string(&off).unwrap()).unwrap();
+        assert!(!back.structured);
     }
 
     #[test]
