@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.15 — 2026-10-10
+
+- Run threads on your other computers. Pair one in Settings, Computers, see its threads in your sidebar, and pick which computer a new thread starts on.
+- Pasting into a terminal no longer stalls, and the app stays smooth while agents work.
+- Structured threads are on by default in Settings.
+- Sonnet 5.5 and Haiku 5.5 are in the model list.
+- The folder under the composer switches projects, and the new-thread dialog lists your projects.
+- Selecting text in a transcript keeps the rows that scroll out of view.
+- Spinner symbols in terminals draw as text instead of emoji.
+
 ## 0.24.14 — 2026-10-09
 
 - Type / for commands and skills, and @ to mention a file, in a structured thread
