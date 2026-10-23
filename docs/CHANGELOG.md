@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.32 — 2026-10-24
+
+- On macOS, HyprSpace is now signed with a lasting certificate, so Accessibility and Screen Recording stay granted across updates
+- After this update, grant them one last time in System Settings, Privacy & Security
+
 ## 0.24.31 — 2026-10-23
 
 - Type / anywhere in a message to pick a skill. Commands still go at the start
