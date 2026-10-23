@@ -69,5 +69,13 @@ install the current app on both platforms.
   `scripts/check-windows-install.ps1` runs those checks.
 - **macOS** (`scripts/package-macos.sh`) assembles `HyprSpace.app` (`com.hyprspace.app`, executable
   `hyprspace`), the `.app.tar.gz` and a dmg. It signs with the Developer ID and notarizes when the
-  Apple secrets exist, otherwise signs ad hoc, which Apple silicon needs to launch it at all.
+  Apple secrets exist. Without them it signs with the self-signed certificate in the
+  `MACOS_SIGNING_CERTIFICATE` secrets, and with neither, ad hoc, which Apple silicon needs to
+  launch it at all.
+- **macOS permissions follow the signature.** A granted permission (Accessibility, Screen
+  Recording) is kept against the app's designated requirement. Signed ad hoc, that's the build's
+  own hash, so every update looks like a new app and the grant silently stops working while
+  System Settings still shows it on. A certificate makes it the bundle id and that certificate,
+  which an update keeps. So the certificate must never change: a new one asks every Mac user again.
+  `scripts/make-macos-signing-cert.sh` makes it once and keeps a copy in `~/.hyprspace-signing`.
 - The uninstaller never touches user data (`~/.hyprspace`).

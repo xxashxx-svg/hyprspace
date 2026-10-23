@@ -128,9 +128,10 @@ cargo build --release -p hyprspace    # target/release/hyprspace(.exe)
 bash scripts/package-macos.sh         # target/package: HyprSpace.app, its .app.tar.gz, a dmg
 ```
 
-A Mac build without the Apple secrets is signed ad hoc and not notarized, so its first launch is
-blocked: right-click the app, Open, then Open (once), or System Settings, Privacy & Security, Open
-Anyway. A locally built app never updates itself.
+A Mac build without the Apple secrets is not notarized, so its first launch is blocked: right-click
+the app, Open, then Open (once), or System Settings, Privacy & Security, Open Anyway. A local build
+without `MACOS_SIGNING_CERTIFICATE` is signed ad hoc, so macOS treats each one as a new app and asks
+for permissions again. A locally built app never updates itself.
 
 ## The Android app
 

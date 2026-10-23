@@ -5,10 +5,15 @@
 #   HyprSpace_<version>_aarch64.dmg     the download, with the drag-to-Applications layout
 # The names are the ones every Tauri release used, so the feed and the website keep working.
 #
-# Signing follows release.yml's Apple secrets, all optional:
+# Signing follows release.yml's signing secrets, all optional:
 #   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
-#     sign with the Developer ID, hardened runtime on. Without them the app is signed ad hoc,
-#     which Apple silicon needs to launch it at all; Gatekeeper then wants right-click, Open.
+#     sign with the Developer ID, hardened runtime on.
+#   MACOS_SIGNING_CERTIFICATE (base64 .p12), MACOS_SIGNING_CERTIFICATE_PASSWORD
+#     without a Developer ID, sign with this self-signed certificate (scripts/make-macos-signing-cert.sh).
+#     macOS keys a granted permission to the app's id and its certificate, so grants survive
+#     updates. Signed ad hoc, the key is the build's own hash and every update asks again.
+#   With neither the app is signed ad hoc, which Apple silicon needs to launch it at all.
+#   Without a Developer ID, Gatekeeper wants right-click, Open on first launch.
 #   APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
 #     notarize and staple the app and the dmg, which needs the Developer ID signature too.
 # The updater signature (minisign, latest.json) is separate: release.yml signs the tarball after.
@@ -34,21 +39,40 @@ install -m 755 target/release/hyprspace "$APP/Contents/MacOS/hyprspace"
 sed "s/__VERSION__/$VERSION/g" apps/hyprspace/package/macos/Info.plist >"$APP/Contents/Info.plist"
 cp apps/hyprspace/assets/hyprspace.icns "$APP/Contents/Resources/hyprspace.icns"
 
-IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
-if [[ -n "${APPLE_CERTIFICATE:-}" && -n "$IDENTITY" ]]; then
-  # a throwaway keychain holding the Developer ID, for this build only
+# a throwaway keychain holding the certificate, for this build only
+import_certificate() { # <base64 .p12> <password>
   KEYCHAIN="${RUNNER_TEMP:-$(mktemp -d)}/hyprspace-build.keychain-db"
   KEYCHAIN_PASSWORD="$(uuidgen)"
   security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
   security set-keychain-settings -lut 21600 "$KEYCHAIN"
   security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-  echo "$APPLE_CERTIFICATE" | base64 --decode >"$OUT/cert.p12"
-  security import "$OUT/cert.p12" -k "$KEYCHAIN" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+  echo "$1" | base64 --decode >"$OUT/cert.p12"
+  security import "$OUT/cert.p12" -k "$KEYCHAIN" -P "$2" -T /usr/bin/codesign
   rm -f "$OUT/cert.p12"
   security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-  security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+  KEYCHAINS_BEFORE="$(security list-keychains -d user | tr -d '"')"
+  security list-keychains -d user -s "$KEYCHAIN" $KEYCHAINS_BEFORE
+  # the dmg is signed near the end too, so the keychain goes when the script does
+  trap forget_keychain EXIT
+}
+
+forget_keychain() {
+  security list-keychains -d user -s $KEYCHAINS_BEFORE
+  security delete-keychain "$KEYCHAIN" || true
+}
+
+IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
+if [[ -n "${APPLE_CERTIFICATE:-}" && -n "$IDENTITY" ]]; then
+  import_certificate "$APPLE_CERTIFICATE" "${APPLE_CERTIFICATE_PASSWORD:-}"
   # hardened runtime and a secure timestamp are what notarization asks for; one Mach-O, so no --deep
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+elif [[ -n "${MACOS_SIGNING_CERTIFICATE:-}" ]]; then
+  IDENTITY=""
+  import_certificate "$MACOS_SIGNING_CERTIFICATE" "${MACOS_SIGNING_CERTIFICATE_PASSWORD:-}"
+  # self-signed, so it's never in the "valid identities" list; sign by its hash
+  SELF_SIGNED="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/\)/ { print $2; exit }')"
+  # no hardened runtime or timestamp: they're for notarization, which this certificate can't get
+  codesign --force --sign "$SELF_SIGNED" "$APP"
 else
   IDENTITY=""
   codesign --force --deep --sign - "$APP"

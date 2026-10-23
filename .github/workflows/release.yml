@@ -20,7 +20,8 @@ name: release
 #              artifacts. It never creates, edits or uploads to a release.
 #
 # Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Optional Apple signing
-# and notarization secrets are used when present (scripts/package-macos.sh).
+# and notarization secrets, or the self-signed MACOS_SIGNING_CERTIFICATE pair, are used when
+# present (scripts/package-macos.sh).
 
 on:
   workflow_dispatch:
@@ -182,6 +183,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
         run: bash scripts/package-macos.sh
       - name: Sign the update for the updaters
         env:
