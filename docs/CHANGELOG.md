@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.34 — 2026-10-24
+
+- Pictures a tool returns, like screenshots, show only when you open its row, so they no longer crowd the thread
+
 ## 0.24.33 — 2026-10-24
 
 - Long replies stream, glide and scroll smoothly, with far less redrawing
