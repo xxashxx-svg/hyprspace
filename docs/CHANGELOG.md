@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.33 — 2026-10-24
+
+- Long replies stream, glide and scroll smoothly, with far less redrawing
+- The line under a reply says what the agent is doing: thinking, writing, running a command or waiting for you
+- Resume sends your message again when the app closed before the agent got it
+- A message sent after the app closed mid-run no longer shows as a steer
+- A background subagent's row shows its latest steps instead of loading forever
+- The file viewer has scrollbars
+
 ## 0.24.32 — 2026-10-24
 
 - On macOS, HyprSpace is now signed with a lasting certificate, so Accessibility and Screen Recording stay granted across updates
