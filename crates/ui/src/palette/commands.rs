@@ -37,6 +37,7 @@ pub enum Cmd {
     SettingsTab(Tab),
     Intro,
     ShuffleWallpaper,
+    Frames,
 }
 
 impl Root {
@@ -208,6 +209,17 @@ impl Root {
             )
             .sub("What HyprSpace is and how it fits together"),
         );
+        if std::env::var_os("HYPRSPACE_DEV").is_some() {
+            out.push(
+                Item::new(
+                    "View",
+                    "Show or hide frame times",
+                    Glyph::Icon("gauge"),
+                    Cmd::Frames,
+                )
+                .sub("Dev builds only"),
+            );
+        }
         out
     }
 
@@ -379,6 +391,7 @@ impl Root {
             Cmd::Settings => self.open_settings(window, cx),
             Cmd::SettingsTab(tab) => self.open_settings_at(tab, window, cx),
             Cmd::Intro => self.show_intro(window, cx),
+            Cmd::Frames => self.toggle_frame_meter(cx),
             Cmd::ShuffleWallpaper => self.shuffle_background(cx),
         }
         cx.notify();

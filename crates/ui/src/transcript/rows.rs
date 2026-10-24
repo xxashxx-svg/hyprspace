@@ -1,13 +1,24 @@
+use std::ops::Range;
+
 use hyprspace_proto::RunStatus;
 
 use super::ask;
 use super::model::Item;
+use crate::markdown::{Block, Unit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
     Loading,
     Empty,
-    Item { ix: usize, user: bool },
+    Item {
+        ix: usize,
+        user: bool,
+    },
+    /// A later piece of a long reply, whose first piece is its `Item` row.
+    Part {
+        ix: usize,
+        part: usize,
+    },
     Quiet(usize),
     Working,
 }
@@ -33,6 +44,51 @@ fn late(all: &[Item], ix: usize) -> Option<usize> {
         .iter()
         .rposition(|i| matches!(i, Item::Finished { .. }))?;
     (run + 1..ix).find(|&j| matches!(all[j], Item::User { .. }))
+}
+
+/// The most pieces of a reply in one row. GPUI's list lays out whole rows, so a long reply in one
+/// row is laid out in full every frame it shows, however little of it is on screen.
+const PIECES: usize = 8;
+
+/// A reply's pieces, in the runs drawn as rows.
+pub fn stretches(units: &[Unit]) -> Vec<Range<usize>> {
+    let size = if units.len() <= PIECES {
+        units.len().max(1)
+    } else {
+        PIECES
+    };
+    (0..units.len().max(1))
+        .step_by(size)
+        .map(|s| s..(s + size).min(units.len()))
+        .collect()
+}
+
+/// How many rows `stretches` gives a reply of these blocks.
+pub fn rows_for(blocks: &[Block]) -> usize {
+    let units: usize = blocks
+        .iter()
+        .map(|b| match b {
+            Block::List { items, .. } => items.len(),
+            _ => 1,
+        })
+        .sum();
+    if units <= PIECES {
+        1
+    } else {
+        units.div_ceil(PIECES)
+    }
+}
+
+/// `rows` with a row after each reply for each of its later pieces.
+pub fn split(rows: Vec<Row>, parts: impl Fn(usize) -> usize) -> Vec<Row> {
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(row);
+        if let Row::Item { ix, user: false } = row {
+            out.extend((1..parts(ix)).map(|part| Row::Part { ix, part }));
+        }
+    }
+    out
 }
 
 pub fn plan(all: &[Item], loading: bool, live: bool) -> Vec<Row> {
@@ -197,6 +253,36 @@ mod tests {
                 Row::Item { ix: 3, user: false },
                 Row::Item { ix: 2, user: true },
                 Row::Working,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_long_reply_takes_a_row_per_stretch() {
+        let units: Vec<Unit> = (0..20).map(|n| Unit::Entry(0, n)).collect();
+        assert_eq!(stretches(&units[..8]).len(), 1);
+        assert_eq!(stretches(&[]).len(), 1);
+        for n in [0, 1, 8, 9, 16, 17, 40] {
+            let list = Block::List {
+                start: Some(1),
+                items: vec![Vec::new(); n],
+            };
+            let blocks = [Block::Rule, list];
+            let units = crate::markdown::units(&blocks);
+            assert_eq!(rows_for(&blocks), stretches(&units).len());
+        }
+        assert_eq!(stretches(&units), [0..8, 8..16, 16..20]);
+        let rows = [
+            Row::Item { ix: 0, user: true },
+            Row::Item { ix: 1, user: false },
+        ];
+        assert_eq!(
+            split(rows.to_vec(), |ix| if ix == 1 { 3 } else { 1 }),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Item { ix: 1, user: false },
+                Row::Part { ix: 1, part: 1 },
+                Row::Part { ix: 1, part: 2 },
             ]
         );
     }

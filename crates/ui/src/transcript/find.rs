@@ -5,7 +5,7 @@ use gpui::{
 
 use super::TranscriptView;
 use super::model::Item;
-use super::rows::Row;
+use super::rows::{self, Row};
 use crate::input::{InputEvent, Newline, TextInput};
 use crate::markdown::{self, find::occurrences};
 use crate::zoom::px;
@@ -114,7 +114,7 @@ impl TranscriptView {
         let top = self.rows[self.list.logical_scroll_top().item_ix.min(self.rows.len())..]
             .iter()
             .find_map(|r| match r {
-                Row::Item { ix, .. } => Some(*ix),
+                Row::Item { ix, .. } | Row::Part { ix, .. } => Some(*ix),
                 _ => None,
             })
             .unwrap_or(0);
@@ -165,21 +165,62 @@ impl TranscriptView {
         if matches!(self.model.items.get(h.item), Some(Item::User { .. })) {
             self.expanded.insert(h.item);
         }
-        let Some(row) = self
+        let Some(first) = self
             .rows
             .iter()
             .position(|r| matches!(r, Row::Item { ix, .. } if *ix == h.item))
         else {
             return;
         };
+        let (part, at) = self.piece_of(h.item, h.at);
+        let row = first + part;
         self.follow.wheel(true);
         self.list.scroll_to(ListOffset {
             item_ix: row,
             offset_in_item: px(0.),
         });
         if let Some(f) = self.find.as_mut() {
-            f.aim = Some((row, h.at, 4));
+            f.aim = Some((row, at, 4));
         }
+    }
+
+    /// The piece of a reply cut into rows that holds the point `at` of the way through its text,
+    /// and how far through that piece it is.
+    fn piece_of(&self, item: usize, at: f32) -> (usize, f32) {
+        let parts = self
+            .rows
+            .iter()
+            .filter(|r| matches!(r, Row::Part { ix, .. } if *ix == item));
+        if parts.count() == 0 {
+            return (0, at);
+        }
+        let Some(Item::Text {
+            blocks: Some(b), ..
+        }) = self.model.items.get(item)
+        else {
+            return (0, at);
+        };
+        let units = markdown::units(b);
+        let lens: Vec<usize> = rows::stretches(&units)
+            .into_iter()
+            .map(|r| {
+                let mut texts = Vec::new();
+                for &u in &units[r] {
+                    markdown::find::unit_texts(b, u, &mut texts);
+                }
+                texts.iter().map(String::len).sum()
+            })
+            .collect();
+        let total = lens.iter().sum::<usize>().max(1) as f32;
+        let mut before = 0.;
+        for (part, len) in lens.iter().enumerate() {
+            let len = *len as f32;
+            if at * total <= before + len || part + 1 == lens.len() {
+                return (part, ((at * total - before) / len.max(1.)).clamp(0., 1.));
+            }
+            before += len;
+        }
+        (0, at)
     }
 
     // a row far off screen has no height yet, so the match is aimed at once the list measured it

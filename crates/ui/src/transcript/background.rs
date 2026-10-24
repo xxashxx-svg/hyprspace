@@ -2,7 +2,7 @@ use gpui::{
     ClickEvent, Context, Div, ElementId, InteractiveElement, ParentElement, SharedString, Stateful,
     StatefulInteractiveElement, Styled, div,
 };
-use hyprspace_proto::{Task, Tool};
+use hyprspace_proto::{Task, TaskKind, Tool};
 use hyprspace_theme::MONO;
 
 use super::TranscriptView;
@@ -33,10 +33,15 @@ pub(super) fn panel(
     let shown = call
         .filter(|id| row_of(v, id).is_some())
         .map(|id| (id.to_string(), call_open(v, id)));
-    let lines = match &v.task_log {
-        None => vec!["Reading its output".to_string()],
-        Some(out) if out.trim().is_empty() => vec!["No output yet".to_string()],
-        Some(out) => tail(&plain(out)),
+    let (title, lines) = if reads(task) {
+        let lines = match &v.task_log {
+            None => vec!["Reading its output".to_string()],
+            Some(out) if out.trim().is_empty() => vec!["No output yet".to_string()],
+            Some(out) => tail(&plain(out)),
+        };
+        ("Latest output", lines)
+    } else {
+        ("Latest steps", steps(v, call))
     };
     let head = div()
         .flex()
@@ -80,7 +85,7 @@ pub(super) fn panel(
             div()
                 .text_size(px(12.))
                 .text_color(colors::text3())
-                .child("Latest output"),
+                .child(title),
         )
         .child(
             div()
@@ -100,6 +105,33 @@ pub(super) fn panel(
                         .child(if l.is_empty() { " ".to_string() } else { l })
                 })),
         )
+}
+
+/// Whether the CLI hands over the task's output. It does for commands and monitors only.
+pub(super) fn reads(task: &Task) -> bool {
+    matches!(task.kind, TaskKind::Command | TaskKind::Monitor)
+}
+
+/// A subagent's last calls, from its card in the thread.
+fn steps(v: &TranscriptView, call: Option<&str>) -> Vec<String> {
+    let agent = call.and_then(|id| {
+        v.model.items.iter().find_map(|i| match i {
+            Item::Agent(a) if a.id == id => Some(a),
+            _ => None,
+        })
+    });
+    let Some(agent) = agent else {
+        return vec!["Nothing to show for this task".to_string()];
+    };
+    let mut lines: Vec<String> = agent
+        .calls
+        .iter()
+        .map(|c| super::tool::label(&c.tool))
+        .collect();
+    if lines.is_empty() {
+        return vec!["No steps yet".to_string()];
+    }
+    lines.split_off(lines.len().saturating_sub(LINES))
 }
 
 fn call_open(v: &TranscriptView, call: &str) -> bool {

@@ -22,6 +22,136 @@ pub fn render(blocks: &[Block], key: &str, fade: &[(Range<usize>, f32)]) -> AnyE
     from(blocks, key, 0, fade)
 }
 
+/// The pieces a long reply can be cut into: a top-level block, or one item of a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unit {
+    Block(usize),
+    Entry(usize, usize),
+}
+
+pub fn units(blocks: &[Block]) -> Vec<Unit> {
+    let mut out = Vec::new();
+    for (i, b) in blocks.iter().enumerate() {
+        match b {
+            Block::List { items, .. } => out.extend((0..items.len()).map(|n| Unit::Entry(i, n))),
+            _ => out.push(Unit::Block(i)),
+        }
+    }
+    out
+}
+
+/// The units `range` of `all`, drawn as `render` draws them, for a reply cut into rows.
+pub fn part(
+    blocks: &[Block],
+    key: &str,
+    fade: &[(Range<usize>, f32)],
+    all: &[Unit],
+    range: Range<usize>,
+) -> AnyElement {
+    let at = |u: Unit| -> usize {
+        if fade.is_empty() {
+            return 0;
+        }
+        let (i, n) = match u {
+            Unit::Block(i) => (i, 0),
+            Unit::Entry(i, n) => (i, n),
+        };
+        let before: usize = blocks[..i].iter().map(block_size).sum();
+        match &blocks[i] {
+            Block::List { items, .. } => {
+                before
+                    + items[..n]
+                        .iter()
+                        .map(|b| super::fade::size(b))
+                        .sum::<usize>()
+            }
+            _ => before,
+        }
+    };
+    let units = &all[range.clone()];
+    let mut groups = Vec::new();
+    let mut k = 0;
+    while k < units.len() {
+        match units[k] {
+            Unit::Block(i) => {
+                groups.push(block(&blocks[i], &format!("{key}-{i}"), at(units[k]), fade));
+                k += 1;
+            }
+            Unit::Entry(i, _) => {
+                let run = units[k..]
+                    .iter()
+                    .take_while(|u| matches!(u, Unit::Entry(j, _) if *j == i))
+                    .count();
+                if let Block::List { start, items } = &blocks[i] {
+                    groups.push(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .children(units[k..k + run].iter().filter_map(|&u| match u {
+                                Unit::Entry(_, n) => Some(entry(
+                                    *start,
+                                    n,
+                                    &items[n],
+                                    &format!("{key}-{i}"),
+                                    at(u),
+                                    fade,
+                                )),
+                                Unit::Block(_) => None,
+                            }))
+                            .into_any_element(),
+                    );
+                }
+                k += run;
+            }
+        }
+    }
+    let seed = (range.start > 0 && super::find::hunting()).then(|| {
+        let mut above = Vec::new();
+        for &u in &all[..range.start] {
+            super::find::unit_texts(blocks, u, &mut above);
+        }
+        super::find::seed(key, above)
+    });
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .children(seed)
+        .children(groups)
+        .into_any_element()
+}
+
+fn entry(
+    start: Option<u64>,
+    n: usize,
+    item: &[Block],
+    key: &str,
+    at: usize,
+    fade: &[(Range<usize>, f32)],
+) -> gpui::Div {
+    let marker = match start {
+        Some(s) => format!("{}.", s + n as u64),
+        None => "•".into(),
+    };
+    div()
+        .flex()
+        .gap_2()
+        .child(
+            div()
+                .flex_none()
+                .min_w(px(14.))
+                .text_color(colors::text2())
+                .child(marker),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(from(item, &format!("{key}-{n}"), at, fade)),
+        )
+}
+
 fn from(blocks: &[Block], key: &str, mut at: usize, fade: &[(Range<usize>, f32)]) -> AnyElement {
     div()
         .flex()
@@ -65,28 +195,7 @@ fn block(b: &Block, key: &str, at: usize, fade: &[(Range<usize>, f32)]) -> AnyEl
                 if !fade.is_empty() {
                     *at += super::fade::size(item);
                 }
-                let marker = match start {
-                    Some(s) => format!("{}.", s + n as u64),
-                    None => "•".into(),
-                };
-                Some(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(
-                            div()
-                                .flex_none()
-                                .min_w(px(14.))
-                                .text_color(colors::text2())
-                                .child(marker),
-                        )
-                        .child(div().flex_1().min_w_0().child(from(
-                            item,
-                            &format!("{key}-{n}"),
-                            here,
-                            fade,
-                        ))),
-                )
+                Some(entry(*start, n, item, key, here, fade))
             }))
             .into_any_element(),
         Block::Quote(inner) => div()

@@ -73,6 +73,17 @@ pub(crate) struct Layout {
     pub cell: Pixels,
     /// The lines on screen, as drawn.
     pub lines: Vec<(usize, ShapedLine)>,
+    /// The scrollbars, when there is anything to scroll to: down the right, and along the bottom.
+    pub down: Option<Bar>,
+    pub across: Option<Bar>,
+}
+
+/// A scrollbar: the strip it runs along, its thumb in it, and how far its side scrolls.
+#[derive(Clone, Copy)]
+pub(crate) struct Bar {
+    pub track: Bounds<Pixels>,
+    pub thumb: Bounds<Pixels>,
+    pub max: Pixels,
 }
 
 pub struct Editor {
@@ -102,6 +113,8 @@ pub struct Editor {
     /// Bring the cursor into view at the next frame: to the middle, or just inside the edge.
     reveal: Option<bool>,
     drag: Option<(Unit, Range<usize>)>,
+    /// A scrollbar thumb held: down the right when true, and where on the thumb it was taken.
+    grab: Option<(bool, Pixels)>,
     rev: u64,
     pub(crate) layout: Option<Layout>,
     _recolor: Option<Task<()>>,
@@ -167,6 +180,7 @@ impl Editor {
             scroll: point(px(0.), px(0.)),
             reveal: None,
             drag: None,
+            grab: None,
             rev: 0,
             layout: None,
             _recolor: None,

@@ -17,7 +17,7 @@ use hyprspace_proto::{RunStatus, TaskKind, Tool};
 
 use super::model::{self, Item};
 use super::rows::{self, Row};
-use super::{TranscriptEvent, TranscriptView, tool};
+use super::{TranscriptEvent, TranscriptView, doing, tool};
 use crate::assets::{icon, mark};
 use crate::composer::model_menu::{self, Host as _, ModelMenu};
 use crate::pace::Looping;
@@ -59,9 +59,9 @@ pub fn view(
         v.follow.step(&v.list, window, cx);
     }
     // rows measure taller than estimated once laid out, which only shows after this frame
-    cx.on_next_frame(window, |v, _, cx| {
+    cx.on_next_frame(window, |v, window, cx| {
         if v.follow.behind(&v.list) {
-            cx.notify();
+            crate::pace::next_for(window, cx.entity_id());
         }
     });
     let revealed = v
@@ -79,26 +79,30 @@ pub fn view(
         }
         _ => None,
     });
-    v.partial = live.and_then(|(ix, end)| match v.model.items.get(ix) {
-        Some(Item::Text { source, .. }) => {
-            let text = &source[..end];
-            if v.model.after_command(ix) {
-                return Some((ix, model::reply(text, true)));
+    // between beats the text is what it was, and so is its parse
+    if live.is_none() || live != v.partial_at {
+        v.partial = live.and_then(|(ix, end)| match v.model.items.get(ix) {
+            Some(Item::Text { source, .. }) => {
+                let text = &source[..end];
+                if v.model.after_command(ix) {
+                    return Some((ix, model::reply(text, true)));
+                }
+                if v.stream.0 != ix {
+                    v.stream = (ix, Default::default());
+                }
+                Some((ix, v.stream.1.parse(text)))
             }
-            if v.stream.0 != ix {
-                v.stream = (ix, Default::default());
-            }
-            Some((ix, v.stream.1.parse(text)))
-        }
-        _ => None,
-    });
+            _ => None,
+        });
+    }
+    v.partial_at = live;
     if slide::animations()
         && let Some((ix, b)) = &v.partial
     {
         v.fade.grow(*ix, b);
     }
     if v.fade.tick() {
-        crate::pace::next(window, cx);
+        crate::pace::beat(window, cx);
     }
     v.model.parse(v.partial.as_ref().map(|(ix, _)| *ix));
     let now = Instant::now();
@@ -112,10 +116,17 @@ pub fn view(
     }
     let live = v.model.elapsed().is_some();
     v.working = live.then(|| v.working.unwrap_or(now));
+    if !live {
+        v.doing = Default::default();
+    } else if v.doing.step(doing::label(&v.model, v.stopping), v.stopping) {
+        crate::pace::next(window, cx);
+    }
     if v.working.is_some_and(|at| at.elapsed() < WORKING_IN) {
         crate::pace::next(window, cx);
     }
-    let rows = rows::plan(&v.model.items, v.loading, live);
+    let rows = rows::split(rows::plan(&v.model.items, v.loading, live), |ix| {
+        reply_blocks(v, ix).map_or(1, |b| rows::rows_for(b))
+    });
     v.sync_rows(rows);
     let prompts: Vec<usize> = v
         .rows
@@ -274,6 +285,10 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             let el = item(v, ix, &v.model.items[ix], cx);
             enter(v, ix, el)
         }
+        Row::Part { ix, part } => {
+            let el = reply(v, ix, part);
+            enter(v, ix, el)
+        }
         Row::Quiet(start) => quiet(v, start, cx),
         Row::Working => {
             let t = v.working.filter(|_| slide::animations()).map_or(1., |at| {
@@ -287,9 +302,62 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
                 .into_any_element()
         }
     };
+    let joined = matches!(v.rows.get(ix + 1), Some(Row::Part { .. }));
     centered(column().child(body))
         .when(ix == 0, |d| d.pt(px(24.)))
-        .pb(px(20.))
+        .when(!joined, |d| d.pb(px(20.)))
+        .into_any_element()
+}
+
+/// The blocks a reply draws: its streaming parse while it comes in.
+fn reply_blocks(v: &TranscriptView, ix: usize) -> Option<&Vec<markdown::Block>> {
+    let Some(Item::Text { blocks, .. }) = v.model.items.get(ix) else {
+        return None;
+    };
+    v.partial
+        .as_ref()
+        .filter(|(p, _)| *p == ix)
+        .map(|(_, b)| b)
+        .or(blocks.as_ref())
+}
+
+/// Piece `part` of a reply, spaced from the next as the reply drawn whole would space them.
+fn reply(v: &TranscriptView, ix: usize, part: usize) -> AnyElement {
+    let (Some(Item::Text { source, .. }), Some(b)) = (v.model.items.get(ix), reply_blocks(v, ix))
+    else {
+        return div().into_any_element();
+    };
+    let units = markdown::units(b);
+    let stretches = rows::stretches(&units);
+    let Some(range) = stretches.get(part).cloned() else {
+        return div().into_any_element();
+    };
+    let key = format!("t{ix}");
+    let fade = v.fade.at(ix);
+    let last = part + 1 == stretches.len();
+    let in_list = matches!(
+        (units.get(range.end.wrapping_sub(1)), units.get(range.end)),
+        (Some(markdown::Unit::Entry(a, _)), Some(markdown::Unit::Entry(b, _))) if a == b
+    );
+    let body = if stretches.len() == 1 {
+        markdown::render(b, &key, &fade)
+    } else {
+        markdown::part(b, &key, &fade, &units, range)
+    };
+    div()
+        .group(SharedString::from(format!("msg-{ix}")))
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .text_size(px(14.))
+        .line_height(relative(1.65))
+        .text_color(colors::text1())
+        .child(body)
+        .when(last && !streaming(v, ix), |d| {
+            d.child(hover_copy(ix, source))
+        })
+        .when(!last && in_list, |d| d.pb_1())
+        .when(!last && !in_list, |d| d.pb(px(10.)))
         .into_any_element()
 }
 
@@ -342,22 +410,33 @@ fn took(secs: u64) -> String {
 
 fn working(v: &TranscriptView) -> AnyElement {
     let took = took(v.model.elapsed().unwrap_or(0));
-    let doing = v
-        .model
-        .running_tool()
-        .filter(|_| !v.stopping)
-        .map(tool::label);
+    let line = |text: &str| {
+        div()
+            .flex()
+            .items_center()
+            .h(px(22.))
+            .flex_none()
+            .min_w_0()
+            .child(div().min_w_0().truncate().child(text.to_string()))
+    };
     let label = div()
-        .flex_none()
+        .flex_1()
+        .min_w_0()
+        .h(px(22.))
+        .overflow_hidden()
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text2())
-        .child(if v.stopping {
-            "Stopping"
-        } else if v.model.compacting {
-            "Compacting"
-        } else {
-            "Working"
-        })
+        .child(
+            div()
+                .relative()
+                .when(v.doing.prev.is_some(), |d| {
+                    d.top(px(-22. * ease_out(v.doing.roll)))
+                })
+                .flex()
+                .flex_col()
+                .children(v.doing.prev.as_deref().map(line))
+                .child(line(&v.doing.shown)),
+        )
         .looping(1800, |d, t| {
             d.opacity(0.55 + 0.45 * (0.5 + 0.5 * (t * std::f32::consts::TAU).cos()))
         });
@@ -374,8 +453,6 @@ fn working(v: &TranscriptView) -> AnyElement {
             spinner::eclipse("working", colors::text2())
         })
         .child(label)
-        .children(doing.map(|d| div().min_w_0().truncate().child(d)))
-        .child(div().flex_1())
         .child(div().flex_none().child(took))
         .when(!v.stopping, |d| {
             d.child(
@@ -935,26 +1012,7 @@ fn item(
                     }),
             )
             .into_any_element(),
-        Item::Text { blocks, source } => match v
-            .partial
-            .as_ref()
-            .filter(|(p, _)| *p == ix)
-            .map(|(_, b)| b)
-            .or(blocks.as_ref())
-        {
-            Some(b) => div()
-                .group(SharedString::from(format!("msg-{ix}")))
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .text_size(px(14.))
-                .line_height(relative(1.65))
-                .text_color(colors::text1())
-                .child(markdown::render(b, &format!("t{ix}"), &v.fade.at(ix)))
-                .when(!streaming(v, ix), |d| d.child(hover_copy(ix, source)))
-                .into_any_element(),
-            None => div().into_any_element(),
-        },
+        Item::Text { .. } => reply(v, ix, 0),
         Item::Thinking { text, open } => {
             let head = fold_head(
                 ("thinking", ix),

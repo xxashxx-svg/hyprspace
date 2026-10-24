@@ -580,6 +580,42 @@ impl Transcript {
         cut
     }
 
+    /// The prompt of the run cut off at `cut` when nothing came back for it. The CLI may never
+    /// have taken it, so a continue message would find nothing to continue.
+    pub fn unanswered(&self, cut: usize) -> Option<Prompt> {
+        match self.items.get(cut.checked_sub(1)?)? {
+            Item::User { text, images, .. } => Some(Prompt {
+                text: text.clone(),
+                images: images.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// A replayed journal says a new CLI process started. A run still open from the one before
+    /// died with it, and the journal never recorded that, so the next prompt would read as a
+    /// steer of it.
+    pub fn restarted(&mut self) {
+        let Some(run) = &self.run else {
+            return;
+        };
+        match self.items.last() {
+            // Claude starts once the first prompt reaches it
+            Some(Item::User { steer: true, .. }) => {
+                let Some(Item::User { text, images, .. }) = self.items.pop() else {
+                    return;
+                };
+                self.settle();
+                self.prompt(&Prompt { text, images });
+            }
+            Some(Item::User { .. }) => {}
+            _ if run.said => {
+                self.settle();
+            }
+            _ => {}
+        }
+    }
+
     fn end_session(&mut self) {
         self.run = None;
         self.compacting = false;
@@ -969,6 +1005,56 @@ mod tests {
         t.settle();
         assert_eq!(agent(&t, "a1"), AgentState::Stopped);
         assert!(!t.ticking());
+    }
+
+    #[test]
+    fn a_cut_off_prompt_with_no_reply_goes_again() {
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("what did they study?"));
+        let cut = t.settle().unwrap();
+        assert_eq!(t.unanswered(cut).unwrap().text, "what did they study?");
+
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("go"));
+        t.apply(text("On it"));
+        let cut = t.settle().unwrap();
+        assert!(t.unanswered(cut).is_none());
+    }
+
+    fn started() -> RunEvent {
+        RunEvent::Started {
+            agent: hyprspace_proto::Agent::Claude,
+            model: "m".into(),
+            thread: "th".into(),
+            cwd: PathBuf::from("/w"),
+        }
+    }
+
+    #[test]
+    fn a_prompt_that_started_a_new_process_ends_the_run_cut_off_before_it() {
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("one"));
+        t.apply(started());
+        t.apply(text("working"));
+        t.prompt(&Prompt::text("two"));
+        t.apply(started());
+        t.restarted();
+        let n = t.items.len();
+        assert!(matches!(&t.items[n - 2], Item::Note(_)));
+        assert!(matches!(&t.items[n - 1], Item::User { text, steer: false, .. } if text == "two"));
+        assert!(t.running());
+
+        // a real steer reaches the same process, which never says it started again
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("one"));
+        t.apply(started());
+        t.apply(text("working"));
+        t.prompt(&Prompt::text("also this"));
+        assert!(matches!(
+            t.items.last(),
+            Some(Item::User { steer: true, .. })
+        ));
+        assert!(!t.items.iter().any(|i| matches!(i, Item::Note(_))));
     }
 
     #[test]

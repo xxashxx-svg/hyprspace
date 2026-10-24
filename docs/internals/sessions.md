@@ -90,7 +90,8 @@ how Claude is driven.
 - **Background tasks are a live list.** Claude's `background_tasks_changed` carries every task
   still running, so `RunEvent::Background` replaces the list each time, and the CLI's `ambient`
   watchers are left out. An open task asks the CLI for the end of its output (`get_task_output`)
-  once a second, and only while it's open. None of it is journaled: the tasks die with the CLI,
+  once a second, and only while it's open. The CLI refuses that for anything but a command or a
+  monitor, so an open subagent shows its last calls from its card in the thread. None of it is journaled: the tasks die with the CLI,
   so a phone or another computer never sees them. Codex has no such list yet (`thread/backgroundTerminals/list` is a
   request, not an event).
 - **Edits carry unified diffs.** Codex sends real ones. Claude sends only the old and new text,
@@ -143,7 +144,9 @@ The Codex rows follow its own presets. Codex has no plan mode, so Plan reads and
   thread mid-run saves `Thread.updating` with its background tasks' labels. The first launch of the
   new version opens those threads, and one whose journal shows the run was cut off gets a continue
   message naming the background work that stopped, since the CLI never reports on it again. A
-  crash or a plain close leaves the Resume button. A copy with `HYPRSPACE_DEV` or
+  crash or a plain close leaves the Resume button. A cut-off run that nothing came back for sends
+  its prompt again instead: the journal saves a prompt before the CLI takes it, so the CLI may
+  never have seen it, and a continue message would find nothing to continue. A copy with `HYPRSPACE_DEV` or
   `HYPRSPACE_STATE_DIR` never picks up: it runs on copies of real threads, and would start real
   agents on them.
 - **Delegation is an MCP tool.** A top-level structured session gets the `hyprspace` MCP server:

@@ -19,6 +19,8 @@ struct Trip {
 
 pub struct Follow {
     pub stick: bool,
+    /// How fast the view is gliding to the end, in px a second.
+    velocity: f32,
     trip: Option<Trip>,
     last: Option<Instant>,
     wheel: Pixels,
@@ -29,6 +31,7 @@ impl Default for Follow {
     fn default() -> Self {
         Self {
             stick: true,
+            velocity: 0.,
             trip: None,
             last: None,
             wheel: px(0.),
@@ -38,6 +41,10 @@ impl Default for Follow {
 }
 
 const EASE: f32 = 0.06;
+/// The glide to the end: its spring, in radians a second, settles in about a quarter second, and
+/// it never moves faster than this many px a second.
+const SPRING: f32 = 18.;
+const GLIDE_MAX: f32 = 1400.;
 
 fn y(list: &ListState) -> Pixels {
     -list.scroll_px_offset_for_scrollbar().y
@@ -80,6 +87,7 @@ impl Follow {
 
     pub fn snap(&mut self, list: &ListState) {
         self.trip = None;
+        self.velocity = 0.;
         self.wheel = px(0.);
         self.stick = true;
         list.scroll_to_end();
@@ -87,6 +95,7 @@ impl Follow {
 
     pub fn wheel(&mut self, up: bool) {
         self.trip = None;
+        self.velocity = 0.;
         if up {
             self.stick = false;
         }
@@ -95,6 +104,7 @@ impl Follow {
     /// A turn of the mouse wheel, eased out over the next frames. Positive scrolls down.
     pub fn spin(&mut self, by: Pixels) {
         self.trip = None;
+        self.velocity = 0.;
         if by < px(0.) {
             self.stick = false;
         }
@@ -196,19 +206,23 @@ impl Follow {
             }
             return;
         }
-        let gap = max - y;
-        if gap <= px(0.5) {
+        let gap = f32::from(max - y);
+        if gap <= 0.5 {
+            self.velocity = 0.;
             return;
         }
-        if !animations() || gap > list.viewport_bounds().size.height * 2. {
+        if !animations() || gap > f32::from(list.viewport_bounds().size.height) * 2. {
+            self.velocity = 0.;
             list.scroll_to_end();
-        } else {
-            let k = 1. - (-dt / 0.06).exp();
-            set(
-                list,
-                (y + (gap * k).max(px(0.5))).max(max - px(24.)).min(max),
-            );
+            crate::pace::next(window, cx);
+            return;
         }
+        // a spring that settles without overshoot carries the view to the end, so what arrives
+        // glides up the whole way; the cap keeps a tall arrival from racing
+        let accel = SPRING * SPRING * gap - 2. * SPRING * self.velocity;
+        self.velocity = (self.velocity + accel * dt).clamp(0., GLIDE_MAX);
+        let step = (self.velocity * dt).clamp(0.5, gap);
+        set(list, y + px(step));
         crate::pace::next(window, cx);
     }
 
@@ -236,25 +250,33 @@ impl Reveal {
         }
     }
 
+    pub fn behind(&self, len: usize) -> bool {
+        animations() && self.shown < len as f32
+    }
+
     pub fn step(&mut self, text: &str, window: &mut Window, cx: &mut App) -> Option<usize> {
         if !animations() {
             return None;
         }
-        let now = Instant::now();
-        let dt = (now - self.last).as_secs_f32().min(0.05);
-        self.last = now;
         let left = text.len() as f32 - self.shown;
         if left <= 0. {
             return None;
         }
-        // text that piles up runs out faster, so the reveal never trails the stream for long
-        let speed = (left / 0.2).max(120.);
-        self.shown = (self.shown + speed * dt).min(text.len() as f32);
+        let now = Instant::now();
+        // only on the beat, which can land up to half a refresh early; a redraw between beats,
+        // for a glide, keeps the text as it was
+        if now - self.last >= crate::pace::BEAT * 3 / 4 {
+            let dt = (now - self.last).as_secs_f32().min(0.1);
+            self.last = now;
+            // text that piles up runs out faster, so the reveal never trails the stream for long
+            let speed = (left / 0.2).max(120.);
+            self.shown = (self.shown + speed * dt).min(text.len() as f32);
+        }
         let mut end = self.shown as usize;
         while !text.is_char_boundary(end) {
             end += 1;
         }
-        crate::pace::next(window, cx);
+        crate::pace::beat(window, cx);
         Some(end)
     }
 }

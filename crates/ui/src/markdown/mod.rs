@@ -15,7 +15,7 @@ use std::ops::Range;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, TextMergeStream};
 
 pub use fade::Fade;
-pub use render::render;
+pub use render::{Unit, part, render, units};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use gpui::{TextLayout, fill};
+use gpui::{IntoElement, Styled, TextLayout, fill};
 
 use super::Block;
 use crate::colors;
@@ -36,6 +36,33 @@ pub fn set(surface: &Arc<str>, hunt: Option<(&str, Option<(usize, usize)>)>) {
             }
         }
     });
+}
+
+pub(super) fn hunting() -> bool {
+    HUNTS.with(|h| !h.borrow().is_empty())
+}
+
+/// Paint first in a later piece of a reply cut into rows: the pieces above it may be off screen
+/// and unpainted, so it counts their matches itself and the current match keeps its number.
+pub(super) fn seed(key: &str, above: Vec<String>) -> impl IntoElement + use<> {
+    let item = item_of(key);
+    gpui::canvas(
+        |_, _, _| {},
+        move |_, _, _, _| {
+            let Some(item) = item else {
+                return;
+            };
+            let surface = super::select::surface();
+            let Some(query) = HUNTS.with(|h| h.borrow().get(&surface).map(|h| h.query.clone()))
+            else {
+                return;
+            };
+            let n = above.iter().map(|t| occurrences(t, &query).len()).sum();
+            SEEN.with(|s| *s.borrow_mut() = (item, n));
+        },
+    )
+    .absolute()
+    .size_0()
 }
 
 pub(super) fn reset() {
@@ -99,6 +126,18 @@ pub fn occurrences(text: &str, query: &str) -> Vec<Range<usize>> {
         }
     }
     out
+}
+
+/// The text of one piece of a reply, as `texts` gives it.
+pub fn unit_texts(blocks: &[Block], unit: super::Unit, out: &mut Vec<String>) {
+    match unit {
+        super::Unit::Block(i) => texts(&blocks[i..=i], out),
+        super::Unit::Entry(i, n) => {
+            if let Block::List { items, .. } = &blocks[i] {
+                texts(&items[n], out);
+            }
+        }
+    }
 }
 
 pub fn texts(blocks: &[Block], out: &mut Vec<String>) {

@@ -12,7 +12,7 @@ use gpui::{
 };
 use hyprspace_theme::MONO;
 
-use super::{Editor, Layout, PAD, shape_plain};
+use super::{Bar, Editor, Layout, PAD, shape_plain};
 use crate::colors;
 use crate::viewer::code::{ROW, color, expand, shown_col};
 use crate::zoom::px;
@@ -85,6 +85,37 @@ pub struct Frame {
     lines: Vec<(Point<Pixels>, ShapedLine)>,
     back: Vec<PaintQuad>,
     cursor: Option<PaintQuad>,
+    thumbs: Vec<PaintQuad>,
+}
+
+const BAR: f32 = 10.;
+const THUMB_MIN: f32 = 24.;
+
+/// A scrollbar along `track` for a view `view` long onto content that scrolls `max` further,
+/// scrolled `at` of the way, down when `down`. None when there is nothing to scroll to.
+fn bar(track: Bounds<Pixels>, view: Pixels, max: Pixels, at: Pixels, down: bool) -> Option<Bar> {
+    if max <= px(0.) || view <= px(0.) {
+        return None;
+    }
+    let long = if down {
+        track.size.height
+    } else {
+        track.size.width
+    };
+    let len = (long * (view / (view + max))).max(px(THUMB_MIN)).min(long);
+    let start = (long - len) * (at / max).clamp(0., 1.);
+    let thumb = if down {
+        Bounds::new(
+            point(track.right() - px(6.), track.top() + start),
+            size(px(4.), len),
+        )
+    } else {
+        Bounds::new(
+            point(track.left() + start, track.bottom() - px(6.)),
+            size(len, px(4.)),
+        )
+    };
+    Some(Bar { track, thumb, max })
 }
 
 impl Editor {
@@ -137,6 +168,7 @@ impl Editor {
             lines: Vec::new(),
             back: Vec::new(),
             cursor: None,
+            thumbs: Vec::new(),
         };
         let mut shaped_lines = Vec::new();
         for i in first..last {
@@ -219,11 +251,42 @@ impl Editor {
             shaped_lines.push((i, shaped.clone()));
             frame.lines.push((origin, shaped));
         }
+        let down = bar(
+            Bounds::new(
+                point(bounds.right() - px(BAR), bounds.top() + px(2.)),
+                size(px(BAR), bounds.size.height - px(4.)),
+            ),
+            view_h,
+            max_y,
+            self.scroll.y,
+            true,
+        );
+        let across = bar(
+            Bounds::new(
+                point(text_x, bounds.bottom() - px(BAR)),
+                size(text_w - px(BAR), px(BAR)),
+            ),
+            text_w,
+            max_x,
+            self.scroll.x,
+            false,
+        );
+        let alpha = |held: bool| colors::ink(if held { 0.3 } else { 0.16 });
+        for (b, side) in [(down, true), (across, false)] {
+            if let Some(b) = b {
+                let held = self.grab.is_some_and(|(d, _)| d == side);
+                frame
+                    .thumbs
+                    .push(fill(b.thumb, alpha(held)).corner_radii(px(2.)));
+            }
+        }
         self.layout = Some(Layout {
             bounds,
             text_x,
             cell,
             lines: shaped_lines,
+            down,
+            across,
         });
         frame
     }
@@ -323,6 +386,9 @@ impl Element for EditorElement {
             for (origin, number) in &frame.numbers {
                 let _ = number.paint(*origin, lh, TextAlign::Left, None, window, cx);
             }
+            for thumb in frame.thumbs.drain(..) {
+                window.paint_quad(thumb);
+            }
         });
     }
 }
@@ -330,6 +396,19 @@ impl Element for EditorElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thumb_runs_from_the_top_of_its_track_to_the_bottom() {
+        let track = Bounds::new(point(px(0.), px(0.)), size(px(10.), px(400.)));
+        assert!(bar(track, px(400.), px(0.), px(0.), true).is_none());
+        let top = bar(track, px(400.), px(1200.), px(0.), true).unwrap();
+        assert_eq!(top.thumb.top(), px(0.));
+        assert_eq!(top.thumb.size.height, px(100.));
+        let end = bar(track, px(400.), px(1200.), px(1200.), true).unwrap();
+        assert_eq!(end.thumb.bottom(), px(400.));
+        let tiny = bar(track, px(400.), px(1_000_000.), px(0.), true).unwrap();
+        assert_eq!(tiny.thumb.size.height, px(THUMB_MIN));
+    }
 
     #[test]
     fn runs_cover_the_line_and_skip_bad_ranges() {

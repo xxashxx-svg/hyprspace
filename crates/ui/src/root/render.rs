@@ -217,6 +217,7 @@ fn menu_line(
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let meter = self.frame_meter(window, cx);
         self.look_for_hosts();
         self.look_up_icons(cx);
         if let Some(space) = self.work.compose.take() {
@@ -340,5 +341,6 @@ impl Render for Root {
             .children(intro)
             .children(viewer)
             .children(lightbox)
+            .children(meter)
     }
 }

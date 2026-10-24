@@ -64,6 +64,10 @@ pub fn reset(surface: Arc<str>) -> impl IntoElement {
     .size_0()
 }
 
+pub(super) fn surface() -> Arc<str> {
+    SURFACE.with(|s| s.borrow().clone())
+}
+
 pub fn tail(surface: Arc<str>) -> impl IntoElement {
     canvas(
         |_, _, _| {},

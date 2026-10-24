@@ -8,6 +8,7 @@ mod background;
 mod branch;
 mod changes;
 mod commands;
+mod doing;
 mod find;
 mod model;
 mod motion;
@@ -139,12 +140,15 @@ pub struct TranscriptView {
     follow: motion::Follow,
     reveal: Option<motion::Reveal>,
     partial: Option<(usize, Vec<crate::markdown::Block>)>,
+    /// The reply and its length that `partial` is the parse of.
+    partial_at: Option<(usize, usize)>,
     stream: (usize, crate::markdown::Stream),
     pub(super) fade: crate::markdown::Fade,
     fresh: usize,
     seen: usize,
     born: HashMap<usize, Instant>,
     working: Option<Instant>,
+    doing: doing::Doing,
     drag_step: Option<Instant>,
     ticker: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -281,12 +285,14 @@ impl TranscriptView {
             follow: Default::default(),
             reveal: None,
             partial: None,
+            partial_at: None,
             stream: Default::default(),
             fade: Default::default(),
             fresh: 0,
             seen: 0,
             born: HashMap::new(),
             working: None,
+            doing: Default::default(),
             drag_step: None,
             ticker: None,
             _subs: vec![sub],
@@ -382,7 +388,12 @@ impl TranscriptView {
     }
 
     pub(super) fn resume_cut(&mut self, cx: &mut Context<Self>) {
-        self.offer(Prompt::text(RESUME), cx);
+        let prompt = self.unanswered().unwrap_or_else(|| Prompt::text(RESUME));
+        self.offer(prompt, cx);
+    }
+
+    fn unanswered(&self) -> Option<Prompt> {
+        self.model.unanswered(self.cut?)
     }
 
     /// Comes on screen: what arrived while it was away shows as it is, and only what streams in
@@ -390,6 +401,7 @@ impl TranscriptView {
     pub fn come_on_screen(&mut self) {
         self.reveal = None;
         self.partial = None;
+        self.partial_at = None;
         self.stream = Default::default();
         self.fade = Default::default();
         self.seen = self.model.items.len();
@@ -408,7 +420,10 @@ impl TranscriptView {
             return;
         }
         if let Some(work) = self.updated.take() {
-            self.offer(Prompt::text(after_update(&work)), cx);
+            let prompt = self
+                .unanswered()
+                .unwrap_or_else(|| Prompt::text(after_update(&work)));
+            self.offer(prompt, cx);
         }
     }
 
@@ -631,7 +646,17 @@ impl TranscriptView {
             cx.notify();
             return;
         }
+        let reads = self
+            .model
+            .background
+            .iter()
+            .any(|b| b.id == task && background::reads(b));
         self.task_open = Some(task);
+        if !reads {
+            self.task_poll = None;
+            cx.notify();
+            return;
+        }
         self.task_poll = Some(cx.spawn(async move |this, cx| {
             loop {
                 let live = this
@@ -1036,6 +1061,12 @@ impl TranscriptView {
             Some(Item::Text { source, .. }) => source.len(),
             _ => 0,
         };
+        // a reveal still behind redraws on its beat, and the beat shows what arrives
+        let quiet = matches!(event, RunEvent::Text { .. })
+            && self
+                .reveal
+                .as_ref()
+                .is_some_and(|r| r.ix + 1 == n && r.behind(had));
         self.model.apply(event);
         let text = self.model.items[n.saturating_sub(1)..]
             .iter()
@@ -1047,7 +1078,10 @@ impl TranscriptView {
             let from = if ix + 1 == n { had } else { 0 };
             self.reveal = Some(motion::Reveal::new(ix, from));
         }
-        self.changed(cx);
+        self.settle(cx);
+        if !quiet {
+            cx.notify();
+        }
         if ended {
             self.apply_pending();
         }
@@ -1078,6 +1112,7 @@ impl TranscriptView {
             self.list.reset(0);
             self.reveal = None;
             self.partial = None;
+            self.partial_at = None;
             self.fade = Default::default();
             self.seen = 0;
             self.born.clear();
@@ -1096,7 +1131,13 @@ impl TranscriptView {
                         self.answered.insert(request, answers);
                     }
                 }
-                Entry::Run { event } => self.model.apply(event),
+                Entry::Run { event } => {
+                    let started = matches!(event, RunEvent::Started { .. });
+                    self.model.apply(event);
+                    if started {
+                        self.model.restarted();
+                    }
+                }
             }
         }
         if !self.remote {
@@ -1233,6 +1274,11 @@ impl TranscriptView {
     /// After anything that can move the status: tell the root, and keep a one-second tick
     /// going while a run or a subagent is live so their timers count.
     fn changed(&mut self, cx: &mut Context<Self>) {
+        self.settle(cx);
+        cx.notify();
+    }
+
+    fn settle(&mut self, cx: &mut Context<Self>) {
         if self.find.is_some() {
             self.refind(false, cx);
         }
@@ -1281,7 +1327,6 @@ impl TranscriptView {
         } else if !self.model.ticking() {
             self.ticker = None;
         }
-        cx.notify();
     }
 
     fn sync_rows(&mut self, rows: Vec<rows::Row>) {

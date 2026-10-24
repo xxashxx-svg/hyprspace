@@ -2,20 +2,36 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
-use futures::StreamExt;
-use futures::channel::mpsc;
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, EntityId, GlobalElementId, InspectorElementId,
     IntoElement, LayoutId, Pixels, Window,
 };
 
-// a loop paced by the display redraws the whole window up to 180 times a second, and GPUI's own
-// timers on Windows only fire on the 15.6 ms system tick
+// A loop paced by the display redraws the whole window up to 180 times a second, so animations
+// redraw at most this often. The timing comes from the display's own refreshes, so each redraw
+// lands on one.
 const TICK: Duration = Duration::from_micros(16_667);
+/// Streamed text's beat: it reveals and fades in steps the eye reads as smooth, with half the
+/// redraws.
+pub const BEAT: Duration = Duration::from_micros(33_333);
 
 thread_local! {
     static EPOCH: Instant = Instant::now();
-    static DUE: RefCell<Option<HashSet<EntityId>>> = const { RefCell::new(None) };
+    static DUE: RefCell<Due> = RefCell::new(Due::default());
+}
+
+/// The views waiting for a redraw: on the next tick, or on the next beat, which comes every
+/// other tick so the two never add up to more redraws than ticks.
+#[derive(Default)]
+struct Due {
+    tick: HashSet<EntityId>,
+    beat: HashSet<EntityId>,
+    /// Watching the display's refreshes for when the next redraw is due.
+    armed: bool,
+    /// The last redraw, the last one that took the beat's views, and the last refresh seen.
+    ticked: Option<Instant>,
+    beaten: Option<Instant>,
+    seen: Option<Instant>,
 }
 
 pub trait Looping: IntoElement + Sized + 'static {
@@ -41,42 +57,70 @@ fn phase(period: Duration) -> f32 {
     (t / period.as_secs_f32()).fract()
 }
 
-pub fn next(window: &Window, cx: &mut App) {
-    want(window.current_view(), cx);
+pub fn next(window: &Window, _: &mut App) {
+    want(window, window.current_view(), false);
 }
 
-fn want(view: EntityId, cx: &mut App) {
-    let idle = DUE.with(|d| {
+pub fn next_for(window: &Window, view: EntityId) {
+    want(window, view, false);
+}
+
+/// Redraws the view on streamed text's beat.
+pub fn beat(window: &Window, _: &mut App) {
+    want(window, window.current_view(), true);
+}
+
+fn want(window: &Window, view: EntityId, beat: bool) {
+    let arm = DUE.with(|d| {
         let mut d = d.borrow_mut();
-        let idle = d.is_none();
-        d.get_or_insert_default().insert(view);
-        idle
+        if beat {
+            d.beat.insert(view);
+        } else {
+            d.tick.insert(view);
+        }
+        !std::mem::replace(&mut d.armed, true)
     });
-    if !idle {
-        return;
+    if arm {
+        watch(window);
     }
-    let (mut tx, mut ticks) = mpsc::channel(1);
-    std::thread::spawn(move || {
-        while !tx.is_closed() {
-            std::thread::sleep(TICK);
-            let _ = tx.try_send(());
+}
+
+/// Looks at each display refresh until a tick is due, then redraws the views that asked. A
+/// refresh within half of one of being due counts, so a 120 or 144 Hz screen still lands close
+/// to the tick.
+fn watch(window: &Window) {
+    window.on_next_frame(move |window, cx| {
+        let now = Instant::now();
+        let ready = DUE.with(|d| {
+            let mut d = d.borrow_mut();
+            let refresh = d.seen.replace(now).map_or(Duration::ZERO, |s| now - s);
+            let due = |at: Option<Instant>, period: Duration| {
+                at.is_none_or(|t| now - t + refresh / 2 >= period)
+            };
+            if !due(d.ticked, TICK) {
+                return Some(Vec::new());
+            }
+            let mut views: Vec<EntityId> = d.tick.drain().collect();
+            if !d.beat.is_empty() && due(d.beaten, BEAT) {
+                d.beaten = Some(now);
+                views.extend(d.beat.drain());
+            }
+            if views.is_empty() && d.beat.is_empty() {
+                *d = Due::default();
+                return None;
+            }
+            if !views.is_empty() {
+                d.ticked = Some(now);
+            }
+            Some(views)
+        });
+        if let Some(views) = ready {
+            for view in views {
+                cx.notify(view);
+            }
+            watch(window);
         }
     });
-    cx.spawn(async move |cx| {
-        while ticks.next().await.is_some() {
-            let views = DUE.with(|d| d.borrow_mut().as_mut().map(std::mem::take));
-            let Some(views) = views.filter(|v| !v.is_empty()) else {
-                DUE.with(|d| d.borrow_mut().take());
-                break;
-            };
-            cx.update(|cx| {
-                for view in views {
-                    cx.notify(view);
-                }
-            });
-        }
-    })
-    .detach();
 }
 
 impl<E: IntoElement + 'static> IntoElement for Loop<E> {
@@ -110,7 +154,7 @@ impl<E: IntoElement + 'static> Element for Loop<E> {
         let t = if cx.reduce_motion() {
             0.
         } else {
-            want(window.current_view(), cx);
+            want(window, window.current_view(), false);
             phase(self.period)
         };
         let mut element = (self.f)(element, t).into_any_element();

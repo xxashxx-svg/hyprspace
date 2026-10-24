@@ -3,6 +3,7 @@
 // so runs go on while another thread is on screen, and routes the engine's events to them.
 
 mod delegate;
+mod frames;
 mod render;
 mod settle;
 mod switch;
@@ -157,6 +158,8 @@ pub struct Root {
     /// The snooze menu: where it opened, for which thread.
     pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
     pub(crate) icon_picker: Option<crate::sidebar::IconPicker>,
+    /// The dev build's frame readout.
+    pub(crate) frames: frames::Frames,
     /// The last settle or snooze, which the toast can undo for a few seconds.
     pub(crate) undo: Option<settle::Undo>,
     _undo_timer: Option<Task<()>>,
@@ -358,6 +361,7 @@ impl Root {
             row_bounds: Default::default(),
             snooze_menu: None,
             icon_picker: None,
+            frames: Default::default(),
             undo: None,
             _undo_timer: None,
             back: Screen::Compose(None),
