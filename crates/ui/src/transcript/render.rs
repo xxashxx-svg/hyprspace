@@ -1401,17 +1401,19 @@ fn main_tool(
             *open = !*open;
         }
     });
-    with_pictures(card, &key, images, cx)
+    with_pictures(card, &key, open, images, cx)
 }
 
-/// `card` with the pictures its tool gave back under it, each opening full size on a click.
+/// `card` with the pictures its tool gave back under it while it's open, each opening full size
+/// on a click.
 pub(super) fn with_pictures(
     card: AnyElement,
     key: &str,
+    open: bool,
     images: &[PathBuf],
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
-    if images.is_empty() {
+    if !open || images.is_empty() {
         return card;
     }
     let shown = images.iter().enumerate().map(|(k, p)| {

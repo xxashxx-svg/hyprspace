@@ -168,7 +168,7 @@ fn body(ix: usize, a: &Subagent, cx: &mut Context<TranscriptView>) -> AnyElement
                 }
             },
         );
-        super::render::with_pictures(card, &key, &c.images, cx)
+        super::render::with_pictures(card, &key, c.open, &c.images, cx)
     });
     let answer = a.blocks.as_ref().filter(|b| !b.is_empty()).map(|b| {
         div()
