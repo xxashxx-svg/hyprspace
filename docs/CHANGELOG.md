@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.35 — 2026-10-25
+
+- Opening a thread that finished while you were away lands at the end instead of scrolling through the reply
+- File paths in a reply open in the viewer, at the line they name
+- A picture a reply shows on its own line appears in the transcript
+- A New line marks where you stopped reading
+- The phone queues messages while a thread works and shows its background tasks, questions, plans and task lists
+- The browser page shows the queue and background tasks
+
 ## 0.24.34 — 2026-10-24
 
 - Pictures a tool returns, like screenshots, show only when you open its row, so they no longer crowd the thread
