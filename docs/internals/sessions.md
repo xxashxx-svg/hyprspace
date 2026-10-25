@@ -94,6 +94,10 @@ how Claude is driven.
   monitor, so an open subagent shows its last calls from its card in the thread. None of it is journaled: the tasks die with the CLI,
   so a phone or another computer never sees them. Codex has no such list yet (`thread/backgroundTerminals/list` is a
   request, not an event).
+- **A reply's links and pictures stay on this computer.** A link, or a path written as code, that
+  names a file in the thread's folder opens in the viewer at its line. A picture on its own line
+  draws only when it is a local file: one on the web is never fetched, because the app makes no
+  request the user didn't ask for. A thread on another computer opens no files.
 - **Edits carry unified diffs.** Codex sends real ones. Claude sends only the old and new text,
   so the harness reads the file and finds the old text, or the new text when the CLI has already
   made the edit, for line numbers and 3 lines of context. A text it can't find, and every

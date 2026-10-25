@@ -77,6 +77,11 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private val lock = Any()
 
     @Volatile private var socket: Socket? = null
+    /** When the computer last said anything on the open line. */
+    @Volatile private var heard = 0L
+    private val _lines = MutableStateFlow(0)
+    /** Goes up each time a line to the computer comes up, so the screens know to check what they sent. */
+    val lines: StateFlow<Int> = _lines
     /** The last try found nothing listening at any saved address. */
     @Volatile private var unreachable = false
     /** Looks for the computer with this fingerprint on the local network (`find`). */
@@ -182,6 +187,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             when (first) {
                 is Down.Welcome -> {
                     _conn.value = Conn.Online(first.desktop, first.version)
+                    seen = d.id to first.version
                     store.update { saved ->
                         saved.copy(desktops = saved.desktops.map {
                             if (it.id == d.id) it.copy(last = s.host, name = first.desktop) else it
@@ -195,10 +201,29 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             val (watched, fitted) = synchronized(lock) { watching.toList() to fits.toMap() }
             for (t in watched) send(s, Up.Watch(t))
             for ((t, size) in fitted) send(s, Up.Fit(t, size.first, size.second))
-            while (true) {
-                val down = next(s) ?: break
-                if (down is Down.Denied) return denied(d, down)
-                handle(down)
+            _lines.value++
+            // a line can go quiet without closing, and whatever is sent into it then is lost:
+            // ask after a few quiet seconds, and start over when nothing answers
+            val watchdog = scope.launch {
+                while (true) {
+                    delay(5_000)
+                    val quiet = System.currentTimeMillis() - heard
+                    if (quiet > 15_000) {
+                        if (BuildConfig.DEBUG) Log.d(TAG, "quiet for ${quiet}ms, starting over")
+                        s.ws.cancel()
+                        break
+                    }
+                    if (quiet > 4_000) send(s, Up.Ping)
+                }
+            }
+            try {
+                while (true) {
+                    val down = next(s) ?: break
+                    if (down is Down.Denied) return denied(d, down)
+                    handle(down)
+                }
+            } finally {
+                watchdog.cancel()
             }
             return Conn.Online("", "")
         } finally {
@@ -214,10 +239,14 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 is WsEvent.Text -> runCatching { wire.decodeFromString(Down.serializer(), e.text) }
                     .onFailure { if (BuildConfig.DEBUG) Log.w(TAG, "unreadable: ${e.text.take(200)}", it) }
                     .getOrNull()?.let {
+                        heard = System.currentTimeMillis()
                         if (BuildConfig.DEBUG) Log.d(TAG, "down ${it::class.simpleName} ${e.text.length}b")
                         return it
                     }
-                is WsEvent.Gone -> return null
+                is WsEvent.Gone -> {
+                    if (BuildConfig.DEBUG) Log.d(TAG, "gone: ${e.why}")
+                    return null
+                }
                 WsEvent.Open -> {}
             }
         }
@@ -307,7 +336,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             is Down.Transcript -> synchronized(lock) {
                 val (t, flow) = transcripts.getOrPut(d.thread) { Transcript() to MutableStateFlow(TranscriptView()) }
                 if (d.reset) t.reset()
-                d.entries.forEach(t::add)
+                d.entries.forEach { t.add(it, replay = d.reset) }
                 flow.value = TranscriptView(t.items(), t.model, t.context, loaded = true)
             }
             is Down.Term -> synchronized(lock) {
@@ -353,8 +382,14 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         _failures.tryEmit(message)
     }
 
+    // what the computer ran when last online, so the screen keeps its shape while reconnecting
+    @Volatile
+    private var seen: Pair<String, String>? = null
+
     fun desktopAtLeast(version: String): Boolean {
-        val have = (_conn.value as? Conn.Online)?.version ?: return false
+        val have = (_conn.value as? Conn.Online)?.version
+            ?: seen?.takeIf { it.first == store.saved.value.current()?.id }?.second
+            ?: return false
         return !com.hyprspace.android.update.Releases.newer(version, have)
     }
 

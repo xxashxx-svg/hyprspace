@@ -97,7 +97,24 @@ took it back.
 Everything that changes a thread goes through the UI as a `PhoneEvent::Ask`, done by the same
 code as the click: a message to a structured thread goes through the transcript view, so the
 desktop shows it too; a new thread starts without taking the desktop's screen; bringing back a
-snoozed thread wakes it. Keystrokes for a terminal go straight to the PTY; a paste with line
+snoozed thread wakes it.
+
+A message sent while a structured thread works joins the desktop's queue, the same queue the
+desktop's box fills. The board carries each thread's queue and background tasks, and the phone
+acts on them with `Steer`, `Unqueue` and `StopTask`. A queued message is named by its place and
+its words, since the queue can move between a board and the tap. The phone shows this, and the
+permission chip, only for a desktop new enough to answer (`Link.desktopAtLeast`, which keeps
+the last version it saw while reconnecting); an older one gets the box as it was. The browser
+page shows the same queue and tasks.
+
+A run the app's closing cut off has no end in the journal. The phone and the page close it when
+the next CLI process starts: always on a whole journal, and live only when a steer came first,
+since a process can also restart in the middle of a run.
+
+OkHttp's `send` returns true once a frame is queued, so a message can vanish into a socket that
+died without closing. The link pings when it has heard nothing for 4 seconds and drops the
+socket after 15. After a reconnect, the phone resends a message the computer's transcript and
+queue don't show. A queued message still unconfirmed after 30 seconds goes back into the box. Keystrokes for a terminal go straight to the PTY; a paste with line
 breaks goes in bracketed when the program asked for that.
 
 ## The app

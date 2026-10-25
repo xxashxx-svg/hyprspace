@@ -8,7 +8,12 @@
 {"type":"paste","thread":3,"text":"a\nb"}
 {"type":"ask","ask":{"type":"send","thread":2,"text":"go","images":["C:\\tmp\\phone-1.jpg"]}}
 {"type":"ask","ask":{"type":"approve","thread":2,"request":"r","answer":"deny"}}
+{"type":"ask","ask":{"type":"approve","thread":2,"request":"q","answer":"allow","answers":[["Which?","The first"]]}}
 {"type":"ask","ask":{"type":"interrupt","thread":2}}
+{"type":"ask","ask":{"type":"steer","thread":2,"index":0,"text":"then this"}}
+{"type":"ask","ask":{"type":"unqueue","thread":2,"index":0,"text":"then this"}}
+{"type":"ask","ask":{"type":"stopTask","thread":2,"task":"b1"}}
+{"type":"ask","ask":{"type":"permission","thread":2,"permission":"auto"}}
 {"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"time","at":1760000000000}}}
 {"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"done"}}}
 {"type":"ask","ask":{"type":"new","space":0,"folder":"/home/ash/code","start":{"agent":null,"model":"","effort":"","permission":"plan","terminal":true,"prompt":""}}}

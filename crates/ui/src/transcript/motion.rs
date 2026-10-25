@@ -25,6 +25,9 @@ pub struct Follow {
     last: Option<Instant>,
     wheel: Pixels,
     wheeled: Option<Instant>,
+    /// Until then the view keeps to the end without gliding, while a thread just put on screen
+    /// measures its rows.
+    calm: Option<Instant>,
 }
 
 impl Default for Follow {
@@ -36,6 +39,7 @@ impl Default for Follow {
             last: None,
             wheel: px(0.),
             wheeled: None,
+            calm: None,
         }
     }
 }
@@ -45,6 +49,7 @@ const EASE: f32 = 0.06;
 /// it never moves faster than this many px a second.
 const SPRING: f32 = 18.;
 const GLIDE_MAX: f32 = 1400.;
+const SETTLE: Duration = Duration::from_millis(300);
 
 fn y(list: &ListState) -> Pixels {
     -list.scroll_px_offset_for_scrollbar().y
@@ -83,6 +88,12 @@ impl Follow {
     pub fn seek(&mut self, list: &ListState, ix: usize) {
         self.stick = false;
         self.go(list, Aim::Item(ix));
+    }
+
+    /// The thread was just put on screen, or its rows laid out anew.
+    pub fn settle(&mut self) {
+        self.velocity = 0.;
+        self.calm = Some(Instant::now() + SETTLE);
     }
 
     pub fn snap(&mut self, list: &ListState) {
@@ -171,7 +182,8 @@ impl Follow {
         });
     }
 
-    pub fn step(&mut self, list: &ListState, window: &mut Window, cx: &mut App) {
+    /// Glides to what arrives only while the agent works; anything else keeps to the end at once.
+    pub fn step(&mut self, list: &ListState, live: bool, window: &mut Window, cx: &mut App) {
         let now = Instant::now();
         let dt = self
             .last
@@ -211,7 +223,12 @@ impl Follow {
             self.velocity = 0.;
             return;
         }
-        if !animations() || gap > f32::from(list.viewport_bounds().size.height) * 2. {
+        let calm = self.calm.is_some_and(|t| now < t);
+        if !animations()
+            || !live
+            || calm
+            || gap > f32::from(list.viewport_bounds().size.height) * 2.
+        {
             self.velocity = 0.;
             list.scroll_to_end();
             crate::pace::next(window, cx);

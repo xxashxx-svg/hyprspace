@@ -857,6 +857,84 @@ button:disabled {
   padding: 6px 24px 14px;
 }
 
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.tray-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 4.5%, transparent);
+  color: var(--text3);
+}
+
+.tray-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tray-label {
+  color: var(--text1);
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-queued {
+  color: var(--text1);
+  font-size: 13.5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tray-kind {
+  font-size: 11px;
+}
+
+.tray-head {
+  padding: 2px 4px 0;
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.tray-pill {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--text1);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.tray-round {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--text2);
+}
+
+.tray-pill:hover,
+.tray-round:hover {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
 .working {
   display: flex;
   align-items: center;

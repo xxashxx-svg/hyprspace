@@ -5,15 +5,15 @@
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, FontStyle, FontWeight, HighlightStyle, InteractiveText, IntoElement, SharedString,
-    StrikethroughStyle, StyledText, UnderlineStyle, div, prelude::*, relative,
+    AnyElement, FontStyle, FontWeight, HighlightStyle, InteractiveText, IntoElement, ObjectFit,
+    SharedString, StrikethroughStyle, StyledText, UnderlineStyle, div, img, prelude::*, relative,
 };
 use hyprspace_theme::MONO;
 
 use super::code::CodeBlock;
 use super::fade::{block_size, local, merge};
 use super::select;
-use super::{Block, Inline};
+use super::{Block, Inline, Style};
 use crate::colors;
 use crate::zoom::px;
 
@@ -211,7 +211,48 @@ fn block(b: &Block, key: &str, at: usize, fade: &[(Range<usize>, f32)]) -> AnyEl
             .bg(colors::border2())
             .into_any_element(),
         Block::Table { head, rows } => table(head, rows, key, at, fade),
+        Block::Image { url, alt } => image(url, alt, key),
     }
+}
+
+/// A picture on the user's computer, which opens full size on a click. Anything else reads as a
+/// link: a picture on the web is never fetched.
+fn image(url: &str, alt: &str, key: &str) -> AnyElement {
+    let links = super::links::current();
+    let file = links
+        .as_ref()
+        .and_then(|l| (l.file)(url))
+        .filter(|p| crate::attach::is_image(p));
+    let (Some(path), Some(links)) = (file, links) else {
+        let words = if alt.trim().is_empty() { url } else { alt };
+        let words = Inline {
+            text: words.to_string(),
+            spans: vec![(
+                0..words.len(),
+                Style {
+                    link: Some(url.to_string()),
+                    ..Default::default()
+                },
+            )],
+        };
+        return inline(&words, key, 0, &[]);
+    };
+    let show = links.show.clone();
+    let open = path.clone();
+    div()
+        .id(SharedString::from(format!("{key}-img")))
+        .w(px(420.))
+        .max_w_full()
+        .h(px(260.))
+        .rounded(px(8.))
+        .overflow_hidden()
+        .border_1()
+        .border_color(colors::border2())
+        .bg(colors::ink(0.03))
+        .cursor_pointer()
+        .child(img(path).size_full().object_fit(ObjectFit::Contain))
+        .on_click(move |_, window, cx| show(open.clone(), window, cx))
+        .into_any_element()
 }
 
 fn columns(head: &[Inline], rows: &[Vec<Inline>]) -> Vec<(f32, f32)> {
@@ -296,11 +337,25 @@ fn table(
 
 /// One run of styled text. Links get their own click targets.
 pub fn inline(i: &Inline, key: &str, at: usize, fade: &[(Range<usize>, f32)]) -> AnyElement {
+    let handler = super::links::current();
+    // a path written as code that names a file opens it, as a link would
+    let named: Vec<bool> = i
+        .spans
+        .iter()
+        .map(|(r, s)| {
+            s.code
+                && s.link.is_none()
+                && handler
+                    .as_ref()
+                    .is_some_and(|h| (h.file)(&i.text[r.clone()]).is_some())
+        })
+        .collect();
     let highlights: Vec<_> = i
         .spans
         .iter()
-        .map(|(range, s)| {
-            let link = s.link.is_some();
+        .zip(&named)
+        .map(|((range, s), named)| {
+            let link = s.link.is_some() || *named;
             (
                 range.clone(),
                 HighlightStyle {
@@ -336,7 +391,14 @@ pub fn inline(i: &Inline, key: &str, at: usize, fade: &[(Range<usize>, f32)]) ->
     let links: Vec<_> = i
         .spans
         .iter()
-        .filter_map(|(r, s)| s.link.clone().map(|l| (r.clone(), l)))
+        .zip(&named)
+        .filter_map(|((r, s), named)| {
+            let url = s
+                .link
+                .clone()
+                .or_else(|| named.then(|| i.text[r.clone()].to_string()))?;
+            Some((r.clone(), url))
+        })
         .collect();
     let body = if links.is_empty() {
         text.into_any_element()
@@ -344,9 +406,12 @@ pub fn inline(i: &Inline, key: &str, at: usize, fade: &[(Range<usize>, f32)]) ->
         let ranges = links.iter().map(|(r, _)| r.clone()).collect();
         let urls: Vec<String> = links.into_iter().map(|(_, l)| l).collect();
         InteractiveText::new(SharedString::from(format!("md-{key}")), text)
-            .on_click(ranges, move |ix, _, cx| {
+            .on_click(ranges, move |ix, window, cx| {
                 if let Some(url) = urls.get(ix) {
-                    cx.open_url(url);
+                    match &handler {
+                        Some(h) => (h.open)(url, window, cx),
+                        None => cx.open_url(url),
+                    }
                 }
             })
             .into_any_element()

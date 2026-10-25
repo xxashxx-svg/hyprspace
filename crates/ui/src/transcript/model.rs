@@ -242,6 +242,12 @@ impl Transcript {
         self.run.as_ref().map(|r| r.since.elapsed().as_secs())
     }
 
+    pub fn elapsed_ms(&self) -> Option<u64> {
+        self.run
+            .as_ref()
+            .map(|r| r.since.elapsed().as_millis() as u64)
+    }
+
     pub fn status(&self) -> Status {
         let waiting = self.items.iter().any(|i| {
             matches!(

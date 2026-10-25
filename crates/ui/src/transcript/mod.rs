@@ -10,6 +10,7 @@ mod changes;
 mod commands;
 mod doing;
 mod find;
+mod links;
 mod model;
 mod motion;
 mod render;
@@ -146,6 +147,10 @@ pub struct TranscriptView {
     pub(super) fade: crate::markdown::Fade,
     fresh: usize,
     seen: usize,
+    /// How many items the thread had when it was last drawn, and the first one that came after
+    /// that while it was off screen.
+    read: usize,
+    unread: Option<usize>,
     born: HashMap<usize, Instant>,
     working: Option<Instant>,
     doing: doing::Doing,
@@ -290,6 +295,8 @@ impl TranscriptView {
             fade: Default::default(),
             fresh: 0,
             seen: 0,
+            read: 0,
+            unread: None,
             born: HashMap::new(),
             working: None,
             doing: Default::default(),
@@ -324,6 +331,10 @@ impl TranscriptView {
     /// Seconds the live run has taken, while one is live.
     pub fn elapsed(&self) -> Option<u64> {
         self.model.elapsed()
+    }
+
+    pub fn elapsed_ms(&self) -> Option<u64> {
+        self.model.elapsed_ms()
     }
 
     /// The tool the run is in, while it runs one.
@@ -399,6 +410,8 @@ impl TranscriptView {
     /// Comes on screen: what arrived while it was away shows as it is, and only what streams in
     /// from here on animates. A view off screen draws nothing, so its reveal fell behind.
     pub fn come_on_screen(&mut self) {
+        self.follow.settle();
+        self.unread = (self.read > 0 && self.read < self.model.items.len()).then_some(self.read);
         self.reveal = None;
         self.partial = None;
         self.partial_at = None;
@@ -428,6 +441,10 @@ impl TranscriptView {
     }
 
     /// The background work a run has going, as the agent would know it.
+    pub fn tasks(&self) -> &[hyprspace_proto::Task] {
+        &self.model.background
+    }
+
     pub fn background_work(&self) -> Vec<String> {
         self.model
             .background
@@ -483,7 +500,7 @@ impl TranscriptView {
         self.offer(prompt, cx);
     }
 
-    /// An approval answered from the phone.
+    /// An approval answered from the phone. An approved plan leaves plan mode, as a click does.
     pub fn approve(
         &mut self,
         request: String,
@@ -491,7 +508,15 @@ impl TranscriptView {
         answers: Vec<(String, String)>,
         cx: &mut Context<Self>,
     ) {
-        self.answer_with(request, answer, answers, cx);
+        let plan = self.model.items.iter().any(|i| {
+            matches!(i, Item::Approval { request: r, tool, .. }
+                if *r == request && ask::named(tool).is_some_and(|(n, _)| n == ask::PLAN))
+        });
+        if plan && answer == Answer::Allow {
+            self.approve_plan(request, cx);
+        } else {
+            self.answer_with(request, answer, answers, cx);
+        }
     }
 
     /// The thread runs on another computer, which keeps its journal and sends what it records.
@@ -547,6 +572,20 @@ impl TranscriptView {
             self.queue_changed(cx);
         } else {
             self.send(prompt, cx);
+        }
+    }
+
+    /// A queued message the phone acted on: sent now, or dropped. It's found at `index` when the
+    /// words there still match, else by its words, since the queue may have moved since.
+    pub fn queued(&mut self, index: usize, text: &str, send: bool, cx: &mut Context<Self>) {
+        let at = match self.queue.get(index) {
+            Some(p) if p.text == text => Some(index),
+            _ => self.queue.iter().position(|p| p.text == text),
+        };
+        match at {
+            Some(ix) if send => self.steer(ix, cx),
+            Some(ix) => self.unqueue(ix, cx),
+            None => {}
         }
     }
 
@@ -681,7 +720,7 @@ impl TranscriptView {
         cx.notify();
     }
 
-    pub(super) fn stop_task(&mut self, task: String, cx: &mut Context<Self>) {
+    pub fn stop_task(&mut self, task: String, cx: &mut Context<Self>) {
         self.client.send(Command::StopTask { id: self.id, task });
         cx.notify();
     }
@@ -1147,6 +1186,8 @@ impl TranscriptView {
             self.model.note(note);
         }
         self.loading = false;
+        self.read = self.model.items.len();
+        self.unread = None;
         self.continue_updated(cx);
         self.fresh = self.model.items.len();
         self.follow.snap(&self.list);
@@ -1339,6 +1380,7 @@ impl TranscriptView {
         if same == 0 && !rows.is_empty() {
             // a row not drawn yet counts as no height, so a jump through it lands short
             self.list.reset_with_uniform_height(rows.len(), px(120.));
+            self.follow.settle();
         } else if same < self.rows.len() || rows.len() > same {
             self.list.splice(same..self.rows.len(), rows.len() - same);
         }

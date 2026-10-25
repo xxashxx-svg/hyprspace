@@ -7,6 +7,7 @@
 package com.hyprspace.android.net
 
 import com.hyprspace.android.BuildConfig
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -120,8 +121,14 @@ sealed interface Ask {
     @Serializable @SerialName("send")
     data class Send(val thread: Long, val text: String, val images: List<String> = emptyList()) : Ask
 
+    /** [answers] carries a question's picks as (question, answer) pairs. */
     @Serializable @SerialName("approve")
-    data class Approve(val thread: Long, val request: String, val answer: Answer) : Ask
+    data class Approve(
+        val thread: Long,
+        val request: String,
+        val answer: Answer,
+        @EncodeDefault(EncodeDefault.Mode.NEVER) val answers: List<List<String>> = emptyList(),
+    ) : Ask
 
     @Serializable @SerialName("interrupt")
     data class Interrupt(val thread: Long) : Ask
@@ -140,6 +147,19 @@ sealed interface Ask {
 
     @Serializable @SerialName("pin")
     data class Pin(val thread: Long, val on: Boolean) : Ask
+
+    @Serializable @SerialName("permission")
+    data class SetPermission(val thread: Long, val permission: Permission) : Ask
+
+    /** Sends a queued message now: [index] finds it, and [text] checks it's still that one. */
+    @Serializable @SerialName("steer")
+    data class Steer(val thread: Long, val index: Int, val text: String) : Ask
+
+    @Serializable @SerialName("unqueue")
+    data class Unqueue(val thread: Long, val index: Int, val text: String) : Ask
+
+    @Serializable @SerialName("stopTask")
+    data class StopTask(val thread: Long, val task: String) : Ask
 }
 
 /** When a snoozed thread wakes: `time` at [at] (unix ms), or `done` when its turn ends. */
@@ -256,7 +276,24 @@ data class BoardThread(
     val rank: Long = 0,
     val live: Boolean = false,
     val pinned: Boolean = false,
+    val permission: Permission = Permission.Ask,
+    /** Messages waiting for the run to end, oldest first. */
+    val queue: List<Prompt> = emptyList(),
+    /** What the agent left running in the background. */
+    val tasks: List<BgTask> = emptyList(),
 )
+
+@Serializable
+enum class TaskKind {
+    @SerialName("command") Command,
+    @SerialName("monitor") Monitor,
+    @SerialName("subagent") Subagent,
+    @SerialName("other") Other,
+}
+
+/** A background task; [tool] is the call that started it, a subagent's id. */
+@Serializable
+data class BgTask(val id: String, val kind: TaskKind, val label: String = "", val tool: String? = null)
 
 @Serializable
 data class StartPrefs(
@@ -388,8 +425,9 @@ sealed interface Entry {
     @Serializable @SerialName("prompt")
     data class PromptEntry(val prompt: Prompt) : Entry
 
+    /** [answers] holds a question's picks as (question, answer) pairs. */
     @Serializable @SerialName("answer")
-    data class AnswerEntry(val request: String, val answer: Answer) : Entry
+    data class AnswerEntry(val request: String, val answer: Answer, val answers: List<List<String>> = emptyList()) : Entry
 
     @Serializable @SerialName("run")
     data class Run(val event: RunEvent) : Entry

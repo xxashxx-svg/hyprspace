@@ -76,7 +76,7 @@ pub(super) fn block_size(b: &Block) -> usize {
         Block::Code { text, .. } => text.trim_end().chars().count(),
         Block::List { items, .. } => items.iter().map(|i| size(i)).sum(),
         Block::Quote(inner) => size(inner),
-        Block::Rule => 0,
+        Block::Rule | Block::Image { .. } => 0,
         Block::Table { head, rows } => head.iter().chain(rows.iter().flatten()).map(chars).sum(),
     }
 }

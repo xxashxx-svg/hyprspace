@@ -1,4 +1,4 @@
-import { elapsed, h } from "./dom.js";
+import { add, elapsed, h } from "./dom.js";
 import { icon, mark } from "./icons.js";
 import { markdown } from "./markdown.js";
 import { Transcript } from "./transcript.js";
@@ -9,6 +9,13 @@ const PERMISSIONS = [
   ["auto", "Auto edit", "file-pen-line"],
   ["bypass", "Full access", "lock-open"],
 ];
+
+const TASKS = {
+  command: ["terminal", "Background command"],
+  monitor: ["gauge", "Monitor"],
+  subagent: ["bot", "Background subagent"],
+  other: ["zap", "Background task"],
+};
 
 export class Chat {
   constructor(app, id) {
@@ -38,6 +45,7 @@ export class Chat {
     this.model = h("span", { class: "chip-model" });
     this.effort = h("span", { class: "chip chip-quiet" });
     this.workRow = h("div", { class: "working" });
+    this.tray = h("div", { class: "tray" });
     this.folder = h("span", { class: "foot-item" });
     this.place = h("span", { class: "foot-item" });
     this.context = h("span", { class: "foot-item" });
@@ -56,7 +64,7 @@ export class Chat {
       ),
     );
     const foot = h("div", { class: "composer-foot" }, this.folder, h("span", { class: "grow" }), this.place, this.context);
-    this.el = h("div", { class: "chat" }, this.scroller, h("div", { class: "composer" }, this.workRow, pill, foot));
+    this.el = h("div", { class: "chat" }, this.scroller, h("div", { class: "composer" }, this.tray, this.workRow, pill, foot));
   }
 
   entries(entries, reset) {
@@ -65,7 +73,7 @@ export class Chat {
       this.rows.clear();
       this.list.replaceChildren();
     }
-    for (const e of entries) this.t.add(e);
+    for (const e of entries) this.t.add(e, reset);
     this.draw();
   }
 
@@ -121,10 +129,46 @@ export class Chat {
     const since = this.info && this.info.since;
     this.workRow.hidden = !busy;
     if (busy) this.workRow.replaceChildren(h("span", { class: "dots" }, h("i"), h("i")), h("span", null, this.info && this.info.status === "waiting" ? "Waiting on you" : "Working"), h("span", { class: "grow" }), since ? h("span", { class: "mono", "data-since": since }, elapsed(since)) : null);
+    this.drawTray();
     const ctx = this.t.context;
     this.context.hidden = !ctx;
     if (ctx) this.context.textContent = `${Math.round((ctx[0] / ctx[1]) * 100)}% context`;
     if (this.follow) this.scroller.scrollTop = this.scroller.scrollHeight;
+  }
+
+  drawTray() {
+    const queue = (this.info && this.info.queue) || [];
+    const tasks = (this.info && this.info.tasks) || [];
+    const key = JSON.stringify([queue, tasks]);
+    if (key === this.trayKey) return;
+    this.trayKey = key;
+    this.tray.hidden = !queue.length && !tasks.length;
+    const ask = (type, fields) => this.app.ask({ type, thread: this.id, ...fields });
+    this.tray.replaceChildren();
+    add(this.tray, [
+      tasks.map((t) => {
+        const [name, kind] = TASKS[t.kind] || TASKS.other;
+        return h("div", { class: "tray-row" }, icon(name, 13), h("div", { class: "tray-text" }, h("div", { class: "tray-label" }, t.label || kind), h("div", { class: "tray-kind" }, kind)), h("span", { class: "dots" }, h("i"), h("i")), h("button", { class: "tray-pill", onclick: () => ask("stopTask", { task: t.id }) }, "Stop"));
+      }),
+      queue.length ? h("div", { class: "tray-head" }, queue.length === 1 ? "Queued for when it finishes" : `${queue.length} queued for when it finishes`) : null,
+      queue.map((q, index) => {
+        const images = q.images ? q.images.length : 0;
+        const edit = () => {
+          if (!ask("unqueue", { index, text: q.text })) return;
+          this.input.value = this.input.value.trim() ? `${q.text}\n${this.input.value}` : q.text;
+          this.grow();
+          this.input.focus();
+        };
+        return h(
+          "div",
+          { class: "tray-row queued" },
+          h("div", { class: "tray-text" }, h("div", { class: "tray-queued" }, q.text), images ? h("div", { class: "tray-kind" }, `${images} image${images === 1 ? "" : "s"}`) : null),
+          h("button", { class: "tray-round", title: "Edit", onclick: edit }, icon("pencil", 13)),
+          h("button", { class: "tray-round", title: "Remove", onclick: () => ask("unqueue", { index, text: q.text }) }, icon("x", 13)),
+          h("button", { class: "tray-pill", onclick: () => ask("steer", { index, text: q.text }) }, "Steer"),
+        );
+      }),
+    ]);
   }
 
   scrolled() {
@@ -180,6 +224,8 @@ export class Chat {
         return this.approval(it);
       case "error":
         return h("div", { class: "error" }, it.message);
+      case "note":
+        return h("div", { class: "dim small" }, it.text);
       case "finished":
         return h("div", { class: it.status === "failed" ? "error small" : "dim small" }, it.status === "failed" ? (it.error ? `Failed: ${it.error}` : `Failed after ${(it.ms / 1000).toFixed(1)}s`) : `Stopped after ${(it.ms / 1000).toFixed(1)}s`);
     }

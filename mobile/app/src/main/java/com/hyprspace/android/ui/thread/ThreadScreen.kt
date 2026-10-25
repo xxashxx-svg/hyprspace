@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hyprspace.android.App
 import com.hyprspace.android.R
+import com.hyprspace.android.net.Agent
 import com.hyprspace.android.net.Ask
 import com.hyprspace.android.net.BoardKind
 import com.hyprspace.android.net.BoardStatus
@@ -58,6 +59,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
     val h = LocalHues.current
     val board by app.link.board.collectAsStateWithLifecycle()
     val conn by app.link.conn.collectAsStateWithLifecycle()
+    val lines by app.link.lines.collectAsStateWithLifecycle()
     val saved by app.store.saved.collectAsStateWithLifecycle()
     val t = board?.threads?.firstOrNull { it.id == id }
     val online = conn is Conn.Online
@@ -129,7 +131,10 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                     )
                 }
             }
-            if (t != null) StatusMark(t.status)
+            if (t != null) {
+                Spacer(Modifier.width(8.dp))
+                StatusMark(t.status)
+            }
             var menu by remember { mutableStateOf(false) }
             IconButton(onClick = { menu = true }) {
                 Icon(painterResource(R.drawable.ic_ellipsis), "More", Modifier.size(20.dp), tint = h.text2)
@@ -156,6 +161,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                 val view by remember(id) { app.link.transcript(id) }.collectAsStateWithLifecycle()
                 var picking by remember { mutableStateOf(false) }
                 val catalog = board?.agents?.firstOrNull { it.agent == t.agent }?.catalog?.takeIf { app.link.desktopAtLeast(MODELS) }
+                val queueing = app.link.desktopAtLeast(QUEUE)
                 Chat(
                     view = view,
                     working = t.status == BoardStatus.Working || t.status == BoardStatus.Waiting,
@@ -165,12 +171,32 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                     canAnswer = online && t.live,
                     onSend = { text, images -> app.link.ask(Ask.Send(id, text, images)) },
                     onStop = { app.link.ask(Ask.Interrupt(id)) },
-                    onAnswer = { request, answer -> app.link.ask(Ask.Approve(id, request, answer)) },
+                    onAnswer = { request, answer, given ->
+                        app.link.ask(Ask.Approve(id, request, answer, given.map { listOf(it.first, it.second) }))
+                    },
                     attach = if (app.link.desktopAtLeast(PHOTOS)) { onPick -> rememberAttach(app, app.link.desktopAtLeast(FILES), onPick) } else null,
                     modifier = Modifier.weight(1f),
                     model = catalog?.let {
                         { ModelChip(t.agent, t.model ?: "Default", t.effort, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting) { picking = true } }
                     },
+                    permission = if (queueing) {
+                        { PermissionChip(t.permission, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting) { app.link.ask(Ask.SetPermission(id, it)) } }
+                    } else {
+                        null
+                    },
+                    extras = if (queueing) {
+                        Extras(
+                            queue = t.queue,
+                            tasks = t.tasks,
+                            onSteer = { i, text -> app.link.ask(Ask.Steer(id, i, text)) },
+                            onUnqueue = { i, text -> app.link.ask(Ask.Unqueue(id, i, text)) },
+                            onStopTask = { task -> app.link.ask(Ask.StopTask(id, task)) },
+                        )
+                    } else {
+                        null
+                    },
+                    ultra = t.agent == Agent.Claude,
+                    lines = lines,
                 )
                 if (picking && catalog != null) {
                     ModelSheet(catalog, t.modelId, t.effort, onPick = { m, e -> app.link.ask(Ask.Model(id, m, e)) }, onDismiss = { picking = false })
@@ -199,3 +225,4 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
 private const val PHOTOS = "0.24.12"
 private const val MODELS = "0.24.14"
 private const val FILES = "0.24.14"
+private const val QUEUE = "0.24.35"

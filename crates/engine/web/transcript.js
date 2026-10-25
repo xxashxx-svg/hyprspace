@@ -31,7 +31,7 @@ export class Transcript {
     return null;
   }
 
-  add(entry) {
+  add(entry, replay) {
     if (entry.type === "prompt") {
       this.item("user", { text: entry.prompt.text, images: entry.prompt.images.length, steer: this.running });
       if (!this.running) {
@@ -48,7 +48,30 @@ export class Transcript {
       }
     } else if (entry.type === "run") {
       this.apply(entry.event);
+      if (entry.event.type === "started") this.restarted(replay);
     }
+  }
+
+  restarted(replay) {
+    if (!this.running) return;
+    const last = this.items[this.items.length - 1];
+    if (last && last.kind === "user") {
+      if (!last.steer) return;
+      this.items.pop();
+      this.cut();
+      this.items.push(last);
+      this.touch(last, { steer: false });
+      this.running = true;
+      this.said = false;
+    } else if (this.said && replay) this.cut();
+  }
+
+  cut() {
+    for (const it of this.items) if (it.kind === "call" && !it.done) this.touch(it, { done: { ok: false, output: "The app closed before it finished." } });
+    this.running = false;
+    this.expire();
+    for (const it of this.items) if (it.kind === "agent" && it.state === "working") this.touch(it, { state: "stopped" });
+    this.item("note", { text: "The app closed before this run finished." });
   }
 
   apply(e) {

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::{Agent, AgentInfo};
 use crate::folder::{FolderCommand, FolderEvent};
-use crate::run::{Answer, Permission};
+use crate::run::{Answer, Permission, Prompt, Task};
 use crate::state::{Entry, Scheme, Snooze};
 
 /// Moves when a message changes shape, so an old phone is told to update rather than misread.
@@ -196,6 +196,24 @@ pub enum Ask {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         fast: bool,
     },
+    /// Sends a queued message now, into the run. `index` finds it in the board's queue, and
+    /// `text` makes sure it's still the one there.
+    Steer {
+        thread: u64,
+        index: usize,
+        text: String,
+    },
+    /// Drops a queued message, found as `Steer` finds it.
+    Unqueue {
+        thread: u64,
+        index: usize,
+        text: String,
+    },
+    /// Stops one of a structured thread's background tasks.
+    StopTask {
+        thread: u64,
+        task: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -347,6 +365,12 @@ pub struct BoardThread {
     pub live: bool,
     pub pinned: bool,
     pub permission: Permission,
+    /// The messages waiting for its run to end, oldest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub queue: Vec<Prompt>,
+    /// What its agent left running in the background.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<Task>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -816,6 +840,16 @@ mod tests {
                         rank: -3,
                         live: true,
                         pinned: true,
+                        queue: vec![Prompt {
+                            text: "then this".into(),
+                            images: vec!["C:\\b.png".into()],
+                        }],
+                        tasks: vec![Task {
+                            id: "b1".into(),
+                            kind: crate::run::TaskKind::Subagent,
+                            label: "Look around".into(),
+                            tool: Some("2".into()),
+                        }],
                     }],
                     agents: vec![AgentInfo {
                         agent: Agent::Claude,
@@ -946,7 +980,41 @@ mod tests {
                 },
             },
             Up::Ask {
+                ask: Ask::Approve {
+                    thread: 2,
+                    request: "q".into(),
+                    answer: Answer::Allow,
+                    answers: vec![("Which?".into(), "The first".into())],
+                },
+            },
+            Up::Ask {
                 ask: Ask::Interrupt { thread: 2 },
+            },
+            Up::Ask {
+                ask: Ask::Steer {
+                    thread: 2,
+                    index: 0,
+                    text: "then this".into(),
+                },
+            },
+            Up::Ask {
+                ask: Ask::Unqueue {
+                    thread: 2,
+                    index: 0,
+                    text: "then this".into(),
+                },
+            },
+            Up::Ask {
+                ask: Ask::StopTask {
+                    thread: 2,
+                    task: "b1".into(),
+                },
+            },
+            Up::Ask {
+                ask: Ask::Permission {
+                    thread: 2,
+                    permission: Permission::Auto,
+                },
             },
             Up::Ask {
                 ask: Ask::Snooze {

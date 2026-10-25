@@ -1,8 +1,10 @@
 // A structured thread on the phone: the conversation with its tool calls folded into one line
-// per run of calls, subagents, approvals to answer, and a box to reply, steer or stop.
+// per run of calls, subagents, approvals, questions and plans to answer, the task list, what runs
+// in the background and what's queued, and a box to reply, queue or stop.
 
 package com.hyprspace.android.ui.thread
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -19,6 +21,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -55,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +77,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -82,11 +89,18 @@ import androidx.compose.ui.unit.sp
 import com.hyprspace.android.R
 import com.hyprspace.android.model.AgentState
 import com.hyprspace.android.model.Item
+import com.hyprspace.android.model.PLAN
+import com.hyprspace.android.model.QUESTION
+import com.hyprspace.android.model.TODO
 import com.hyprspace.android.model.counts
+import com.hyprspace.android.model.doing as doingNow
 import com.hyprspace.android.model.input
 import com.hyprspace.android.model.label
+import com.hyprspace.android.model.special
 import com.hyprspace.android.model.summary
 import com.hyprspace.android.net.Answer
+import com.hyprspace.android.net.BgTask
+import com.hyprspace.android.net.Prompt
 import com.hyprspace.android.net.RunStatus
 import com.hyprspace.android.net.Tool
 import com.hyprspace.android.net.TranscriptView
@@ -95,6 +109,7 @@ import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -104,10 +119,20 @@ private sealed interface Shown {
     val key: String
     data class One(val item: Item) : Shown { override val key = item.key }
     data class Calls(val calls: List<Item.Call>) : Shown { override val key = "calls" + calls.first().key }
+    data class Todo(val call: Item.Call) : Shown { override val key = call.key }
+}
+
+/** A question or plan call whose approval in the same exchange is its card already. */
+private fun carded(items: List<Item>, ix: Int, name: String): Boolean {
+    val from = items.subList(0, ix).indexOfLast { it is Item.User } + 1
+    val next = items.subList(ix, items.size).indexOfFirst { it is Item.User }
+    val to = if (next < 0) items.size else ix + next
+    return items.subList(from, to).any { it is Item.Approval && special(it.tool) == name }
 }
 
 private fun fold(items: List<Item>): List<Shown> {
     val out = ArrayList<Shown>()
+    val lastTodo = items.indexOfLast { it is Item.Call && special(it.tool) == TODO }
     var run = ArrayList<Item.Call>()
     fun flush() {
         when (run.size) {
@@ -117,15 +142,42 @@ private fun fold(items: List<Item>): List<Shown> {
         }
         run = ArrayList()
     }
-    for (i in items) {
-        if (i is Item.Call) run += i else {
-            flush()
-            out += Shown.One(i)
+    for ((ix, i) in items.withIndex()) {
+        val name = (i as? Item.Call)?.let { special(it.tool) }
+        when {
+            name == TODO -> {
+                flush()
+                if (ix == lastTodo) out += Shown.Todo(i)
+            }
+            name != null && carded(items, ix, name) -> {}
+            i is Item.Call -> run += i
+            else -> {
+                flush()
+                out += Shown.One(i)
+            }
         }
     }
     flush()
     return out
 }
+
+/** The replies that end a run, which get a copy button. */
+private fun ends(shown: List<Shown>): Set<String> = shown.indices
+    .filter { i ->
+        val s = shown[i] as? Shown.One
+        s?.item is Item.Reply && (shown.getOrNull(i + 1) as? Shown.One)?.item is Item.Finished
+    }
+    .map { shown[it].key }
+    .toSet()
+
+/** What the desktop does with a structured thread's queue and background, when it's new enough to. */
+class Extras(
+    val queue: List<Prompt>,
+    val tasks: List<BgTask>,
+    val onSteer: (Int, String) -> Unit,
+    val onUnqueue: (Int, String) -> Unit,
+    val onStopTask: (String) -> Unit,
+)
 
 @Composable
 fun Chat(
@@ -138,13 +190,21 @@ fun Chat(
     canAnswer: Boolean,
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
-    onAnswer: (String, Answer) -> Unit,
+    onAnswer: Answers,
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     modifier: Modifier = Modifier,
     model: (@Composable () -> Unit)? = null,
+    permission: (@Composable () -> Unit)? = null,
+    extras: Extras? = null,
+    ultra: Boolean = false,
+    lines: Int = 0,
 ) {
     val h = LocalHues.current
     val shown = remember(view.items) { fold(view.items) }
+    val ending = remember(shown) { ends(shown) }
+    var stopping by remember { mutableStateOf(false) }
+    LaunchedEffect(working) { if (!working) stopping = false }
+    var draft by rememberSaveable { mutableStateOf("") }
     // laid out from the bottom, so a growing reply stays pinned to the box without scrolling
     val list = rememberLazyListState()
     var stuck by remember { mutableStateOf(true) }
@@ -158,36 +218,62 @@ fun Chat(
     LaunchedEffect(list) {
         list.interactionSource.interactions.collect { if (it is DragInteraction.Start) stuck = false }
     }
-    // what was sent or answered here shows at once, until the journal brings it back
+    // what was sent or answered here shows at once, until the journal or the queue brings it back
     var pending by remember { mutableStateOf(listOf<Pending>()) }
     var answered by remember { mutableStateOf(mapOf<String, Answer>()) }
-    LaunchedEffect(view.items) {
+    LaunchedEffect(view.items, extras?.queue) {
         val users = view.items.filterIsInstance<Item.User>()
         val used = mutableSetOf<String>()
         pending = pending.filter { p ->
-            val from = users.indexOfFirst { it.key == p.after } + 1
+            val from = p.after.coerceAtMost(users.size)
             val hit = users.drop(from).firstOrNull { it.key !in used && it.text == p.text }
             if (hit != null) used += hit.key
-            hit == null
+            hit == null && !(p.queued && extras?.queue?.any { it.text == p.text } == true)
         }
     }
-    val newest = if (busy) "working" else pending.lastOrNull()?.let { "pending${it.id}" } ?: shown.lastOrNull()?.key
+    // a line that dropped may have taken a message with it: once the new line has brought the
+    // transcript and the queue back, what still isn't there goes again
+    LaunchedEffect(lines) {
+        delay(3000)
+        val stale = pending.filter { it.line < lines }
+        if (stale.isEmpty()) return@LaunchedEffect
+        pending = pending.map { if (it.line < lines) it.copy(id = System.nanoTime(), line = lines) else it }
+        for (p in stale) onSend(p.text, p.images)
+    }
+    // a message the computer never put in its queue comes back to the box rather than vanish
+    LaunchedEffect(pending) {
+        while (pending.any { it.queued }) {
+            delay(1000)
+            val now = System.nanoTime()
+            val lost = pending.filter { it.queued && now - it.id > 30_000_000_000L }
+            if (lost.isNotEmpty()) {
+                pending = pending - lost.toSet()
+                draft = (lost.map { it.text } + draft).filter { it.isNotBlank() }.joinToString("\n\n")
+            }
+        }
+    }
+    val bubbles = pending.filter { !it.queued }
+    val newest = if (busy) "working" else bubbles.lastOrNull()?.let { "pending${it.id}" } ?: shown.lastOrNull()?.key
     LaunchedEffect(newest) {
         if (stuck && newest != null) list.animateScrollToItem(0)
     }
     val live = if (working) (shown.lastOrNull() as? Shown.One)?.item?.takeIf { it is Item.Reply }?.key else null
     val send: (String, List<String>) -> Unit = { text, images ->
+        // while it works, the computer queues the message for when the run ends
+        val queued = working && extras != null
         if (text.isNotBlank()) {
-            val after = view.items.lastOrNull { it is Item.User }?.key
-            pending = pending + Pending(System.nanoTime(), text, after)
+            val after = view.items.count { it is Item.User }
+            pending = pending + Pending(System.nanoTime(), text, after, queued, images, lines)
         }
-        stuck = true
-        scope.launch { list.animateScrollToItem(0) }
+        if (!queued) {
+            stuck = true
+            scope.launch { list.animateScrollToItem(0) }
+        }
         onSend(text, images)
     }
-    val answer: (String, Answer) -> Unit = { request, a ->
+    val answer: Answers = { request, a, given ->
         answered = answered + (request to a)
-        onAnswer(request, a)
+        onAnswer(request, a, given)
     }
     Column(modifier) {
         if (!view.loaded) {
@@ -206,23 +292,25 @@ fun Chat(
             ) {
                 if (busy) {
                     item(key = "working") {
-                        Box(rise()) { Working(doing, since) }
+                        val label = doingNow(view.items, waiting = false, stopping = stopping, compacting = doing == "Compacting")
+                        Box(rise()) { Working(label, since) }
                     }
                 }
-                items(pending.asReversed(), key = { "pending${it.id}" }) { p ->
+                items(bubbles.asReversed(), key = { "pending${it.id}" }) { p ->
                     Box(rise()) {
-                        One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false)
+                        One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false, end = false)
                     }
                 }
                 items(shown.asReversed(), key = { it.key }) { s ->
                     Box(rise()) {
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)
-                            is Shown.One -> One(s.item, canAnswer, answered, answer, live = s.key == live)
+                            is Shown.Todo -> TodoCard(s.call.tool)
+                            is Shown.One -> One(s.item, canAnswer, answered, answer, live = s.key == live, end = s.key in ending)
                         }
                     }
                 }
-                if (shown.isEmpty() && pending.isEmpty()) {
+                if (shown.isEmpty() && bubbles.isEmpty()) {
                     item(key = "empty") { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
@@ -250,12 +338,43 @@ fun Chat(
             }
             }
         }
-        Composer(working, send, onStop, attach, model)
+        if (extras != null) {
+            val waiting = extras.queue.map { Waiting(it.text, it.images.size, sent = false) } +
+                pending.filter { it.queued }.map { Waiting(it.text, 0, sent = true) }
+            Tray(
+                tasks = extras.tasks,
+                items = view.items,
+                queue = waiting,
+                canAct = canAnswer,
+                onStopTask = extras.onStopTask,
+                onSendNow = extras.onSteer,
+                onEdit = { i, text ->
+                    extras.onUnqueue(i, text)
+                    draft = if (draft.isBlank()) text else "$text\n\n$draft"
+                },
+                onRemove = extras.onUnqueue,
+            )
+        }
+        Composer(
+            draft = draft,
+            onDraft = { draft = it },
+            working = working,
+            queues = extras != null,
+            ultra = ultra,
+            onSend = send,
+            onStop = {
+                stopping = true
+                onStop()
+            },
+            attach = attach,
+            model = model,
+            permission = permission,
+        )
     }
 }
 
 @Composable
-private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, onAnswer: (String, Answer) -> Unit, live: Boolean) {
+private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, onAnswer: Answers, live: Boolean, end: Boolean) {
     val h = LocalHues.current
     when (item) {
         is Item.User -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -273,11 +392,21 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
                 }
             }
         }
-        is Item.Reply -> Markdown(revealed(item.key, item.text, live))
+        is Item.Reply -> Column {
+            Markdown(revealed(item.key, item.text, live))
+            if (end && !live) Copy(item.text)
+        }
         is Item.Thinking -> Fold("Thinking", item.text, mono = false)
         is Item.Call -> CallLine(item)
         is Item.Agent -> AgentCard(item)
-        is Item.Approval -> ApprovalCard(item.copy(answer = item.answer ?: answered[item.request]), canAnswer, onAnswer)
+        is Item.Approval -> {
+            val a = item.copy(answer = item.answer ?: answered[item.request])
+            when (special(a.tool)) {
+                QUESTION -> QuestionCard(a, canAnswer, onAnswer)
+                PLAN -> PlanCard(a, canAnswer, onAnswer)
+                else -> ApprovalCard(a, canAnswer) { r, ans -> onAnswer(r, ans, emptyList()) }
+            }
+        }
         is Item.Error -> Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(h.error.copy(alpha = 0.08f)).padding(horizontal = 14.dp, vertical = 11.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -286,10 +415,51 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
             Text(item.message, style = MaterialTheme.typography.bodyMedium, color = h.text1)
         }
         is Item.Finished -> TurnEnd(item)
+        is Item.Note -> Text(item.text, style = MaterialTheme.typography.bodySmall, color = h.text3)
     }
 }
 
-private data class Pending(val id: Long, val text: String, val after: String?)
+/** Sent here and not yet back from the computer, on line [line] of [Link.lines]. */
+private data class Pending(
+    val id: Long,
+    val text: String,
+    /** How many prompts the transcript had when it was sent, which a fresh copy keeps. */
+    val after: Int,
+    val queued: Boolean = false,
+    val images: List<String> = emptyList(),
+    val line: Int = 0,
+)
+
+@Composable
+private fun Copy(text: String) {
+    val h = LocalHues.current
+    val clipboard = LocalContext.current.getSystemService(android.content.ClipboardManager::class.java)
+    var done by remember { mutableStateOf(false) }
+    LaunchedEffect(done) {
+        if (done) {
+            delay(1500)
+            done = false
+        }
+    }
+    Box(
+        Modifier
+            .padding(top = 2.dp)
+            .size(30.dp)
+            .clip(CircleShape)
+            .clickableQuiet {
+                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Reply", text))
+                done = true
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painterResource(if (done) R.drawable.ic_check else R.drawable.ic_copy),
+            if (done) "Copied" else "Copy",
+            Modifier.size(14.dp),
+            tint = h.text3,
+        )
+    }
+}
 
 private fun LazyItemScope.rise(): Modifier = Modifier.animateItem(
     fadeInSpec = tween(220),
@@ -646,14 +816,15 @@ private fun ApprovalDetail(tool: Tool) {
 }
 
 @Composable
-private fun Choice(text: String, modifier: Modifier = Modifier, primary: Boolean = false, onClick: () -> Unit) {
+internal fun Choice(text: String, modifier: Modifier = Modifier, primary: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val h = LocalHues.current
     Box(
         modifier
             .height(44.dp)
+            .alpha(if (enabled) 1f else 0.5f)
             .clip(RoundedCornerShape(12.dp))
             .background(if (primary) h.accent else h.ink(0.08f))
-            .clickableQuiet(onClick),
+            .then(if (enabled) Modifier.clickableQuiet(onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, color = if (primary) h.onAccent else h.text1)
@@ -662,14 +833,20 @@ private fun Choice(text: String, modifier: Modifier = Modifier, primary: Boolean
 
 @Composable
 private fun Composer(
+    draft: String,
+    onDraft: (String) -> Unit,
     working: Boolean,
+    queues: Boolean,
+    ultra: Boolean,
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     model: (@Composable () -> Unit)?,
+    permission: (@Composable () -> Unit)?,
 ) {
     val h = LocalHues.current
-    var text by rememberSaveable { mutableStateOf("") }
+    val text = draft
+    val glow = ultra && saysUltrathink(text)
     val photos = remember { mutableStateListOf<Attachment>() }
     val pick = attach?.invoke { p ->
         val i = photos.indexOfFirst { it.key == p.key }
@@ -681,6 +858,7 @@ private fun Composer(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
+            .ultraRing(glow, h.dark, 18.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(h.ink(0.045f)),
     ) {
@@ -694,14 +872,20 @@ private fun Composer(
     }
     Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)) {
         if (text.isEmpty()) {
-            Text(if (working) "Steer it, or stop it" else "Reply", style = MaterialTheme.typography.bodyLarge, color = h.text3)
+            val hint = when {
+                !working -> "Reply"
+                queues -> "Queue a message for when it finishes"
+                else -> "Steer it, or stop it"
+            }
+            Text(hint, style = MaterialTheme.typography.bodyLarge, color = h.text3)
         }
         BasicTextField(
             value = text,
-            onValueChange = { text = it },
+            onValueChange = onDraft,
             modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp),
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = h.text1),
             cursorBrush = SolidColor(h.accent),
+            visualTransformation = if (ultra) UltraWords(h.dark) else androidx.compose.ui.text.input.VisualTransformation.None,
         )
     }
     Row(
@@ -717,6 +901,7 @@ private fun Composer(
             }
         }
         Spacer(Modifier.weight(1f))
+        permission?.invoke()
         model?.invoke()
         Spacer(Modifier.width(6.dp))
         val stop = working && text.isBlank() && photos.isEmpty()
@@ -730,7 +915,7 @@ private fun Composer(
                         onStop()
                     } else if (sendable) {
                         onSend(text.trim(), photos.mapNotNull { it.path })
-                        text = ""
+                        onDraft("")
                         photos.clear()
                     }
                 },
@@ -751,8 +936,22 @@ private fun Composer(
     }
 }
 
+/** [target] once what shows has been up long enough to read, so a burst of calls doesn't flicker. */
 @Composable
-private fun Working(doing: String?, since: Long?) {
+private fun held(target: String): String {
+    var shown by remember { mutableStateOf(target) }
+    var at by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(target) {
+        val wait = 850 - (System.currentTimeMillis() - at)
+        if (wait > 0 && target != "Stopping") delay(wait)
+        shown = target
+        at = System.currentTimeMillis()
+    }
+    return shown
+}
+
+@Composable
+private fun Working(doing: String, since: Long?) {
     val h = LocalHues.current
     val now = com.hyprspace.android.ui.ticking(since != null)
     val pulse by rememberInfiniteTransition(label = "working").animateFloat(
@@ -764,15 +963,24 @@ private fun Working(doing: String?, since: Long?) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Eclipse(h.text2)
-        Text("Working", Modifier.alpha(pulse), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = h.text2)
-        Text(
-            doing.orEmpty(),
-            Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            color = h.text3,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        AnimatedContent(
+            held(doing),
+            Modifier.weight(1f).clipToBounds(),
+            transitionSpec = {
+                (slideInVertically { it } + fadeIn(tween(200))) togetherWith (slideOutVertically { -it } + fadeOut(tween(150)))
+            },
+            label = "doing",
+        ) { label ->
+            Text(
+                label,
+                Modifier.alpha(pulse),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = h.text2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         since?.let { Text(elapsed((now - it).coerceAtLeast(0) / 1000), fontFamily = Mono, fontSize = 11.sp, color = h.text3) }
     }
 }

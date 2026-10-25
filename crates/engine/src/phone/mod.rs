@@ -588,7 +588,10 @@ impl Phone {
                     | Ask::Model { thread, .. }
                     | Ask::Permission { thread, .. }
                     | Ask::Rename { thread, .. }
-                    | Ask::Pin { thread, .. } => known(*thread),
+                    | Ask::Pin { thread, .. }
+                    | Ask::Steer { thread, .. }
+                    | Ask::Unqueue { thread, .. }
+                    | Ask::StopTask { thread, .. } => known(*thread),
                 };
                 if ok {
                     let _ = hub

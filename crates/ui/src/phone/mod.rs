@@ -186,16 +186,20 @@ impl Root {
         } else {
             self.subagents(id, cx).len()
         };
+        let tasks = match self.views.get(&id) {
+            Some(View::Structured(v)) => v.read(cx).tasks().to_vec(),
+            _ => Vec::new(),
+        };
         let (running, doing) = match self.views.get(&id) {
             Some(View::Structured(v)) => {
                 let v = v.read(cx);
-                (v.elapsed(), v.doing())
+                (v.elapsed_ms(), v.doing())
             }
             _ => (
                 self.turns
                     .get(&id)
                     .filter(|_| busy)
-                    .map(|t| t.elapsed().as_secs()),
+                    .map(|t| t.elapsed().as_millis() as u64),
                 self.activity.get(&id).and_then(|a| a.doing.clone()),
             ),
         };
@@ -235,7 +239,8 @@ impl Root {
                 Status::Failed => BoardStatus::Failed,
             },
             doing: doing.map(|d| line(&d, 160)),
-            since: running.map(|secs| now.saturating_sub(secs * 1000)),
+            // to the second, or every check would find the board changed and send it again
+            since: running.map(|ms| (now.saturating_sub(ms) + 500) / 1000 * 1000),
             unseen: self.unseen.contains(&id),
             place,
             branch,
@@ -250,6 +255,8 @@ impl Root {
             rank: t.pinned.map_or(t.rank(), |at| i64::MAX - at as i64),
             live: self.views.contains_key(&id),
             pinned: t.pinned.is_some(),
+            queue: t.queue.clone(),
+            tasks,
         }
     }
 
@@ -266,6 +273,29 @@ impl Root {
                 };
                 if let Some(v) = self.structured_view(thread, cx) {
                     v.update(cx, |v, cx| v.send_prompt(prompt, cx));
+                }
+            }
+            Ask::Steer {
+                thread,
+                index,
+                text,
+            } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.queued(index, &text, true, cx));
+                }
+            }
+            Ask::Unqueue {
+                thread,
+                index,
+                text,
+            } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.queued(index, &text, false, cx));
+                }
+            }
+            Ask::StopTask { thread, task } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.stop_task(task, cx));
                 }
             }
             Ask::Approve {

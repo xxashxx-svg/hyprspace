@@ -6,6 +6,7 @@
 mod code;
 mod fade;
 pub mod find;
+pub mod links;
 mod mend;
 mod render;
 pub mod select;
@@ -35,6 +36,11 @@ pub enum Block {
     Table {
         head: Vec<Inline>,
         rows: Vec<Vec<Inline>>,
+    },
+    /// A picture standing on its own line: where it is, and its alt text.
+    Image {
+        url: String,
+        alt: String,
     },
 }
 
@@ -107,6 +113,8 @@ struct Builder {
     italic: u32,
     strike: u32,
     links: Vec<String>,
+    /// An image being read: where it is, and its alt text so far.
+    image: Option<(String, String)>,
 }
 
 impl Builder {
@@ -138,6 +146,10 @@ impl Builder {
     fn text(&mut self, text: &str, code: bool) {
         if let Some((_, buf)) = self.code.as_mut() {
             buf.push_str(text);
+            return;
+        }
+        if let Some((_, alt)) = self.image.as_mut() {
+            alt.push_str(text);
             return;
         }
         if self.open.is_none() {
@@ -251,6 +263,7 @@ impl Builder {
                 self.links.push(dest_url.to_string());
                 self.restyle();
             }
+            Tag::Image { dest_url, .. } => self.image = Some((dest_url.to_string(), String::new())),
             _ => {}
         }
     }
@@ -311,6 +324,23 @@ impl Builder {
             TagEnd::Link => {
                 self.links.pop();
                 self.restyle();
+            }
+            TagEnd::Image => {
+                let Some((url, alt)) = self.image.take() else {
+                    return;
+                };
+                // in a cell or a heading, or mid-sentence, a picture reads as its alt text
+                let alone = match &self.open {
+                    None => true,
+                    Some((Open::Paragraph, i)) => i.text.trim().is_empty(),
+                    Some(_) => false,
+                };
+                if !alone {
+                    self.text(&alt, false);
+                    return;
+                }
+                self.open = None;
+                self.blocks().push(Block::Image { url, alt });
             }
             _ => {}
         }
@@ -520,6 +550,22 @@ mod tests {
             p.text,
             "Desktop: https://github.com/x/y/runs/1. Docs (https://x.dev/a_(b)), https://not.me"
         );
+    }
+
+    #[test]
+    fn a_picture_on_its_own_line_is_a_block() {
+        let b = parse(
+            "Here it is:\n\n![the tower](shots/tower.png)\n\nAnd ![inline](x.png) stays text.",
+        );
+        assert_eq!(para(&b).text, "Here it is:");
+        assert_eq!(
+            b[1],
+            Block::Image {
+                url: "shots/tower.png".into(),
+                alt: "the tower".into()
+            }
+        );
+        assert!(matches!(&b[2], Block::Paragraph(i) if i.text == "And inline stays text."));
     }
 
     #[test]

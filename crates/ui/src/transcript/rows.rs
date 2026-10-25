@@ -21,6 +21,8 @@ pub enum Row {
     },
     Quiet(usize),
     Working,
+    /// Where what came while the thread was off screen starts.
+    New,
 }
 
 fn quiet(item: &Item) -> bool {
@@ -77,6 +79,21 @@ pub fn rows_for(blocks: &[Block]) -> usize {
     } else {
         units.div_ceil(PIECES)
     }
+}
+
+/// `rows` with the divider before the first row of item `from` or later, when one follows it.
+pub fn mark_new(mut rows: Vec<Row>, from: Option<usize>) -> Vec<Row> {
+    let Some(from) = from else {
+        return rows;
+    };
+    let at = rows.iter().position(|r| match r {
+        Row::Item { ix, .. } | Row::Part { ix, .. } | Row::Quiet(ix) => *ix >= from,
+        _ => false,
+    });
+    if let Some(at) = at {
+        rows.insert(at, Row::New);
+    }
+    rows
 }
 
 /// `rows` with a row after each reply for each of its later pieces.
@@ -285,6 +302,28 @@ mod tests {
                 Row::Part { ix: 1, part: 2 },
             ]
         );
+    }
+
+    #[test]
+    fn the_new_divider_goes_before_what_came_after() {
+        let rows = vec![
+            Row::Item { ix: 0, user: true },
+            Row::Quiet(1),
+            Row::Item { ix: 3, user: false },
+            Row::Working,
+        ];
+        assert_eq!(mark_new(rows.clone(), None), rows);
+        assert_eq!(
+            mark_new(rows.clone(), Some(2)),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Quiet(1),
+                Row::New,
+                Row::Item { ix: 3, user: false },
+                Row::Working,
+            ]
+        );
+        assert_eq!(mark_new(rows.clone(), Some(9)), rows);
     }
 
     #[test]

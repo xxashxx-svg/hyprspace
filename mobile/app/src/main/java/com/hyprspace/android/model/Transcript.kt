@@ -40,8 +40,11 @@ sealed interface Item {
         val always: Boolean,
         val answer: Answer?,
         val expired: Boolean,
+        /** A question's answers, as (question, answer). */
+        val given: List<Pair<String, String>> = emptyList(),
     ) : Item
     data class Error(override val key: String, val message: String) : Item
+    data class Note(override val key: String, val text: String) : Item
     data class Finished(override val key: String, val status: RunStatus, val ms: Long, val error: String?) : Item
 }
 
@@ -74,7 +77,8 @@ class Transcript {
 
     private fun key() = "i${next++}"
 
-    fun add(entry: Entry) {
+    /** [replay] for a journal sent whole. */
+    fun add(entry: Entry, replay: Boolean = false) {
         when (entry) {
             is Entry.PromptEntry -> {
                 items += Item.User(key(), entry.prompt.text, entry.prompt.images.size, steer = running)
@@ -83,15 +87,20 @@ class Transcript {
                     said = false
                 }
             }
-            is Entry.AnswerEntry -> answered(entry.request, entry.answer)
-            is Entry.Run -> apply(entry.event)
+            is Entry.AnswerEntry -> answered(entry.request, entry.answer, entry.answers.mapNotNull { it.pair() })
+            is Entry.Run -> {
+                apply(entry.event)
+                if (entry.event is RunEvent.Started) restarted(replay)
+            }
         }
     }
 
-    private fun answered(request: String, answer: Answer) {
+    private fun answered(request: String, answer: Answer, given: List<Pair<String, String>>) {
         val i = items.indexOfLast { it is Item.Approval && it.request == request }
-        if (i >= 0) items[i] = (items[i] as Item.Approval).copy(answer = answer)
+        if (i >= 0) items[i] = (items[i] as Item.Approval).copy(answer = answer, given = given)
     }
+
+    private fun List<String>.pair(): Pair<String, String>? = if (size == 2) this[0] to this[1] else null
 
     private fun apply(event: RunEvent) {
         when (event) {
@@ -197,6 +206,38 @@ class Transcript {
                 stopAgents()
             }
         }
+    }
+
+    /**
+     * A new CLI process started. A run still open from the one before died with it, and the
+     * journal never says so, so the prompt that started this process reads as a steer of it.
+     * A process can also restart mid-run, so a run with no prompt after it ends only on replay.
+     */
+    private fun restarted(replay: Boolean) {
+        if (!running) return
+        val last = items.lastOrNull()
+        when {
+            last is Item.User && last.steer -> {
+                items.removeAt(items.lastIndex)
+                cut()
+                items += last.copy(steer = false)
+                running = true
+                said = false
+            }
+            last is Item.User -> {}
+            said && replay -> cut()
+        }
+    }
+
+    private fun cut() {
+        for (i in items.indices) {
+            val it = items[i]
+            if (it is Item.Call && it.done == null) items[i] = it.copy(done = Done(false, "The app closed before it finished."))
+        }
+        running = false
+        expire()
+        stopAgents()
+        items += Item.Note(key(), "The app closed before this run finished.")
     }
 
     // an approval left open when its run ended can't be answered any more

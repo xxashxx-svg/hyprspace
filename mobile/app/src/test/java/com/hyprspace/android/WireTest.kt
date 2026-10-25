@@ -34,6 +34,9 @@ class WireTest {
         assertEquals("structured", wire.encodeToString(com.hyprspace.android.net.BoardKind.serializer(), board.threads[0].kind).trim('"'))
         assertEquals("opus" to "high", board.start.pick(com.hyprspace.android.net.Agent.Claude))
         assertEquals(0x161616FFL, board.theme.dark.bg)
+        assertEquals("then this", board.threads[0].queue.single().text)
+        assertEquals(com.hyprspace.android.net.TaskKind.Subagent, board.threads[0].tasks.single().kind)
+        assertEquals("2", board.threads[0].tasks.single().tool)
         val entries = (all[3] as Down.Transcript).entries
         val tools = entries.filterIsInstance<Entry.Run>().map { it.event }.filterIsInstance<RunEvent.ToolCall>().map { it.tool }
         assertTrue(tools.any { it is Tool.AgentCall && it.agentType == "general-purpose" })

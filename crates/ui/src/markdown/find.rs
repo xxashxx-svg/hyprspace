@@ -151,7 +151,7 @@ pub fn texts(blocks: &[Block], out: &mut Vec<String>) {
                 }
             }
             Block::Quote(inner) => texts(inner, out),
-            Block::Rule => {}
+            Block::Rule | Block::Image { .. } => {}
             Block::Table { head, rows } => {
                 out.extend(head.iter().map(|c| c.text.clone()));
                 for row in rows {

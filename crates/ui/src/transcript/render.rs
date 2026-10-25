@@ -56,7 +56,7 @@ pub fn view(
     }
     v.follow.ease(&v.list, window);
     if !v.finding() {
-        v.follow.step(&v.list, window, cx);
+        v.follow.step(&v.list, v.model.running(), window, cx);
     }
     // rows measure taller than estimated once laid out, which only shows after this frame
     cx.on_next_frame(window, |v, window, cx| {
@@ -127,7 +127,8 @@ pub fn view(
     let rows = rows::split(rows::plan(&v.model.items, v.loading, live), |ix| {
         reply_blocks(v, ix).map_or(1, |b| rows::rows_for(b))
     });
-    v.sync_rows(rows);
+    v.sync_rows(rows::mark_new(rows, v.unread));
+    v.read = v.model.items.len();
     let prompts: Vec<usize> = v
         .rows
         .iter()
@@ -260,6 +261,7 @@ fn edge_scroll(v: &mut TranscriptView, surface: &Arc<str>, window: &mut Window) 
 }
 
 fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>) -> AnyElement {
+    let _links = markdown::links::scope(Some(super::links::handler(v, cx)));
     let Some(&row) = v.rows.get(ix) else {
         return div().into_any_element();
     };
@@ -290,6 +292,16 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             enter(v, ix, el)
         }
         Row::Quiet(start) => quiet(v, start, cx),
+        Row::New => div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .text_size(px(11.5))
+            .text_color(colors::text3())
+            .child(div().flex_1().h(px(1.)).bg(colors::ink(0.1)))
+            .child("New")
+            .child(div().flex_1().h(px(1.)).bg(colors::ink(0.1)))
+            .into_any_element(),
         Row::Working => {
             let t = v.working.filter(|_| slide::animations()).map_or(1., |at| {
                 ease_out((at.elapsed().as_secs_f32() / WORKING_IN.as_secs_f32()).min(1.))
