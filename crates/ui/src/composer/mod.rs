@@ -28,7 +28,7 @@ use crate::zoom::px;
 use crate::{attach, colors};
 use clone::CloneCard;
 use model_menu::{Anchor, Choice, Host as _, ModelMenu, Spec};
-pub use pickers::effort_label;
+pub use pickers::{effort_label, permission_label};
 
 /// Where a new thread goes: a space, its name, and its folder (None for an open space).
 #[derive(Clone, Debug, PartialEq)]
@@ -138,7 +138,12 @@ impl Composer {
                 InputEvent::Changed => this.text_changed(cx),
                 InputEvent::Images(images) => {
                     let asked = images.len();
-                    attach::mark(&this.input, this.images.len() + this.saving + 1, asked, cx);
+                    attach::mark(
+                        &this.input,
+                        this.images.len() + this.saving + 1,
+                        &vec!["Image"; asked],
+                        cx,
+                    );
                     this.saving += asked;
                     attach::save_later(images.clone(), cx, move |this, saved, cx| {
                         this.saving -= asked;
@@ -621,7 +626,8 @@ impl Composer {
                 return;
             };
             let _ = this.update(cx, |c, cx| {
-                c.images.extend(paths.into_iter().filter(|p| p.is_file()));
+                let files: Vec<PathBuf> = paths.into_iter().filter(|p| p.is_file()).collect();
+                c.attach(files, cx);
                 cx.notify();
             });
         })
@@ -649,11 +655,22 @@ impl Composer {
         }
     }
 
+    fn attach(&mut self, files: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let words: Vec<&str> = files.iter().map(|f| attach::word(f)).collect();
+        attach::mark(&self.input, self.images.len() + self.saving + 1, &words, cx);
+        self.images.extend(files);
+    }
+
     /// Files dropped on the screen: images go in with the task, anything else has its path
     /// typed in at the cursor, as a terminal does, and the box takes the keyboard.
-    fn drop_paths(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn drop_paths(
+        &mut self,
+        paths: &ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let (images, text) = attach::split_drop(paths.paths());
-        self.images.extend(images);
+        self.attach(images, cx);
         if !text.is_empty() {
             self.input.update(cx, |i, cx| i.insert(&text, cx));
         }

@@ -218,7 +218,7 @@ impl Peers {
         match cmd {
             Command::LoadJournal { .. } => {
                 route.kind = Kind::Journal;
-                ups.push(Up::Watch { thread });
+                ups.push(Up::Watch { thread, tail: None });
             }
             Command::OpenTerminal { cols, rows, .. } => {
                 route.kind = Kind::Terminal;
@@ -398,7 +398,10 @@ impl Peers {
             .values()
             .filter(|r| r.peer == peer)
             .flat_map(|r| match (r.kind, r.size) {
-                (Kind::Journal, _) => vec![Up::Watch { thread: r.thread }],
+                (Kind::Journal, _) => vec![Up::Watch {
+                    thread: r.thread,
+                    tail: None,
+                }],
                 (Kind::Terminal, Some((cols, rows))) => vec![
                     Up::Attach { thread: r.thread },
                     Up::Size {
@@ -439,6 +442,7 @@ impl Peers {
                 thread,
                 entries,
                 reset,
+                ..
             } => {
                 for id in inner.routed(peer, thread, Kind::Journal) {
                     let entries = entries.clone();

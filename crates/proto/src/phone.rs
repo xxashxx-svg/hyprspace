@@ -46,9 +46,12 @@ pub enum Up {
     },
     /// The phone forgot this computer: the computer forgets the phone too.
     Leave,
-    /// Stream one thread: its transcript, or its terminal's screen.
+    /// Stream one thread: its transcript, or its terminal's screen. `tail` sends only the
+    /// transcript's last whole prompts that fit in about that many bytes, and at least the last.
     Watch {
         thread: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tail: Option<u32>,
     },
     Unwatch {
         thread: u64,
@@ -214,6 +217,10 @@ pub enum Ask {
         thread: u64,
         task: String,
     },
+    /// Closes the thread's side question, and stops it if it's still answering.
+    DropAside {
+        thread: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -259,11 +266,14 @@ pub enum Down {
         board: Box<Board>,
     },
     /// A structured thread's journal. `reset` starts it over (the first batch after `Watch`);
-    /// otherwise the entries follow the ones sent before.
+    /// otherwise the entries follow the ones sent before. `before` counts the prompts a `tail`
+    /// left out.
     Transcript {
         thread: u64,
         entries: Vec<Entry>,
         reset: bool,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        before: u32,
     },
     Term {
         frame: TermFrame,
@@ -272,6 +282,20 @@ pub enum Down {
     Failed {
         thread: Option<u64>,
         message: String,
+    },
+    /// What a command sent from the phone said, which the desktop shows in the thread.
+    Note {
+        thread: u64,
+        message: String,
+    },
+    /// The slash commands to offer, on connecting and whenever they change.
+    Commands {
+        list: Vec<Slash>,
+    },
+    /// A watched thread's side question (`/btw`) so far, or `None` once it's closed.
+    Aside {
+        thread: u64,
+        aside: Option<AsideView>,
     },
     Pong,
     Folders {
@@ -491,8 +515,29 @@ pub struct Span {
     pub s: u8,
 }
 
-fn is_zero(n: &u8) -> bool {
-    *n == 0
+/// A slash command the phone offers as `/` is typed: HyprSpace's own, which work in every
+/// structured thread, then each agent's own and its skills.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Slash {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<Agent>,
+}
+
+/// A side question and its answer so far. `error` says why it ended without one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AsideView {
+    pub question: String,
+    pub text: String,
+    pub done: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
+    *n == T::default()
 }
 
 impl Span {
@@ -534,6 +579,14 @@ pub enum PhoneCommand {
     },
     /// The thread an asking connection's `Ask::New` made.
     Started { to: u64, request: u64, thread: u64 },
+    /// The slash commands phones offer as `/` is typed. Sent on to phones only when it changes.
+    Commands { list: Vec<Slash> },
+    /// A line for the connection that sent a command, about the thread it was sent to.
+    Note {
+        to: u64,
+        thread: u64,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -888,6 +941,7 @@ mod tests {
                 thread: 2,
                 entries,
                 reset: true,
+                before: 3,
             },
             Down::Term {
                 frame: TermFrame {
@@ -921,6 +975,37 @@ mod tests {
                 thread: Some(2),
                 message: "gone".into(),
             },
+            Down::Note {
+                thread: 2,
+                message: "Fast mode on.".into(),
+            },
+            Down::Commands {
+                list: vec![
+                    Slash {
+                        name: "btw".into(),
+                        detail: "Ask a side question while it works".into(),
+                        agent: None,
+                    },
+                    Slash {
+                        name: "compact".into(),
+                        detail: String::new(),
+                        agent: Some(Agent::Claude),
+                    },
+                ],
+            },
+            Down::Aside {
+                thread: 2,
+                aside: Some(AsideView {
+                    question: "what now?".into(),
+                    text: "Tests.".into(),
+                    done: true,
+                    error: None,
+                }),
+            },
+            Down::Aside {
+                thread: 2,
+                aside: None,
+            },
             Down::Pong,
             Down::Uploaded {
                 id: 1,
@@ -948,7 +1033,14 @@ mod tests {
                 app: "0.24.4 (5321b19)".into(),
                 computer: false,
             },
-            Up::Watch { thread: 2 },
+            Up::Watch {
+                thread: 2,
+                tail: None,
+            },
+            Up::Watch {
+                thread: 2,
+                tail: Some(200_000),
+            },
             Up::Unwatch { thread: 2 },
             Up::Fit {
                 thread: 3,
@@ -1009,6 +1101,9 @@ mod tests {
                     thread: 2,
                     task: "b1".into(),
                 },
+            },
+            Up::Ask {
+                ask: Ask::DropAside { thread: 2 },
             },
             Up::Ask {
                 ask: Ask::Permission {

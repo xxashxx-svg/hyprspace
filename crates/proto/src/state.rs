@@ -43,6 +43,7 @@ pub struct AppState {
     /// them before a session has started.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub command_info: BTreeMap<String, Vec<CommandInfo>>,
+    pub titles: bool,
 }
 
 impl Default for AppState {
@@ -63,6 +64,7 @@ impl Default for AppState {
             phone: PhonePrefs::default(),
             commands: BTreeMap::new(),
             command_info: BTreeMap::new(),
+            titles: true,
         }
     }
 }

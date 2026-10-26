@@ -26,8 +26,8 @@ pub use pane::Pane;
 pub use peer::{PeerCommand, PeerEvent};
 pub use phone::{PhoneCommand, PhoneEvent};
 pub use run::{
-    Answer, CommandInfo, Delegation, Launch, Permission, Prompt, Rewind, RunEvent, RunStatus, Task,
-    TaskKind, Tool,
+    Answer, Aside, CommandInfo, Delegation, Launch, Permission, Prompt, Rewind, RunEvent,
+    RunStatus, Task, TaskKind, Tool,
 };
 pub use skills::{SkillCommand, SkillEvent};
 pub use state::{AppState, Entry, SettleAfter, Snooze, Space, SpaceIcon, Thread, ThreadKind};

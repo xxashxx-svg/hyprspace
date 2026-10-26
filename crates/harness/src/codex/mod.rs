@@ -25,7 +25,7 @@ use crate::{Emit, Harness, Input, Session};
 use rpc::{Incoming, Rpc};
 
 pub struct Codex {
-    program: PathBuf,
+    pub(crate) program: PathBuf,
     patience: Duration,
     mcp: Option<crate::Mcp>,
 }
@@ -105,10 +105,10 @@ fn thread_request(launch: &Launch, mcp: Option<&crate::Mcp>, fork: bool) -> (&'s
 fn input(prompts: &[Prompt], skills: &[CommandInfo]) -> Value {
     let mut out = Vec::new();
     for p in prompts {
-        let (images, files): (Vec<_>, Vec<_>) = p.images.iter().partition(|f| image(f));
+        let images: Vec<_> = p.images.iter().filter(|f| image(f)).collect();
         let mut text = p.text.clone();
-        for f in files {
-            text.push_str(&format!("\n\nAttached file: {}", f.display()));
+        for (n, f) in p.images.iter().enumerate().filter(|(_, f)| !image(f)) {
+            text.push_str(&format!("\n\nAttached file {}: {}", n + 1, f.display()));
         }
         out.push(json!({ "type": "text", "text": text, "text_elements": [] }));
         for image in images {
@@ -287,7 +287,7 @@ impl Actor {
         let (method, params) = thread_request(&self.launch, self.mcp.as_ref(), fork);
         let opened = self.rpc.request(method, params).await?;
         self.thread = text(&opened["thread"]["id"]);
-        if let Some(rewind) = rewind.filter(|_| method != "thread/start") {
+        if let Some(rewind) = rewind.filter(|r| method != "thread/start" && !r.text.is_empty()) {
             self.rewind(&rewind).await;
         }
         let cwd = opened["cwd"].as_str().map(PathBuf::from);

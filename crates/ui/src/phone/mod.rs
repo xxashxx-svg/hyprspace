@@ -7,9 +7,9 @@ pub(crate) mod qr;
 use gpui::{App, Context, Window};
 use hyprspace_proto::phone::{
     Ask, Board, BoardKind, BoardSpace, BoardStatus, BoardTheme, BoardThread, Pairing, Palette,
-    PhoneCommand, PhoneEvent, PhoneStatus, Shelf, StartPrefs,
+    PhoneCommand, PhoneEvent, PhoneStatus, Shelf, Slash, StartPrefs,
 };
-use hyprspace_proto::{Command, Launch, SessionId, ThreadKind};
+use hyprspace_proto::{Agent, Command, Launch, SessionId, ThreadKind};
 use hyprspace_theme::Theme;
 
 use crate::root::{Root, Start, View};
@@ -23,6 +23,7 @@ pub struct PhoneState {
     /// The board and session list the engine has, so an unchanged one isn't sent again.
     sent: Option<Board>,
     sessions: Vec<(u64, SessionId)>,
+    commands: Vec<Slash>,
 }
 
 impl PhoneState {
@@ -104,6 +105,12 @@ impl Root {
             self.client
                 .send(Command::Phone(PhoneCommand::Sessions { sessions }));
         }
+        let commands = self.phone_commands();
+        if commands != self.phone.commands {
+            self.phone.commands = commands.clone();
+            self.client
+                .send(Command::Phone(PhoneCommand::Commands { list: commands }));
+        }
         let board = self.board(cx);
         if self.phone.sent.as_ref() != Some(&board) {
             self.phone.sent = Some(board.clone());
@@ -111,6 +118,34 @@ impl Root {
                 board: Box::new(board),
             }));
         }
+    }
+
+    /// What a phone offers as `/` is typed: ours first, then each agent's own that we don't take.
+    fn phone_commands(&self) -> Vec<Slash> {
+        let ours = crate::transcript::phone_commands();
+        let mut list: Vec<Slash> = ours
+            .iter()
+            .map(|(name, detail)| Slash {
+                name: name.to_string(),
+                detail: detail.to_string(),
+                agent: None,
+            })
+            .collect();
+        for agent in [Agent::Claude, Agent::Codex] {
+            let Some(info) = self.state.command_info.get(agent.cli()) else {
+                continue;
+            };
+            list.extend(
+                info.iter()
+                    .filter(|c| !ours.iter().any(|(n, _)| *n == c.name))
+                    .map(|c| Slash {
+                        name: c.name.clone(),
+                        detail: c.description.chars().take(90).collect(),
+                        agent: Some(agent),
+                    }),
+            );
+        }
+        list
     }
 
     /// The sidebar as data: each space and its threads, with what each row shows.
@@ -272,7 +307,13 @@ impl Root {
                     images: images.into_iter().map(std::path::PathBuf::from).collect(),
                 };
                 if let Some(v) = self.structured_view(thread, cx) {
-                    v.update(cx, |v, cx| v.send_prompt(prompt, cx));
+                    for message in v.update(cx, |v, cx| v.send_prompt(prompt, cx)) {
+                        self.client.send(Command::Phone(PhoneCommand::Note {
+                            to: from,
+                            thread,
+                            message,
+                        }));
+                    }
                 }
             }
             Ask::Steer {
@@ -296,6 +337,11 @@ impl Root {
             Ask::StopTask { thread, task } => {
                 if let Some(v) = self.structured_view(thread, cx) {
                     v.update(cx, |v, cx| v.stop_task(task, cx));
+                }
+            }
+            Ask::DropAside { thread } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.drop_aside(cx));
                 }
             }
             Ask::Approve {

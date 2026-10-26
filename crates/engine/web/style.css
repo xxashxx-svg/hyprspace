@@ -857,6 +857,37 @@ button:disabled {
   padding: 6px 24px 14px;
 }
 
+.aside {
+  margin-bottom: 8px;
+  padding: 4px 6px 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 4.5%, transparent);
+}
+
+.aside-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text3);
+}
+
+.aside-question {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  color: var(--text2);
+}
+
+.aside-body {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 6px;
+  font-size: 13.5px;
+}
+
 .tray {
   display: flex;
   flex-direction: column;

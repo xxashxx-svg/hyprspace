@@ -47,6 +47,9 @@ data class TranscriptView(
     val items: List<Item> = emptyList(),
     val model: String? = null,
     val context: Pair<Long, Long>? = null,
+    /** The computer has prompts from before these. */
+    val earlier: Boolean = false,
+    val prompts: Int = 0,
     val loaded: Boolean = false,
 )
 
@@ -73,6 +76,8 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private val transcripts = HashMap<Long, Pair<Transcript, MutableStateFlow<TranscriptView>>>()
     private val terms = HashMap<Long, Pair<TermBuffer, MutableStateFlow<TermView>>>()
     private val watching = LinkedHashSet<Long>()
+    // how much of each thread's journal to ask for, from its end
+    private val tails = HashMap<Long, Int>()
     private val fits = HashMap<Long, Pair<Int, Int>>()
     private val lock = Any()
 
@@ -199,7 +204,10 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             }
             // what was open before the line dropped opens again
             val (watched, fitted) = synchronized(lock) { watching.toList() to fits.toMap() }
-            for (t in watched) send(s, Up.Watch(t))
+            for (t in watched) {
+                asideOf(t).value = null
+                send(s, Up.Watch(t, tail(t)))
+            }
             for ((t, size) in fitted) send(s, Up.Fit(t, size.first, size.second))
             _lines.value++
             // a line can go quiet without closing, and whatever is sent into it then is lost:
@@ -335,15 +343,18 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             }
             is Down.Transcript -> synchronized(lock) {
                 val (t, flow) = transcripts.getOrPut(d.thread) { Transcript() to MutableStateFlow(TranscriptView()) }
-                if (d.reset) t.reset()
+                if (d.reset) t.reset(d.before)
                 d.entries.forEach { t.add(it, replay = d.reset) }
-                flow.value = TranscriptView(t.items(), t.model, t.context, loaded = true)
+                flow.value = TranscriptView(t.items(), t.model, t.context, loaded = true, earlier = t.before > 0, prompts = t.prompts)
             }
             is Down.Term -> synchronized(lock) {
                 val (b, flow) = terms.getOrPut(d.frame.thread) { TermBuffer() to MutableStateFlow(TermView()) }
                 flow.value = b.apply(d.frame)
             }
             is Down.Failed -> _failures.tryEmit(d.message)
+            is Down.Note -> _failures.tryEmit(d.message)
+            is Down.Commands -> _commands.value = d.list
+            is Down.Aside -> asideOf(d.thread).value = d.aside
             is Down.Folders -> _folders.value = d
             is Down.Uploaded -> uploads.remove(d.id)?.complete(d)
             is Down.Welcome, is Down.Denied, Down.Pong -> {}
@@ -353,6 +364,16 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     fun transcript(thread: Long): StateFlow<TranscriptView> = synchronized(lock) {
         transcripts.getOrPut(thread) { Transcript() to MutableStateFlow(TranscriptView()) }.second
     }
+
+    private val _commands = MutableStateFlow<List<Slash>>(emptyList())
+    val commands: StateFlow<List<Slash>> = _commands
+
+    private val asides = HashMap<Long, MutableStateFlow<AsideView?>>()
+
+    private fun asideOf(thread: Long) = synchronized(lock) { asides.getOrPut(thread) { MutableStateFlow<AsideView?>(null) } }
+
+    /** The thread's side question (`/btw`), which the computer sends again on each watch. */
+    fun aside(thread: Long): StateFlow<AsideView?> = asideOf(thread)
 
     fun term(thread: Long): StateFlow<TermView> = synchronized(lock) {
         terms.getOrPut(thread) { TermBuffer() to MutableStateFlow(TermView()) }.second
@@ -378,6 +399,11 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         return r?.path
     }
 
+    /** A line for the snackbar that isn't about something failing. */
+    fun say(message: String) {
+        _failures.tryEmit(message)
+    }
+
     fun fail(message: String) {
         _failures.tryEmit(message)
     }
@@ -400,13 +426,23 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     fun watch(thread: Long) {
         synchronized(lock) { watching += thread }
-        send(Up.Watch(thread))
+        asideOf(thread).value = null
+        send(Up.Watch(thread, tail(thread)))
+    }
+
+    private fun tail(thread: Long): Int = synchronized(lock) { tails[thread] ?: TAIL }
+
+    /** Asks for the thread again with four times the journal. */
+    fun earlier(thread: Long) {
+        synchronized(lock) { tails[thread] = tail(thread) * 4 }
+        send(Up.Watch(thread, tail(thread)))
     }
 
     fun unwatch(thread: Long) {
         synchronized(lock) {
             watching -= thread
             fits -= thread
+            tails -= thread
         }
         send(Up.Unwatch(thread))
     }
@@ -471,6 +507,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     companion object {
         private const val TAG = "HyprLink"
+        private const val TAIL = 200_000
 
         /** What the computer's Settings lists this phone as. */
         var deviceName: () -> String = { android.os.Build.MODEL }

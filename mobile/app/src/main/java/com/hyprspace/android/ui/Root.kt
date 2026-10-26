@@ -43,7 +43,7 @@ fun HyprApp(app: App) {
             } else {
                 BackHandler(enabled = screen != Screen.Home) { nav.back() }
                 when (screen) {
-                    is Screen.Thread -> ThreadScreen(app, screen.id, onBack = { nav.back() })
+                    is Screen.Thread -> ThreadScreen(app, screen.id, onBack = { nav.back() }, onOpen = { nav.go(Screen.Thread(it)) })
                     Screen.Settings -> SettingsScreen(app, onBack = { nav.back() }, onPair = { nav.go(Screen.Pair) })
                     else -> HomeScreen(
                         app,

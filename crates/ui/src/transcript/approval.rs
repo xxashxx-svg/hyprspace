@@ -4,18 +4,15 @@
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, IntoElement, div, prelude::*};
 use hyprspace_proto::{Answer, Tool};
 
-use super::{TranscriptView, tool};
+use super::{Item, TranscriptView, tool};
 use crate::assets::icon;
 use crate::colors;
 use crate::zoom::px;
 
-#[allow(clippy::too_many_arguments)]
 pub fn card(
     v: &TranscriptView,
     request: &str,
     t: &Tool,
-    reason: Option<&str>,
-    always: bool,
     answer: Option<Answer>,
     expired: bool,
     cx: &mut Context<TranscriptView>,
@@ -29,9 +26,25 @@ pub fn card(
         }
         _ => {}
     }
-    if answer.is_some() || expired {
-        return answered(t, answer);
+    match answer {
+        None if !expired => line(t, "hand", colors::waiting(), "Waiting for you"),
+        _ => answered(t, answer),
     }
+}
+
+pub fn dock(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyElement> {
+    let open = open(v);
+    let Item::Approval {
+        request,
+        tool: t,
+        reason,
+        always,
+        ..
+    } = open.first()?
+    else {
+        return None;
+    };
+    let count = (open.len() > 1).then(|| format!("1/{}", open.len()));
     let detail = match t {
         Tool::Edit { changes } => Some(tool::diffs(changes)),
         _ => tool::input(t).map(|i| tool::mono(&i)),
@@ -65,43 +78,69 @@ pub fn card(
         .gap(px(10.))
         .px(px(14.))
         .py(px(12.))
+        .mb(px(8.))
         .rounded(px(12.))
         .bg(colors::ink(0.035))
         .border_1()
-        .border_color(colors::ink(0.08))
+        .border_color(colors::waiting().opacity(0.35))
         .child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(icon("hand", 14., colors::text2()))
+                .child(icon("hand", 14., colors::waiting()))
                 .child(
                     div()
+                        .flex_1()
                         .text_size(px(13.))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(colors::text1())
                         .child(ask(t)),
-                ),
+                )
+                .children(count.map(|c| {
+                    div()
+                        .text_size(px(12.))
+                        .text_color(colors::text3())
+                        .child(c)
+                })),
         )
-        .children(reason.map(|r| {
+        .children(reason.as_ref().map(|r| {
             div()
                 .text_size(px(12.5))
                 .text_color(colors::text2())
-                .child(r.to_string())
+                .child(r.clone())
         }))
-        .children(detail)
+        .children(detail.map(|d| {
+            div()
+                .id(("dock-detail", v.id.0))
+                .max_h(px(160.))
+                .overflow_y_scroll()
+                .child(d)
+        }))
         .child(
             div()
                 .flex()
                 .justify_end()
                 .gap_2()
                 .child(button("deny", "Deny", Answer::Deny, false))
-                .when(always, |d| {
+                .when(*always, |d| {
                     d.child(button("always", "Always allow", Answer::AllowAlways, false))
                 })
                 .child(button("allow", "Allow", Answer::Allow, true)),
         )
         .into_any_element()
+        .into()
+}
+
+pub fn open(v: &TranscriptView) -> Vec<&Item> {
+    v.model
+        .items
+        .iter()
+        .filter(|i| {
+            matches!(i, Item::Approval { tool, answer: None, expired: false, .. }
+                if !matches!(super::ask::named(tool), Some((super::ask::QUESTION | super::ask::PLAN, _))))
+        })
+        .collect()
 }
 
 fn ask(t: &Tool) -> String {
@@ -121,6 +160,10 @@ fn answered(t: &Tool, answer: Option<Answer>) -> AnyElement {
         Some(Answer::Deny) => ("x", colors::error(), "Denied"),
         None => ("clock", colors::text3(), "Not answered"),
     };
+    line(t, mark, tint, state)
+}
+
+fn line(t: &Tool, mark: &'static str, tint: gpui::Hsla, state: &'static str) -> AnyElement {
     div()
         .flex()
         .items_center()

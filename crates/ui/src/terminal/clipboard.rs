@@ -29,7 +29,7 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
 impl TerminalView {
     /// Files dropped from File Explorer or Finder: their paths typed in, the way a terminal does,
     /// and images kept so their `[Image #N]` previews before the prompt goes.
-    pub(super) fn drop_paths(
+    pub(crate) fn drop_paths(
         &mut self,
         paths: &ExternalPaths,
         window: &mut Window,

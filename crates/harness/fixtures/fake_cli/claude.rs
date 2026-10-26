@@ -53,7 +53,55 @@ fn control(id: &str, tool: &str, input: Value, rules: Value) -> Value {
     read().unwrap_or_default()
 }
 
+// a side question: one turn on a fork that isn't saved, with every tool refused
+fn aside(args: &[String]) {
+    let Some(msg) = read() else {
+        return;
+    };
+    if prompt_text(&msg).contains("grab-a-tool") {
+        let answer = control("a1", "Bash", json!({ "command": "ls" }), json!([]));
+        if answer["response"]["response"]["behavior"] != "deny" {
+            say("the tool was allowed");
+        }
+        result("error_max_turns", "", json!([]));
+        return;
+    }
+    let has = |f: &str| args.iter().any(|a| a == f);
+    let forked =
+        has("--fork-session") && has("--max-turns") && !has("--dangerously-skip-permissions");
+    say("Side: ");
+    say(if forked { "forked once" } else { "wrong flags" });
+    done("");
+}
+
+fn title(args: &[String]) {
+    let flag = |name: &str| {
+        let at = args.iter().position(|a| a == name)?;
+        args.get(at + 1).cloned()
+    };
+    let asked = std::io::read_to_string(std::io::stdin()).unwrap_or_default();
+    let quiet = flag("--settings")
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .is_some_and(|s| s.contains("disableAllHooks"));
+    if flag("--tools").as_deref() != Some("")
+        || !quiet
+        || flag("--model").as_deref() != Some("haiku")
+    {
+        println!("bad title args: {args:?}");
+    } else if !asked.contains("The conversation:") {
+        println!("no conversation on stdin");
+    } else {
+        println!("\"Fix the login bug.\"");
+    }
+}
+
 pub fn run(args: &[String]) {
+    if args.iter().any(|a| a == "--output-format") && args.iter().any(|a| a == "text") {
+        return title(args);
+    }
+    if args.iter().any(|a| a == "--no-session-persistence") {
+        return aside(args);
+    }
     let flag = |name: &str| {
         let at = args.iter().position(|a| a == name)?;
         args.get(at + 1).cloned()

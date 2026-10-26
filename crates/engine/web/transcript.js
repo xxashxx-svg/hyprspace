@@ -174,4 +174,38 @@ export class Transcript {
   waiting() {
     return this.items.some((it) => it.kind === "approval" && !it.answer && !it.expired);
   }
+
+  folds() {
+    const items = this.items;
+    const asks = (tool) => tool.kind === "other" && ["AskUserQuestion", "ExitPlanMode"].includes(tool.name);
+    const foldable = (it) =>
+      it.kind === "thinking" || it.kind === "reply" || ((it.kind === "call" || it.kind === "approval") && !asks(it.tool)) || (it.kind === "agent" && it.state !== "working");
+    const runs = [];
+    let open = null;
+    items.forEach((it, ix) => {
+      if (it.kind === "user" && !it.steer) open = [ix, ix + 1];
+      else if (it.kind === "finished") {
+        if (open) runs.push([...open, ix]);
+        open = null;
+      } else if (!open && (foldable(it) || it.kind === "error")) open = [ix, ix];
+    });
+    const out = [];
+    for (const [anchor, first, end] of runs) {
+      const done = items[end];
+      const run = items.slice(first, end);
+      if (done.status !== "done" || run.some((it) => it.kind === "error")) continue;
+      const reply = run.findLast((it) => it.kind === "reply");
+      const cuts = [[anchor, first], ...run.flatMap((it, n) => (it.kind === "user" ? [[first + n, first + n + 1]] : []))];
+      cuts.forEach(([a, f], i) => {
+        const to = i + 1 < cuts.length ? cuts[i + 1][0] : end;
+        const hide = items.slice(f, to).filter((it) => it !== reply && foldable(it)).map((it) => it.key);
+        if (hide.length) out.push({ prompt: items[a].key, first: items[f].key, ms: i === 0 ? done.ms : null, hide });
+      });
+    }
+    return out;
+  }
+
+  denies() {
+    return this.items.some((it) => it.kind === "approval" && !it.answer && !it.expired && !(it.tool.kind === "other" && ["AskUserQuestion", "ExitPlanMode"].includes(it.tool.name)));
+  }
 }

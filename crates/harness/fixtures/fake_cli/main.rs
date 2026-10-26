@@ -13,8 +13,12 @@ use serde_json::Value;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().is_some_and(|a| a == "app-server") {
+    if args.first().is_some_and(|a| a == "--version") {
+        println!("9.9.9 (fake)");
+    } else if args.first().is_some_and(|a| a == "app-server") {
         codex::run();
+    } else if args.first().is_some_and(|a| a == "exec") {
+        codex::exec(&args);
     } else {
         claude::run(&args);
     }

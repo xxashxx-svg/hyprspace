@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::ops::Range;
 
 use hyprspace_proto::RunStatus;
 
 use super::ask;
-use super::model::Item;
+use super::model::{AgentState, Item};
 use crate::markdown::{Block, Unit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,10 @@ pub enum Row {
         part: usize,
     },
     Quiet(usize),
+    Fold {
+        prompt: usize,
+        ms: Option<u64>,
+    },
     Working,
     /// Where what came while the thread was off screen starts.
     New,
@@ -88,6 +93,7 @@ pub fn mark_new(mut rows: Vec<Row>, from: Option<usize>) -> Vec<Row> {
     };
     let at = rows.iter().position(|r| match r {
         Row::Item { ix, .. } | Row::Part { ix, .. } | Row::Quiet(ix) => *ix >= from,
+        Row::Fold { prompt, .. } => *prompt >= from,
         _ => false,
     });
     if let Some(at) = at {
@@ -108,7 +114,104 @@ pub fn split(rows: Vec<Row>, parts: impl Fn(usize) -> usize) -> Vec<Row> {
     out
 }
 
-pub fn plan(all: &[Item], loading: bool, live: bool) -> Vec<Row> {
+pub struct Fold {
+    pub prompt: usize,
+    pub first: usize,
+    pub ms: Option<u64>,
+    pub hide: Vec<usize>,
+}
+
+fn foldable(item: &Item) -> bool {
+    match item {
+        Item::Thinking { .. } | Item::Text { .. } => true,
+        Item::Tool { tool, .. } | Item::Approval { tool, .. } => {
+            !matches!(ask::named(tool), Some((ask::QUESTION | ask::PLAN, _)))
+        }
+        Item::Agent(a) => a.state != AgentState::Working,
+        _ => false,
+    }
+}
+
+fn runs(all: &[Item]) -> Vec<(usize, usize, usize)> {
+    let mut out = Vec::new();
+    let mut open = None;
+    for (ix, item) in all.iter().enumerate() {
+        match item {
+            Item::User { steer: false, .. } => open = Some((ix, ix + 1)),
+            Item::Finished { .. } => {
+                if let Some((anchor, first)) = open.take() {
+                    out.push((anchor, first, ix));
+                }
+            }
+            _ if open.is_none() && (foldable(item) || matches!(item, Item::Error(_))) => {
+                open = Some((ix, ix));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+pub fn folds(all: &[Item]) -> Vec<Fold> {
+    let mut out = Vec::new();
+    for (anchor, first, end) in runs(all) {
+        let Item::Finished {
+            status: RunStatus::Done,
+            ms,
+            ..
+        } = all[end]
+        else {
+            continue;
+        };
+        let run = first..end;
+        if all[run.clone()].iter().any(|i| matches!(i, Item::Error(_))) {
+            continue;
+        }
+        let reply = run
+            .clone()
+            .rev()
+            .find(|&j| matches!(all[j], Item::Text { .. }));
+        let mut cuts = vec![(anchor, first)];
+        cuts.extend(
+            run.filter(|&j| matches!(all[j], Item::User { .. }))
+                .map(|j| (j, j + 1)),
+        );
+        for (i, &(prompt, first)) in cuts.iter().enumerate() {
+            let to = cuts.get(i + 1).map_or(end, |c| c.0);
+            let hide: Vec<usize> = (first..to)
+                .filter(|&j| Some(j) != reply && foldable(&all[j]))
+                .collect();
+            if !hide.is_empty() {
+                out.push(Fold {
+                    prompt,
+                    first,
+                    ms: (i == 0).then_some(ms),
+                    hide,
+                });
+            }
+        }
+    }
+    out
+}
+
+pub fn folded_in(all: &[Item], ix: usize) -> Option<usize> {
+    folds(all)
+        .into_iter()
+        .find(|f| f.hide.contains(&ix))
+        .map(|f| f.prompt)
+}
+
+pub fn plan(all: &[Item], loading: bool, live: bool, open: &HashSet<usize>) -> Vec<Row> {
+    let mut hidden = vec![false; all.len()];
+    let mut heads = std::collections::HashMap::new();
+    for f in folds(all) {
+        if !open.contains(&f.prompt) {
+            for &j in &f.hide {
+                hidden[j] = true;
+            }
+        }
+        heads.insert(f.first, (f.prompt, f.ms));
+    }
     let mut rows = Vec::new();
     if loading {
         rows.push(Row::Loading);
@@ -119,7 +222,12 @@ pub fn plan(all: &[Item], loading: bool, live: bool) -> Vec<Row> {
     let mut ix = 0;
     while ix < all.len() {
         let item = &all[ix];
-        if ask::special(item) {
+        if let Some(&(prompt, ms)) = heads.get(&ix) {
+            rows.push(Row::Fold { prompt, ms });
+        }
+        if hidden[ix] {
+            ix += 1;
+        } else if ask::special(item) {
             if (!todo(item) || Some(ix) == last_todo) && !ask::carded(all, ix) {
                 rows.push(Row::Item { ix, user: false });
             }
@@ -128,15 +236,14 @@ pub fn plan(all: &[Item], loading: bool, live: bool) -> Vec<Row> {
             rows.push(Row::Quiet(ix));
             ix = quiet_end(all, ix);
         } else {
-            let quick = matches!(
+            let done = matches!(
                 item,
                 Item::Finished {
                     status: RunStatus::Done,
-                    ms,
                     ..
-                } if *ms < 10_000
+                }
             );
-            if !quick && late(all, ix).is_none() {
+            if !done && late(all, ix).is_none() {
                 let user = matches!(item, Item::User { .. });
                 rows.push(Row::Item { ix, user });
             }
@@ -205,17 +312,46 @@ mod tests {
     }
 
     #[test]
-    fn a_long_run_keeps_its_finish() {
-        let long = Item::Finished {
-            status: RunStatus::Done,
-            ms: 95_000,
-            error: None,
-        };
+    fn only_a_run_that_did_not_finish_keeps_its_end_line() {
+        let open = HashSet::new();
         assert_eq!(
-            plan(&[user(), long], false, false),
+            plan(&[user(), finished(RunStatus::Done)], false, false, &open),
+            [Row::Item { ix: 0, user: true }]
+        );
+        assert_eq!(
+            plan(
+                &[user(), finished(RunStatus::Interrupted)],
+                false,
+                false,
+                &open
+            ),
             [
                 Row::Item { ix: 0, user: true },
                 Row::Item { ix: 1, user: false },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_run_a_background_task_woke_folds_too() {
+        let items = [
+            user(),
+            reply("started the scan"),
+            finished(RunStatus::Done),
+            call("ls"),
+            reply("scan is done"),
+            finished(RunStatus::Done),
+        ];
+        assert_eq!(
+            plan(&items, false, false, &HashSet::new()),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Item { ix: 1, user: false },
+                Row::Fold {
+                    prompt: 3,
+                    ms: Some(1)
+                },
+                Row::Item { ix: 4, user: false },
             ]
         );
     }
@@ -235,9 +371,13 @@ mod tests {
             finished(RunStatus::Interrupted),
         ];
         assert_eq!(
-            plan(&items, false, true),
+            plan(&items, false, true, &HashSet::from([0])),
             [
                 Row::Item { ix: 0, user: true },
+                Row::Fold {
+                    prompt: 0,
+                    ms: Some(1)
+                },
                 Row::Quiet(1),
                 Row::Item { ix: 4, user: false },
                 Row::Item { ix: 6, user: false },
@@ -263,10 +403,9 @@ mod tests {
         };
         let items = [user(), long, user(), changes];
         assert_eq!(
-            plan(&items, false, true),
+            plan(&items, false, true, &HashSet::new()),
             [
                 Row::Item { ix: 0, user: true },
-                Row::Item { ix: 1, user: false },
                 Row::Item { ix: 3, user: false },
                 Row::Item { ix: 2, user: true },
                 Row::Working,
@@ -326,18 +465,121 @@ mod tests {
         assert_eq!(mark_new(rows.clone(), Some(9)), rows);
     }
 
+    fn reply(text: &str) -> Item {
+        Item::Text {
+            source: text.into(),
+            blocks: None,
+        }
+    }
+
+    fn steer() -> Item {
+        Item::User {
+            text: "also".into(),
+            images: Vec::new(),
+            steer: true,
+        }
+    }
+
+    #[test]
+    fn a_settled_run_folds_its_work_above_the_reply() {
+        let items = [
+            user(),
+            Item::Thinking {
+                text: "hm".into(),
+                open: false,
+            },
+            reply("checking"),
+            call("ls"),
+            Item::Note("n".into()),
+            reply("done"),
+            Item::Finished {
+                status: RunStatus::Done,
+                ms: 21_000,
+                error: None,
+            },
+        ];
+        let head = Row::Fold {
+            prompt: 0,
+            ms: Some(21_000),
+        };
+        assert_eq!(
+            plan(&items, false, false, &HashSet::new()),
+            [
+                Row::Item { ix: 0, user: true },
+                head,
+                Row::Item { ix: 4, user: false },
+                Row::Item { ix: 5, user: false },
+            ]
+        );
+        assert_eq!(
+            plan(&items, false, false, &HashSet::from([0])),
+            [
+                Row::Item { ix: 0, user: true },
+                head,
+                Row::Quiet(1),
+                Row::Item { ix: 2, user: false },
+                Row::Quiet(3),
+                Row::Item { ix: 4, user: false },
+                Row::Item { ix: 5, user: false },
+            ]
+        );
+        assert_eq!(folded_in(&items, 2), Some(0));
+        assert_eq!(folded_in(&items, 5), None);
+    }
+
+    #[test]
+    fn live_failed_and_stopped_runs_stay_open_and_steers_split_the_fold() {
+        let open = HashSet::new();
+        let live = [user(), call("ls"), reply("done")];
+        assert!(folds(&live).is_empty());
+        for status in [RunStatus::Failed, RunStatus::Interrupted] {
+            assert!(folds(&[user(), call("ls"), finished(status)]).is_empty());
+        }
+        let errored = [
+            user(),
+            call("ls"),
+            Item::Error("x".into()),
+            finished(RunStatus::Done),
+        ];
+        assert!(folds(&errored).is_empty());
+        let steered = [
+            user(),
+            call("ls"),
+            steer(),
+            call("pwd"),
+            reply("done"),
+            finished(RunStatus::Done),
+        ];
+        assert_eq!(
+            plan(&steered, false, false, &open),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Fold {
+                    prompt: 0,
+                    ms: Some(1)
+                },
+                Row::Item { ix: 2, user: true },
+                Row::Fold {
+                    prompt: 2,
+                    ms: None
+                },
+                Row::Item { ix: 4, user: false },
+            ]
+        );
+    }
+
     #[test]
     fn only_the_last_task_list_shows() {
         let items = [user(), todo_list(), call("ls"), todo_list()];
         assert_eq!(
-            plan(&items, false, false),
+            plan(&items, false, false, &HashSet::new()),
             [
                 Row::Item { ix: 0, user: true },
                 Row::Quiet(2),
                 Row::Item { ix: 3, user: false },
             ]
         );
-        assert_eq!(plan(&[], false, false), [Row::Empty]);
-        assert_eq!(plan(&[], true, false), [Row::Loading]);
+        assert_eq!(plan(&[], false, false, &HashSet::new()), [Row::Empty]);
+        assert_eq!(plan(&[], true, false, &HashSet::new()), [Row::Loading]);
     }
 }

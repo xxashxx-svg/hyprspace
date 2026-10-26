@@ -10,7 +10,7 @@ use common::{count, events, fake, finished, text};
 use hyprspace_harness::{Claude, Harness, Session};
 use hyprspace_proto::run::{ChangeKind, FileChange};
 use hyprspace_proto::{
-    Agent, Answer, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
+    Agent, Answer, Aside, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
 };
 use serde_json::json;
 
@@ -670,4 +670,50 @@ async fn a_background_task_s_output_is_read_on_request() {
     };
     assert_eq!(task, "b1");
     assert!(output.contains("VITE") && output.contains("GET /"));
+}
+
+async fn aside(launch: Launch, question: &str) -> Vec<Aside> {
+    let mut heard = Vec::new();
+    claude()
+        .aside(launch, question.into(), |a| heard.push(a))
+        .await;
+    heard
+}
+
+#[tokio::test]
+async fn a_side_question_forks_once_and_streams_its_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut launch = Launch::new(Agent::Claude, dir.path());
+    launch.resume = Some("fake-session".into());
+    launch.permission = Permission::Bypass;
+    let said = aside(launch.clone(), "what are you doing?").await;
+    let text: String = said
+        .iter()
+        .filter_map(|a| match a {
+            Aside::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Full access drops to Ask, and the fork isn't saved
+    assert_eq!(text, "Side: forked once");
+    assert_eq!(said.last(), Some(&Aside::Done));
+
+    let said = aside(launch.clone(), "grab-a-tool").await;
+    assert!(
+        matches!(said.last(), Some(Aside::Failed { message }) if message.contains("needs a tool"))
+    );
+
+    launch.resume = None;
+    let said = aside(launch, "anything").await;
+    assert!(
+        matches!(said.as_slice(), [Aside::Failed { message }] if message.contains("Send a message first"))
+    );
+}
+
+#[tokio::test]
+async fn a_title_comes_from_one_quiet_run_with_the_conversation_on_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let ask = hyprspace_harness::title::ask("fix login", None);
+    let title = claude().title(dir.path(), None, &ask).await;
+    assert_eq!(title.as_deref(), Some("Fix the login bug"));
 }

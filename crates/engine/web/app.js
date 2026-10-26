@@ -113,8 +113,14 @@ class App {
         break;
       }
       case "failed":
+      case "note":
         this.say(d.message);
         break;
+      case "aside": {
+        const v = this.views.get(d.thread);
+        if (v instanceof Chat) v.side(d.aside || null);
+        break;
+      }
       case "started":
         if (d.request === this.requests) this.go({ thread: d.thread });
         break;
@@ -169,8 +175,9 @@ class App {
     }
     this.watched = id;
     if (id == null) return;
-    this.send({ type: "watch", thread: id });
     const v = this.views.get(id);
+    if (v instanceof Chat) v.side(null);
+    this.send({ type: "watch", thread: id });
     if (v instanceof Term && again) {
       v.size = null;
       v.fit();

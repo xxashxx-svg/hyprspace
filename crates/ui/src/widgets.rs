@@ -61,10 +61,10 @@ pub fn primary_frame(id: impl Into<ElementId>) -> Stateful<Div> {
         .hover(|s| s.bg(colors::accent_hover()))
 }
 
-/// The round send button in a prompt box, zeron's: the text color filled in, its arrow cut out
-/// in the background color.
-pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
-    div()
+/// The round send button in a prompt box: the accent once there is something to send, muted
+/// until then.
+pub fn send(id: impl Into<ElementId>, icon_name: &str, ready: bool) -> Stateful<Div> {
+    let b = div()
         .id(id)
         .flex()
         .flex_none()
@@ -72,10 +72,38 @@ pub fn send(id: impl Into<ElementId>, icon_name: &str) -> Stateful<Div> {
         .justify_center()
         .size(px(28.))
         .rounded_full()
-        .bg(colors::text1())
-        .cursor_pointer()
-        .hover(|s| s.bg(colors::text1().opacity(0.85)))
-        .child(icon(icon_name, 15., colors::bg()))
+        .cursor_pointer();
+    if ready {
+        b.bg(colors::accent())
+            .hover(|s| s.bg(colors::accent_hover()))
+            .child(icon(icon_name, 15., colors::on_accent()))
+    } else {
+        b.bg(colors::ink(0.1))
+            .hover(|s| s.bg(colors::ink(0.16)))
+            .child(icon(icon_name, 15., colors::text3()))
+    }
+}
+
+pub const BOX_RADIUS: f32 = 20.;
+
+pub fn composer_box(focused: bool) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .rounded(px(BOX_RADIUS))
+        .border_1()
+        .border_color(if focused {
+            colors::ink(0.18)
+        } else {
+            colors::border2()
+        })
+        .bg(if colors::theme().dark {
+            colors::ink(0.04)
+        } else {
+            colors::surface2()
+        })
+        .shadow(colors::lift())
 }
 
 /// Send's neutral twin while a run is live: a round button with a filled square.
@@ -178,8 +206,8 @@ pub fn layer(
 }
 
 /// Like [`layer`], but by a picker's chip, wherever on the chip the click landed: under it when
-/// `below`, else over it, with its right edge on the chip's, so a picker on the right of a box
-/// stays over the box.
+/// `below`, else over it, lined up with the chip's edge nearer the window's middle, so it stays
+/// over the box it came from.
 pub fn by_chip(
     chip: Bounds<Pixels>,
     below: bool,
@@ -187,18 +215,19 @@ pub fn by_chip(
     close: impl Fn(&mut Window, &mut App) + 'static,
     content: impl IntoElement,
 ) -> AnyElement {
-    let (corner, at) = if below {
-        (
-            Anchor::TopRight,
-            point(chip.right(), chip.bottom() + px(6.)),
-        )
-    } else {
-        (
-            Anchor::BottomRight,
-            point(chip.right(), chip.top() - px(6.)),
-        )
+    let left = from_left(chip, window);
+    let x = if left { chip.left() } else { chip.right() };
+    let (corner, at) = match (below, left) {
+        (true, true) => (Anchor::TopLeft, point(x, chip.bottom() + px(6.))),
+        (true, false) => (Anchor::TopRight, point(x, chip.bottom() + px(6.))),
+        (false, true) => (Anchor::BottomLeft, point(x, chip.top() - px(6.))),
+        (false, false) => (Anchor::BottomRight, point(x, chip.top() - px(6.))),
     };
     float(corner, at, window, close, content)
+}
+
+pub fn from_left(chip: Bounds<Pixels>, window: &Window) -> bool {
+    chip.center().x < window.viewport_size().width / 2.
 }
 
 fn float(
@@ -249,17 +278,45 @@ fn menu_frame() -> Stateful<Div> {
         .max_w(px(400.))
         .max_h(px(520.))
         .overflow_y_scroll()
-        .p(px(4.))
+        .p(px(5.))
         .flex()
         .flex_col()
         .gap(px(1.))
-        .rounded(px(9.))
+        .rounded(px(12.))
         .border_1()
         .border_color(colors::border2())
         .bg(colors::surface2())
         .shadow(colors::shadow())
-        .text_size(px(12.))
+        .text_size(px(12.5))
         .text_color(colors::text2())
+}
+
+pub fn popup_with_note(
+    at: Point<Pixels>,
+    open: Open,
+    window: &Window,
+    close: impl Fn(&mut Window, &mut App) + 'static,
+    content: impl IntoElement,
+    note: &'static str,
+) -> AnyElement {
+    let note = div()
+        .mt(px(4.))
+        .mx(px(-5.))
+        .mb(px(-5.))
+        .px(px(12.))
+        .py(px(8.))
+        .border_t_1()
+        .border_color(colors::border1())
+        .text_size(px(11.))
+        .text_color(colors::text3())
+        .child(note);
+    layer(
+        at,
+        open,
+        window,
+        close,
+        menu_frame().child(content).child(note),
+    )
 }
 
 /// A menu in the context-menu frame, floated by `layer`.
@@ -302,11 +359,11 @@ pub fn menu_item(
         .flex()
         .items_center()
         .gap_2()
-        .px(px(8.))
-        .py(px(5.))
-        .rounded(px(6.))
+        .px(px(10.))
+        .py(px(6.))
+        .rounded(px(8.))
         .cursor_pointer()
-        .hover(|s| s.bg(colors::surface3()))
+        .hover(|s| s.bg(colors::ink(0.06)))
         .child(
             div()
                 .flex()

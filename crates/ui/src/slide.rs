@@ -226,6 +226,7 @@ impl Glide {
                 self.state.set(Some((here, to, now)));
                 here
             }
+            Some((_, at, start)) if now - start >= GLIDE => at,
             Some((from, _, _)) => from,
         };
         Motion {
@@ -245,7 +246,7 @@ impl Motion {
         f: impl Fn(E, f32) -> E + 'static,
     ) -> AnyElement {
         let Motion { from, to, moves } = self;
-        if moves == 0 || !animations() {
+        if moves == 0 || from == to || !animations() {
             return f(el, to).into_any_element();
         }
         el.with_animation(

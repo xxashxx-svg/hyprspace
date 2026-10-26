@@ -3,6 +3,7 @@
 // as runs or steers, answers approvals, and tells the root when its status changes.
 
 mod approval;
+mod aside;
 mod ask;
 mod background;
 mod branch;
@@ -37,6 +38,8 @@ use crate::zoom::px;
 pub use model::Status;
 use model::{Item, Transcript};
 
+pub(crate) use commands::for_phone as phone_commands;
+
 pub enum TranscriptEvent {
     Status(Status),
     /// The CLI is up: the id that resumes its conversation, and the folder it runs in.
@@ -62,6 +65,8 @@ pub enum TranscriptEvent {
     NewThread,
     /// `/login`: sign the agent in again in a shell under the thread.
     SignIn,
+    Rename(String),
+    Settings(crate::settings::Tab),
     Fork {
         launch: Launch,
         keep: usize,
@@ -110,6 +115,9 @@ pub struct TranscriptView {
     requeue_at: Option<usize>,
     task_open: Option<String>,
     task_log: Option<String>,
+    aside: Option<aside::Card>,
+    /// The agent CLI's version, for `/status`.
+    cli_version: Option<String>,
     task_poll: Option<Task<()>>,
     catalog: Option<AgentCatalog>,
     menu: Option<ModelMenu>,
@@ -133,6 +141,10 @@ pub struct TranscriptView {
     pub(super) picks: std::collections::HashMap<String, Vec<Vec<usize>>>,
     pub(super) steps: std::collections::HashMap<String, usize>,
     pub(super) expanded: HashSet<usize>,
+    pub(super) unfolded: HashSet<usize>,
+    pub(super) turn_flip: Option<(usize, bool)>,
+    pub(super) turn_primed: bool,
+    pub(super) turn_anim: Option<(usize, bool, HashSet<usize>)>,
     pub(super) answered: std::collections::HashMap<String, Vec<(String, String)>>,
     /// What was typed for each question's Other choice, and the field open for one.
     pub(super) others: std::collections::HashMap<String, Vec<String>>,
@@ -186,7 +198,12 @@ impl TranscriptView {
             InputEvent::Cancel => this.interrupt(cx),
             InputEvent::Images(images) => {
                 let asked = images.len();
-                attach::mark(&this.input, this.images.len() + this.saving + 1, asked, cx);
+                attach::mark(
+                    &this.input,
+                    this.images.len() + this.saving + 1,
+                    &vec!["Image"; asked],
+                    cx,
+                );
                 this.saving += asked;
                 attach::save_later(images.clone(), cx, move |this, saved, cx| {
                     this.saving -= asked;
@@ -265,6 +282,8 @@ impl TranscriptView {
             requeue_at: None,
             task_open: None,
             task_log: None,
+            aside: None,
+            cli_version: None,
             task_poll: None,
             catalog: None,
             menu: None,
@@ -283,6 +302,10 @@ impl TranscriptView {
             picks: Default::default(),
             steps: Default::default(),
             expanded: HashSet::new(),
+            unfolded: HashSet::new(),
+            turn_flip: None,
+            turn_primed: false,
+            turn_anim: None,
             answered: Default::default(),
             others: Default::default(),
             other: None,
@@ -485,9 +508,28 @@ impl TranscriptView {
         }
     }
 
-    pub fn set_catalog(&mut self, catalog: AgentCatalog, cx: &mut Context<Self>) {
+    pub fn set_catalog(
+        &mut self,
+        catalog: AgentCatalog,
+        version: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.catalog = Some(catalog);
+        self.cli_version = version;
         cx.notify();
+    }
+
+    pub fn gist(&self) -> String {
+        self.model
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::User { text, .. } => Some(format!("You: {}", text.trim())),
+                Item::Text { source, .. } => Some(format!("Agent: {}", source.trim())),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 
     pub fn note(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
@@ -495,9 +537,25 @@ impl TranscriptView {
         cx.notify();
     }
 
-    /// A message from the phone, sent the way the reply box sends one.
-    pub fn send_prompt(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
-        self.offer(prompt, cx);
+    /// A message from the phone, sent the way the reply box sends one. A command runs here as it
+    /// would from the box, and the lines it adds come back for the phone.
+    pub fn send_prompt(&mut self, prompt: Prompt, cx: &mut Context<Self>) -> Vec<String> {
+        let known = crate::suggest::commands_of(self.launch.agent, cx);
+        if prompt.images.is_empty()
+            && let Some(slash) = commands::parse(prompt.text.trim(), &known)
+        {
+            let before = self.model.items.len();
+            self.run_slash(slash, true, cx);
+            return self.model.items[before.min(self.model.items.len())..]
+                .iter()
+                .filter_map(|i| match i {
+                    model::Item::Note(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect();
+        }
+        self.redirect(prompt, cx);
+        Vec::new()
     }
 
     /// An approval answered from the phone. An approved plan leaves plan mode, as a click does.
@@ -551,7 +609,7 @@ impl TranscriptView {
                 commands::parse(&text, &crate::suggest::commands_of(self.launch.agent, cx))
         {
             self.input.update(cx, |i, cx| i.set_text("", cx));
-            self.run_slash(slash, cx);
+            self.run_slash(slash, false, cx);
             return;
         }
         let prompt = Prompt {
@@ -559,7 +617,24 @@ impl TranscriptView {
             images: std::mem::take(&mut self.images),
         };
         self.input.update(cx, |i, cx| i.set_text("", cx));
-        self.offer(prompt, cx);
+        self.redirect(prompt, cx);
+    }
+
+    fn redirect(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
+        let open: Vec<String> = approval::open(self)
+            .into_iter()
+            .filter_map(|i| match i {
+                Item::Approval { request, .. } => Some(request.clone()),
+                _ => None,
+            })
+            .collect();
+        if open.is_empty() {
+            return self.offer(prompt, cx);
+        }
+        for request in open {
+            self.answer(request, Answer::Deny, cx);
+        }
+        self.send(prompt, cx);
     }
 
     fn offer(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
@@ -610,6 +685,17 @@ impl TranscriptView {
             false => format!("{}\n\n{draft}", prompt.text),
         };
         self.images.splice(0..0, prompt.images);
+        self.input.update(cx, |i, cx| i.set_text(text, cx));
+        window.focus(&self.input.focus_handle(cx), cx);
+    }
+
+    pub(super) fn cite(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let quote = quoted(text);
+        let draft = self.input.read(cx).text().trim_end().to_string();
+        let text = match draft.is_empty() {
+            true => format!("{quote}\n\n"),
+            false => format!("{draft}\n\n{quote}\n\n"),
+        };
         self.input.update(cx, |i, cx| i.set_text(text, cx));
         window.focus(&self.input.focus_handle(cx), cx);
     }
@@ -1209,7 +1295,8 @@ impl TranscriptView {
                 return;
             };
             let _ = this.update(cx, |v, cx| {
-                v.images.extend(paths.into_iter().filter(|p| p.is_file()));
+                let files: Vec<PathBuf> = paths.into_iter().filter(|p| p.is_file()).collect();
+                v.attach(files, cx);
                 v.keep_draft(cx);
                 cx.notify();
             });
@@ -1267,7 +1354,9 @@ impl TranscriptView {
 
     fn run_if_own(&mut self, cx: &mut Context<Self>) {
         let text = self.input.read(cx).text().trim().to_string();
-        if let Some(commands::Slash::Own(_)) = commands::parse(&text, &[]) {
+        if let Some(commands::Slash::Own(own, _)) = commands::parse(&text, &[])
+            && !commands::wants_text(own)
+        {
             self.submit(cx);
         }
     }
@@ -1323,7 +1412,9 @@ impl TranscriptView {
         if self.find.is_some() {
             self.refind(false, cx);
         }
-        let hint = if self.model.running() {
+        let hint = if !approval::open(self).is_empty() {
+            APPROVAL_HINT
+        } else if self.model.running() {
             RUNNING_HINT
         } else {
             IDLE_HINT
@@ -1390,11 +1481,22 @@ impl TranscriptView {
         self.rows = rows;
     }
 
+    fn attach(&mut self, files: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let words: Vec<&str> = files.iter().map(|f| attach::word(f)).collect();
+        attach::mark(&self.input, self.images.len() + self.saving + 1, &words, cx);
+        self.images.extend(files);
+    }
+
     /// Files dropped on the thread: images go in with the next message, anything else has its
     /// path typed in at the cursor, as a terminal does, and the box takes the keyboard.
-    fn drop_paths(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn drop_paths(
+        &mut self,
+        paths: &ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let (images, text) = attach::split_drop(paths.paths());
-        self.images.extend(images);
+        self.attach(images, cx);
         self.keep_draft(cx);
         if !text.is_empty() {
             self.input.update(cx, |i, cx| i.insert(&text, cx));
@@ -1474,9 +1576,17 @@ pub fn bind_keys(cx: &mut gpui::App) {
     ]);
 }
 
-const IDLE_HINT: &str = "Ask for anything";
+const IDLE_HINT: &str = "Ask anything, @ for files, / for commands";
 const CONTINUE: &str = "The usage limit has reset. Continue where you left off.";
 const RESUME: &str = "The app closed before your last run finished. Continue where you left off.";
+
+fn quoted(text: &str) -> String {
+    text.trim()
+        .lines()
+        .map(|l| format!("> {l}").trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// The prompt that picks a run back up after an update, naming the background work that stopped.
 fn after_update(work: &[String]) -> String {
@@ -1499,6 +1609,7 @@ fn after_update(work: &[String]) -> String {
     text
 }
 const RUNNING_HINT: &str = "Queue a message for when it finishes";
+const APPROVAL_HINT: &str = "Send a message to deny and redirect the agent";
 
 impl Focusable for TranscriptView {
     fn focus_handle(&self, cx: &gpui::App) -> gpui::FocusHandle {

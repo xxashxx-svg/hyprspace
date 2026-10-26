@@ -86,7 +86,7 @@ sealed interface Up {
     data object Leave : Up
 
     @Serializable @SerialName("watch")
-    data class Watch(val thread: Long) : Up
+    data class Watch(val thread: Long, val tail: Int? = null) : Up
 
     @Serializable @SerialName("unwatch")
     data class Unwatch(val thread: Long) : Up
@@ -160,6 +160,9 @@ sealed interface Ask {
 
     @Serializable @SerialName("stopTask")
     data class StopTask(val thread: Long, val task: String) : Ask
+
+    @Serializable @SerialName("dropAside")
+    data class DropAside(val thread: Long) : Ask
 }
 
 /** When a snoozed thread wakes: `time` at [at] (unix ms), or `done` when its turn ends. */
@@ -195,13 +198,28 @@ sealed interface Down {
     data class BoardMsg(val board: Board) : Down
 
     @Serializable @SerialName("transcript")
-    data class Transcript(val thread: Long, val entries: List<Entry>, val reset: Boolean) : Down
+    data class Transcript(
+        val thread: Long,
+        val entries: List<Entry>,
+        val reset: Boolean,
+        @EncodeDefault(EncodeDefault.Mode.NEVER) val before: Int = 0,
+    ) : Down
 
     @Serializable @SerialName("term")
     data class Term(val frame: TermFrame) : Down
 
     @Serializable @SerialName("failed")
     data class Failed(val thread: Long? = null, val message: String) : Down
+
+    @Serializable @SerialName("note")
+    data class Note(val thread: Long, val message: String) : Down
+
+    @Serializable @SerialName("commands")
+    data class Commands(val list: List<Slash>) : Down
+
+    /** A watched thread's side question so far, or null once it's closed. */
+    @Serializable @SerialName("aside")
+    data class Aside(val thread: Long, val aside: AsideView? = null) : Down
 
     @Serializable @SerialName("pong")
     data object Pong : Down
@@ -524,3 +542,10 @@ sealed interface Tool {
 
 @Serializable
 data class FileChange(val path: String, val kind: ChangeKind, val diff: String)
+
+@Serializable
+data class AsideView(val question: String, val text: String, val done: Boolean, val error: String? = null)
+
+/** A slash command to offer as `/` is typed: the desktop's own when [agent] is null, else that agent's. */
+@Serializable
+data class Slash(val name: String, val detail: String = "", val agent: Agent? = null)

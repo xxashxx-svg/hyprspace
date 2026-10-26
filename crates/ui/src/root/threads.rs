@@ -381,15 +381,15 @@ impl Root {
                 let catalog = agents
                     .iter()
                     .find(|a| a.agent == launch.agent)
-                    .map(|a| a.catalog.clone());
+                    .map(|a| (a.catalog.clone(), a.status.version.clone()));
                 let v = cx.new(|cx| {
                     let mut v =
                         TranscriptView::new(session, launch, thread, history, first, client, cx);
                     if remote.is_some() {
                         v.set_remote();
                     }
-                    if let Some(c) = catalog {
-                        v.set_catalog(c, cx);
+                    if let Some((c, version)) = catalog {
+                        v.set_catalog(c, version, cx);
                     }
                     v
                 });
@@ -485,7 +485,32 @@ impl Root {
         }
     }
 
+    pub(super) fn retitle(&mut self, thread: u64, name: String) {
+        if !name.is_empty()
+            && let Some(t) = self.state.thread_mut(thread)
+            && t.title != name
+        {
+            t.title = name.clone();
+            self.ask_host(thread, |thread| Ask::Rename {
+                thread,
+                title: name,
+            });
+            self.save();
+        }
+    }
+
     fn on_transcript(&mut self, thread: u64, e: &TranscriptEvent, cx: &mut Context<Self>) {
+        match e {
+            TranscriptEvent::Rename(name) => {
+                self.retitle(thread, name.clone());
+                return cx.notify();
+            }
+            TranscriptEvent::Settings(tab) => {
+                self.work.settings = Some(*tab);
+                return cx.notify();
+            }
+            _ => {}
+        }
         if self.machines.remote(thread).is_some() {
             match e {
                 TranscriptEvent::Status(s) => {
@@ -514,6 +539,7 @@ impl Root {
             return;
         }
         match e {
+            TranscriptEvent::Rename(_) | TranscriptEvent::Settings(_) => {}
             TranscriptEvent::NewThread => {
                 self.work.compose = self.state.thread(thread).map(|(s, _)| s.id);
             }
@@ -634,6 +660,26 @@ impl Root {
         cx.notify();
     }
 
+    pub(crate) fn drop_anywhere(
+        &mut self,
+        paths: &gpui::ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::attach::hold(false);
+        match self.screen {
+            Screen::Thread(id) => match self.views.get(&id) {
+                Some(View::Structured(v)) => v.update(cx, |v, cx| v.drop_paths(paths, window, cx)),
+                Some(View::Terminal(t)) => t.update(cx, |t, cx| t.drop_paths(paths, window, cx)),
+                None => {}
+            },
+            Screen::Compose(_) => self
+                .composer
+                .update(cx, |c, cx| c.drop_paths(paths, window, cx)),
+            Screen::Settings => {}
+        }
+    }
+
     /// Opens a file a terminal pointed at, in the viewer card at its line. The event
     /// comes without the window, so the workbench picks it up on its next draw.
     pub(crate) fn open_file(
@@ -667,6 +713,10 @@ impl Root {
             launch.cwd = scratch_folder(&title);
         }
         let resumed = launch.resume.is_some() && !terminal;
+        let ask = prompt
+            .as_ref()
+            .filter(|_| launch.resume.is_none() && self.state.titles)
+            .map(|p| p.text.clone());
         let kind = if terminal {
             // a Claude thread claims its conversation id up front, so it can resume it later
             if launch.agent == Agent::Claude && launch.resume.is_none() {
@@ -691,6 +741,9 @@ impl Root {
         s.folded = false;
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, prompt, false, cx);
+        if let Some(text) = ask {
+            self.name_thread(thread.id, &text, None, cx);
+        }
         if resumed && let Some(View::Structured(v)) = self.views.get(&thread.id) {
             v.update(cx, |v, cx| {
                 v.note(
@@ -915,6 +968,7 @@ impl Root {
             }
             Action::Worktree(id, action) => self.finish_worktree(id, action, window, cx),
             Action::ProjectIcon(space) => self.open_icon_picker(space, at, window, cx),
+            Action::RegenerateTitle(thread) => self.regenerate_title(thread, cx),
             Action::OpenIn(opener, space) => {
                 if let Some(cwd) = self.state.space(space).and_then(|s| s.cwd.clone()) {
                     self.open_in(opener, &cwd, cx);
@@ -1010,17 +1064,8 @@ impl Root {
             _ => return,
         };
         let name = input.read(cx).text().trim().to_string();
-        if save
-            && !name.is_empty()
-            && let Some(t) = self.state.thread_mut(thread)
-            && t.title != name
-        {
-            t.title = name.clone();
-            self.ask_host(thread, |thread| Ask::Rename {
-                thread,
-                title: name,
-            });
-            self.save();
+        if save {
+            self.retitle(thread, name);
         }
         self.rename = None;
         // after the key that ended it has finished with the box

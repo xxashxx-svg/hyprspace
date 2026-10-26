@@ -57,9 +57,16 @@ A paired Android phone reaches the desktop app directly, with no server between 
   knows which session is which thread and what each row says. It goes out when a phone is
   connected and it changed, checked every 400 ms. Titles and the doing line are cut to one short
   line: some thread titles hold a whole pasted prompt, and one board was 350 KB before that.
-- **A structured thread** streams its journal: the engine hands a watcher the whole journal under
-  the journal's own lock, then every entry as it is recorded, streamed text piece by piece, so the
+- **A structured thread** streams its journal: the engine hands a watcher the journal under the
+  journal's own lock, then every entry as it is recorded, streamed text piece by piece, so the
   phone misses nothing and hears nothing twice. Reading a transcript starts no session.
+- **Only the end of a long thread.** A journal reaches tens of megabytes, almost all of it tool
+  calls, and one message that size blocks the socket for seconds. The phone's `Watch` asks for a
+  `tail` in bytes and gets the last whole prompts that fit, and at least the last, with `before`
+  counting the prompts left out. "Show earlier" watches again with four times the tail. Item keys
+  and the match for a message still on its way count prompts, not entries, because the file joins
+  a reply's streamed pieces into one line, so entry counts differ between live and reloaded.
+  The browser and other computers send no tail and get the whole journal.
 - **A terminal thread** streams its screen. The desktop's emulator lives in the UI, which the
   engine can't reach, so the engine keeps its own (`mirror.rs`) for each terminal a phone watches,
   started from the last 512 KB the session printed. Watching a terminal whose session isn't
@@ -99,6 +106,15 @@ code as the click: a message to a structured thread goes through the transcript 
 desktop shows it too; a new thread starts without taking the desktop's screen; bringing back a
 snoozed thread wakes it.
 
+A message from the phone runs a slash command the way the box does, and the notes it adds come
+back as `Down::Note`. The phone does a few itself, where the result shows on it: `/copy` and
+`/export` fill its clipboard, an empty `/model` or `/effort` opens its model sheet, and `/clear`
+opens a new thread. The desktop answers the rest, and one that only shows on the computer (`/diff`,
+`/skills`) says so. The commands the phone offers as `/` is typed come in `Down::Commands`, sent
+on connecting and only when they change, since a board goes out on every status change. The phone
+shows no pending bubble for a `/` message, since it may never become one. A side question reaches every phone watching its thread as `Down::Aside`,
+kept by the bridge so a phone that starts watching later still gets it.
+
 A message sent while a structured thread works joins the desktop's queue, the same queue the
 desktop's box fills. The board carries each thread's queue and background tasks, and the phone
 acts on them with `Steer`, `Unqueue` and `StopTask`. A queued message is named by its place and
@@ -114,7 +130,9 @@ since a process can also restart in the middle of a run.
 OkHttp's `send` returns true once a frame is queued, so a message can vanish into a socket that
 died without closing. The link pings when it has heard nothing for 4 seconds and drops the
 socket after 15. After a reconnect, the phone resends a message the computer's transcript and
-queue don't show. A queued message still unconfirmed after 30 seconds goes back into the box. Keystrokes for a terminal go straight to the PTY; a paste with line
+queue don't show. A queued message still unconfirmed after 30 seconds goes back into the box.
+The Android emulator's NAT (`10.0.2.2`) freezes a fresh socket in both directions a few
+seconds in, so test link behavior over `adb reverse` and `127.0.0.1` instead. Keystrokes for a terminal go straight to the PTY; a paste with line
 breaks goes in bracketed when the program asked for that.
 
 ## The app

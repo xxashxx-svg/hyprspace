@@ -39,7 +39,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use hyprspace_harness::{Emit, Session};
-use hyprspace_proto::{Client, Command, Entry, Event, Events, RunEvent, SessionId};
+use hyprspace_proto::{Aside, Client, Command, Entry, Event, Events, RunEvent, SessionId};
 use tokio::runtime::Runtime;
 use tokio::task::block_in_place;
 
@@ -216,6 +216,7 @@ async fn serve(
     let requests = Requests::new(store, tx.clone());
     let delegates = delegate::Delegates::default();
     let mut structured: HashMap<SessionId, Live> = HashMap::new();
+    let mut asides: HashMap<SessionId, tokio::task::JoinHandle<()>> = HashMap::new();
     while let Some(cmd) = rx.next().await {
         let Some(cmd) = peers.route(cmd) else {
             continue;
@@ -475,6 +476,59 @@ async fn serve(
                 // dropping the session kills its CLI
                 structured.remove(&id);
                 terminals.close(id);
+                if let Some(aside) = asides.remove(&id) {
+                    aside.abort();
+                }
+            }
+            Command::Aside {
+                id,
+                launch,
+                question,
+            } => {
+                let _ = tx.unbounded_send(Event::Aside {
+                    id,
+                    aside: Aside::Asked {
+                        question: question.clone(),
+                    },
+                });
+                let events = tx.clone();
+                let said = move |aside| {
+                    let _ = events.unbounded_send(Event::Aside { id, aside });
+                };
+                let task = tokio::spawn(async move {
+                    hyprspace_harness::Claude::default()
+                        .aside(launch, question, said)
+                        .await
+                });
+                // aborting drops the CLI, which is spawned to die with it
+                if let Some(old) = asides.insert(id, task) {
+                    old.abort();
+                }
+            }
+            Command::Title {
+                thread,
+                agent,
+                cwd,
+                model,
+                text,
+                previous,
+            } => {
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let title =
+                        hyprspace_harness::title(agent, &cwd, model, &text, previous.as_deref())
+                            .await;
+                    let _ = tx.unbounded_send(Event::Title { thread, title });
+                });
+            }
+            Command::DropAside { id } => {
+                if let Some(aside) = asides.remove(&id) {
+                    aside.abort();
+                }
+                let _ = tx.unbounded_send(Event::Aside {
+                    id,
+                    aside: Aside::Closed,
+                });
             }
             Command::FindImage {
                 id,

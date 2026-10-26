@@ -415,6 +415,7 @@ impl Root {
             }
             menu.push(MenuEntry::Sub {
                 label: "Snooze".into(),
+                icon: "clock",
                 entries: times,
             });
         }
@@ -423,6 +424,12 @@ impl Root {
             "Rename thread",
             Action::Rename(Rename::Thread(id)),
         ));
+        if self.can_rename_itself(id) {
+            menu.push(MenuEntry::item(
+                "Regenerate title",
+                Action::RegenerateTitle(id),
+            ));
+        }
         if let Some(label) = self.switch_label(t) {
             menu.push(MenuEntry::Item {
                 label: label.into(),
@@ -434,6 +441,7 @@ impl Root {
         if let Some(w) = t.worktree.as_ref().filter(|_| !mirrored) {
             menu.push(MenuEntry::Sub {
                 label: "Worktree".into(),
+                icon: "git-branch",
                 entries: vec![
                     MenuEntry::item(
                         format!("Merge into {}", w.base),
@@ -456,6 +464,7 @@ impl Root {
         {
             menu.push(MenuEntry::Sub {
                 label: format!("Open {} in", s.name).into(),
+                icon: "folder-open",
                 entries: self
                     .work
                     .openers
@@ -482,6 +491,7 @@ impl Root {
         }
         menu.push(MenuEntry::Sub {
             label: "Copy".into(),
+            icon: "copy",
             entries: copy,
         });
         if !mirrored {
@@ -564,6 +574,34 @@ impl Root {
         };
         let title: AnyElement = match self.rename_box(id, px(13.5), FontWeight::MEDIUM) {
             Some(rename) => rename,
+            None if let Some((shown, caret)) = self.typed(id, &t.title) => div()
+                .flex()
+                .items_center()
+                .min_w_0()
+                .h(px(20.))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(13.5))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(if self.naming(id) {
+                            colors::text2()
+                        } else {
+                            colors::text1()
+                        })
+                        .child(shown),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .ml(px(1.))
+                        .w(px(1.5))
+                        .h(px(15.))
+                        .bg(colors::text1())
+                        .when(!caret, |d| d.opacity(0.)),
+                )
+                .into_any_element(),
             None => div()
                 .min_w_0()
                 .truncate()

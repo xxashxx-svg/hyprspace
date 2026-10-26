@@ -59,7 +59,10 @@ how Claude is driven.
   message names it, a built-in or MCP prompt only when it starts one. The disk scan in
   `engine/src/skills.rs` covers a folder no session has opened yet.
 - **Approvals are never auto-answered.** The user picks a permission mode, and Bypass is the way to
-  skip the questions; allowing everything under Ask would make the mode a lie.
+  skip the questions; allowing everything under Ask would make the mode a lie. The one answer
+  given for the user is a deny: a message sent while a tool approval waits (from the box, the
+  phone or the browser) denies it and steers the run, since queueing it behind a run that can't
+  go on would never send it. Questions and plans are left alone.
 - **Resume pins Claude's folder.** `claude --resume <id>` only finds a conversation from the folder
   it started in, so the harness reads the `cwd` recorded in `~/.claude/projects/*/<id>.jsonl` (or
   under `CLAUDE_CONFIG_DIR`) and spawns there, whatever the caller passed. Codex threads carry
@@ -76,6 +79,29 @@ how Claude is driven.
   every rewind already forks. Codex's `thread/revert` rewrites the thread it is given, so a fork
   opens with `thread/fork` and reverts the copy. A Claude fork whose prompt isn't found still
   passes `--fork-session`, or two threads would write one conversation.
+- **Slash commands are ours first.** The CLI's machine mode answers commands that only exist
+  interactively with "isn't available in this environment", and some it does take (`/fast`,
+  `/rename`) change the CLI without telling HyprSpace. So `transcript/commands.rs` handles the
+  ones HyprSpace can do itself before anything reaches the CLI, names the rest of the
+  interactive-only ones as terminal-only, and passes everything else through. The interactive
+  list comes from the CLI binary, the machine one from its `initialize` answer; check both when
+  Claude Code adds commands. `/branch` is a fork with an empty `Rewind`, which keeps the whole
+  conversation.
+- **`/btw` is a fork that answers once.** The CLI's machine mode has no `/btw`, so a side question
+  runs a second `claude` with the thread's own flags plus `--fork-session
+  --no-session-persistence --max-turns 1`, and its answer stays out of the journal. Keeping the
+  flags keeps the prompt cache: `--tools ""` or plan mode would make it read the whole conversation
+  again at full price. Permission drops to Ask, which the cache doesn't see, and every tool request
+  is refused. It sees the conversation up to the last finished reply, since that's what Claude has
+  saved. Claude threads on this computer only.
+- **A thread names itself with one quiet run.** A new thread's first message, or the whole
+  conversation for Regenerate title, goes on stdin to `claude -p` on Haiku or `codex exec
+  --ephemeral` on the catalog's Luna model. Nothing is saved, so it never shows in either CLI's
+  resume list. Claude's run has no tools or MCP servers and a `--settings` file with
+  `disableAllHooks`, or the user's own Stop hooks would fire on every new thread; `--bare` can't do
+  this, since it drops the subscription login. The name lands only if the thread still has the
+  title it had when it asked, so a rename in between wins. On by default, with a switch in
+  Settings, General.
 - **Changes apply in place.** Claude takes a model, 1M window included, as `set_model`, a
   permission as `set_permission_mode`, and effort and fast mode as `apply_flag_settings`. Every
   launch passes `--allow-dangerously-skip-permissions`, or the CLI refuses a later switch to

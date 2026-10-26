@@ -4,6 +4,9 @@
 
 package com.hyprspace.android.ui.thread
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +46,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hyprspace.android.App
 import com.hyprspace.android.R
+import com.hyprspace.android.model.Item
+import com.hyprspace.android.model.exported
 import com.hyprspace.android.net.Agent
 import com.hyprspace.android.net.Ask
 import com.hyprspace.android.net.BoardKind
@@ -53,9 +59,10 @@ import com.hyprspace.android.ui.AgentMark
 import com.hyprspace.android.ui.ConnStrip
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.StatusMark
+import com.hyprspace.android.ui.start.NewThreadScreen
 
 @Composable
-fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
+fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit = {}) {
     val h = LocalHues.current
     val board by app.link.board.collectAsStateWithLifecycle()
     val conn by app.link.conn.collectAsStateWithLifecycle()
@@ -63,6 +70,15 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
     val saved by app.store.saved.collectAsStateWithLifecycle()
     val t = board?.threads?.firstOrNull { it.id == id }
     val online = conn is Conn.Online
+    // /clear opens a new thread here; once it starts, the threads there were before spot it
+    var fresh by remember { mutableStateOf(false) }
+    var before by remember { mutableStateOf<Set<Long>?>(null) }
+    LaunchedEffect(board) {
+        val known = before ?: return@LaunchedEffect
+        val made = board?.threads?.firstOrNull { it.id !in known } ?: return@LaunchedEffect
+        before = null
+        onOpen(made.id)
+    }
 
     // streamed only while it's on screen: a phone in a pocket shouldn't keep a terminal its size
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -159,9 +175,44 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
         when (t?.kind) {
             BoardKind.Structured -> {
                 val view by remember(id) { app.link.transcript(id) }.collectAsStateWithLifecycle()
+                val asked by remember(id) { app.link.aside(id) }.collectAsStateWithLifecycle()
                 var picking by remember { mutableStateOf(false) }
                 val catalog = board?.agents?.firstOrNull { it.agent == t.agent }?.catalog?.takeIf { app.link.desktopAtLeast(MODELS) }
                 val queueing = app.link.desktopAtLeast(QUEUE)
+                val slashes by app.link.commands.collectAsStateWithLifecycle()
+                val context = LocalContext.current
+                // a command whose result shows on the phone runs here; the rest goes to the computer
+                val here: (String) -> Boolean = { text ->
+                    val words = text.trim().removePrefix("/").split(Regex("\\s+"), limit = 2)
+                    val (name, arg) = words[0] to words.getOrElse(1) { "" }
+                    when {
+                        !text.trim().startsWith("/") -> false
+                        name == "copy" -> {
+                            val reply = view.items.lastOrNull { it is Item.Reply } as Item.Reply?
+                            if (reply == null) {
+                                app.link.say("There's no reply to copy yet.")
+                            } else {
+                                clip(context, reply.text)
+                                app.link.say("Copied the last reply.")
+                            }
+                            true
+                        }
+                        name == "export" -> {
+                            clip(context, exported(view.items))
+                            app.link.say("Copied the conversation as Markdown.")
+                            true
+                        }
+                        (name == "model" || name == "effort") && arg.isBlank() && catalog != null -> {
+                            picking = true
+                            true
+                        }
+                        name == "clear" || name == "new" -> {
+                            fresh = true
+                            true
+                        }
+                        else -> false
+                    }
+                }
                 Chat(
                     view = view,
                     working = t.status == BoardStatus.Working || t.status == BoardStatus.Waiting,
@@ -169,7 +220,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                     doing = t.doing,
                     since = t.since,
                     canAnswer = online && t.live,
-                    onSend = { text, images -> app.link.ask(Ask.Send(id, text, images)) },
+                    onSend = { text, images -> if (images.isNotEmpty() || !here(text)) app.link.ask(Ask.Send(id, text, images)) },
                     onStop = { app.link.ask(Ask.Interrupt(id)) },
                     onAnswer = { request, answer, given ->
                         app.link.ask(Ask.Approve(id, request, answer, given.map { listOf(it.first, it.second) }))
@@ -191,12 +242,17 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
                             onSteer = { i, text -> app.link.ask(Ask.Steer(id, i, text)) },
                             onUnqueue = { i, text -> app.link.ask(Ask.Unqueue(id, i, text)) },
                             onStopTask = { task -> app.link.ask(Ask.StopTask(id, task)) },
+                            redirects = app.link.desktopAtLeast(REDIRECT),
                         )
                     } else {
                         null
                     },
                     ultra = t.agent == Agent.Claude,
                     lines = lines,
+                    onEarlier = { app.link.earlier(id) },
+                    aside = asked,
+                    onDropAside = { app.link.ask(Ask.DropAside(id)) },
+                    commands = slashes.filter { it.agent == null || it.agent == t.agent },
                 )
                 if (picking && catalog != null) {
                     ModelSheet(catalog, t.modelId, t.effort, onPick = { m, e -> app.link.ask(Ask.Model(id, m, e)) }, onDismiss = { picking = false })
@@ -220,9 +276,29 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit) {
             null -> Spacer(Modifier.weight(1f))
         }
     }
+    val b = board
+    if (fresh && b != null && t != null) {
+        val computer = (conn as? Conn.Online)?.desktop ?: saved.current()?.name ?: "HyprSpace"
+        NewThreadScreen(
+            app,
+            b,
+            t.space,
+            computer,
+            onDismiss = { fresh = false },
+            onStarted = {
+                before = b.threads.map { it.id }.toSet()
+                fresh = false
+            },
+        )
+    }
 }
 
 private const val PHOTOS = "0.24.12"
 private const val MODELS = "0.24.14"
 private const val FILES = "0.24.14"
 private const val QUEUE = "0.24.35"
+private const val REDIRECT = "0.24.36"
+
+private fun clip(context: Context, text: String) {
+    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("HyprSpace", text))
+}

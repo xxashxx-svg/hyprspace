@@ -165,6 +165,11 @@ impl TranscriptView {
         if matches!(self.model.items.get(h.item), Some(Item::User { .. })) {
             self.expanded.insert(h.item);
         }
+        if let Some(prompt) = rows::folded_in(&self.model.items, h.item)
+            && self.unfolded.insert(prompt)
+        {
+            super::render::replan(self);
+        }
         let Some(first) = self
             .rows
             .iter()

@@ -170,6 +170,26 @@ pub fn shadow() -> Vec<BoxShadow> {
     }]
 }
 
+pub fn lift() -> Vec<BoxShadow> {
+    let t = theme();
+    vec![
+        BoxShadow {
+            color: hsla(t.shadow).opacity(if t.dark { 0.5 } else { 0.45 }),
+            offset: point(px(0.), px(6.)),
+            blur_radius: px(22.),
+            spread_radius: px(0.),
+            inset: false,
+        },
+        BoxShadow {
+            color: ink(if t.dark { 0.05 } else { 0. }),
+            offset: point(px(0.), px(1.)),
+            blur_radius: px(0.),
+            spread_radius: px(0.),
+            inset: true,
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

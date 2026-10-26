@@ -23,10 +23,10 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use futures::channel::mpsc::UnboundedSender;
 use hyprspace_proto::phone::{
-    Ask, Board, BoardKind, Down, Network, PROTOCOL, Pairing, PhoneCommand, PhoneEvent, PhoneStatus,
-    Up,
+    AsideView, Ask, Board, BoardKind, Down, Network, PROTOCOL, Pairing, PhoneCommand, PhoneEvent,
+    PhoneStatus, Slash, Up,
 };
-use hyprspace_proto::{Entry, Event, FolderCommand, SessionId};
+use hyprspace_proto::{Aside, Entry, Event, FolderCommand, SessionId};
 use tokio::task::JoinHandle;
 
 use crate::folder::Folders;
@@ -87,6 +87,9 @@ struct Hub {
     ticks: u32,
     sessions: HashMap<u64, SessionId>,
     threads: HashMap<SessionId, u64>,
+    /// Each thread's side question, for the phones that watch it now or later.
+    asides: HashMap<u64, AsideView>,
+    commands: Vec<Slash>,
     terms: HashMap<SessionId, Term>,
     journals: HashMap<String, Weak<Journal>>,
 }
@@ -164,6 +167,8 @@ impl Phone {
             ticks: 0,
             sessions: HashMap::new(),
             threads: HashMap::new(),
+            asides: HashMap::new(),
+            commands: Vec::new(),
             terms: HashMap::new(),
             journals: HashMap::new(),
         })))
@@ -200,6 +205,22 @@ impl Phone {
             } => {
                 if let Some(c) = self.hub().conns.get(&to) {
                     let _ = c.tx.unbounded_send(Down::Started { request, thread });
+                }
+            }
+            PhoneCommand::Commands { list } => {
+                let mut hub = self.hub();
+                if hub.commands != list {
+                    hub.commands = list.clone();
+                    hub.broadcast(Down::Commands { list });
+                }
+            }
+            PhoneCommand::Note {
+                to,
+                thread,
+                message,
+            } => {
+                if let Some(c) = self.hub().conns.get(&to) {
+                    let _ = c.tx.unbounded_send(Down::Note { thread, message });
                 }
             }
             PhoneCommand::Pair => {
@@ -481,6 +502,10 @@ impl Phone {
         hub.board.present = idle::present();
         let board = Box::new(hub.board.clone());
         let _ = tx.unbounded_send(Down::Board { board });
+        if !hub.commands.is_empty() {
+            let list = hub.commands.clone();
+            let _ = tx.unbounded_send(Down::Commands { list });
+        }
         hub.conns.insert(
             conn,
             Conn {
@@ -520,7 +545,7 @@ impl Phone {
     /// Everything a phone sends after it is in.
     fn handle(&self, conn: u64, up: Up) {
         match up {
-            Up::Watch { thread } => self.watch(conn, thread),
+            Up::Watch { thread, tail } => self.watch(conn, thread, tail),
             Up::Unwatch { thread } => {
                 let mut hub = self.hub();
                 hub.unwatch(conn, thread, true);
@@ -591,7 +616,8 @@ impl Phone {
                     | Ask::Pin { thread, .. }
                     | Ask::Steer { thread, .. }
                     | Ask::Unqueue { thread, .. }
-                    | Ask::StopTask { thread, .. } => known(*thread),
+                    | Ask::StopTask { thread, .. }
+                    | Ask::DropAside { thread } => known(*thread),
                 };
                 if ok {
                     let _ = hub
@@ -778,7 +804,7 @@ impl Phone {
         ptys.write(id, &bytes);
     }
 
-    fn watch(&self, conn: u64, thread: u64) {
+    fn watch(&self, conn: u64, thread: u64, tail: Option<u32>) {
         let mut hub = self.hub();
         let kind = hub
             .board
@@ -813,6 +839,12 @@ impl Phone {
             old.live.store(false, Ordering::Relaxed);
         }
         let tx = c.tx.clone();
+        if let Some(aside) = hub.asides.get(&thread) {
+            let _ = tx.unbounded_send(Down::Aside {
+                thread,
+                aside: Some(aside.clone()),
+            });
+        }
         if !structured {
             hub.send_watching();
             return;
@@ -822,17 +854,19 @@ impl Phone {
         let file = journal::path(&hub.journals_dir, &name);
         drop(hub);
         tokio::task::spawn_blocking(move || {
-            let send = |mut entries: Vec<Entry>| {
+            let send = |file: &Path| {
+                let (before, mut entries) = journal::tail(file, tail.map(|t| t as usize));
                 entries.retain(for_phone);
                 let _ = tx.unbounded_send(Down::Transcript {
                     thread,
                     entries,
                     reset: true,
+                    before,
                 });
             };
             match journal {
                 Some(j) => j.watch(Some(Box::new(send)), watcher(thread, live, tx.clone())),
-                None => send(journal::load(&file)),
+                None => send(&file),
             }
         });
     }
@@ -918,6 +952,46 @@ impl Phone {
                             data: bytes.clone(),
                         });
                     }
+                }
+            }
+            Event::Aside { id, aside } => {
+                let mut hub = self.hub();
+                let Some(&thread) = hub.threads.get(id) else {
+                    return;
+                };
+                let view = match aside {
+                    Aside::Asked { question } => Some(AsideView {
+                        question: question.clone(),
+                        text: String::new(),
+                        done: false,
+                        error: None,
+                    }),
+                    Aside::Closed => None,
+                    said => hub.asides.get(&thread).cloned().map(|mut v| {
+                        match said {
+                            Aside::Text { text } => v.text.push_str(text),
+                            Aside::Failed { message } => {
+                                v.done = true;
+                                v.error = Some(message.clone());
+                            }
+                            _ => v.done = true,
+                        }
+                        v
+                    }),
+                };
+                match &view {
+                    Some(v) => hub.asides.insert(thread, v.clone()),
+                    None => hub.asides.remove(&thread),
+                };
+                for c in hub
+                    .conns
+                    .values()
+                    .filter(|c| c.watching.contains_key(&thread))
+                {
+                    let _ = c.tx.unbounded_send(Down::Aside {
+                        thread,
+                        aside: view.clone(),
+                    });
                 }
             }
             Event::TerminalExit { id, code } => {
@@ -1226,6 +1300,7 @@ fn watcher(thread: u64, live: Arc<AtomicBool>, tx: UnboundedSender<Down>) -> jou
                     thread,
                     entries: vec![e.clone()],
                     reset: false,
+                    before: 0,
                 })
                 .is_ok()
     })

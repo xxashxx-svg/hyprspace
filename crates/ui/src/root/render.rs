@@ -71,9 +71,26 @@ impl Root {
     }
 }
 
-const MENU_PAD: f32 = 4.;
-const MENU_ROW: f32 = 30.;
+const MENU_PAD: f32 = 5.;
+const MENU_ROW: f32 = 28.;
 const MENU_RULE: f32 = 9.;
+
+fn glyph(action: Action, label: &str) -> Option<&'static str> {
+    Some(match action {
+        Action::Pin(_, true) => "pin",
+        Action::Pin(_, false) => "pin-off",
+        Action::Settle(_, true) => "circle-check",
+        Action::Settle(_, false) => "rotate-ccw",
+        Action::Wake(_) => "clock",
+        Action::Rename(_) => "pencil",
+        Action::Switch(_) if label.contains("terminal") => "square-terminal",
+        Action::Switch(_) => "message-square",
+        Action::ProjectIcon(_) => "palette",
+        Action::RegenerateTitle(_) => "refresh-cw",
+        Action::RemoveThread(_) => "trash-2",
+        _ => return None,
+    })
+}
 
 /// The lines of the open menu above line `i`.
 fn entries_before(
@@ -109,7 +126,7 @@ fn menu_panel(
         MenuEntry::Divider => div()
             .h(px(1.))
             .my(px((MENU_RULE - 1.) / 2.))
-            .mx(px(-MENU_PAD))
+            .mx(px(8.))
             .bg(colors::ink(0.08))
             .into_any_element(),
         MenuEntry::Item {
@@ -123,10 +140,11 @@ fn menu_panel(
                 return div()
                     .flex()
                     .items_center()
-                    .gap(px(12.))
+                    .gap(px(10.))
                     .h(px(MENU_ROW))
-                    .px(px(12.))
+                    .px(px(10.))
                     .text_color(colors::text3())
+                    .children(glyph(action, label).map(|m| icon(m, 14., colors::text3())))
                     .child(div().flex_1().min_w_0().truncate().child(label.clone()))
                     .children(
                         hint.clone()
@@ -134,7 +152,7 @@ fn menu_panel(
                     )
                     .into_any_element();
             }
-            menu_line((key, i), label.clone(), danger)
+            menu_line((key, i), label.clone(), glyph(action, label), danger)
                 .children(hint.clone().map(|h| {
                     div()
                         .flex_none()
@@ -157,20 +175,24 @@ fn menu_panel(
                 }))
                 .into_any_element()
         }
-        MenuEntry::Sub { label, .. } => menu_line((key, i), label.clone(), false)
-            .child(icon("chevron-right", 12., colors::text3()))
-            .on_hover(cx.listener(move |r, on: &bool, _, cx| {
-                if *on && r.menu_sub != Some(i) {
+        MenuEntry::Sub {
+            label, icon: mark, ..
+        } => {
+            menu_line((key, i), label.clone(), Some(*mark), false)
+                .child(icon("chevron-right", 12., colors::text3()))
+                .on_hover(cx.listener(move |r, on: &bool, _, cx| {
+                    if *on && r.menu_sub != Some(i) {
+                        r.menu_sub = Some(i);
+                        cx.notify();
+                    }
+                }))
+                // a click opens them too, for anyone who clicks rather than waits
+                .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
                     r.menu_sub = Some(i);
                     cx.notify();
-                }
-            }))
-            // a click opens them too, for anyone who clicks rather than waits
-            .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                r.menu_sub = Some(i);
-                cx.notify();
-            }))
-            .into_any_element(),
+                }))
+                .into_any_element()
+        }
     });
     div()
         .relative()
@@ -179,7 +201,7 @@ fn menu_panel(
         .p(px(MENU_PAD))
         .flex()
         .flex_col()
-        .rounded(px(8.))
+        .rounded(px(10.))
         .border_1()
         .border_color(colors::border2())
         .bg(colors::surface2())
@@ -193,21 +215,28 @@ fn menu_panel(
 fn menu_line(
     id: impl Into<gpui::ElementId>,
     label: gpui::SharedString,
+    mark: Option<&'static str>,
     danger: bool,
 ) -> gpui::Stateful<gpui::Div> {
+    let ink = if danger {
+        colors::error()
+    } else {
+        colors::text2()
+    };
     div()
         .id(id)
         .flex()
         .items_center()
-        .gap(px(12.))
+        .gap(px(10.))
         .h(px(MENU_ROW))
-        .px(px(12.))
-        .rounded(px(5.))
+        .px(px(10.))
+        .rounded(px(7.))
         .cursor_pointer()
+        .when(danger, |d| d.text_color(colors::error()))
+        .children(mark.map(|m| icon(m, 14., ink)))
         .hover(move |s| {
             if danger {
                 s.bg(colors::error().opacity(0.14))
-                    .text_color(colors::error())
             } else {
                 s.bg(colors::ink(0.08))
             }
@@ -217,6 +246,9 @@ fn menu_line(
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !cx.has_active_drag() {
+            crate::attach::hold(false);
+        }
         let meter = self.frame_meter(window, cx);
         self.look_for_hosts();
         self.look_up_icons(cx);
@@ -228,6 +260,9 @@ impl Render for Root {
         }
         if let Some(thread) = self.work.sign_in.take() {
             self.sign_in(thread, window, cx);
+        }
+        if let Some(tab) = self.work.settings.take() {
+            self.open_settings_at(tab, window, cx);
         }
         self.show_terminals(cx);
         let main: AnyElement = if !self.loaded {
@@ -319,6 +354,16 @@ impl Render for Root {
                 cx.notify();
             }))
             .on_drop(cx.listener(|r, _: &SidebarDrag, _, _| r.save()))
+            .on_drag_move(
+                cx.listener(|_, _: &DragMoveEvent<gpui::ExternalPaths>, window, _| {
+                    if crate::attach::hold(true) {
+                        window.refresh();
+                    }
+                }),
+            )
+            .on_drop(cx.listener(|r, paths: &gpui::ExternalPaths, window, cx| {
+                r.drop_anywhere(paths, window, cx)
+            }))
             .child(titlebar)
             .child(
                 div()

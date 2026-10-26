@@ -3,8 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use super::model::{Item, Status, Transcript};
-use super::tool;
+use super::model::{Status, Transcript};
 use crate::slide::animations;
 
 const HOLD: Duration = Duration::from_millis(850);
@@ -20,15 +19,7 @@ pub fn label(t: &Transcript, stopping: bool) -> String {
     if t.status() == Status::Waiting {
         return "Waiting for you".into();
     }
-    if let Some(call) = t.running_tool() {
-        return tool::label(call);
-    }
-    match t.items.last() {
-        Some(Item::Thinking { .. }) => "Thinking",
-        Some(Item::Text { .. }) => "Writing",
-        _ => "Working",
-    }
-    .into()
+    "Working".into()
 }
 
 #[derive(Default)]
@@ -68,23 +59,18 @@ mod tests {
     use hyprspace_proto::{Prompt, RunEvent, Tool};
 
     #[test]
-    fn says_what_the_run_is_on() {
+    fn leaves_the_live_step_to_the_row_above_it() {
         let mut t = Transcript::default();
         t.prompt(&Prompt::text("go"));
-        assert_eq!(label(&t, false), "Working");
         t.apply(RunEvent::Thinking { text: "hm".into() });
-        assert_eq!(label(&t, false), "Thinking");
-        t.apply(RunEvent::Text {
-            text: "Sure".into(),
-        });
-        assert_eq!(label(&t, false), "Writing");
+        assert_eq!(label(&t, false), "Working");
         t.apply(RunEvent::Tool {
             id: "c1".into(),
             tool: Tool::Command {
                 command: "cargo test".into(),
             },
         });
-        assert_eq!(label(&t, false), "Run cargo test");
+        assert_eq!(label(&t, false), "Working");
         assert_eq!(label(&t, true), "Stopping");
     }
 

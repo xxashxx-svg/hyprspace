@@ -65,15 +65,9 @@ fun said(q: Question, picked: Set<Int>, other: String): String {
 }
 
 /** What a live run is doing now, as the desktop's status line says it. */
-fun doing(items: List<Item>, waiting: Boolean, stopping: Boolean, compacting: Boolean): String {
-    if (stopping) return "Stopping"
-    if (compacting) return "Compacting"
-    if (waiting) return "Waiting for you"
-    val call = items.lastOrNull { it is Item.Call && it.done == null } as Item.Call?
-    if (call != null) return label(call.tool)
-    return when (items.lastOrNull()) {
-        is Item.Thinking -> "Thinking"
-        is Item.Reply -> "Writing"
-        else -> "Working"
-    }
+fun doing(waiting: Boolean, stopping: Boolean, compacting: Boolean): String = when {
+    stopping -> "Stopping"
+    compacting -> "Compacting"
+    waiting -> "Waiting for you"
+    else -> "Working"
 }

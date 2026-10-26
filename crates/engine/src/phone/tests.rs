@@ -236,7 +236,14 @@ fn a_phone_pairs_watches_a_terminal_types_and_comes_back() {
             other => panic!("{other:?}"),
         };
         assert!(matches!(hear(&mut ws).await, Down::Board { board } if board.threads.len() == 1));
-        say(&mut ws, &Up::Watch { thread: 7 }).await;
+        say(
+            &mut ws,
+            &Up::Watch {
+                thread: 7,
+                tail: None,
+            },
+        )
+        .await;
         say(
             &mut ws,
             &Up::Fit {

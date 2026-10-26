@@ -11,7 +11,7 @@ use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
 use crate::peer::{PeerCommand, PeerEvent};
 use crate::phone::{PhoneCommand, PhoneEvent};
-use crate::run::{Answer, Delegation, Launch, Prompt, RunEvent};
+use crate::run::{Answer, Aside, Delegation, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Background, Effect, Entry};
 use crate::update::{UpdateCommand, UpdateEvent};
@@ -48,6 +48,26 @@ pub enum Command {
     StopTask {
         id: SessionId,
         task: String,
+    },
+    /// A side question about the conversation `launch.resume` names, answered by a fork of it
+    /// that can't use tools and isn't saved, while the session's own run goes on. Claude only.
+    /// Answered with `Event::Aside`; a new one replaces the last.
+    Aside {
+        id: SessionId,
+        launch: Launch,
+        question: String,
+    },
+    /// Stop the side question, if it's still answering.
+    DropAside {
+        id: SessionId,
+    },
+    Title {
+        thread: u64,
+        agent: Agent,
+        cwd: PathBuf,
+        model: Option<String>,
+        text: String,
+        previous: Option<String>,
     },
     /// Read the end of a background task's output, answered with `RunEvent::TaskOutput`.
     TaskOutput {
@@ -223,6 +243,14 @@ pub enum Event {
     Run {
         id: SessionId,
         event: RunEvent,
+    },
+    Aside {
+        id: SessionId,
+        aside: Aside,
+    },
+    Title {
+        thread: u64,
+        title: Option<String>,
     },
     /// Coalesced PTY output: at most one batch per frame under load.
     TerminalOutput {

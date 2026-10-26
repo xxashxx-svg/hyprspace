@@ -155,6 +155,15 @@ impl Root {
                 }),
         );
 
+        let named = self.state.titles;
+        let titles = widgets::switch("titles", named).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| {
+                r.state.titles = !named;
+                r.save();
+                cx.notify();
+            },
+        ));
+
         let opener = self.state.open_with;
         let open_control = if self.work.openers.is_empty() {
             text("Looking for apps").into_any_element()
@@ -178,11 +187,18 @@ impl Root {
             ))
             .child(group(
                 "Threads",
-                vec![row(
-                    "Settle untouched threads",
-                    "Idle threads move to Settled. Open or working ones stay.",
-                    settle,
-                )],
+                vec![
+                    row(
+                        "Settle untouched threads",
+                        "Idle threads move to Settled. Open or working ones stay.",
+                        settle,
+                    ),
+                    row(
+                        "Name new threads",
+                        "Sends a new thread's first message to a small model on your plan for a short title: Haiku for Claude, GPT Luna for Codex.",
+                        titles,
+                    ),
+                ],
             ))
             .child(self.snoozed_group(cx))
             .child(group(

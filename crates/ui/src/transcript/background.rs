@@ -142,6 +142,16 @@ fn call_open(v: &TranscriptView, call: &str) -> bool {
 }
 
 fn toggle_call(v: &mut TranscriptView, call: &str, cx: &mut Context<TranscriptView>) {
+    let at = v
+        .model
+        .items
+        .iter()
+        .position(|i| matches!(i, Item::Tool { id, .. } if id == call));
+    if let Some(prompt) = at.and_then(|at| super::rows::folded_in(&v.model.items, at))
+        && v.unfolded.insert(prompt)
+    {
+        super::render::replan(v);
+    }
     let Some(row) = row_of(v, call) else {
         return;
     };

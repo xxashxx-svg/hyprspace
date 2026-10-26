@@ -54,8 +54,8 @@ pub(crate) fn content(prompt: &Prompt) -> Value {
         return Value::String(prompt.text.clone());
     }
     let mut blocks = Vec::new();
-    let mut skipped: Vec<&PathBuf> = Vec::new();
-    for path in &prompt.images {
+    let mut skipped: Vec<(usize, &PathBuf)> = Vec::new();
+    for (n, path) in prompt.images.iter().enumerate() {
         // a few MB at most, read on the session's task
         let bytes = std::fs::read(path).unwrap_or_default();
         match media_type(path, &bytes) {
@@ -67,12 +67,12 @@ pub(crate) fn content(prompt: &Prompt) -> Value {
                     "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
                 },
             })),
-            _ => skipped.push(path),
+            _ => skipped.push((n + 1, path)),
         }
     }
     let mut text = prompt.text.clone();
-    for path in skipped {
-        text.push_str(&format!("\n\nAttached file: {}", path.display()));
+    for (n, path) in skipped {
+        text.push_str(&format!("\n\nAttached file {n}: {}", path.display()));
     }
     blocks.push(json!({ "type": "text", "text": text }));
     Value::Array(blocks)

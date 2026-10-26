@@ -13,7 +13,7 @@ use std::time::Instant;
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Context, DispatchPhase, Div, FocusHandle, Focusable,
     FontWeight, HitboxBehavior, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels, ScrollHandle,
-    ScrollWheelEvent, SharedString, Stateful, Window, canvas, div, point, prelude::*,
+    ScrollWheelEvent, SharedString, Stateful, Window, canvas, div, point, prelude::*, relative,
 };
 use hyprspace_proto::Agent;
 
@@ -119,7 +119,8 @@ pub struct ModelMenu {
     effort: bool,
     /// The agent the rail narrows the models to, or all of them.
     rail: Option<Agent>,
-    legacy: bool,
+    legacy: Option<Agent>,
+    legacy_opened: usize,
     /// This opening's number, so each opening eases in afresh.
     opened: usize,
     glide: Glide,
@@ -144,21 +145,18 @@ impl ModelMenu {
     }
 
     fn new(spec: &Spec, effort: bool, window: &mut Window, cx: &mut App) -> Self {
-        let legacy = spec
-            .models
-            .iter()
-            .any(|m| is_pick(spec, m) && is_legacy(spec, m));
         let m = Self {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
-            hi: shown(spec, "", None, legacy)
+            hi: shown(spec, "", None, false)
                 .iter()
                 .position(|m| is_pick(spec, m))
                 .unwrap_or(0),
             query: String::new(),
             effort,
             rail: None,
-            legacy,
+            legacy: None,
+            legacy_opened: 0,
             opened: OPENED.fetch_add(1, Ordering::Relaxed),
             glide: Glide::default(),
             rail_glide: Glide::default(),
@@ -308,7 +306,7 @@ pub(super) fn to_models<H: Host>(h: &mut H, window: &mut Window, cx: &mut Contex
     let level = h.model_menu().as_mut().and_then(|m| {
         m.effort = false;
         m.opened = OPENED.fetch_add(1, Ordering::Relaxed);
-        m.hi = shown(&spec, "", None, m.legacy)
+        m.hi = shown(&spec, "", None, false)
             .iter()
             .position(|x| is_pick(&spec, x))
             .unwrap_or(0);
@@ -337,13 +335,19 @@ fn key<H: Host>(h: &mut H, e: &KeyDownEvent, window: &mut Window, cx: &mut Conte
     let Some(m) = h.model_menu() else {
         return;
     };
-    let count = shown(&spec, &m.query, m.rail, m.legacy).len();
+    let count = shown(&spec, &m.query, m.rail, false).len();
     let k = &e.keystroke;
     match k.key.as_str() {
-        "up" => m.hi = m.hi.saturating_sub(1),
-        "down" => m.hi = (m.hi + 1).min(count.saturating_sub(1)),
+        "up" => {
+            m.hi = m.hi.saturating_sub(1);
+            m.legacy = None;
+        }
+        "down" => {
+            m.hi = (m.hi + 1).min(count.saturating_sub(1));
+            m.legacy = None;
+        }
         "enter" => {
-            let model = shown(&spec, &m.query, m.rail, m.legacy)
+            let model = shown(&spec, &m.query, m.rail, false)
                 .get(m.hi)
                 .map(|m| (m.agent, m.id.clone()));
             if let Some((agent, id)) = model {
@@ -352,6 +356,7 @@ fn key<H: Host>(h: &mut H, e: &KeyDownEvent, window: &mut Window, cx: &mut Conte
             cx.stop_propagation();
             return;
         }
+        "escape" if m.legacy.is_some() => m.legacy = None,
         "escape" => {
             close(h, window, cx);
             cx.stop_propagation();
@@ -442,6 +447,25 @@ pub fn render<H: Host>(
     // heading nor the text; over it under a thread, where the box sits at the window's foot
     let tall = if m.effort { EFFORT_TALL } else { MODELS_TALL };
     let below = window.viewport_size().height - chip.bottom() >= px(tall + 16.);
+    let panel = m
+        .legacy
+        .filter(|_| !m.effort && m.query.is_empty())
+        .map(|agent| {
+            let edge = if widgets::from_left(chip, window) {
+                chip.left() + px(if m.effort { effort::CARD } else { 340. })
+            } else {
+                chip.right()
+            };
+            let left = edge + px(250.) > window.viewport_size().width;
+            div()
+                .absolute()
+                .when(below, |d| d.top_0())
+                .when(!below, |d| d.bottom_0())
+                .when(left, |d| d.right(relative(1.)).mr(px(6.)))
+                .when(!left, |d| d.left(relative(1.)).ml(px(6.)))
+                .child(legacy_panel(m, spec, agent, cx))
+        });
+    let frame = div().relative().child(frame).children(panel);
     // slides a few pixels into place, away from its chip, as it fades in
     let from = if below { -8. } else { 8. };
     let frame = crate::slide::ease_in(frame, ("model-menu-open", m.opened), 160, move |d, t| {
@@ -538,7 +562,7 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
         });
 
     // agent headings and model rows, measured as they go so the highlight knows where to sit
-    let shown = shown(spec, &m.query, m.rail, m.legacy);
+    let shown = shown(spec, &m.query, m.rail, false);
     let mut folds: Vec<(Agent, AnyElement)> = Vec::new();
     for agent in agents(spec) {
         let n = spec
@@ -546,8 +570,15 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
             .iter()
             .filter(|x| x.agent == agent && is_legacy(spec, x))
             .count();
+        let picked = spec
+            .models
+            .iter()
+            .any(|x| x.agent == agent && is_pick(spec, x) && is_legacy(spec, x));
         if m.query.is_empty() && n > 0 {
-            folds.push((agent, legacy_row(agent, n, m.legacy, cx)));
+            folds.push((
+                agent,
+                legacy_row(agent, n, m.legacy == Some(agent), picked, cx),
+            ));
         }
     }
     let mut folded = |agent: Agent| {
@@ -587,9 +618,10 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
             model_row(i, model, is_pick(spec, model))
                 .on_mouse_move(cx.listener(move |h: &mut H, _: &MouseMoveEvent, _, cx| {
                     if let Some(m) = h.model_menu()
-                        && m.hi != i
+                        && (m.hi != i || m.legacy.is_some())
                     {
                         m.hi = i;
+                        m.legacy = None;
                         cx.notify();
                     }
                 }))
@@ -602,7 +634,7 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
     }
     children.extend(fold);
     *m.rows.borrow_mut() = rows;
-    let highlight = match hi_y {
+    let highlight = match hi_y.filter(|_| m.legacy.is_none()) {
         Some(y) => m.glide.toward(y).apply(
             "model-hi",
             div()
@@ -675,8 +707,24 @@ fn heading(agent: Agent) -> Div {
         )
 }
 
-/// The row that folds an agent's older models away, with how many there are.
-fn legacy_row<H: Host>(agent: Agent, n: usize, open: bool, cx: &mut Context<H>) -> AnyElement {
+/// The row that opens an agent's older models beside the menu, with how many there are.
+fn legacy_row<H: Host>(
+    agent: Agent,
+    n: usize,
+    open: bool,
+    picked: bool,
+    cx: &mut Context<H>,
+) -> AnyElement {
+    let show = move |h: &mut H, on: bool| {
+        if let Some(m) = h.model_menu()
+            && (m.legacy == Some(agent)) != on
+        {
+            m.legacy = on.then_some(agent);
+            m.legacy_opened += 1;
+            return true;
+        }
+        false
+    };
     div()
         .id(("legacy-row", agent as usize))
         .flex_none()
@@ -688,30 +736,70 @@ fn legacy_row<H: Host>(agent: Agent, n: usize, open: bool, cx: &mut Context<H>) 
         .rounded(px(8.))
         .cursor_pointer()
         .text_color(colors::text3())
-        .hover(|s| s.bg(colors::ink(0.04)))
+        .when(open, |d| {
+            d.bg(colors::ink(0.06)).text_color(colors::text1())
+        })
+        .hover(|s| s.bg(colors::ink(0.06)))
         .child("Legacy models")
         .child(badge(n.to_string()))
         .child(div().flex_1())
-        .child(icon(
-            if open {
-                "chevron-down"
-            } else {
-                "chevron-right"
-            },
-            12.,
-            colors::text3(),
-        ))
-        .on_click(cx.listener(|h: &mut H, _: &ClickEvent, _, cx| {
-            if let Some(spec) = h.model_spec()
-                && let Some(m) = h.model_menu()
-            {
-                m.legacy = !m.legacy;
-                let count = shown(&spec, &m.query, m.rail, m.legacy).len();
-                m.hi = m.hi.min(count.saturating_sub(1));
+        .when(picked, |d| d.child(icon("check", 13., colors::accent())))
+        .child(icon("chevron-right", 12., colors::text3()))
+        .on_mouse_move(cx.listener(move |h: &mut H, _: &MouseMoveEvent, _, cx| {
+            if show(h, true) {
+                cx.notify();
             }
+        }))
+        .on_click(cx.listener(move |h: &mut H, _: &ClickEvent, _, cx| {
+            show(h, !open);
             cx.notify();
         }))
         .into_any_element()
+}
+
+fn legacy_panel<H: Host>(
+    m: &ModelMenu,
+    spec: &Spec,
+    agent: Agent,
+    cx: &mut Context<H>,
+) -> AnyElement {
+    let rows = spec
+        .models
+        .iter()
+        .filter(|x| x.agent == agent && is_legacy(spec, x))
+        .enumerate()
+        .map(|(i, model)| {
+            let id = model.id.clone();
+            model_row(1000 + i, model, is_pick(spec, model))
+                .hover(|s| s.bg(colors::ink(0.06)))
+                .on_click(cx.listener(move |h: &mut H, _: &ClickEvent, window, cx| {
+                    pick(h, agent, id.clone(), window, cx)
+                }))
+        });
+    let panel = div()
+        .id("legacy-panel")
+        .occlude()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .w(px(240.))
+        .max_h(px(320.))
+        .overflow_y_scroll()
+        .p(px(4.))
+        .flex()
+        .flex_col()
+        .rounded(px(12.))
+        .border_1()
+        .border_color(colors::border2())
+        .bg(colors::surface2())
+        .shadow(colors::shadow())
+        .text_size(px(12.5))
+        .text_color(colors::text1())
+        .children(rows);
+    crate::slide::ease_in(
+        panel,
+        ("legacy-panel-open", m.opened * 1000 + m.legacy_opened),
+        120,
+        |d, t| d.opacity(t).ml(px(-6. * (1. - t))),
+    )
 }
 
 /// One model: its name, a short note, and a tick on the pick.

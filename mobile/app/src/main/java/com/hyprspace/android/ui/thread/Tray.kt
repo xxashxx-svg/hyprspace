@@ -38,11 +38,48 @@ import androidx.compose.ui.unit.sp
 import com.hyprspace.android.R
 import com.hyprspace.android.model.Item
 import com.hyprspace.android.model.label
+import com.hyprspace.android.net.AsideView
 import com.hyprspace.android.net.BgTask
 import com.hyprspace.android.net.TaskKind
 import com.hyprspace.android.ui.Eclipse
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.clickableQuiet
+
+/** A side question (`/btw`) and its answer so far, with a cross that closes it. */
+@Composable
+fun AsideCard(aside: AsideView, onDrop: () -> Unit) {
+    val h = LocalHues.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(top = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(h.ink(0.045f))
+            .padding(start = 12.dp, end = 4.dp, bottom = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(painterResource(R.drawable.ic_circle_help), null, Modifier.size(14.dp), tint = h.text3)
+            Text(
+                aside.question,
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = h.text2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!aside.done) Eclipse(h.text3)
+            Round(R.drawable.ic_x, "Close") { onDrop() }
+        }
+        Box(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(end = 8.dp)) {
+            when {
+                aside.error != null -> Text(aside.error, style = MaterialTheme.typography.bodyMedium, color = h.text3)
+                aside.text.isEmpty() -> Text("Answering", style = MaterialTheme.typography.bodyMedium, color = h.text3)
+                else -> Markdown(aside.text)
+            }
+        }
+    }
+}
 
 /** A message waiting for the run to end; [sent] while it's only on its way to the computer. */
 data class Waiting(val text: String, val images: Int, val sent: Boolean)

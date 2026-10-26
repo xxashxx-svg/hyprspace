@@ -11,6 +11,7 @@ pub mod codex;
 mod images;
 pub mod protocol;
 mod spawn;
+pub mod title;
 
 use std::io;
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ use tokio::task::JoinHandle;
 
 pub use claude::Claude;
 pub use codex::Codex;
+pub use title::title;
 
 /// Where a session's events go, in order.
 pub type Emit = Box<dyn FnMut(RunEvent) + Send>;

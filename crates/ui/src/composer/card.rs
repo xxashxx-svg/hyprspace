@@ -107,11 +107,6 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             ))
             .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_structured(cx)))
     });
-    let frame = if focused {
-        colors::ink(0.12)
-    } else {
-        gpui::transparent_black()
-    };
     // the send button firms up once there is something to send; empty, it starts the agent
     // with no task, as a terminal would
     let send = if empty {
@@ -129,23 +124,14 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             .child(icon("arrow-up", 15., colors::text2()))
             .tooltip(widgets::tip("Start without a task"))
     } else {
-        widgets::send("composer-start", "arrow-up").tooltip(widgets::tip("Start"))
+        widgets::send("composer-start", "arrow-up", true).tooltip(widgets::tip("Start"))
     };
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .rounded(px(18.))
-        .border_1()
-        .border_color(frame)
-        .bg(if crate::wallpaper::showing() {
-            colors::surface2().opacity(0.94)
-        } else {
-            colors::ink(0.045)
+    widgets::composer_box(focused)
+        .when(crate::wallpaper::showing(), |d| {
+            d.bg(colors::surface2().opacity(0.94))
         })
-        // files held over the screen land here
-        .drag_over::<gpui::ExternalPaths>(|s, _, _, _| {
-            s.border_color(colors::accent())
+        .when(attach::held(), |d| {
+            d.border_color(colors::accent())
                 .bg(colors::accent().opacity(0.06))
         })
         .children(attach::peek(&c.images, c.peek))

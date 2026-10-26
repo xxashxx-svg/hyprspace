@@ -14,7 +14,8 @@ sealed interface Item {
     /** Stable across updates, for list keys. */
     val key: String
 
-    data class User(override val key: String, val text: String, val images: Int, val steer: Boolean) : Item
+    /** [at] counts the thread's prompts up to this one, from its very first. */
+    data class User(override val key: String, val text: String, val images: Int, val steer: Boolean, val at: Int = 0) : Item
     data class Reply(override val key: String, val text: String) : Item
     data class Thinking(override val key: String, val text: String) : Item
     data class Call(override val key: String, val id: String, val tool: Tool, val done: Done?) : Item
@@ -54,7 +55,9 @@ enum class AgentState { Working, Done, Failed, Stopped }
 
 class Transcript {
     private val items = ArrayList<Item>()
-    private var next = 0
+    // keys count prompts and the items since each, which a whole journal and a live one agree on
+    private var prompt = 0
+    private var sub = 0
     private var running = false
     private var said = false
 
@@ -65,9 +68,17 @@ class Transcript {
     var context: Pair<Long, Long>? = null
         private set
 
+    /** The prompts before the first one here, which the computer left out. */
+    var before = 0
+        private set
+    val prompts: Int get() = prompt
+
     fun items(): List<Item> = items.toList()
 
-    fun reset() {
+    fun reset(before: Int = 0) {
+        this.before = before
+        prompt = before
+        sub = 0
         items.clear()
         running = false
         said = false
@@ -75,13 +86,15 @@ class Transcript {
         context = null
     }
 
-    private fun key() = "i${next++}"
+    private fun key() = "p$prompt.${sub++}"
 
     /** [replay] for a journal sent whole. */
     fun add(entry: Entry, replay: Boolean = false) {
         when (entry) {
             is Entry.PromptEntry -> {
-                items += Item.User(key(), entry.prompt.text, entry.prompt.images.size, steer = running)
+                prompt++
+                sub = 0
+                items += Item.User(key(), entry.prompt.text, entry.prompt.images.size, steer = running, at = prompt)
                 if (!running) {
                     running = true
                     said = false
@@ -257,4 +270,59 @@ class Transcript {
 
     private fun agent(id: String) = items.indexOfLast { it is Item.Agent && it.id == id }
     private fun call(id: String) = items.indexOfLast { it is Item.Call && it.id == id }
+}
+
+/** The conversation as Markdown: what was asked, what came back, and a line for each tool call. */
+fun exported(items: List<Item>): String = items.mapNotNull {
+    when (it) {
+        is Item.User -> "## You\n\n${it.text.trim()}"
+        is Item.Reply -> it.text.trim().ifEmpty { null }
+        is Item.Call -> "- ${label(it.tool)}"
+        else -> null
+    }
+}.joinToString("\n\n") + "\n"
+
+data class Fold(val prompt: String, val first: String, val ms: Long?, val hide: Set<String>, val finish: String)
+
+private fun foldable(item: Item): Boolean = when (item) {
+    is Item.Thinking, is Item.Reply -> true
+    is Item.Call -> special(item.tool).let { it != QUESTION && it != PLAN }
+    is Item.Approval -> special(item.tool).let { it != QUESTION && it != PLAN }
+    is Item.Agent -> item.state != AgentState.Working
+    else -> false
+}
+
+private fun runs(items: List<Item>): List<Triple<Int, Int, Int>> {
+    val out = ArrayList<Triple<Int, Int, Int>>()
+    var open: Pair<Int, Int>? = null
+    for ((ix, item) in items.withIndex()) {
+        when {
+            item is Item.User && !item.steer -> open = ix to ix + 1
+            item is Item.Finished -> {
+                open?.let { out += Triple(it.first, it.second, ix) }
+                open = null
+            }
+            open == null && (foldable(item) || item is Item.Error) -> open = ix to ix
+        }
+    }
+    return out
+}
+
+fun folds(items: List<Item>): List<Fold> {
+    val out = ArrayList<Fold>()
+    for ((anchor, first, end) in runs(items)) {
+        val done = items[end] as Item.Finished
+        val run = first until end
+        if (done.status != RunStatus.Done || run.any { items[it] is Item.Error }) continue
+        val reply = run.lastOrNull { items[it] is Item.Reply }
+        val cuts = listOf(anchor to first) + run.filter { items[it] is Item.User }.map { it to it + 1 }
+        for ((i, cut) in cuts.withIndex()) {
+            val to = cuts.getOrNull(i + 1)?.first ?: end
+            val hide = (cut.second until to).filter { it != reply && foldable(items[it]) }.map { items[it].key }.toSet()
+            if (hide.isNotEmpty()) {
+                out += Fold(items[cut.first].key, items[cut.second].key, if (i == 0) done.ms else null, hide, items[end].key)
+            }
+        }
+    }
+    return out
 }

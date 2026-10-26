@@ -8,7 +8,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -47,6 +46,7 @@ import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -76,14 +76,16 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hyprspace.android.R
@@ -94,11 +96,14 @@ import com.hyprspace.android.model.QUESTION
 import com.hyprspace.android.model.TODO
 import com.hyprspace.android.model.counts
 import com.hyprspace.android.model.doing as doingNow
+import com.hyprspace.android.model.folds
 import com.hyprspace.android.model.input
 import com.hyprspace.android.model.label
 import com.hyprspace.android.model.special
 import com.hyprspace.android.model.summary
 import com.hyprspace.android.net.Answer
+import com.hyprspace.android.net.AsideView
+import com.hyprspace.android.net.Slash
 import com.hyprspace.android.net.BgTask
 import com.hyprspace.android.net.Prompt
 import com.hyprspace.android.net.RunStatus
@@ -120,6 +125,7 @@ private sealed interface Shown {
     data class One(val item: Item) : Shown { override val key = item.key }
     data class Calls(val calls: List<Item.Call>) : Shown { override val key = "calls" + calls.first().key }
     data class Todo(val call: Item.Call) : Shown { override val key = call.key }
+    data class Folded(val prompt: String, val ms: Long?, val open: Boolean) : Shown { override val key = "fold$prompt" }
 }
 
 /** A question or plan call whose approval in the same exchange is its card already. */
@@ -130,8 +136,11 @@ private fun carded(items: List<Item>, ix: Int, name: String): Boolean {
     return items.subList(from, to).any { it is Item.Approval && special(it.tool) == name }
 }
 
-private fun fold(items: List<Item>): List<Shown> {
+private fun fold(items: List<Item>, unfolded: Set<String>): List<Shown> {
     val out = ArrayList<Shown>()
+    val folds = folds(items)
+    val heads = folds.associateBy { it.first }
+    val hidden = folds.flatMap { f -> if (f.prompt in unfolded) listOf(f.finish) else f.hide + f.finish }.toSet()
     val lastTodo = items.indexOfLast { it is Item.Call && special(it.tool) == TODO }
     var run = ArrayList<Item.Call>()
     fun flush() {
@@ -144,7 +153,12 @@ private fun fold(items: List<Item>): List<Shown> {
     }
     for ((ix, i) in items.withIndex()) {
         val name = (i as? Item.Call)?.let { special(it.tool) }
+        heads[i.key]?.let {
+            flush()
+            out += Shown.Folded(it.prompt, it.ms, it.prompt in unfolded)
+        }
         when {
+            i.key in hidden -> {}
             name == TODO -> {
                 flush()
                 if (ix == lastTodo) out += Shown.Todo(i)
@@ -162,12 +176,9 @@ private fun fold(items: List<Item>): List<Shown> {
 }
 
 /** The replies that end a run, which get a copy button. */
-private fun ends(shown: List<Shown>): Set<String> = shown.indices
-    .filter { i ->
-        val s = shown[i] as? Shown.One
-        s?.item is Item.Reply && (shown.getOrNull(i + 1) as? Shown.One)?.item is Item.Finished
-    }
-    .map { shown[it].key }
+private fun ends(items: List<Item>): Set<String> = items.indices
+    .filter { items[it] is Item.Reply && items.getOrNull(it + 1) is Item.Finished }
+    .map { items[it].key }
     .toSet()
 
 /** What the desktop does with a structured thread's queue and background, when it's new enough to. */
@@ -177,6 +188,7 @@ class Extras(
     val onSteer: (Int, String) -> Unit,
     val onUnqueue: (Int, String) -> Unit,
     val onStopTask: (String) -> Unit,
+    val redirects: Boolean = false,
 )
 
 @Composable
@@ -198,10 +210,15 @@ fun Chat(
     extras: Extras? = null,
     ultra: Boolean = false,
     lines: Int = 0,
+    onEarlier: (() -> Unit)? = null,
+    aside: AsideView? = null,
+    onDropAside: () -> Unit = {},
+    commands: List<Slash> = emptyList(),
 ) {
     val h = LocalHues.current
-    val shown = remember(view.items) { fold(view.items) }
-    val ending = remember(shown) { ends(shown) }
+    var unfolded by remember { mutableStateOf(setOf<String>()) }
+    val shown = remember(view.items, unfolded) { fold(view.items, unfolded) }
+    val ending = remember(view.items) { ends(view.items) }
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(working) { if (!working) stopping = false }
     var draft by rememberSaveable { mutableStateOf("") }
@@ -225,8 +242,7 @@ fun Chat(
         val users = view.items.filterIsInstance<Item.User>()
         val used = mutableSetOf<String>()
         pending = pending.filter { p ->
-            val from = p.after.coerceAtMost(users.size)
-            val hit = users.drop(from).firstOrNull { it.key !in used && it.text == p.text }
+            val hit = users.firstOrNull { it.at > p.after && it.key !in used && it.text == p.text }
             if (hit != null) used += hit.key
             hit == null && !(p.queued && extras?.queue?.any { it.text == p.text } == true)
         }
@@ -258,11 +274,16 @@ fun Chat(
         if (stuck && newest != null) list.animateScrollToItem(0)
     }
     val live = if (working) (shown.lastOrNull() as? Shown.One)?.item?.takeIf { it is Item.Reply }?.key else null
+    val denies = extras?.redirects == true && view.items.any {
+        it is Item.Approval && it.answer == null && !it.expired && it.request !in answered &&
+            special(it.tool).let { s -> s != QUESTION && s != PLAN }
+    }
     val send: (String, List<String>) -> Unit = { text, images ->
         // while it works, the computer queues the message for when the run ends
-        val queued = working && extras != null
-        if (text.isNotBlank()) {
-            val after = view.items.count { it is Item.User }
+        val queued = working && extras != null && !denies
+        // a command may never become a message, so it shows once the computer says what it did
+        if (text.isNotBlank() && !text.trimStart().startsWith("/")) {
+            val after = view.prompts
             pending = pending + Pending(System.nanoTime(), text, after, queued, images, lines)
         }
         if (!queued) {
@@ -292,7 +313,7 @@ fun Chat(
             ) {
                 if (busy) {
                     item(key = "working") {
-                        val label = doingNow(view.items, waiting = false, stopping = stopping, compacting = doing == "Compacting")
+                        val label = doingNow(waiting = false, stopping = stopping, compacting = doing == "Compacting")
                         Box(rise()) { Working(label, since) }
                     }
                 }
@@ -306,9 +327,15 @@ fun Chat(
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)
                             is Shown.Todo -> TodoCard(s.call.tool)
+                            is Shown.Folded -> FoldHead(s.ms?.let { "Worked for ${took(it)}" } ?: "Continued", s.open) {
+                                unfolded = if (s.open) unfolded - s.prompt else unfolded + s.prompt
+                            }
                             is Shown.One -> One(s.item, canAnswer, answered, answer, live = s.key == live, end = s.key in ending)
                         }
                     }
+                }
+                if (view.earlier && onEarlier != null) {
+                    item(key = "earlier") { Earlier(shown.lastOrNull()?.key, onEarlier) }
                 }
                 if (shown.isEmpty() && bubbles.isEmpty()) {
                     item(key = "empty") { Text("Nothing here yet. Say what to do below.", color = h.text3, style = MaterialTheme.typography.bodyMedium) }
@@ -338,6 +365,7 @@ fun Chat(
             }
             }
         }
+        if (aside != null) AsideCard(aside, onDropAside)
         if (extras != null) {
             val waiting = extras.queue.map { Waiting(it.text, it.images.size, sent = false) } +
                 pending.filter { it.queued }.map { Waiting(it.text, 0, sent = true) }
@@ -360,6 +388,7 @@ fun Chat(
             onDraft = { draft = it },
             working = working,
             queues = extras != null,
+            denies = denies,
             ultra = ultra,
             onSend = send,
             onStop = {
@@ -369,6 +398,7 @@ fun Chat(
             attach = attach,
             model = model,
             permission = permission,
+            commands = commands,
         )
     }
 }
@@ -419,6 +449,62 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
     }
 }
 
+/** Asks the computer for the prompts before these, until the list starting at [first] changes. */
+@Composable
+private fun Earlier(first: String?, onEarlier: () -> Unit) {
+    val h = LocalHues.current
+    var asked by remember(first) { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        if (asked) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = h.text3)
+        } else {
+            Text(
+                "Show earlier messages",
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickableQuiet {
+                        asked = true
+                        onEarlier()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge,
+                color = h.text2,
+            )
+        }
+    }
+}
+
+/** The commands that start with what's typed after `/`, above the box. */
+@Composable
+private fun Slashes(offered: List<Slash>, onPick: (Slash) -> Unit) {
+    val h = LocalHues.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(top = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(h.ink(0.045f))
+            .heightIn(max = 260.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 4.dp),
+    ) {
+        for (s in offered) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickableQuiet { onPick(s) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text("/${s.name}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = h.text1)
+                if (s.detail.isNotBlank()) {
+                    Text(s.detail, style = MaterialTheme.typography.bodySmall, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
 /** Sent here and not yet back from the computer, on line [line] of [Link.lines]. */
 private data class Pending(
     val id: Long,
@@ -461,10 +547,11 @@ private fun Copy(text: String) {
     }
 }
 
+// no placement spring: a reply growing at the bottom would leave the rows above trailing over it
 private fun LazyItemScope.rise(): Modifier = Modifier.animateItem(
     fadeInSpec = tween(220),
     fadeOutSpec = null,
-    placementSpec = spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
+    placementSpec = null,
 )
 
 @Composable
@@ -837,15 +924,23 @@ private fun Composer(
     onDraft: (String) -> Unit,
     working: Boolean,
     queues: Boolean,
+    denies: Boolean,
     ultra: Boolean,
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     model: (@Composable () -> Unit)?,
     permission: (@Composable () -> Unit)?,
+    commands: List<Slash>,
 ) {
     val h = LocalHues.current
     val text = draft
+    // text put in from outside (a picked command, an edited queue item) leaves the cursor at its end
+    var field by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+    val shown = if (field.text == text) field else TextFieldValue(text, TextRange(text.length))
+    val typed = text.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }?.drop(1)?.lowercase()
+    val offered = typed?.let { t -> commands.filter { it.name.lowercase().startsWith(t) }.take(6) }.orEmpty()
+    if (offered.isNotEmpty()) Slashes(offered) { onDraft("/${it.name} ") }
     val glow = ultra && saysUltrathink(text)
     val photos = remember { mutableStateListOf<Attachment>() }
     val pick = attach?.invoke { p ->
@@ -874,14 +969,18 @@ private fun Composer(
         if (text.isEmpty()) {
             val hint = when {
                 !working -> "Reply"
+                denies -> "Send a message to deny and redirect the agent"
                 queues -> "Queue a message for when it finishes"
                 else -> "Steer it, or stop it"
             }
             Text(hint, style = MaterialTheme.typography.bodyLarge, color = h.text3)
         }
         BasicTextField(
-            value = text,
-            onValueChange = onDraft,
+            value = shown,
+            onValueChange = {
+                field = it
+                onDraft(it.text)
+            },
             modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp),
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = h.text1),
             cursorBrush = SolidColor(h.accent),
@@ -900,9 +999,10 @@ private fun Composer(
                 Icon(painterResource(R.drawable.ic_paperclip), "Attach", Modifier.size(18.dp), tint = h.text2)
             }
         }
-        Spacer(Modifier.weight(1f))
-        permission?.invoke()
-        model?.invoke()
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            permission?.invoke()
+            if (model != null) Box(Modifier.weight(1f, fill = false)) { model() }
+        }
         Spacer(Modifier.width(6.dp))
         val stop = working && text.isBlank() && photos.isEmpty()
         Box(
@@ -973,7 +1073,7 @@ private fun Working(doing: String, since: Long?) {
         ) { label ->
             Text(
                 label,
-                Modifier.alpha(pulse),
+                Modifier.graphicsLayer { alpha = pulse },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 color = h.text2,

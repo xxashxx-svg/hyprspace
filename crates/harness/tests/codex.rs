@@ -361,3 +361,11 @@ async fn a_failed_turn_says_why() {
         (RunStatus::Failed, Some("boom"))
     );
 }
+
+#[tokio::test]
+async fn a_title_comes_from_an_ephemeral_exec() {
+    let dir = tempfile::tempdir().unwrap();
+    let ask = hyprspace_harness::title::ask("fix login", Some("Login"));
+    let title = codex().title(dir.path(), None, &ask).await;
+    assert_eq!(title.as_deref(), Some("Fix the login bug"));
+}

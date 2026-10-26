@@ -14,12 +14,13 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, Bounds, CursorStyle, DispatchPhase, HitboxBehavior, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, TextLayout, canvas,
-    div, fill, point, prelude::*, size,
+    AnyElement, App, Bounds, CursorStyle, DispatchPhase, HitboxBehavior, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, TextAlign,
+    TextLayout, TextRun, Window, canvas, div, fill, point, prelude::*, size,
 };
 
 use crate::colors;
+use crate::zoom::px;
 
 struct Selection {
     /// The transcript it lives in. Keys only need to be unique within one.
@@ -68,17 +69,120 @@ pub(super) fn surface() -> Arc<str> {
     SURFACE.with(|s| s.borrow().clone())
 }
 
-pub fn tail(surface: Arc<str>) -> impl IntoElement {
+pub fn tail(
+    surface: Arc<str>,
+    cite: impl Fn(String, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let at = surface.clone();
     canvas(
-        |_, _, _| {},
-        move |_, _, window, _| {
+        move |bounds, window, _| {
+            let end = end_of(&at)?;
+            let style = window.text_style();
+            let run = TextRun {
+                len: CITE.len(),
+                font: style.font(),
+                color: colors::text1(),
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            let line = window
+                .text_system()
+                .shape_line(CITE.into(), px(12.), &[run], None);
+            let chip = size(line.width + px(18.), px(24.));
+            let x = end
+                .x
+                .min(bounds.right() - chip.width - px(8.))
+                .max(bounds.left() + px(8.));
+            let y = end.y + px(4.);
+            if y < bounds.top() || y + chip.height > bounds.bottom() {
+                return None;
+            }
+            let rect = Bounds::new(point(x, y), chip);
+            Some((
+                rect,
+                line,
+                window.insert_hitbox(rect, HitboxBehavior::BlockMouse),
+            ))
+        },
+        move |_, chip, window, cx| {
             if drag_to(&surface) {
                 window.refresh();
             }
+            let Some((rect, line, hitbox)) = chip else {
+                return;
+            };
+            let ground = match hitbox.is_hovered(window) {
+                true => colors::surface3(),
+                false => colors::surface2(),
+            };
+            window.paint_quad(
+                fill(rect, ground)
+                    .corner_radii(px(6.))
+                    .border_widths(px(1.))
+                    .border_color(colors::border2()),
+            );
+            let origin = point(
+                rect.left() + px(9.),
+                rect.top() + (rect.size.height - px(16.)) / 2.,
+            );
+            line.paint(origin, px(16.), TextAlign::Left, None, window, cx)
+                .ok();
+            window.set_cursor_style(CursorStyle::PointingHand, &hitbox);
+            let was = hitbox.is_hovered(window);
+            let hover = hitbox.clone();
+            window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, _| {
+                if phase == DispatchPhase::Bubble && hover.is_hovered(window) != was {
+                    window.refresh();
+                }
+            });
+            let surface = surface.clone();
+            window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
+                if phase != DispatchPhase::Capture
+                    || e.button != MouseButton::Left
+                    || !hitbox.is_hovered(window)
+                {
+                    return;
+                }
+                cx.stop_propagation();
+                if let Some(text) = take(&surface) {
+                    cite(text, window, cx);
+                }
+                window.refresh();
+            });
         },
     )
     .absolute()
-    .size_0()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+const CITE: &str = "Cite";
+
+fn end_of(surface: &Arc<str>) -> Option<Point<Pixels>> {
+    let (key, range) = SELECTION.with(|s| {
+        let s = s.borrow();
+        let s = s
+            .as_ref()
+            .filter(|s| s.surface == *surface && !s.dragging)?;
+        let (key, range, _) = s.spans.iter().rev().find(|(_, r, _)| !r.is_empty())?;
+        Some((key.clone(), range.clone()))
+    })?;
+    PAINTED.with(|p| {
+        let p = p.borrow();
+        let e = p.iter().find(|e| e.surface == *surface && e.key == key)?;
+        rects(&e.layout, &range).last().map(|r| r.bottom_right())
+    })
+}
+
+fn take(surface: &Arc<str>) -> Option<String> {
+    SELECTION.with(|s| {
+        let mut s = s.borrow_mut();
+        let text = join(&s.as_ref().filter(|s| s.surface == *surface)?.spans);
+        *s = None;
+        (!text.is_empty()).then_some(text)
+    })
 }
 
 pub fn dragging(surface: &Arc<str>) -> Option<Point<Pixels>> {
@@ -185,9 +289,9 @@ fn track(window: &mut gpui::Window, surface: Arc<str>) {
             }
         });
     }
-    window.on_mouse_event(move |_: &MouseUpEvent, phase, _, _| {
-        if phase == DispatchPhase::Bubble {
-            end(&surface);
+    window.on_mouse_event(move |_: &MouseUpEvent, phase, window, _| {
+        if phase == DispatchPhase::Bubble && end(&surface) {
+            window.refresh();
         }
     });
 }
@@ -245,17 +349,19 @@ fn aim(surface: &Arc<str>, at: Point<Pixels>) -> bool {
     })
 }
 
-fn end(surface: &Arc<str>) {
+fn end(surface: &Arc<str>) -> bool {
     SELECTION.with(|s| {
         let mut s = s.borrow_mut();
-        if let Some(sel) = s.as_mut().filter(|s| s.surface == *surface && s.dragging) {
-            sel.dragging = false;
-            sel.seen.clear();
-            if sel.spans.iter().all(|(_, r, _)| r.is_empty()) {
-                *s = None;
-            }
+        let Some(sel) = s.as_mut().filter(|s| s.surface == *surface && s.dragging) else {
+            return false;
+        };
+        sel.dragging = false;
+        sel.seen.clear();
+        if sel.spans.iter().all(|(_, r, _)| r.is_empty()) {
+            *s = None;
         }
-    });
+        true
+    })
 }
 
 fn item(key: &str) -> Option<usize> {

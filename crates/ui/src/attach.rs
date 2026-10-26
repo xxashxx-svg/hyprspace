@@ -5,7 +5,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
@@ -249,16 +249,38 @@ pub fn thumb(path: &Path, size: f32) -> AnyElement {
         .into_any_element()
 }
 
+static HELD: AtomicBool = AtomicBool::new(false);
+
+pub fn held() -> bool {
+    HELD.load(Ordering::Relaxed)
+}
+
+pub fn hold(on: bool) -> bool {
+    HELD.swap(on, Ordering::Relaxed) != on
+}
+
 /// What a paste types at the cursor, so the prompt can point at the nth image in the tray.
-pub fn marker(n: usize) -> String {
-    format!("[Image {n}]")
+pub fn marker(word: &str, n: usize) -> String {
+    format!("[{word} {n}]")
+}
+
+const WORDS: [&str; 3] = ["Image", "Video", "File"];
+
+pub fn word(path: &Path) -> &'static str {
+    if is_video(path) {
+        "Video"
+    } else if is_image(path) {
+        "Image"
+    } else {
+        "File"
+    }
 }
 
 /// Types a marker at the cursor for each of `count` new images, numbered from `first`.
 pub fn mark(
     input: &gpui::Entity<crate::input::TextInput>,
     first: usize,
-    count: usize,
+    words: &[&str],
     cx: &mut App,
 ) {
     input.update(cx, |i, cx| {
@@ -268,7 +290,11 @@ pub fn mark(
         } else {
             ""
         };
-        let tags: String = (first..first + count).map(|n| marker(n) + " ").collect();
+        let tags: String = words
+            .iter()
+            .enumerate()
+            .map(|(i, w)| marker(w, first + i) + " ")
+            .collect();
         i.insert(&format!("{lead}{tags}"), cx);
     });
 }
@@ -303,12 +329,19 @@ pub fn drop_unmarked(
 
 /// Where `text` names a tray image, and which one, counting from 1.
 pub fn markers(text: &str) -> Vec<(Range<usize>, usize)> {
-    const OPEN: &str = "[Image ";
     let mut out = Vec::new();
     let mut from = 0;
-    while let Some(at) = text[from..].find(OPEN) {
+    while let Some(at) = text[from..].find('[') {
         let start = from + at;
-        let rest = &text[start + OPEN.len()..];
+        from = start + 1;
+        let Some(word) = WORDS
+            .iter()
+            .find(|w| text[from..].starts_with(*w) && text[from + w.len()..].starts_with(' '))
+        else {
+            continue;
+        };
+        let head = from + word.len() + 1;
+        let rest = &text[head..];
         let len = rest
             .find(|c: char| !c.is_ascii_digit())
             .unwrap_or(rest.len());
@@ -316,9 +349,8 @@ pub fn markers(text: &str) -> Vec<(Range<usize>, usize)> {
             && rest[len..].starts_with(']')
             && let Ok(n) = rest[..len].parse()
         {
-            out.push((start..start + OPEN.len() + len + 1, n));
+            out.push((start..head + len + 1, n));
         }
-        from = start + OPEN.len();
     }
     out
 }
@@ -336,7 +368,8 @@ pub fn renumber(text: &str, ix: usize) -> String {
                 last += 1;
             }
         } else if n > gone {
-            out.push_str(&marker(n - 1));
+            let word = text[range.start + 1..].split(' ').next().unwrap_or("Image");
+            out.push_str(&marker(word, n - 1));
         } else {
             out.push_str(&text[range]);
         }
@@ -431,15 +464,16 @@ mod tests {
 
     #[test]
     fn removing_an_image_drops_its_marker_and_counts_the_rest_down() {
-        let text = "see [Image 1] and [Image 2] then [Image 3], not [Image x] or [Image 3";
+        let text = "see [Image 1] and [Video 2] then [Video 3], not [Image x] or [Image 3";
         assert_eq!(
             markers(text).iter().map(|(_, n)| *n).collect::<Vec<_>>(),
             [1, 2, 3]
         );
         assert_eq!(
             renumber(text, 1),
-            "see [Image 1] and then [Image 2], not [Image x] or [Image 3"
+            "see [Image 1] and then [Video 2], not [Image x] or [Image 3"
         );
+        assert!(markers("[Videos 1] [Video1]").is_empty());
         assert_eq!(renumber("[Image 1] hi", 0), "hi");
     }
 

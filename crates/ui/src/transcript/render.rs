@@ -124,10 +124,17 @@ pub fn view(
     if v.working.is_some_and(|at| at.elapsed() < WORKING_IN) {
         crate::pace::next(window, cx);
     }
-    let rows = rows::split(rows::plan(&v.model.items, v.loading, live), |ix| {
-        reply_blocks(v, ix).map_or(1, |b| rows::rows_for(b))
-    });
-    v.sync_rows(rows::mark_new(rows, v.unread));
+    replan(v);
+    // rows drawn for the first time take a slow frame, so the clock starts on the one after it
+    if let Some((prompt, _)) = v.turn_flip.filter(|_| v.turn_primed) {
+        let key = turn_key(v, prompt);
+        cx.on_next_frame(window, move |v, _, cx| {
+            if std::mem::take(&mut v.turn_primed) {
+                slide::flip(key);
+                cx.notify();
+            }
+        });
+    }
     v.read = v.model.items.len();
     let prompts: Vec<usize> = v
         .rows
@@ -188,7 +195,12 @@ pub fn view(
                 // before any text, so selection knows this transcript's elements
                 .child(markdown::select::reset(surface.clone()))
                 .child(rows)
-                .child(markdown::select::tail(surface))
+                .child(markdown::select::tail(surface, {
+                    let view = cx.weak_entity();
+                    move |text, window, cx| {
+                        let _ = view.update(cx, |v, cx| v.cite(&text, window, cx));
+                    }
+                }))
                 .children(ticks)
                 .children(jump)
                 .children(bar),
@@ -292,6 +304,29 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             enter(v, ix, el)
         }
         Row::Quiet(start) => quiet(v, start, cx),
+        Row::Fold { prompt, ms } => {
+            let label = match ms {
+                Some(ms) => format!("Worked for {}", took(ms / 1000)),
+                None => "Continued".into(),
+            };
+            fold_head(
+                ("turn-fold", prompt),
+                v.unfolded.contains(&prompt),
+                label.into(),
+                None,
+                cx,
+                move |v| {
+                    let open = !v.unfolded.remove(&prompt);
+                    if open {
+                        v.unfolded.insert(prompt);
+                    } else {
+                        slide::flip(turn_key(v, prompt));
+                    }
+                    v.turn_flip = Some((prompt, open));
+                    v.turn_primed = open;
+                },
+            )
+        }
         Row::New => div()
             .flex()
             .items_center()
@@ -315,10 +350,50 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
         }
     };
     let joined = matches!(v.rows.get(ix + 1), Some(Row::Part { .. }));
-    centered(column().child(body))
+    let el = centered(column().child(body))
         .when(ix == 0, |d| d.pt(px(24.)))
-        .when(!joined, |d| d.pb(px(20.)))
-        .into_any_element()
+        .when(!joined, |d| d.pb(px(20.)));
+    let item = match row {
+        Row::Item { ix, .. } | Row::Part { ix, .. } | Row::Quiet(ix) => Some(ix),
+        _ => None,
+    };
+    match &v.turn_anim {
+        Some((prompt, open, hide)) if item.is_some_and(|i| hide.contains(&i)) => grow(
+            &turn_key(v, *prompt),
+            format!("{}:{row:?}", turn_key(v, *prompt)),
+            *open,
+            v.turn_primed,
+            el,
+        ),
+        _ => el.into_any_element(),
+    }
+}
+
+fn turn_key(v: &TranscriptView, prompt: usize) -> String {
+    format!("turn:{}:{prompt}", v.id.0)
+}
+
+pub(super) fn replan(v: &mut TranscriptView) {
+    let live = v.model.elapsed().is_some();
+    let mut open = v.unfolded.clone();
+    let primed = v.turn_primed;
+    v.turn_anim = v
+        .turn_flip
+        .filter(|(prompt, _)| primed || slide::flipped(&turn_key(v, *prompt), UNFOLD).is_some())
+        .and_then(|(prompt, opening)| {
+            open.insert(prompt);
+            let fold = rows::folds(&v.model.items)
+                .into_iter()
+                .find(|f| f.prompt == prompt)?;
+            Some((prompt, opening, fold.hide.into_iter().collect()))
+        });
+    if v.turn_anim.is_none() {
+        v.turn_flip = None;
+    }
+    let rows = rows::split(rows::plan(&v.model.items, v.loading, live, &open), |ix| {
+        reply_blocks(v, ix).map_or(1, |b| rows::rows_for(b))
+    });
+    v.sync_rows(rows::mark_new(rows, v.unread));
 }
 
 /// The blocks a reply draws: its streaming parse while it comes in.
@@ -593,77 +668,90 @@ fn jump_prompt(v: &mut TranscriptView, down: bool) {
     }
 }
 
-fn lit(v: &TranscriptView, prompts: &[usize]) -> usize {
-    let (list, last) = (&v.list, prompts.len().saturating_sub(1));
-    if v.follow.stick {
-        return last;
-    }
-    let max = list.max_offset_for_scrollbar().y;
-    let y = -list.scroll_px_offset_for_scrollbar().y;
-    if max <= px(4.) || y >= max - px(4.) {
-        return last;
-    }
-    if y <= px(4.) {
-        return 0;
-    }
-    let view = list.viewport_bounds();
-    let line = view.top() + view.size.height / 3.;
-    let top = list.logical_scroll_top().item_ix;
+/// Which prompts' rows are on screen, by their place in `prompts`.
+fn in_view(v: &TranscriptView, prompts: &[usize]) -> Vec<bool> {
+    let view = v.list.viewport_bounds();
     prompts
         .iter()
-        .rposition(|&row| row < top || list.bounds_for_item(row).is_some_and(|b| b.top() <= line))
-        .unwrap_or(0)
+        .map(|&row| {
+            v.list
+                .bounds_for_item(row)
+                .is_some_and(|b| b.bottom() > view.top() && b.top() < view.bottom())
+        })
+        .collect()
 }
 
-/// One tick per prompt on the left edge: the one for the part being read lit, the ones near the
-/// pointer longer the closer they are, and a card with the prompt and the start of its reply
-/// beside the hovered one. A click scrolls to its prompt. `prompts` are the prompts' rows.
+/// The turn being read: the first prompt on screen, else the last one above it.
+fn current(v: &TranscriptView, prompts: &[usize], seen: &[bool]) -> Option<usize> {
+    if let Some(ix) = seen.iter().position(|&s| s) {
+        return Some(ix);
+    }
+    let first = v.list.logical_scroll_top().item_ix;
+    prompts.iter().rposition(|&row| row < first)
+}
+
+/// One strip per prompt on the left edge: the ones on screen lit, the ones near the pointer
+/// longer the closer they are, a card with the prompt and the start of its reply beside the
+/// hovered one, and Previous and Next turn above and below. A click scrolls to its prompt.
+/// `prompts` are the prompts' rows.
 fn ticks(
     v: &TranscriptView,
     prompts: &[usize],
     window: &mut Window,
     cx: &mut Context<TranscriptView>,
 ) -> Option<AnyElement> {
-    // two prompts at least, and room beside the column so the ticks don't sit on the text
-    if prompts.len() < 2 || v.list.viewport_bounds().size.width < px(COLUMN + 80.) {
+    // two prompts at least, and room beside the column so the strips don't sit on the text
+    let width = f32::from(v.list.viewport_bounds().size.width) / crate::zoom::zoom();
+    if prompts.len() < 2 || width < COLUMN + 80. {
         return None;
     }
     // positions come from the last layout, and a scroll set during this one (to the bottom, say)
-    // only shows in the next, so check again then and redraw if the lit tick moved
-    let lit = lit(v, prompts);
+    // only shows in the next, so check again then and redraw if what's on screen moved
+    let seen = in_view(v, prompts);
     let rows = prompts.to_vec();
+    let was = seen.clone();
     cx.on_next_frame(window, move |v, _, cx| {
-        if self::lit(v, &rows) != lit {
+        if in_view(v, &rows) != was {
             cx.notify();
         }
     });
+    let now = current(v, prompts, &seen);
     let height = f32::from(v.list.viewport_bounds().size.height) / crate::zoom::zoom();
-    let (shown, pitch) = fit_ticks(prompts.len(), height - 48.);
+    let (shown, pitch) = fit_ticks(prompts.len(), height - 96.);
     let last = prompts.len() - 1;
     let prompt_of = |n: usize| (n * last + (shown - 1) / 2) / (shown - 1);
-    let lit = (lit * (shown - 1) + last / 2) / last;
     let hover = v.hover_tick.get().filter(|&h| h < shown);
-    let previews = previews(&v.model.items);
+    // a strip stands for the prompts nearest it, so it lights when any of them is on screen
+    let mut lit = vec![false; shown];
+    for (ix, _) in seen.iter().enumerate().filter(|(_, s)| **s) {
+        lit[(ix * (shown - 1) + last / 2) / last] = true;
+    }
+    // mid-reply no prompt is on screen, so the turn being read keeps its place lit
+    if let Some(c) = now.filter(|_| !lit.contains(&true)) {
+        lit[(c * (shown - 1) + last / 2) / last] = true;
+    }
     let mut glides = v.rail.borrow_mut();
     glides.resize_with(shown, Glide::default);
     let marks: Vec<AnyElement> = (0..shown)
         .map(|n| {
             let row = prompts[prompt_of(n)];
+            let lit = lit[n];
             let near = hover.map(|h| h.abs_diff(n));
-            let width = match near {
-                Some(0) => 18.,
-                Some(1) => 13.,
+            let length = match near {
+                Some(0) => 24.,
+                Some(1) => 16.,
                 Some(2) => 10.,
-                _ if n == lit => 12.,
-                _ => 6.,
+                _ => 8.,
             };
-            let bar = glides[n].toward(width).apply(
+            let ink = match (lit, near) {
+                (true, _) => colors::text1().opacity(0.9),
+                (false, Some(0)) => colors::text2().opacity(0.75),
+                _ => colors::text2().opacity(0.35),
+            };
+            let bar = glides[n].toward(length).apply(
                 "tick-bar",
-                div().h(px(1.5)).rounded_full(),
-                |d, w| {
-                    let k = ((w - 6.) / 12.).clamp(0., 1.);
-                    d.w(px(w)).bg(colors::text1().opacity(0.3 + 0.7 * k))
-                },
+                div().h(px(2.)).rounded_full().bg(ink),
+                |d, w| d.w(px(w)),
             );
             div()
                 .id(("tick", n))
@@ -688,14 +776,53 @@ fn ticks(
                 .into_any_element()
         })
         .collect();
+    // shows only under the pointer, and sits on the strips' start
+    let turn = |up: bool| {
+        let (id, name, tip) = match up {
+            true => ("rail-prev", "chevron-up", "Previous turn"),
+            false => ("rail-next", "chevron-down", "Next turn"),
+        };
+        let target = now
+            .and_then(|c| if up { c.checked_sub(1) } else { Some(c + 1) })
+            .and_then(|ix| prompts.get(ix).copied());
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(20.))
+            .ml(px(-6.))
+            .rounded(px(6.))
+            .opacity(0.)
+            .child(icon(name, 14., colors::text1().opacity(0.9)))
+            .tooltip(widgets::tip(tip))
+            .map(|d| match target {
+                Some(row) => d
+                    .cursor_pointer()
+                    .hover(|s| s.opacity(1.).bg(colors::surface3()))
+                    .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+                        v.follow.seek(&v.list, row);
+                        cx.notify();
+                    })),
+                None => d.hover(|s| s.opacity(0.4)),
+            })
+    };
+    let (prev, next) = (turn(true), turn(false));
+    const ENDS: f32 = 22.;
     let card = hover.map(|n| {
-        let (title, reply) = previews.get(prompt_of(n)).cloned().unwrap_or_default();
-        let column = shown as f32 * pitch;
+        let (title, reply) = previews(&v.model.items)
+            .get(prompt_of(n))
+            .cloned()
+            .unwrap_or_default();
+        let column = shown as f32 * pitch + 2. * ENDS;
         let start = (height - column) / 2.;
-        let top = (start + n as f32 * pitch - 18.).min(height - 120.).max(8.) - start;
+        let top = (start + ENDS + n as f32 * pitch - 18.)
+            .min(height - 120.)
+            .max(8.)
+            - start;
         div()
             .absolute()
-            .left(px(30.))
+            .left(px(32.))
             .top(px(top))
             .w(px(320.))
             .flex()
@@ -711,15 +838,15 @@ fn ticks(
             .child(
                 div()
                     .truncate()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(13.5))
+                    .font_weight(FontWeight::MEDIUM)
                     .text_color(colors::text1())
                     .child(title),
             )
             .when(!reply.is_empty(), |d| {
                 d.child(
                     div()
-                        .text_size(px(12.5))
+                        .text_size(px(13.))
                         .line_height(relative(1.5))
                         .text_color(colors::text3())
                         .line_clamp(3)
@@ -732,7 +859,9 @@ fn ticks(
                 |d, t| d.opacity(t),
             )
     });
-    let seen = pitch >= 9.
+    // there for good where the window leaves room beside the text, else near the pointer
+    let gutter = (width - COLUMN) / 2.;
+    let seen = gutter >= 48.
         || v.rail_near.get()
         || hover.is_some()
         || v.rail_until.is_some_and(|u| Instant::now() < u);
@@ -741,7 +870,10 @@ fn ticks(
         .relative()
         .flex()
         .flex_col()
-        .children(marks)
+        .gap(px(2.))
+        .child(prev)
+        .child(div().flex().flex_col().children(marks))
+        .child(next)
         .children(card);
     Some(
         div()
@@ -751,7 +883,7 @@ fn ticks(
             .top_0()
             .bottom_0()
             .w(px(56.))
-            .pl(px(10.))
+            .pl(px(12.))
             .flex()
             .items_center()
             .on_hover(cx.listener(|v, on: &bool, _, cx| {
@@ -809,7 +941,7 @@ fn fade_rail(
 
 fn fit_ticks(prompts: usize, room: f32) -> (usize, f32) {
     let shown = prompts.min((room / 4.).floor().max(2.) as usize);
-    (shown, (room / shown as f32).clamp(4., 9.))
+    (shown, (room / shown as f32).clamp(4., 8.))
 }
 
 fn previews(items: &[Item]) -> Vec<(String, String)> {
@@ -1085,20 +1217,10 @@ fn item(
         Item::Approval {
             request,
             tool,
-            reason,
-            always,
             answer,
             expired,
-        } => super::approval::card(
-            v,
-            request,
-            tool,
-            reason.as_deref(),
-            *always,
-            *answer,
-            *expired,
-            cx,
-        ),
+            ..
+        } => super::approval::card(v, request, tool, *answer, *expired, cx),
         Item::Error(message) => {
             // a model the account can't use is the error people hit most; say how to get past it
             let hint = message.to_lowercase().contains("model").then(|| {
@@ -1162,7 +1284,7 @@ fn item(
             .gap(px(10.))
             .text_size(px(11.5))
             .text_color(colors::text3())
-            .child(text.clone())
+            .child(div().min_w_0().child(text.clone()))
             .when(v.cut == Some(ix) && !v.model.running(), |d| {
                 d.child(
                     widgets::button("resume-cut", "Resume")
@@ -1259,6 +1381,10 @@ pub(super) fn unfold(
     body: impl IntoElement,
 ) -> AnyElement {
     let key = fold_key(cx, &id.into());
+    grow(&key, key.clone(), open, false, body)
+}
+
+fn grow(flip: &str, key: String, open: bool, primed: bool, body: impl IntoElement) -> AnyElement {
     let mark = key.clone();
     let measure = gpui::canvas(
         move |b, _, _| {
@@ -1269,12 +1395,18 @@ pub(super) fn unfold(
     )
     .absolute()
     .inset_0();
-    let body = div()
-        .relative()
-        .flex()
-        .flex_col()
-        .child(div().relative().flex_none().child(body).child(measure));
-    let Some(n) = slide::flipped(&key, UNFOLD) else {
+    let body = div().relative().w_full().flex().flex_col().child(
+        div()
+            .relative()
+            .w_full()
+            .flex_none()
+            .child(body)
+            .child(measure),
+    );
+    if primed {
+        return body.overflow_hidden().h_0().opacity(0.).into_any_element();
+    }
+    let Some(n) = slide::flipped(flip, UNFOLD) else {
         return body.into_any_element();
     };
     // the height is read each frame: on a first opening it is known from the second frame on
@@ -1600,27 +1732,15 @@ fn composer(
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.interrupt(cx)))
     } else {
-        widgets::send("send", "arrow-up")
+        widgets::send("send", "arrow-up", !v.empty || !v.images.is_empty())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(cx)))
     };
     // the prompt across the whole width, and under it the model, effort and permission on the
     // left with attach and send on the right
-    let pill = div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .rounded(px(14.))
-        .border_1()
-        .border_color(if focused {
-            colors::ink(0.12)
-        } else {
-            gpui::transparent_black()
-        })
-        .bg(colors::ink(0.045))
-        // files held over the thread land here
-        .drag_over::<ExternalPaths>(|s, _, _, _| {
-            s.border_color(colors::accent())
+    let pill = widgets::composer_box(focused)
+        .when(attach::held(), |d| {
+            d.border_color(colors::accent())
                 .bg(colors::accent().opacity(0.06))
         })
         .children(attach::peek(&v.images, v.peek))
@@ -1645,15 +1765,16 @@ fn composer(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
-                .px(px(8.))
-                .pt(px(12.))
-                .pb(px(8.))
+                .gap(px(10.))
+                .px(px(10.))
+                .pt(px(16.))
+                .pb(px(10.))
                 .child(
                     div()
                         .px(px(8.))
-                        .text_size(px(14.))
-                        .line_height(px(22.))
+                        .min_h(px(24.))
+                        .text_size(px(14.5))
+                        .line_height(px(23.))
                         .child(v.input.clone()),
                 )
                 .child(
@@ -1681,16 +1802,24 @@ fn composer(
                 ),
         )
         .when(v.ultra && agent == hyprspace_proto::Agent::Claude, |d| {
-            d.relative()
-                .child(super::ring::ring(14., focused && window.is_window_active()))
+            d.relative().child(super::ring::ring(
+                widgets::BOX_RADIUS,
+                focused && window.is_window_active(),
+            ))
         });
     let foot = div()
+        .mx(px(16.))
         .flex()
         .items_center()
         .justify_between()
         .gap(px(12.))
+        .h(px(28.))
         .px(px(12.))
-        .pt(px(8.))
+        .rounded_b(px(12.))
+        .border_1()
+        .border_t_0()
+        .border_color(colors::border1())
+        .bg(colors::ink(0.025))
         .text_size(px(11.5))
         .text_color(colors::text3())
         .child(
@@ -1769,6 +1898,8 @@ fn composer(
     centered(
         column()
             .pb(px(12.))
+            .children(super::aside::card(v, cx))
+            .children(super::approval::dock(v, cx))
             .children(tray(v, cx))
             .children(tasks)
             .child(pill)
@@ -2033,37 +2164,31 @@ pub(super) fn permission_menu(
     window: &mut Window,
     cx: &mut Context<TranscriptView>,
 ) -> Option<AnyElement> {
-    use hyprspace_proto::Permission;
     let at = v.perm_menu?;
-    let rows = div().w(px(280.)).flex().flex_col().gap(px(1.)).children(
-        [
-            Permission::Plan,
-            Permission::Ask,
-            Permission::Auto,
-            Permission::Bypass,
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(i, mode)| {
-            widgets::menu_item(
-                ("thread-perm", i),
-                crate::composer::pickers::permission_label(mode),
-                Some(crate::composer::pickers::permission_note(mode).into()),
-                mode == v.launch.permission,
-            )
-            .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.pick_permission(mode, cx)))
-        }),
+    let rows = div().w(px(300.)).flex().flex_col().gap(px(1.)).children(
+        crate::composer::pickers::MODES
+            .into_iter()
+            .enumerate()
+            .map(|(i, mode)| {
+                crate::composer::pickers::permission_row(
+                    ("thread-perm", i),
+                    mode,
+                    mode == v.launch.permission,
+                )
+                .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.pick_permission(mode, cx)))
+            }),
     );
     let close = cx.listener(|v, _: &(), _, cx| {
         v.perm_menu = None;
         cx.notify();
     });
-    Some(widgets::popup(
+    Some(widgets::popup_with_note(
         at,
         widgets::Open::Up,
         window,
         move |w, cx| close(&(), w, cx),
         rows,
+        "Switching keeps this conversation.",
     ))
 }
 

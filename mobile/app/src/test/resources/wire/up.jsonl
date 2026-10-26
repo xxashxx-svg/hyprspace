@@ -1,6 +1,7 @@
 {"type":"hello","token":"tok","device":"Pixel","protocol":2,"app":"0.24.4 (5321b19)"}
 {"type":"pair","proof":"aGk","device":"Pixel","protocol":2,"app":"0.24.4 (5321b19)"}
 {"type":"watch","thread":2}
+{"type":"watch","thread":2,"tail":200000}
 {"type":"unwatch","thread":2}
 {"type":"fit","thread":3,"cols":40,"rows":20}
 {"type":"unfit","thread":3}
@@ -13,6 +14,7 @@
 {"type":"ask","ask":{"type":"steer","thread":2,"index":0,"text":"then this"}}
 {"type":"ask","ask":{"type":"unqueue","thread":2,"index":0,"text":"then this"}}
 {"type":"ask","ask":{"type":"stopTask","thread":2,"task":"b1"}}
+{"type":"ask","ask":{"type":"dropAside","thread":2}}
 {"type":"ask","ask":{"type":"permission","thread":2,"permission":"auto"}}
 {"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"time","at":1760000000000}}}
 {"type":"ask","ask":{"type":"snooze","thread":2,"until":{"until":"done"}}}

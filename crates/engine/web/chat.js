@@ -46,6 +46,7 @@ export class Chat {
     this.effort = h("span", { class: "chip chip-quiet" });
     this.workRow = h("div", { class: "working" });
     this.tray = h("div", { class: "tray" });
+    this.aside = h("div", { class: "aside", hidden: true });
     this.folder = h("span", { class: "foot-item" });
     this.place = h("span", { class: "foot-item" });
     this.context = h("span", { class: "foot-item" });
@@ -64,7 +65,7 @@ export class Chat {
       ),
     );
     const foot = h("div", { class: "composer-foot" }, this.folder, h("span", { class: "grow" }), this.place, this.context);
-    this.el = h("div", { class: "chat" }, this.scroller, h("div", { class: "composer" }, this.tray, this.workRow, pill, foot));
+    this.el = h("div", { class: "chat" }, this.scroller, h("div", { class: "composer" }, this.aside, this.tray, this.workRow, pill, foot));
   }
 
   entries(entries, reset) {
@@ -100,7 +101,11 @@ export class Chat {
   draw() {
     const keep = new Set();
     let prev = null;
-    for (const it of this.t.items) {
+    const folds = this.t.folds();
+    const hidden = new Set(folds.flatMap((f) => (this.open.has(`fold${f.prompt}`) ? [] : f.hide)));
+    const heads = new Map(folds.map((f) => [f.first, { kind: "fold", key: `fold${f.prompt}`, v: f.ms }]));
+    const shown = this.t.items.flatMap((it) => [...(heads.has(it.key) ? [heads.get(it.key)] : []), ...(hidden.has(it.key) ? [] : [it])]);
+    for (const it of shown) {
       if (it.kind === "finished" && it.status === "done") continue;
       keep.add(it.key);
       let row = this.rows.get(it.key);
@@ -125,7 +130,7 @@ export class Chat {
     this.sendButton.classList.toggle("stop", stop);
     this.sendButton.title = stop ? "Stop" : "Send";
     this.sendButton.replaceChildren(stop ? h("span", { class: "stop-square" }) : icon("arrow-up", 15));
-    this.input.placeholder = busy ? "Queue a message for when it finishes" : "Ask for anything";
+    this.input.placeholder = this.t.denies() ? "Send a message to deny and redirect the agent" : busy ? "Queue a message for when it finishes" : "Ask for anything";
     const since = this.info && this.info.since;
     this.workRow.hidden = !busy;
     if (busy) this.workRow.replaceChildren(h("span", { class: "dots" }, h("i"), h("i")), h("span", null, this.info && this.info.status === "waiting" ? "Waiting on you" : "Working"), h("span", { class: "grow" }), since ? h("span", { class: "mono", "data-since": since }, elapsed(since)) : null);
@@ -169,6 +174,23 @@ export class Chat {
         );
       }),
     ]);
+  }
+
+  side(a) {
+    this.aside.hidden = !a;
+    if (!a) return this.aside.replaceChildren();
+    const body = a.error ? h("div", { class: "dim" }, a.error) : a.text ? markdown(a.text) : h("div", { class: "dim" }, "Answering");
+    this.aside.replaceChildren(
+      h(
+        "div",
+        { class: "aside-head" },
+        icon("message-square", 13),
+        h("div", { class: "aside-question" }, a.question),
+        a.done ? null : h("span", { class: "dots" }, h("i"), h("i")),
+        h("button", { class: "tray-round", title: "Close", onclick: () => this.app.ask({ type: "dropAside", thread: this.id }) }, icon("x", 13)),
+      ),
+      h("div", { class: "aside-body" }, body),
+    );
   }
 
   scrolled() {
@@ -226,6 +248,8 @@ export class Chat {
         return h("div", { class: "error" }, it.message);
       case "note":
         return h("div", { class: "dim small" }, it.text);
+      case "fold":
+        return fold(open, it.v == null ? "Continued" : `Worked for ${elapsed(Date.now() - it.v)}`, null, () => this.toggle(it.key), null);
       case "finished":
         return h("div", { class: it.status === "failed" ? "error small" : "dim small" }, it.status === "failed" ? (it.error ? `Failed: ${it.error}` : `Failed after ${(it.ms / 1000).toFixed(1)}s`) : `Stopped after ${(it.ms / 1000).toFixed(1)}s`);
     }

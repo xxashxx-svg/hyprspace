@@ -62,6 +62,19 @@ fn text_of(params: &Value) -> String {
         .collect()
 }
 
+pub fn exec(args: &[String]) {
+    let asked = std::io::read_to_string(std::io::stdin()).unwrap_or_default();
+    let at = args.iter().position(|a| a == "-o");
+    let Some(out) = at.and_then(|at| args.get(at + 1)) else {
+        std::process::exit(2);
+    };
+    let ok = args.iter().any(|a| a == "--ephemeral")
+        && args.last().is_some_and(|a| a == "-")
+        && asked.contains("The conversation:");
+    let said = if ok { "Fix the login bug" } else { "bad exec" };
+    let _ = std::fs::write(out, said);
+}
+
 pub fn run() {
     let hello = read().unwrap_or_default();
     let named = hello["params"]["clientInfo"]["name"] == "hyprspace";

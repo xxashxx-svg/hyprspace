@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -75,12 +76,58 @@ private val parser: Parser = Parser.builder()
 
 @Composable
 fun Markdown(text: String, modifier: Modifier = Modifier) {
-    val doc = remember(text) { parser.parse(text) }
+    val parts = remember(text) { stretches(text) }
     SelectionContainer(modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Blocks(doc)
+            for (p in parts) Stretch(p)
         }
     }
+}
+
+// a layer each, so a stretch that stopped changing keeps its drawing while the last one grows
+@Composable
+private fun Stretch(text: String) {
+    val doc = remember(text) { parser.parse(text) }
+    Column(Modifier.graphicsLayer(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Blocks(doc)
+    }
+}
+
+/**
+ * [text] cut at blank lines outside code fences, so a reply that grows parses and lays out only
+ * its last stretch. A line indented after a blank one still belongs to the list item above it.
+ */
+internal fun stretches(text: String): List<String> {
+    val out = ArrayList<String>()
+    val cur = StringBuilder()
+    var fence: String? = null
+    var gap = false
+    for (line in text.split('\n')) {
+        val lead = line.trimStart()
+        if (fence != null) {
+            cur.append(line).append('\n')
+            if (lead.startsWith(fence) && lead.trimEnd().all { it == fence!![0] }) fence = null
+            continue
+        }
+        if (line.isBlank()) {
+            gap = true
+            continue
+        }
+        if (gap && cur.isNotEmpty()) {
+            if (line[0] == ' ' || line[0] == '\t') {
+                cur.append('\n')
+            } else {
+                out += cur.toString()
+                cur.clear()
+            }
+        }
+        gap = false
+        val tick = lead.takeWhile { it == '`' || it == '~' }
+        if (tick.length >= 3 && tick.all { it == tick[0] }) fence = tick
+        cur.append(line).append('\n')
+    }
+    if (cur.isNotEmpty()) out += cur.toString()
+    return out
 }
 
 private fun Node.children(): List<Node> = generateSequence(firstChild) { it.next }.toList()

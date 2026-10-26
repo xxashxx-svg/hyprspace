@@ -228,7 +228,6 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
         .iter()
         .find(|x| x.agent == spec.agent && x.id == crate::models::windowed(&spec.model, false))
         .map_or_else(|| "Default".to_string(), |x| x.label.clone());
-    let changed = !spec.effort.is_empty() || s.level.is_some();
 
     let name = match now {
         Some(i) => div()
@@ -262,33 +261,6 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
         .child(model)
         .child(icon("chevron-right", 11., colors::text3()))
         .on_click(cx.listener(|h: &mut H, _: &ClickEvent, window, cx| to_models(h, window, cx)));
-    let tip = match &spec.default_effort {
-        Some(d) => format!("Reset to {}, the model's default", effort_label(d)),
-        None => "Reset to the model's default".into(),
-    };
-    let reset = changed.then(|| {
-        div()
-            .id("effort-reset")
-            .tooltip(crate::widgets::tip_text(tip))
-            .absolute()
-            .top(px(0.))
-            .right(px(0.))
-            .size(px(24.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(6.))
-            .cursor_pointer()
-            .hover(|s| s.bg(colors::ink(0.08)))
-            .child(icon("rotate-ccw", 13., colors::text3()))
-            .on_click(cx.listener(|h: &mut H, _: &ClickEvent, _, cx| {
-                if let Some(m) = h.model_menu() {
-                    m.slider.take();
-                }
-                h.choose(Choice::Effort(String::new()), cx);
-                cx.notify();
-            }))
-    });
     let head = div()
         .relative()
         .flex()
@@ -296,8 +268,7 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
         .items_center()
         .gap(px(4.))
         .child(name)
-        .child(chip)
-        .children(reset);
+        .child(chip);
 
     let slider = (n > 0).then(|| {
         let frac = move |i: usize| {

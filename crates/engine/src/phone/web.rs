@@ -68,7 +68,8 @@ const ASSETS: &[(&str, &[u8])] = ui!(
     "icons/pencil.svg",
     "icons/gauge.svg",
     "icons/bot.svg",
-    "icons/zap.svg"
+    "icons/zap.svg",
+    "icons/message-square.svg"
 );
 
 fn find(path: &str) -> Option<(&'static str, &'static [u8], bool)> {

@@ -9,6 +9,7 @@ mod settle;
 mod switch;
 mod threads;
 pub mod titlebar;
+mod titles;
 mod worktree;
 
 pub(crate) use threads::{folder_name, same_folder, scratch_root};
@@ -79,6 +80,7 @@ pub enum Action {
     Worktree(u64, hyprspace_proto::git::WorktreeAction),
     /// Opens the space's icon picker where the menu was.
     ProjectIcon(u64),
+    RegenerateTitle(u64),
 }
 
 /// One line of a right-click menu.
@@ -95,6 +97,7 @@ pub enum MenuEntry {
     /// A row that opens more choices beside it while the pointer is on it.
     Sub {
         label: SharedString,
+        icon: &'static str,
         entries: Vec<MenuEntry>,
     },
 }
@@ -120,6 +123,9 @@ pub struct Root {
     pub(crate) state: AppState,
     pub(crate) loaded: bool,
     pub(crate) agents: Vec<AgentInfo>,
+    naming: HashMap<u64, String>,
+    typing: HashMap<u64, std::time::Instant>,
+    title_tick: bool,
     pub(crate) views: HashMap<u64, View>,
     pub(crate) sessions: HashMap<SessionId, u64>,
     pub(crate) delegations: HashMap<u64, u64>,
@@ -339,6 +345,9 @@ impl Root {
             state: AppState::default(),
             loaded: false,
             agents: Vec::new(),
+            naming: HashMap::new(),
+            typing: HashMap::new(),
+            title_tick: false,
             views: HashMap::new(),
             sessions: HashMap::new(),
             delegations: HashMap::new(),
@@ -421,7 +430,8 @@ impl Root {
                         let agent = v.read(cx).agent();
                         if let Some(info) = agents.iter().find(|a| a.agent == agent) {
                             let catalog = info.catalog.clone();
-                            v.update(cx, |v, cx| v.set_catalog(catalog, cx));
+                            let version = info.status.version.clone();
+                            v.update(cx, |v, cx| v.set_catalog(catalog, version, cx));
                         }
                     }
                 }
@@ -453,6 +463,15 @@ impl Root {
             Event::Run { id, event } => {
                 if let Some(View::Structured(v)) = self.view_of(id) {
                     v.update(cx, |v, cx| v.apply(event, cx));
+                }
+            }
+            Event::Title { thread, title } => {
+                self.named(thread, title, cx);
+                cx.notify();
+            }
+            Event::Aside { id, aside } => {
+                if let Some(View::Structured(v)) = self.view_of(id) {
+                    v.update(cx, |v, cx| v.heard_aside(aside, cx));
                 }
             }
             Event::Journal { id, entries } => {

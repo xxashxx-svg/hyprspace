@@ -32,7 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -122,7 +122,7 @@ fun StatusMark(status: BoardStatus) {
             val pulse by rememberInfiniteTransition(label = "wait").animateFloat(
                 0.35f, 1f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "wait",
             )
-            Box(Modifier.size(9.dp).alpha(pulse).clip(CircleShape).background(h.waiting))
+            Box(Modifier.size(9.dp).graphicsLayer { alpha = pulse }.clip(CircleShape).background(h.waiting))
         }
         BoardStatus.Done -> Box(
             Modifier.size(14.dp).clip(CircleShape).background(h.ok),

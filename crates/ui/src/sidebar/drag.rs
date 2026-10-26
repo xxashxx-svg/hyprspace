@@ -86,6 +86,9 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !paths.paths().iter().any(|p| p.is_dir()) {
+            return self.drop_anywhere(paths, window, cx);
+        }
         let mut last = None;
         for p in paths.paths().iter().filter(|p| p.is_dir()) {
             last = Some(self.add_project(p.clone(), cx));

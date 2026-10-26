@@ -18,6 +18,7 @@ pub struct Journal {
 /// Hears each entry as it is recorded, streamed text piece by piece. Returns false once it no
 /// longer wants to, and is dropped.
 pub type Watcher = Box<dyn FnMut(&Entry) -> bool + Send>;
+pub type First<'a> = Box<dyn FnOnce(&Path) + 'a>;
 
 struct Inner {
     path: PathBuf,
@@ -87,14 +88,15 @@ impl Journal {
         inner.write(&entry);
     }
 
-    /// Adds a watcher. With `first`, hands it every entry recorded so far, under the same lock
-    /// `record` takes, so the watcher misses nothing, hears nothing twice and hears it in order.
-    pub fn watch(&self, first: Option<Box<dyn FnOnce(Vec<Entry>) + '_>>, watcher: Watcher) {
+    /// Adds a watcher. With `first`, hands it the file holding every entry recorded so far, under
+    /// the same lock `record` takes, so the watcher misses nothing, hears nothing twice and hears
+    /// it in order.
+    pub fn watch(&self, first: Option<First<'_>>, watcher: Watcher) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(first) = first {
             // a reply still streaming is written out, to go on in a line of its own
             inner.flush_pending();
-            first(load(&inner.path));
+            first(&inner.path);
         }
         inner.watchers.push(watcher);
     }
@@ -135,6 +137,48 @@ pub fn load(file: &Path) -> Vec<Entry> {
         .map_while(Result::ok)
         .filter_map(|line| serde_json::from_str(&line).ok())
         .collect()
+}
+
+/// The journal's last whole prompts that fit in about `budget` bytes, and at least the last, with
+/// how many prompts came before them. Without a budget, all of it.
+pub fn tail(file: &Path, budget: Option<usize>) -> (u32, Vec<Entry>) {
+    let Some(budget) = budget else {
+        return (0, load(file));
+    };
+    let Ok(bytes) = std::fs::read(file) else {
+        return (0, Vec::new());
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    let start = tail_start(&lines, budget);
+    let before = lines[..start].iter().filter(|l| is_prompt(l)).count() as u32;
+    let entries = lines[start..]
+        .iter()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    (before, entries)
+}
+
+// told by how the line starts, so a tail parses only the lines it keeps
+fn is_prompt(line: &str) -> bool {
+    line.starts_with(r#"{"type":"prompt""#)
+}
+
+fn tail_start(lines: &[&str], budget: usize) -> usize {
+    let mut size = 0;
+    let mut start = None;
+    for (i, line) in lines.iter().enumerate().rev() {
+        size += line.len();
+        if is_prompt(line) {
+            if size > budget
+                && let Some(start) = start
+            {
+                return start;
+            }
+            start = Some(i);
+        }
+    }
+    0
 }
 
 pub fn import(file: &Path, conversation: &str) {
@@ -376,7 +420,7 @@ mod tests {
         let h = heard.clone();
         let mut before = Vec::new();
         j.watch(
-            Some(Box::new(|e| before = e)),
+            Some(Box::new(|file| before = load(file))),
             Box::new(move |e| {
                 h.lock().unwrap().push(e.clone());
                 true
@@ -390,6 +434,42 @@ mod tests {
         // the reply split where the watcher came in, and replays the same
         let all = load(&path(dir.path(), "thread-2"));
         assert_eq!(all[1..], [run(text("Hel")), run(text("lo"))]);
+    }
+
+    #[test]
+    fn a_tail_keeps_whole_prompts_from_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = path(dir.path(), "thread-2");
+        let j = Journal::open(&file);
+        let prompt = |t: &str| Entry::Prompt {
+            prompt: Prompt::text(t),
+        };
+        for (p, n) in [("a", 500), ("b", 50), ("c", 50)] {
+            j.record(prompt(p));
+            j.record(run(RunEvent::Error {
+                message: "x".repeat(n),
+            }));
+        }
+        drop(j);
+        assert!(is_prompt(&serde_json::to_string(&prompt("a")).unwrap()));
+        let texts = |(before, e): (u32, Vec<Entry>)| {
+            let firsts: Vec<_> = e
+                .iter()
+                .filter_map(|e| match e {
+                    Entry::Prompt { prompt } => Some(prompt.text.clone()),
+                    _ => None,
+                })
+                .collect();
+            (before, firsts)
+        };
+        assert_eq!(
+            texts(tail(&file, Some(400))),
+            (1, vec!["b".into(), "c".into()])
+        );
+        assert_eq!(texts(tail(&file, Some(10_000))).0, 0);
+        // the last prompt comes whole, however big
+        assert_eq!(texts(tail(&file, Some(10))), (2, vec!["c".into()]));
+        assert_eq!(tail(&file, None).1.len(), 6);
     }
 
     #[test]

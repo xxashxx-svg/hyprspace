@@ -11,6 +11,7 @@
 // the background answers its call at once with a launch note, so that call stays open until the
 // subagent's `task_notification`, and the CLI then starts a run of its own to read the result.
 
+mod aside;
 mod history;
 mod resume;
 
@@ -35,7 +36,7 @@ use crate::spawn::{Tail, exit_message, spawn};
 use crate::{Emit, Harness, Input, Session};
 
 pub struct Claude {
-    program: PathBuf,
+    pub(crate) program: PathBuf,
     config: Option<PathBuf>,
     patience: Duration,
     mcp: Option<crate::Mcp>,
@@ -176,8 +177,13 @@ impl Harness for Claude {
             .and_then(|(thread, config)| resume::origin(config, thread));
         let cwd = origin.unwrap_or_else(|| launch.cwd.clone());
         let mut keep = None;
-        let mut fork = false;
-        if let Some(rewind) = launch.rewind.take() {
+        // an empty fork carries the whole conversation on
+        let whole = launch
+            .rewind
+            .as_ref()
+            .is_some_and(|r| r.fork && r.text.is_empty());
+        let mut fork = whole;
+        if let Some(rewind) = launch.rewind.take().filter(|_| !whole) {
             let point = launch
                 .resume
                 .as_deref()
