@@ -4,6 +4,17 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.36 — 2026-10-26
+
+- Finished runs fold their work under one Worked for line
+- Approvals wait above the box, and a message you send denies them and redirects the agent
+- New threads name themselves with a small model, and Regenerate title is in the thread menu (switch in Settings, General)
+- /btw side questions and more slash commands, on the phone and in the browser too
+- Select text in a reply and Cite it into the box
+- Drop files anywhere in the window, and videos get their own markers
+- A refreshed composer, menus and turn rail
+- Big threads open much faster
+
 ## 0.24.35 — 2026-10-25
 
 - Opening a thread that finished while you were away lands at the end instead of scrolling through the reply
