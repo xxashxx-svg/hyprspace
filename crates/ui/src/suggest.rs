@@ -35,6 +35,8 @@ const ASK_AGAIN: Duration = Duration::from_secs(10);
 
 type Chips = Rc<HashSet<String>>;
 
+pub const THREAD: &str = "\u{1}thread:";
+
 #[derive(Default)]
 struct Known {
     commands: HashMap<Agent, Vec<String>>,
@@ -46,6 +48,7 @@ struct Known {
     files: HashMap<PathBuf, (Instant, Vec<String>)>,
     skills: HashMap<PathBuf, (Instant, Vec<SkillItem>)>,
     asked: HashMap<(PathBuf, bool), Instant>,
+    threads: Vec<Item>,
 }
 
 impl Global for Known {}
@@ -68,6 +71,10 @@ pub fn set_info(agent: Agent, cwd: PathBuf, info: Vec<CommandInfo>, cx: &mut App
     let known = cx.default_global::<Known>();
     known.info.insert((agent, cwd), info);
     known.version += 1;
+}
+
+pub fn set_threads(threads: Vec<Item>, cx: &mut App) {
+    cx.default_global::<Known>().threads = threads;
 }
 
 pub fn set_files(cwd: PathBuf, files: Vec<String>, cx: &mut App) {
@@ -144,6 +151,7 @@ pub struct Suggest {
     pub open: Option<Open>,
     muted: Option<usize>,
     own: Vec<Item>,
+    threads: bool,
 }
 
 impl Suggest {
@@ -152,6 +160,11 @@ impl Suggest {
             own,
             ..Self::default()
         }
+    }
+
+    pub fn with_threads(mut self) -> Self {
+        self.threads = true;
+        self
     }
 
     pub fn refresh(
@@ -172,7 +185,7 @@ impl Suggest {
             cursor,
             agent,
             cwd,
-            (&self.own, self.muted),
+            (&self.own, self.muted, self.threads),
             client,
             cx,
         );
@@ -192,15 +205,18 @@ impl Suggest {
         });
     }
 
-    pub fn accept(&mut self, ix: Option<usize>, input: &Entity<TextInput>, cx: &mut App) {
-        let Some(open) = self.open.take() else {
-            return;
-        };
-        if let Some(item) = open.items.get(ix.unwrap_or(open.sel)) {
-            input.update(cx, |i, cx| {
-                i.replace_range(open.range.clone(), &item.insert, cx)
-            });
-        }
+    pub fn accept(
+        &mut self,
+        ix: Option<usize>,
+        input: &Entity<TextInput>,
+        cx: &mut App,
+    ) -> Option<u64> {
+        let open = self.open.take()?;
+        let item = open.items.get(ix.unwrap_or(open.sel))?;
+        let thread = item.insert.strip_prefix(THREAD);
+        let text = if thread.is_some() { "" } else { &item.insert };
+        input.update(cx, |i, cx| i.replace_range(open.range.clone(), text, cx));
+        thread.and_then(|id| id.parse().ok())
     }
 
     pub fn step(&mut self, by: isize) {
@@ -219,7 +235,7 @@ fn detect(
     cursor: usize,
     agent: Agent,
     cwd: &Path,
-    (own, muted): (&[Item], Option<usize>),
+    (own, muted, threads): (&[Item], Option<usize>, bool),
     client: &Client,
     cx: &mut App,
 ) -> Option<Open> {
@@ -237,7 +253,7 @@ fn detect(
         Some(_) => return None,
         None => match word.strip_prefix('$') {
             Some(q) => (q, true),
-            None => return files(word, start..cursor, cwd, muted, client, cx),
+            None => return files(word, start..cursor, cwd, (muted, threads), client, cx),
         },
     };
     if muted == Some(start) {
@@ -262,7 +278,7 @@ fn files(
     word: &str,
     range: Range<usize>,
     cwd: &Path,
-    muted: Option<usize>,
+    (muted, threads): (Option<usize>, bool),
     client: &Client,
     cx: &mut App,
 ) -> Option<Open> {
@@ -272,19 +288,27 @@ fn files(
     }
     want(client, cwd, true, cx);
     let known = cx.default_global::<Known>();
-    let (_, files) = known.files.get(cwd)?;
-    let files: Vec<Item> = files
-        .iter()
-        .map(|f| {
-            let (dir, name) = f.rsplit_once('/').unwrap_or(("", f));
-            Item {
-                label: name.to_string(),
-                detail: dir.to_string(),
-                insert: format!("@{f} "),
-            }
+    let mut all: Vec<Item> = known
+        .files
+        .get(cwd)
+        .map(|(_, files)| {
+            files
+                .iter()
+                .map(|f| {
+                    let (dir, name) = f.rsplit_once('/').unwrap_or(("", f));
+                    Item {
+                        label: name.to_string(),
+                        detail: dir.to_string(),
+                        insert: format!("@{f} "),
+                    }
+                })
+                .collect()
         })
-        .collect();
-    let items = rank(&files, q);
+        .unwrap_or_default();
+    if threads {
+        all.extend(known.threads.iter().cloned());
+    }
+    let items = rank(&all, q);
     (!items.is_empty()).then_some(Open {
         kind: Kind::File,
         range,
@@ -466,6 +490,7 @@ pub fn render(
                 ("square-slash", format!("${}", item.label))
             }
             Kind::Command => ("square-slash", format!("/{}", item.label)),
+            Kind::File if item.insert.starts_with(THREAD) => ("message-square", item.label.clone()),
             Kind::File => ("file", item.label.clone()),
         };
         div()
@@ -532,6 +557,9 @@ pub fn render(
                 .text_color(colors::text3())
                 .child(match open.kind {
                     Kind::Command => "Commands and skills",
+                    Kind::File if open.items.iter().any(|i| i.insert.starts_with(THREAD)) => {
+                        "Files and threads"
+                    }
                     Kind::File => "Files",
                 }),
         )

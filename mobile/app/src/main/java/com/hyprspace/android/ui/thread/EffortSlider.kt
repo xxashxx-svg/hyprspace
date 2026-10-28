@@ -24,18 +24,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
+import com.hyprspace.android.ui.feel
 import kotlin.math.roundToInt
 
 fun effortLabel(e: String): String = when (e) {
@@ -50,12 +52,14 @@ private val KNOB = 24.dp
 @Composable
 fun EffortSlider(levels: List<String>, value: String, fallback: String?, onPick: (String) -> Unit) {
     val h = LocalHues.current
-    val haptic = LocalHapticFeedback.current
+    val host = LocalView.current
     val density = LocalDensity.current
     val resting = levels.indexOf(value.ifEmpty { fallback ?: "" }).takeIf { it >= 0 } ?: (levels.size / 2)
     var dragging by remember { mutableStateOf<Int?>(null) }
     var width by remember { mutableIntStateOf(1) }
     val at = dragging ?: resting
+    // the gesture blocks below outlive the composition that made them
+    val rest by rememberUpdatedState(resting)
     val shown = levels.getOrElse(at) { "" }
     val end = with(density) { (TRACK / 2).toPx() }
     val span = (width - 2 * end).coerceAtLeast(1f)
@@ -66,7 +70,7 @@ fun EffortSlider(levels: List<String>, value: String, fallback: String?, onPick:
         label = "knob",
     )
     fun move(i: Int) {
-        if (i != at) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        if (i != (dragging ?: rest)) host.feel(Feel.Tick)
         dragging = i
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -85,7 +89,11 @@ fun EffortSlider(levels: List<String>, value: String, fallback: String?, onPick:
                 .clip(CircleShape)
                 .background(h.ink(0.07f))
                 .pointerInput(levels) {
-                    detectTapGestures { o -> onPick(levels[stop(o.x)]) }
+                    detectTapGestures { o ->
+                        val i = stop(o.x)
+                        if (i != rest) host.feel(Feel.Tick)
+                        onPick(levels[i])
+                    }
                 }
                 .pointerInput(levels) {
                     detectHorizontalDragGestures(

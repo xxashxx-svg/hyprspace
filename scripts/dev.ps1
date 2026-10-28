@@ -55,6 +55,8 @@ function Stop-App {
     if (-not $script:app -or $script:app.HasExited) { return }
     # closing the window lets the app end its terminals; a killed app leaves shells and agents behind
     $null = $script:app.CloseMainWindow()
+    # a thread still working asks before closing, and a second close is the yes
+    if (-not $script:app.WaitForExit(1500)) { $null = $script:app.CloseMainWindow() }
     if (-not $script:app.WaitForExit(8000)) {
         Write-Host 'The app did not close in time, so it was stopped.' -ForegroundColor Yellow
         Stop-Process -Id $script:app.Id -Force -ErrorAction SilentlyContinue

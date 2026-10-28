@@ -6,6 +6,7 @@ mod approval;
 mod aside;
 mod ask;
 mod background;
+mod banner;
 mod branch;
 mod changes;
 mod commands;
@@ -67,6 +68,7 @@ pub enum TranscriptEvent {
     SignIn,
     Rename(String),
     Settings(crate::settings::Tab),
+    Reference(u64),
     Fork {
         launch: Launch,
         keep: usize,
@@ -118,6 +120,7 @@ pub struct TranscriptView {
     aside: Option<aside::Card>,
     /// The agent CLI's version, for `/status`.
     cli_version: Option<String>,
+    provider: Option<hyprspace_proto::agents::ProviderStatus>,
     task_poll: Option<Task<()>>,
     catalog: Option<AgentCatalog>,
     menu: Option<ModelMenu>,
@@ -142,8 +145,11 @@ pub struct TranscriptView {
     pub(super) steps: std::collections::HashMap<String, usize>,
     pub(super) expanded: HashSet<usize>,
     pub(super) unfolded: HashSet<usize>,
+    typed_at: Option<Instant>,
+    pub(super) held: HashSet<String>,
     pub(super) turn_flip: Option<(usize, bool)>,
     pub(super) turn_primed: bool,
+    pub(super) appear: Option<(Instant, Option<Instant>)>,
     pub(super) turn_anim: Option<(usize, bool, HashSet<usize>)>,
     pub(super) answered: std::collections::HashMap<String, Vec<(String, String)>>,
     /// What was typed for each question's Other choice, and the field open for one.
@@ -230,6 +236,7 @@ impl TranscriptView {
                 cx.notify();
             }
             InputEvent::Changed => {
+                this.typed_at = Some(Instant::now());
                 this.keep_draft(cx);
                 this.refresh_suggest(cx);
                 let text = this.input.read(cx).text();
@@ -284,6 +291,7 @@ impl TranscriptView {
             task_log: None,
             aside: None,
             cli_version: None,
+            provider: None,
             task_poll: None,
             catalog: None,
             menu: None,
@@ -298,13 +306,16 @@ impl TranscriptView {
             repicked: false,
             status: Status::Idle,
             stopping: false,
-            suggest: crate::suggest::Suggest::with(commands::items()),
+            suggest: crate::suggest::Suggest::with(commands::items()).with_threads(),
             picks: Default::default(),
             steps: Default::default(),
             expanded: HashSet::new(),
             unfolded: HashSet::new(),
+            typed_at: None,
+            held: HashSet::new(),
             turn_flip: None,
             turn_primed: false,
+            appear: None,
             turn_anim: None,
             answered: Default::default(),
             others: Default::default(),
@@ -511,11 +522,12 @@ impl TranscriptView {
     pub fn set_catalog(
         &mut self,
         catalog: AgentCatalog,
-        version: Option<String>,
+        status: hyprspace_proto::agents::ProviderStatus,
         cx: &mut Context<Self>,
     ) {
         self.catalog = Some(catalog);
-        self.cli_version = version;
+        self.cli_version = status.version.clone();
+        self.provider = Some(status);
         cx.notify();
     }
 
@@ -577,6 +589,14 @@ impl TranscriptView {
         }
     }
 
+    pub fn blocked(&self) -> bool {
+        !self.remote
+            && self
+                .provider
+                .as_ref()
+                .is_some_and(|s| !s.installed || s.signed_out())
+    }
+
     /// The thread runs on another computer, which keeps its journal and sends what it records.
     pub fn set_remote(&mut self) {
         self.remote = true;
@@ -618,6 +638,26 @@ impl TranscriptView {
         };
         self.input.update(cx, |i, cx| i.set_text("", cx));
         self.redirect(prompt, cx);
+    }
+
+    fn release_held(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(TYPING).await;
+                let idle = this.update(cx, |v, cx| {
+                    if v.typed_at.is_some_and(|t| t.elapsed() < TYPING) {
+                        return false;
+                    }
+                    v.held.clear();
+                    v.changed(cx);
+                    true
+                });
+                if !matches!(idle, Ok(false)) {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     fn redirect(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
@@ -685,6 +725,17 @@ impl TranscriptView {
             false => format!("{}\n\n{draft}", prompt.text),
         };
         self.images.splice(0..0, prompt.images);
+        self.input.update(cx, |i, cx| i.set_text(text, cx));
+        window.focus(&self.input.focus_handle(cx), cx);
+    }
+
+    pub fn add_output(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let block = format!("```\n{}\n```", text.trim_matches(['\r', '\n']).trim_end());
+        let draft = self.input.read(cx).text().trim_end().to_string();
+        let text = match draft.is_empty() {
+            true => format!("{block}\n\n"),
+            false => format!("{draft}\n\n{block}\n\n"),
+        };
         self.input.update(cx, |i, cx| i.set_text(text, cx));
         window.focus(&self.input.focus_handle(cx), cx);
     }
@@ -1070,6 +1121,52 @@ impl TranscriptView {
         });
     }
 
+    /// A new thread that keeps the first `keep` prompts and their replies, from the phone.
+    pub fn fork_keeping(&mut self, keep: usize, prompt: &str, cx: &mut Context<Self>) {
+        let users: Vec<(usize, &str)> = self
+            .model
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, i)| match i {
+                Item::User { text, .. } => Some((ix, text.trim())),
+                _ => None,
+            })
+            .collect();
+        let prompt = prompt.trim();
+        let counted = keep
+            .checked_sub(1)
+            .and_then(|at| users.get(at))
+            .is_some_and(|(_, text)| prompt.is_empty() || *text == prompt);
+        let keep = if counted {
+            keep
+        } else {
+            match users.iter().rposition(|(_, text)| *text == prompt) {
+                Some(at) => at + 1,
+                None => return,
+            }
+        };
+        let next = users.get(keep).map(|(ix, _)| *ix);
+        let Some(ix) = next else {
+            return self.branch(cx);
+        };
+        let Some((text, _, nth, keep)) = self.point(ix) else {
+            return;
+        };
+        let mut launch = self.launch.clone();
+        launch.rewind = launch.resume.is_some().then_some(hyprspace_proto::Rewind {
+            text,
+            nth,
+            fork: true,
+        });
+        cx.emit(TranscriptEvent::Fork {
+            launch,
+            keep,
+            text: String::new(),
+            images: Vec::new(),
+        });
+    }
+
     pub(super) fn rewind(&mut self, ix: usize, cx: &mut Context<Self>) {
         let Some((text, images, nth, keep)) = self.point(ix) else {
             return;
@@ -1172,6 +1269,13 @@ impl TranscriptView {
         }
         if let RunEvent::Limited { resets } = &event {
             cx.emit(TranscriptEvent::Limited(*resets));
+        }
+        // an approval that lands mid-keystroke must not be denied by the Enter already on its way
+        if let RunEvent::Approval { request, .. } = &event
+            && self.typed_at.is_some_and(|t| t.elapsed() < TYPING)
+        {
+            self.held.insert(request.clone());
+            self.release_held(cx);
         }
         let done = matches!(
             event,
@@ -1348,8 +1452,21 @@ impl TranscriptView {
     }
 
     pub(super) fn take_suggestion(&mut self, ix: usize, cx: &mut Context<Self>) {
-        self.suggest.accept(Some(ix), &self.input, cx);
-        self.run_if_own(cx);
+        let thread = self.suggest.accept(Some(ix), &self.input, cx);
+        self.took(thread, cx);
+    }
+
+    fn took(&mut self, thread: Option<u64>, cx: &mut Context<Self>) {
+        match thread {
+            Some(thread) => cx.emit(TranscriptEvent::Reference(thread)),
+            None => self.run_if_own(cx),
+        }
+    }
+
+    pub fn attach_files(&mut self, files: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.attach(files, cx);
+        self.keep_draft(cx);
+        cx.notify();
     }
 
     fn run_if_own(&mut self, cx: &mut Context<Self>) {
@@ -1387,8 +1504,8 @@ impl TranscriptView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.suggest.accept(None, &self.input, cx);
-        self.run_if_own(cx);
+        let thread = self.suggest.accept(None, &self.input, cx);
+        self.took(thread, cx);
     }
 
     pub(super) fn suggest_dismiss(
@@ -1472,6 +1589,9 @@ impl TranscriptView {
             // a row not drawn yet counts as no height, so a jump through it lands short
             self.list.reset_with_uniform_height(rows.len(), px(120.));
             self.follow.settle();
+            if rows.iter().any(|r| matches!(r, rows::Row::Item { .. })) {
+                self.appear = Some((Instant::now(), None));
+            }
         } else if same < self.rows.len() || rows.len() > same {
             self.list.splice(same..self.rows.len(), rows.len() - same);
         }
@@ -1609,6 +1729,7 @@ fn after_update(work: &[String]) -> String {
     text
 }
 const RUNNING_HINT: &str = "Queue a message for when it finishes";
+const TYPING: Duration = Duration::from_millis(1500);
 const APPROVAL_HINT: &str = "Send a message to deny and redirect the agent";
 
 impl Focusable for TranscriptView {

@@ -99,6 +99,11 @@ fn args(launch: &Launch) -> Vec<String> {
     ]
     .map(String::from)
     .into();
+    let exports = std::env::temp_dir().join(hyprspace_proto::wire::THREAD_EXPORTS);
+    if std::fs::create_dir_all(&exports).is_ok() {
+        // takes every path up to the next flag, so a flag must follow it
+        out.extend(["--add-dir".into(), exports.to_string_lossy().into_owned()]);
+    }
     match launch.permission {
         Permission::Bypass => out.push("--dangerously-skip-permissions".into()),
         p => out.extend([
@@ -826,6 +831,10 @@ impl Actor {
         for _ in run.steers.drain(..=at) {
             (self.emit)(RunEvent::Steered);
         }
+        // the held result ended the turn before this echo; the steer's own turn brings its own
+        if run.steers.is_empty() {
+            run.held = None;
+        }
     }
 
     fn limited(&mut self, resets: Option<u64>) {
@@ -1072,6 +1081,8 @@ mod tests {
         assert!(a.windows(2).any(|w| w == ["--permission-mode", "default"]));
         assert!(a.contains(&"--verbose".to_string()));
         assert!(!a.contains(&"--model".to_string()));
+        let dir = a.iter().position(|x| x == "--add-dir").unwrap();
+        assert!(a[dir + 2].starts_with("--"));
         launch.model = Some("claude-opus-5-5".into());
         launch.effort = Some("high".into());
         launch.permission = Permission::Bypass;

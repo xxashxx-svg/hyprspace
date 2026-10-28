@@ -42,16 +42,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.hyprspace.android.net.SnoozeUntil
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -75,11 +76,11 @@ fun SwipeRow(
     val offset = remember { Animatable(0f) }
     var width by remember { mutableFloatStateOf(1f) }
     val scope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
+    val host = LocalView.current
     val toRight = offset.value > 0
     val armed = abs(offset.value) > width * ARM
     LaunchedEffect(armed) {
-        if (armed) haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+        if (armed) host.feel(Feel.Arm)
     }
     LaunchedEffect(reset) {
         if (reset > 0) offset.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow))

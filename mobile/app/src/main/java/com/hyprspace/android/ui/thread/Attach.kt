@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,8 +57,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.scale
 import com.hyprspace.android.App
 import com.hyprspace.android.R
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -192,6 +195,7 @@ private fun AttachRow(label: String, icon: Int, onClick: () -> Unit) {
 @Composable
 fun AttachmentThumb(p: Attachment, onRemove: () -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     Box(Modifier.size(60.dp)) {
         val thumb = p.thumb
         if (thumb != null) {
@@ -229,7 +233,7 @@ fun AttachmentThumb(p: Attachment, onRemove: () -> Unit) {
                 .size(20.dp)
                 .clip(CircleShape)
                 .background(h.bg.copy(alpha = 0.8f))
-                .clickableQuiet(onRemove),
+                .clickableQuiet { host.feel(Feel.Tick); onRemove() },
             contentAlignment = Alignment.Center,
         ) {
             Icon(painterResource(R.drawable.ic_x), "Remove", Modifier.size(11.dp), tint = h.text1)

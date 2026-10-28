@@ -132,6 +132,10 @@ where
         server::accept(phone, stream, permit, web).await;
         return;
     }
+    if let Some(token) = path.strip_prefix("/media/") {
+        lend(&phone, &mut stream, method, token).await;
+        return;
+    }
     if !phone.serves_page() {
         return;
     }
@@ -144,6 +148,49 @@ where
         None => response("404 Not Found", "text/plain", b"Not found", false),
     };
     let _ = stream.write_all(&reply).await;
+    let _ = stream.shutdown().await;
+}
+
+/// A file lent to a phone by its token, streamed rather than read whole: a video can be large.
+async fn lend<S: AsyncWrite + Unpin>(phone: &Phone, stream: &mut S, method: &str, token: &str) {
+    let opened = match phone.lent(token) {
+        Some(file) if method == "GET" => tokio::fs::File::open(&file).await.ok().map(|f| (file, f)),
+        _ => None,
+    };
+    let Some((file, mut body)) = opened else {
+        let _ = stream
+            .write_all(&response(
+                "404 Not Found",
+                "text/plain",
+                b"Not found",
+                false,
+            ))
+            .await;
+        let _ = stream.shutdown().await;
+        return;
+    };
+    let len = body.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let kind = match file
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("mov") => "video/quicktime",
+        Some("webm") => "video/webm",
+        _ => "video/mp4",
+    };
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {len}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(head.as_bytes()).await.is_ok() {
+        let _ = tokio::io::copy(&mut body, stream).await;
+    }
     let _ = stream.shutdown().await;
 }
 

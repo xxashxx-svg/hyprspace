@@ -62,7 +62,13 @@ how Claude is driven.
   skip the questions; allowing everything under Ask would make the mode a lie. The one answer
   given for the user is a deny: a message sent while a tool approval waits (from the box, the
   phone or the browser) denies it and steers the run, since queueing it behind a run that can't
-  go on would never send it. Questions and plans are left alone.
+  go on would never send it. Questions and plans are left alone. An approval that lands within
+  1.5 s of a keystroke in the box stays off the dock until typing stops for that long, so an Enter
+  already on its way can't deny something the user never saw.
+- **A thread mentioned with `@` goes along as a file.** The engine writes its journal's prompts
+  and replies to Markdown in `hyprspace-threads` in the temp folder, and the box attaches it as
+  `[Thread N]`, so it works for a thread no view has opened. Claude starts with that folder as an
+  `--add-dir`, or Ask first would stop to ask before reading a file outside the thread's folder.
 - **Resume pins Claude's folder.** `claude --resume <id>` only finds a conversation from the folder
   it started in, so the harness reads the `cwd` recorded in `~/.claude/projects/*/<id>.jsonl` (or
   under `CLAUDE_CONFIG_DIR`) and spawns there, whatever the caller passed. Codex threads carry

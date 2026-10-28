@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -45,8 +46,10 @@ import com.hyprspace.android.model.said
 import com.hyprspace.android.model.todos
 import com.hyprspace.android.net.Answer
 import com.hyprspace.android.net.Tool
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 
 typealias Answers = (String, Answer, List<Pair<String, String>>) -> Unit
 
@@ -168,13 +171,14 @@ fun QuestionCard(a: Item.Approval, canAnswer: Boolean, onAnswer: Answers) {
 @Composable
 private fun Option(label: String, about: String, on: Boolean, multi: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(if (on) h.accent.copy(alpha = 0.12f) else h.ink(0.03f))
             .border(1.dp, if (on) h.accent.copy(alpha = 0.5f) else h.border0, RoundedCornerShape(10.dp))
-            .then(if (enabled) Modifier.clickableQuiet(onClick) else Modifier)
+            .then(if (enabled) Modifier.clickableQuiet { host.feel(Feel.Tick); onClick() } else Modifier)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -208,8 +212,9 @@ fun PlanCard(a: Item.Approval, canAnswer: Boolean, onAnswer: Answers) {
         else -> null
     }
     var open by rememberSaveable(a.request) { mutableStateOf(pending) }
+    val host = LocalView.current
     Card(pending) {
-        Heading(R.drawable.ic_list_checks, "Plan", state, Modifier.clickableQuiet { open = !open })
+        Heading(R.drawable.ic_list_checks, "Plan", state, Modifier.clickableQuiet { host.feel(Feel.Tick); open = !open })
         if (open || pending) {
             Box(
                 Modifier

@@ -783,3 +783,24 @@ fn a_browser_loads_the_page_and_pairs_with_the_typed_code() {
     });
     engine.shutdown();
 }
+
+#[test]
+fn a_phone_reads_only_inside_its_threads_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("app");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src").join("shot.png"), b"png").unwrap();
+    std::fs::write(root.join("notes.txt"), b"hi").unwrap();
+    std::fs::write(dir.path().join("secret.png"), b"png").unwrap();
+    let roots = vec![root.clone()];
+
+    assert!(super::within(&roots, &root.join("src")));
+    assert!(!super::within(&roots, dir.path()));
+    // a way out through .. is still out
+    assert!(!super::within(&roots, &root.join("..").join("secret.png")));
+
+    assert!(super::media_file(&root.join("src").join("shot.png"), &roots).is_ok());
+    assert!(super::media_file(&root.join("notes.txt"), &roots).is_err());
+    assert!(super::media_file(&dir.path().join("secret.png"), &roots).is_err());
+    assert!(super::media_file(&root.join("gone.png"), &roots).is_err());
+}

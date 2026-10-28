@@ -6,6 +6,7 @@ package com.hyprspace.android.ui.start
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalView
 import com.hyprspace.android.net.Agent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
@@ -68,9 +69,12 @@ import com.hyprspace.android.net.Board
 import com.hyprspace.android.net.NewThread
 import com.hyprspace.android.net.Permission
 import com.hyprspace.android.ui.AgentMark
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.SpaceTag
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
+import com.hyprspace.android.ui.felt
 import com.hyprspace.android.ui.thread.ModelChip
 import com.hyprspace.android.ui.thread.ModelSheet
 
@@ -79,6 +83,7 @@ private enum class Page { Start, Projects, Browse }
 @Composable
 fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDismiss: () -> Unit, onStarted: (Long) -> Unit = {}) {
     val h = LocalHues.current
+    val host = LocalView.current
     val installed = board.agents.filter { it.status.installed }.map { it.agent }
     var spaceId by remember { mutableStateOf(space) }
     // null is a plain shell
@@ -120,13 +125,13 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
             Page.Projects -> Projects(
                 board.spaces,
                 if (folder == null) spaceId else null,
-                onPick = { spaceId = it; folder = null; page = Page.Start },
+                onPick = { host.feel(Feel.Tick); spaceId = it; folder = null; page = Page.Start },
                 onBrowse = if (canBrowse) ({ app.link.browse(folder ?: ""); page = Page.Browse }) else null,
                 onBack = { page = Page.Start },
             )
             Page.Browse -> FolderBrowser(
                 app,
-                onPick = { folder = it; page = Page.Start },
+                onPick = { host.feel(Feel.Tick); folder = it; page = Page.Start },
                 onBack = { page = Page.Projects },
             )
             Page.Start -> Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
@@ -229,7 +234,7 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
                                 .background(h.accent)
                                 .clickableQuiet {
                                     val start = NewThread(agent, model, effort, permission, terminal || agent == null, prompt.trim())
-                                    if (app.link.ask(Ask.New(if (folder != null) 0 else spaceId, start, folder))) {
+                                    if (host.felt(app.link.ask(Ask.New(if (folder != null) 0 else spaceId, start, folder)))) {
                                         onStarted(spaceId)
                                         onDismiss()
                                     }
@@ -334,8 +339,9 @@ private fun Group(content: @Composable () -> Unit) {
 @Composable
 private fun Option(label: String, about: String, on: Boolean, onClick: () -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     Row(
-        Modifier.fillMaxWidth().clickableQuiet(onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickableQuiet { host.feel(Feel.Tick); onClick() }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -354,6 +360,7 @@ internal fun leaf(path: String): String =
 @Composable
 private fun AgentTabs(agents: List<Agent?>, picked: Agent?, onPick: (Agent?) -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     val density = LocalDensity.current
     var width by remember { mutableIntStateOf(0) }
     val at = agents.indexOf(picked).coerceAtLeast(0)
@@ -382,7 +389,7 @@ private fun AgentTabs(agents: List<Agent?>, picked: Agent?, onPick: (Agent?) -> 
             for ((i, a) in agents.withIndex()) {
                 val on = i == at
                 Row(
-                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(9.dp)).clickableQuiet { onPick(a) },
+                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(9.dp)).clickableQuiet { if (a != picked) host.feel(Feel.Tick); onPick(a) },
                     horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

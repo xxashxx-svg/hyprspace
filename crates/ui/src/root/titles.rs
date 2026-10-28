@@ -115,7 +115,7 @@ impl Root {
             && !self.naming.contains_key(&thread)
     }
 
-    pub(super) fn regenerate_title(&mut self, thread: u64, cx: &mut gpui::Context<Self>) {
+    pub(crate) fn regenerate_title(&mut self, thread: u64, cx: &mut gpui::Context<Self>) {
         let Some(View::Structured(v)) = self.views.get(&thread) else {
             return;
         };

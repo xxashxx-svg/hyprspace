@@ -15,6 +15,14 @@ pub struct ProviderStatus {
     pub detail: Option<String>,
 }
 
+impl ProviderStatus {
+    pub const SIGNED_OUT: &str = "Not signed in";
+
+    pub fn signed_out(&self) -> bool {
+        self.installed && self.detail.as_deref() == Some(Self::SIGNED_OUT)
+    }
+}
+
 /// One conversation a CLI saved on disk, as the composer's resume list shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

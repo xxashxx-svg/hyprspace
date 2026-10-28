@@ -15,6 +15,8 @@ import com.hyprspace.android.model.Item
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
@@ -126,8 +128,10 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             terms.clear()
             watching.clear()
             fits.clear()
+            tails.clear()
         }
         _board.value = null
+        _commands.value = emptyList()
         _conn.value = if (store.saved.value.current() == null) Conn.None else Conn.Connecting
         if (store.saved.value.current() != null) start()
     }
@@ -357,6 +361,8 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             is Down.Aside -> asideOf(d.thread).value = d.aside
             is Down.Folders -> _folders.value = d
             is Down.Uploaded -> uploads.remove(d.id)?.complete(d)
+            is Down.Fetched -> fetches.remove(d.id)?.complete(d)
+            is Down.Folder -> _folder.tryEmit(d.event)
             is Down.Welcome, is Down.Denied, Down.Pong -> {}
         }
     }
@@ -399,6 +405,48 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         return r?.path
     }
 
+    private val fetches = java.util.concurrent.ConcurrentHashMap<Long, CompletableDeferred<Down.Fetched>>()
+
+    @Volatile private var media: Pair<String, okhttp3.OkHttpClient>? = null
+
+    /**
+     * An image or video from the computer, by its path there, saved to [into]. The computer
+     * answers with a link on its own port, which this downloads over the pinned connection.
+     */
+    suspend fun fetch(path: String, into: java.io.File): Result<java.io.File> {
+        val id = nextUpload.getAndIncrement()
+        val done = CompletableDeferred<Down.Fetched>()
+        fetches[id] = done
+        if (!send(Up.Fetch(id, path))) {
+            fetches.remove(id)
+            return Result.failure(Exception("Not connected."))
+        }
+        val r = withTimeoutOrNull(60_000) { done.await() }
+        fetches.remove(id)
+        val url = r?.url ?: return Result.failure(Exception(r?.error ?: "The computer didn't answer."))
+        val s = socket ?: return Result.failure(Exception("Not connected."))
+        val d = store.saved.value.current() ?: return Result.failure(Exception("Not connected."))
+        val http = media?.takeIf { it.first == d.id }?.second ?: client(Pinned(d.id)).also { media = d.id to it }
+        val host = if (s.host.contains(':')) "[${s.host}]" else s.host
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                http.newCall(Request.Builder().url("https://$host:${d.port}$url").build()).execute().use { res ->
+                    check(res.isSuccessful) { "The computer didn't send it." }
+                    into.parentFile?.mkdirs()
+                    into.outputStream().use { out -> res.body.byteStream().copyTo(out) }
+                }
+                into
+            }
+        }
+    }
+
+    private val _folder = MutableSharedFlow<FolderEvt>(extraBufferCapacity = 32)
+
+    /** Answers about folders: listings, files, git status and diffs. */
+    val folder: SharedFlow<FolderEvt> = _folder
+
+    fun folder(cmd: FolderCmd): Boolean = send(Up.Folder(cmd))
+
     /** A line for the snackbar that isn't about something failing. */
     fun say(message: String) {
         _failures.tryEmit(message)
@@ -434,7 +482,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     /** Asks for the thread again with four times the journal. */
     fun earlier(thread: Long) {
-        synchronized(lock) { tails[thread] = tail(thread) * 4 }
+        synchronized(lock) { tails[thread] = (tail(thread).toLong() * 4).coerceAtMost(Int.MAX_VALUE.toLong()).toInt() }
         send(Up.Watch(thread, tail(thread)))
     }
 

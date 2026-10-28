@@ -246,6 +246,7 @@ fn menu_line(
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.list_threads(cx);
         if !cx.has_active_drag() {
             crate::attach::hold(false);
         }
@@ -285,6 +286,7 @@ impl Render for Root {
         let snooze = self.snooze_popup(window, cx);
         let icon_picker = self.icon_popup(window, cx);
         let toast = self.undo_toast(cx);
+        let close = self.close_dialog(cx);
         let palette = self.palette_overlay(window, cx);
         let folders = self.folder_overlay(window, cx);
         let intro = self.intro_overlay(window, cx);
@@ -381,6 +383,7 @@ impl Render for Root {
             .children(snooze)
             .children(icon_picker)
             .children(toast)
+            .children(close)
             .children(palette)
             .children(folders)
             .children(intro)

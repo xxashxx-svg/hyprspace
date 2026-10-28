@@ -101,7 +101,7 @@ impl Root {
             vec![
                 row(
                     "What it can do",
-                    "See your threads and terminals, send messages, answer approvals and start threads.",
+                    "See your threads, terminals and files, send messages, answer approvals, start threads, and commit and push.",
                     div(),
                 ),
                 row(

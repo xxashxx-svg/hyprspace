@@ -4,6 +4,8 @@
 
 mod delegate;
 mod frames;
+mod quit;
+mod refs;
 mod render;
 mod settle;
 mod switch;
@@ -126,6 +128,9 @@ pub struct Root {
     naming: HashMap<u64, String>,
     typing: HashMap<u64, std::time::Instant>,
     title_tick: bool,
+    closing: bool,
+    close_ok: bool,
+    listed: u64,
     pub(crate) views: HashMap<u64, View>,
     pub(crate) sessions: HashMap<SessionId, u64>,
     pub(crate) delegations: HashMap<u64, u64>,
@@ -247,6 +252,7 @@ impl Root {
     ) -> Self {
         client.send(Command::LoadState);
         client.send(Command::LoadAgents);
+        Self::guard_close(window, cx);
         let composer = cx.new(|cx| Composer::new(client.clone(), cx));
         let mut subs = vec![
             cx.subscribe_in(&composer, window, Self::on_composer),
@@ -257,6 +263,14 @@ impl Root {
             cx.observe_window_activation(window, |root, window, cx| {
                 if window.is_window_active() {
                     root.updater.update(cx, |u, cx| u.focused(cx));
+                    // back from signing in in the browser, so a thread's sign-in banner can clear
+                    if root
+                        .views
+                        .values()
+                        .any(|v| matches!(v, View::Structured(t) if t.read(cx).blocked()))
+                    {
+                        root.client.send(Command::LoadAgents);
+                    }
                 }
             }),
         ];
@@ -348,6 +362,9 @@ impl Root {
             naming: HashMap::new(),
             typing: HashMap::new(),
             title_tick: false,
+            closing: false,
+            close_ok: false,
+            listed: 0,
             views: HashMap::new(),
             sessions: HashMap::new(),
             delegations: HashMap::new(),
@@ -430,8 +447,8 @@ impl Root {
                         let agent = v.read(cx).agent();
                         if let Some(info) = agents.iter().find(|a| a.agent == agent) {
                             let catalog = info.catalog.clone();
-                            let version = info.status.version.clone();
-                            v.update(cx, |v, cx| v.set_catalog(catalog, version, cx));
+                            let status = info.status.clone();
+                            v.update(cx, |v, cx| v.set_catalog(catalog, status, cx));
                         }
                     }
                 }
@@ -465,6 +482,12 @@ impl Root {
                     v.update(cx, |v, cx| v.apply(event, cx));
                 }
             }
+            Event::ThreadExported { thread, path } => match (path, self.views.get(&thread)) {
+                (Some(path), Some(View::Structured(v))) => {
+                    v.update(cx, |v, cx| v.attach_files(vec![path], cx))
+                }
+                _ => self.notify("Couldn't read that thread.".into(), cx),
+            },
             Event::Title { thread, title } => {
                 self.named(thread, title, cx);
                 cx.notify();

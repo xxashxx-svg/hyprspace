@@ -47,11 +47,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +70,7 @@ import com.hyprspace.android.net.Shelf
 import com.hyprspace.android.net.SnoozeUntil
 import com.hyprspace.android.ui.AgentMark
 import com.hyprspace.android.ui.ConnStrip
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.Pill
@@ -80,25 +80,33 @@ import com.hyprspace.android.ui.UpdateStrip
 import com.hyprspace.android.ui.ago
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
+import com.hyprspace.android.ui.feel
+import com.hyprspace.android.ui.felt
 import com.hyprspace.android.ui.start.NewThreadScreen
 import com.hyprspace.android.ui.ticking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair: () -> Unit) {
+fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair: () -> Unit, current: Long? = null) {
     val h = LocalHues.current
     val conn by app.link.conn.collectAsStateWithLifecycle()
     val board by app.link.board.collectAsStateWithLifecycle()
     val saved by app.store.saved.collectAsStateWithLifecycle()
     var starting by remember { mutableStateOf<Long?>(null) }
     var computers by remember { mutableStateOf(false) }
+    var usage by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf<String?>(null) }
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val host = LocalView.current
     val undo: (String, () -> Unit) -> Unit = { text, back ->
         scope.launch {
             snack.currentSnackbarData?.dismiss()
-            if (snack.showSnackbar(text, "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) back()
+            if (snack.showSnackbar(text, "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                host.feel(Feel.Tap)
+                back()
+            }
         }
     }
     // a thread just asked for: the threads there were before, to spot the new one
@@ -112,7 +120,7 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
     val name = (conn as? Conn.Online)?.desktop ?: saved.current()?.name ?: "HyprSpace"
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(
+        query?.let { q -> Search(q, onQuery = { query = it }, onClose = { query = null }) } ?: Row(
             Modifier.fillMaxWidth().padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -133,6 +141,16 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
                     Text(label, style = MaterialTheme.typography.bodySmall, color = h.text3)
                 }
             }
+            if (board?.threads?.isNotEmpty() == true) {
+                IconButton(onClick = { query = "" }) {
+                    Icon(painterResource(R.drawable.ic_search), "Search threads", Modifier.size(20.dp), tint = h.text2)
+                }
+            }
+            if (board?.usage?.isNotEmpty() == true) {
+                IconButton(onClick = { usage = true }) {
+                    Icon(painterResource(R.drawable.ic_gauge), "Usage", Modifier.size(20.dp), tint = h.text2)
+                }
+            }
             IconButton(onClick = onSettings) {
                 Icon(painterResource(R.drawable.ic_settings), "Settings", Modifier.size(20.dp), tint = h.text2)
             }
@@ -145,8 +163,17 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
             if (waiting || b == null) {
                 Waiting(conn)
             } else {
+                val q = query?.trim().orEmpty()
+                val names = b.spaces.associate { it.id to it.name }
+                val found = if (q.isEmpty()) b else b.copy(
+                    threads = b.threads.filter { t ->
+                        t.title.contains(q, ignoreCase = true) || names[t.space].orEmpty().contains(q, ignoreCase = true)
+                    },
+                )
                 Threads(
-                    b,
+                    found,
+                    current = current,
+                    searching = q.isNotEmpty(),
                     onOpen = onOpen,
                     onSettle = { t, on -> app.link.ask(Ask.Settle(t, on)) },
                     onSnooze = if (app.link.desktopAtLeast(SNOOZE)) { t, until -> app.link.ask(Ask.Snooze(t, until)) } else null,
@@ -175,6 +202,10 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
 
     if (computers) {
         ComputersSheet(app, onPair = onPair, onDismiss = { computers = false })
+    }
+
+    if (usage) {
+        board?.let { UsageSheet(it, onDismiss = { usage = false }) }
     }
 
     if (board?.spaces?.isNotEmpty() == true) {
@@ -248,6 +279,8 @@ private sealed interface Row {
 @Composable
 private fun Threads(
     b: Board,
+    current: Long?,
+    searching: Boolean,
     onOpen: (Long) -> Unit,
     onSettle: (Long, Boolean) -> Boolean,
     onSnooze: ((Long, SnoozeUntil) -> Boolean)?,
@@ -263,6 +296,7 @@ private fun Threads(
     var snoozing by remember { mutableStateOf<BoardThread?>(null) }
     var holding by remember { mutableStateOf<Row.Thread?>(null) }
     val scope = rememberCoroutineScope()
+    val host = LocalView.current
     LaunchedEffect(b) {
         val now = b.threads.associate { it.id to it.shelf }
         gone.keys.filter { now[it] != gone[it] }.forEach { gone.remove(it) }
@@ -283,16 +317,16 @@ private fun Threads(
         val snoozed = shown.filter { it.shelf == Shelf.Snoozed }.sortedByDescending { it.touched }
         if (snoozed.isNotEmpty()) {
             add(Row.Shelf("Snoozed", snoozed.size, snoozedOpen))
-            if (snoozedOpen) snoozed.forEach { add(Row.Thread(it, spaces[it.space], true)) }
+            if (snoozedOpen || searching) snoozed.forEach { add(Row.Thread(it, spaces[it.space], true)) }
         }
         val settled = shown.filter { it.shelf == Shelf.Settled }.sortedByDescending { it.touched }
         if (settled.isNotEmpty()) {
             add(Row.Shelf("Settled", settled.size, settledOpen))
-            if (settledOpen) settled.forEach { add(Row.Thread(it, spaces[it.space], true)) }
+            if (settledOpen || searching) settled.forEach { add(Row.Thread(it, spaces[it.space], true)) }
         }
     }
     fun settle(t: BoardThread) {
-        if (onSettle(t.id, true)) {
+        if (host.felt(onSettle(t.id, true))) {
             hide(t)
             undo("Settled") { onSettle(t.id, false) }
         } else {
@@ -300,7 +334,7 @@ private fun Threads(
         }
     }
     fun bringBack(t: BoardThread) {
-        if (onSettle(t.id, false)) hide(t) else resets[t.id] = (resets[t.id] ?: 0) + 1
+        if (host.felt(onSettle(t.id, false))) hide(t) else resets[t.id] = (resets[t.id] ?: 0) + 1
     }
     val now = ticking(b.threads.any { it.since != null })
     LazyColumn(Modifier.fillMaxSize().clipToBounds(), contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)) {
@@ -319,16 +353,17 @@ private fun Threads(
                         null
                     }
                     SwipeRow(left, right, resets[t.id] ?: 0, Modifier.animateItem()) {
-                        ThreadRow(t, r.space, r.shelved, now, onOpen) { holding = r }
+                        ThreadRow(t, r.space, r.shelved, now, t.id == current, onOpen) { holding = r }
                     }
                 }
                 is Row.Shelf -> Box(Modifier.animateItem()) {
                     ShelfHeader(r) {
+                        host.feel(Feel.Tick)
                         if (r.name == "Snoozed") snoozedOpen = !snoozedOpen else settledOpen = !settledOpen
                     }
                 }
                 Row.Empty -> Text(
-                    "No threads at work. Start one with New thread.",
+                    if (searching) "No threads match." else "No threads at work. Start one with New thread.",
                     Modifier.animateItem().padding(horizontal = 20.dp, vertical = 16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = LocalHues.current.text3,
@@ -346,9 +381,9 @@ private fun Threads(
             listOfNotNull(
                 onPin?.let {
                     if (t.pinned) {
-                        Action("Unpin", R.drawable.ic_pin_off) { close(); it(t.id, false) }
+                        Action("Unpin", R.drawable.ic_pin_off) { close(); host.felt(it(t.id, false)) }
                     } else {
-                        Action("Pin to top", R.drawable.ic_pin) { close(); it(t.id, true) }
+                        Action("Pin to top", R.drawable.ic_pin) { close(); host.felt(it(t.id, true)) }
                     }
                 },
                 onSnooze?.let { Action("Snooze", R.drawable.ic_clock) { close(); snoozing = t } },
@@ -364,7 +399,7 @@ private fun Threads(
             working,
             onPick = { until, label ->
                 snoozing = null
-                if (onSnooze?.invoke(t.id, until) == true) {
+                if (host.felt(onSnooze?.invoke(t.id, until) == true)) {
                     hide(t)
                     undo("Snoozed until $label") { onSettle(t.id, false) }
                 } else {
@@ -406,11 +441,11 @@ private fun ThreadRow(
     space: BoardSpace?,
     shelved: Boolean,
     now: Long,
+    selected: Boolean,
     onOpen: (Long) -> Unit,
     onHold: () -> Unit,
 ) {
     val h = LocalHues.current
-    val haptic = LocalHapticFeedback.current
     val waiting = t.status == BoardStatus.Waiting
     // background work takes less attention than a thread that needs you
     val recede = t.status == BoardStatus.Working
@@ -421,10 +456,9 @@ private fun ThreadRow(
             .clip(RoundedCornerShape(12.dp))
             .background(h.bg)
             .background(if (waiting) h.waiting.copy(alpha = 0.07f) else h.bg)
-            .combinedClickable(onClick = { onOpen(t.id) }, onLongClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onHold()
-            })
+            .background(if (selected) h.ink(0.07f) else h.ink(0f))
+            // the long press buzzes on its own
+            .combinedClickable(onClick = { onOpen(t.id) }, onLongClick = onHold)
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .alpha(if (shelved) 0.6f else 1f),
         verticalArrangement = Arrangement.spacedBy(3.dp),

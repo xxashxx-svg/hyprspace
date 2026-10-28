@@ -4,8 +4,10 @@
 
 package com.hyprspace.android.ui.thread
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -33,13 +35,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
@@ -57,6 +61,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,9 +81,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
@@ -110,10 +118,12 @@ import com.hyprspace.android.net.RunStatus
 import com.hyprspace.android.net.Tool
 import com.hyprspace.android.net.TranscriptView
 import com.hyprspace.android.ui.Eclipse
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
+import com.hyprspace.android.ui.feel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -175,11 +185,10 @@ private fun fold(items: List<Item>, unfolded: Set<String>): List<Shown> {
     return out
 }
 
-/** The replies that end a run, which get a copy button. */
-private fun ends(items: List<Item>): Set<String> = items.indices
+/** The replies that end a run, and how each run ended: they get a footer with copy and its time. */
+private fun ends(items: List<Item>): Map<String, Item.Finished> = items.indices
     .filter { items[it] is Item.Reply && items.getOrNull(it + 1) is Item.Finished }
-    .map { items[it].key }
-    .toSet()
+    .associate { items[it].key to items[it + 1] as Item.Finished }
 
 /** What the desktop does with a structured thread's queue and background, when it's new enough to. */
 class Extras(
@@ -206,7 +215,6 @@ fun Chat(
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     modifier: Modifier = Modifier,
     model: (@Composable () -> Unit)? = null,
-    permission: (@Composable () -> Unit)? = null,
     extras: Extras? = null,
     ultra: Boolean = false,
     lines: Int = 0,
@@ -214,11 +222,23 @@ fun Chat(
     aside: AsideView? = null,
     onDropAside: () -> Unit = {},
     commands: List<Slash> = emptyList(),
+    onFork: ((Int, String) -> Unit)? = null,
 ) {
     val h = LocalHues.current
+    val host = LocalView.current
     var unfolded by remember { mutableStateOf(setOf<String>()) }
     val shown = remember(view.items, unfolded) { fold(view.items, unfolded) }
     val ending = remember(view.items) { ends(view.items) }
+    // a run that ended well shows its time under the reply instead of on a line of its own
+    val footed = remember(ending) { ending.values.filter { it.status == RunStatus.Done }.map { it.key }.toSet() }
+    // the prompt each ending reply answers, which a fork keeps along with everything before it
+    val owner = remember(view.items) {
+        var at: Item.User? = null
+        view.items.mapNotNull { i ->
+            if (i is Item.User) at = i
+            at?.takeIf { i is Item.Reply && it.at > 0 }?.let { i.key to it }
+        }.toMap()
+    }
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(working) { if (!working) stopping = false }
     var draft by rememberSaveable { mutableStateOf("") }
@@ -274,6 +294,7 @@ fun Chat(
         if (stuck && newest != null) list.animateScrollToItem(0)
     }
     val live = if (working) (shown.lastOrNull() as? Shown.One)?.item?.takeIf { it is Item.Reply }?.key else null
+    Felt(view, busy, canAnswer)
     val denies = extras?.redirects == true && view.items.any {
         it is Item.Approval && it.answer == null && !it.expired && it.request !in answered &&
             special(it.tool).let { s -> s != QUESTION && s != PLAN }
@@ -307,8 +328,8 @@ fun Chat(
                 Modifier.fillMaxSize().clipToBounds(),
                 state = list,
                 reverseLayout = true,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 overscrollEffect = null,
             ) {
                 if (busy) {
@@ -319,10 +340,10 @@ fun Chat(
                 }
                 items(bubbles.asReversed(), key = { "pending${it.id}" }) { p ->
                     Box(rise()) {
-                        One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false, end = false)
+                        One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false, end = null)
                     }
                 }
-                items(shown.asReversed(), key = { it.key }) { s ->
+                items(shown.filterNot { it is Shown.One && it.item.key in footed }.asReversed(), key = { it.key }) { s ->
                     Box(rise()) {
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)
@@ -330,7 +351,15 @@ fun Chat(
                             is Shown.Folded -> FoldHead(s.ms?.let { "Worked for ${took(it)}" } ?: "Continued", s.open) {
                                 unfolded = if (s.open) unfolded - s.prompt else unfolded + s.prompt
                             }
-                            is Shown.One -> One(s.item, canAnswer, answered, answer, live = s.key == live, end = s.key in ending)
+                            is Shown.One -> One(
+                                s.item,
+                                canAnswer,
+                                answered,
+                                answer,
+                                live = s.key == live,
+                                end = ending[s.key],
+                                fork = onFork?.let { f -> owner[s.key]?.takeIf { !working }?.let { u -> { f(u.at, u.text) } } },
+                            )
                         }
                     }
                 }
@@ -355,6 +384,7 @@ fun Chat(
                         .background(h.surface2)
                         .border(1.dp, h.border1, CircleShape)
                         .clickableQuiet {
+                            host.feel(Feel.Tick)
                             stuck = true
                             scope.launch { list.animateScrollToItem(0) }
                         },
@@ -397,23 +427,30 @@ fun Chat(
             },
             attach = attach,
             model = model,
-            permission = permission,
             commands = commands,
         )
     }
 }
 
 @Composable
-private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, onAnswer: Answers, live: Boolean, end: Boolean) {
+private fun One(
+    item: Item,
+    canAnswer: Boolean,
+    answered: Map<String, Answer>,
+    onAnswer: Answers,
+    live: Boolean,
+    end: Item.Finished?,
+    fork: (() -> Unit)? = null,
+) {
     val h = LocalHues.current
     when (item) {
         is Item.User -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Column(
                 Modifier
                     .widthIn(max = 320.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(h.ink(0.06f))
-                    .padding(horizontal = 15.dp, vertical = 10.dp),
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(h.ink(0.07f))
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
             ) {
                 if (item.steer) Text("Sent while it worked", fontSize = 11.sp, color = h.text3)
                 Text(item.text, style = MaterialTheme.typography.bodyLarge, color = h.text1)
@@ -424,7 +461,7 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
         }
         is Item.Reply -> Column {
             Markdown(revealed(item.key, item.text, live))
-            if (end && !live) Copy(item.text)
+            if (end != null && !live) Foot(item.text, end, fork)
         }
         is Item.Thinking -> Fold("Thinking", item.text, mono = false)
         is Item.Call -> CallLine(item)
@@ -454,6 +491,7 @@ private fun One(item: Item, canAnswer: Boolean, answered: Map<String, Answer>, o
 private fun Earlier(first: String?, onEarlier: () -> Unit) {
     val h = LocalHues.current
     var asked by remember(first) { mutableStateOf(false) }
+    val host = LocalView.current
     Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
         if (asked) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = h.text3)
@@ -463,6 +501,7 @@ private fun Earlier(first: String?, onEarlier: () -> Unit) {
                 Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .clickableQuiet {
+                        host.feel(Feel.Tick)
                         asked = true
                         onEarlier()
                     }
@@ -478,6 +517,7 @@ private fun Earlier(first: String?, onEarlier: () -> Unit) {
 @Composable
 private fun Slashes(offered: List<Slash>, onPick: (Slash) -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     Column(
         Modifier
             .fillMaxWidth()
@@ -493,7 +533,7 @@ private fun Slashes(offered: List<Slash>, onPick: (Slash) -> Unit) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clickableQuiet { onPick(s) }
+                    .clickableQuiet { host.feel(Feel.Tick); onPick(s) }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Text("/${s.name}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = h.text1)
@@ -504,6 +544,52 @@ private fun Slashes(offered: List<Slash>, onPick: (Slash) -> Unit) {
         }
     }
 }
+
+/**
+ * Ticks as a reply streams in, at most every [STREAM] ms, and buzzes when the open thread starts
+ * waiting on you or a run ends, since a thread on screen gets no notification. The first look at
+ * a thread only notes where it is, so opening one mid-stream is quiet.
+ */
+@Composable
+private fun Felt(view: TranscriptView, busy: Boolean, canAnswer: Boolean) {
+    val host = LocalView.current
+    val seen = remember { Seen() }
+    val items = view.items
+    val reply = (items.lastOrNull() as? Item.Reply)?.takeIf { busy }
+    val ask = items.lastOrNull { it is Item.Approval && it.answer == null && !it.expired }?.key
+    val end = items.lastOrNull { it is Item.Finished } as Item.Finished?
+    SideEffect {
+        if (!view.loaded) return@SideEffect
+        val now = SystemClock.uptimeMillis()
+        if (seen.seeded) {
+            when {
+                ask != null && ask != seen.ask && canAnswer -> host.feel(Feel.Hold)
+                end != null && end.key != seen.end && end.status != RunStatus.Interrupted ->
+                    host.feel(if (end.status == RunStatus.Done) Feel.Done else Feel.Fail)
+                reply != null && (reply.key != seen.reply || (reply.text.length > seen.length && now - seen.at >= STREAM)) -> {
+                    seen.at = now
+                    host.feel(Feel.Stream)
+                }
+            }
+        }
+        seen.seeded = true
+        seen.reply = reply?.key
+        seen.length = reply?.text?.length ?: 0
+        seen.ask = ask
+        seen.end = end?.key
+    }
+}
+
+private class Seen {
+    var seeded = false
+    var reply: String? = null
+    var length = 0
+    var at = 0L
+    var ask: String? = null
+    var end: String? = null
+}
+
+private const val STREAM = 320L
 
 /** Sent here and not yet back from the computer, on line [line] of [Link.lines]. */
 private data class Pending(
@@ -516,10 +602,40 @@ private data class Pending(
     val line: Int = 0,
 )
 
+/** Under the reply that ends a run: copy it, and how long the run took when it finished well. */
+@Composable
+private fun Foot(text: String, end: Item.Finished, fork: (() -> Unit)?) {
+    val h = LocalHues.current
+    val host = LocalView.current
+    Row(Modifier.padding(top = 6.dp).offset(x = (-8).dp), verticalAlignment = Alignment.CenterVertically) {
+        Copy(text)
+        if (fork != null) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).clickableQuiet {
+                    host.feel(Feel.Tap)
+                    fork()
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.ic_git_branch), "Fork from here", Modifier.size(16.dp), tint = h.text3)
+            }
+        }
+        if (end.status == RunStatus.Done) {
+            Text(clock(end.ms), Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge, color = h.text3)
+        }
+    }
+}
+
+private fun clock(ms: Long): String {
+    val s = ms / 1000
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60) else "%02d:%02d".format(s / 60, s % 60)
+}
+
 @Composable
 private fun Copy(text: String) {
     val h = LocalHues.current
     val clipboard = LocalContext.current.getSystemService(android.content.ClipboardManager::class.java)
+    val host = LocalView.current
     var done by remember { mutableStateOf(false) }
     LaunchedEffect(done) {
         if (done) {
@@ -529,11 +645,11 @@ private fun Copy(text: String) {
     }
     Box(
         Modifier
-            .padding(top = 2.dp)
-            .size(30.dp)
+            .size(36.dp)
             .clip(CircleShape)
             .clickableQuiet {
                 clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Reply", text))
+                host.feel(Feel.Tap)
                 done = true
             },
         contentAlignment = Alignment.Center,
@@ -541,7 +657,7 @@ private fun Copy(text: String) {
         Icon(
             painterResource(if (done) R.drawable.ic_check else R.drawable.ic_copy),
             if (done) "Copied" else "Copy",
-            Modifier.size(14.dp),
+            Modifier.size(16.dp),
             tint = h.text3,
         )
     }
@@ -638,8 +754,9 @@ private fun TurnEnd(item: Item.Finished) {
 @Composable
 private fun FoldHead(label: String, open: Boolean, trailing: @Composable () -> Unit = {}, onClick: () -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     Row(
-        Modifier.fillMaxWidth().clickableQuiet(onClick).padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().clickableQuiet { host.feel(Feel.Tick); onClick() }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -777,6 +894,7 @@ fun Diff(path: String, diff: String) {
 private fun AgentCard(a: Item.Agent) {
     val h = LocalHues.current
     var open by rememberSaveable(a.key) { mutableStateOf(false) }
+    val host = LocalView.current
     Column(
         Modifier
             .fillMaxWidth()
@@ -784,7 +902,7 @@ private fun AgentCard(a: Item.Agent) {
             .background(h.ink(0.035f)),
     ) {
         Row(
-            Modifier.fillMaxWidth().clickableQuiet { open = !open }.padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 4.dp),
+            Modifier.fillMaxWidth().clickableQuiet { host.feel(Feel.Tick); open = !open }.padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -874,6 +992,7 @@ private fun PendingApproval(a: Item.Approval, canAnswer: Boolean, onAnswer: (Str
 private fun SettledApproval(a: Item.Approval) {
     val h = LocalHues.current
     var open by rememberSaveable(a.request) { mutableStateOf(false) }
+    val host = LocalView.current
     val (mark, tint, state) = when (a.answer) {
         Answer.Allow -> Triple(R.drawable.ic_check, h.ok, "Allowed")
         Answer.AllowAlways -> Triple(R.drawable.ic_check, h.ok, "Allowed for this session")
@@ -882,7 +1001,7 @@ private fun SettledApproval(a: Item.Approval) {
     }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clickableQuiet { open = !open }.padding(vertical = 4.dp),
+            Modifier.fillMaxWidth().clickableQuiet { host.feel(Feel.Tick); open = !open }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -918,6 +1037,7 @@ internal fun Choice(text: String, modifier: Modifier = Modifier, primary: Boolea
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Composer(
     draft: String,
@@ -930,7 +1050,6 @@ private fun Composer(
     onStop: () -> Unit,
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     model: (@Composable () -> Unit)?,
-    permission: (@Composable () -> Unit)?,
     commands: List<Slash>,
 ) {
     val h = LocalHues.current
@@ -949,65 +1068,18 @@ private fun Composer(
     }
     val ready = photos.none { it.path == null && !it.failed }
     val sendable = (text.isNotBlank() || photos.any { it.path != null }) && ready
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .ultraRing(glow, h.dark, 18.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(h.ink(0.045f)),
-    ) {
-    if (photos.isNotEmpty()) {
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            for (p in photos) AttachmentThumb(p) { photos.remove(p) }
-        }
-    }
-    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)) {
-        if (text.isEmpty()) {
-            val hint = when {
-                !working -> "Reply"
-                denies -> "Send a message to deny and redirect the agent"
-                queues -> "Queue a message for when it finishes"
-                else -> "Steer it, or stop it"
-            }
-            Text(hint, style = MaterialTheme.typography.bodyLarge, color = h.text3)
-        }
-        BasicTextField(
-            value = shown,
-            onValueChange = {
-                field = it
-                onDraft(it.text)
-            },
-            modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp),
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = h.text1),
-            cursorBrush = SolidColor(h.accent),
-            visualTransformation = if (ultra) UltraWords(h.dark) else androidx.compose.ui.text.input.VisualTransformation.None,
-        )
-    }
-    Row(
-        Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (pick != null) {
-            Box(
-                Modifier.size(36.dp).clip(CircleShape).clickableQuiet(pick),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(painterResource(R.drawable.ic_paperclip), "Attach", Modifier.size(18.dp), tint = h.text2)
-            }
-        }
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            permission?.invoke()
-            if (model != null) Box(Modifier.weight(1f, fill = false)) { model() }
-        }
-        Spacer(Modifier.width(6.dp))
-        val stop = working && text.isBlank() && photos.isEmpty()
+    var focused by remember { mutableStateOf(false) }
+    // closing the keyboard keeps the field focused, which would hold the box open
+    val keyboard = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(keyboard) { if (!keyboard && focused) focusManager.clearFocus() }
+    // a pill with the box, the clip and send while idle; typing opens it up with its toolbar
+    val open = focused || text.isNotEmpty() || photos.isNotEmpty()
+    val stop = working && text.isBlank() && photos.isEmpty()
+    val send = @Composable {
         Box(
             Modifier
-                .size(36.dp)
+                .size(40.dp)
                 .clip(CircleShape)
                 .background(if (stop) h.surface3 else if (!sendable) h.ink(0.08f) else h.accent)
                 .clickableQuiet {
@@ -1027,12 +1099,71 @@ private fun Composer(
                 Icon(
                     painterResource(if (stop) R.drawable.ic_square else R.drawable.ic_arrow_up),
                     if (stop) "Stop" else "Send",
-                    Modifier.size(16.dp),
+                    Modifier.size(if (stop) 14.dp else 18.dp),
                     tint = if (stop) h.text1 else if (!sendable) h.text3 else h.onAccent,
                 )
             }
         }
     }
+    val plus = @Composable {
+        if (pick != null) {
+            Box(Modifier.size(40.dp).clip(CircleShape).clickableQuiet(pick), contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_plus), "Attach", Modifier.size(22.dp), tint = h.text2)
+            }
+        }
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp)
+            .ultraRing(glow, h.dark, 26.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(h.ink(if (h.dark) 0.075f else 0.05f))
+            .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
+            .padding(6.dp),
+    ) {
+        if (photos.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (p in photos) AttachmentThumb(p) { photos.remove(p) }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!open) plus()
+            Box(Modifier.weight(1f).padding(horizontal = if (open) 12.dp else 6.dp, vertical = if (open) 10.dp else 8.dp)) {
+                if (text.isEmpty()) {
+                    val hint = when {
+                        !working -> "Ask anything, or / for commands"
+                        denies -> "Send a message to deny and redirect the agent"
+                        queues -> "Queue a message for when it finishes"
+                        else -> "Steer it, or stop it"
+                    }
+                    Text(hint, style = MaterialTheme.typography.bodyLarge, color = h.text3, maxLines = if (open) 2 else 1, overflow = TextOverflow.Ellipsis)
+                }
+                BasicTextField(
+                    value = shown,
+                    onValueChange = {
+                        field = it
+                        onDraft(it.text)
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp).onFocusChanged { focused = it.isFocused },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = h.text1),
+                    cursorBrush = SolidColor(h.accent),
+                    visualTransformation = if (ultra) UltraWords(h.dark) else androidx.compose.ui.text.input.VisualTransformation.None,
+                )
+            }
+            if (!open) send()
+        }
+        if (open) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                plus()
+                Spacer(Modifier.weight(1f))
+                if (model != null) Box(Modifier.padding(end = 6.dp)) { model() }
+                send()
+            }
+        }
     }
 }
 

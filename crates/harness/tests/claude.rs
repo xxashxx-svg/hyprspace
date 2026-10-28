@@ -402,6 +402,35 @@ async fn a_steer_waits_for_an_open_tool() {
 }
 
 #[tokio::test]
+async fn a_steer_waiting_on_an_approval_keeps_the_run_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let harness = claude().with_patience(Duration::from_millis(200));
+    let (session, mut events) = start(&harness, dir.path());
+    session.send(Prompt::text("steer-gate"));
+    events
+        .until(|e| {
+            *e == RunEvent::Text {
+                text: "first".into(),
+            }
+        })
+        .await;
+    session.send(Prompt::text("go left"));
+    let asked = events
+        .until(|e| matches!(e, RunEvent::Approval { .. }))
+        .await;
+    assert!(!asked.iter().any(|e| matches!(e, RunEvent::Finished { .. })));
+    // longer than the patience a held run end gets
+    events.quiet().await;
+    events.quiet().await;
+    session.answer("r1".into(), Answer::Allow, Vec::new());
+    let run = events.run().await;
+    assert_eq!(
+        finished(&run),
+        (RunStatus::Done, "after the gate".into(), None)
+    );
+}
+
+#[tokio::test]
 async fn a_steer_the_cli_never_echoes_still_ends_the_run() {
     let dir = tempfile::tempdir().unwrap();
     let harness = claude().with_patience(Duration::from_millis(300));

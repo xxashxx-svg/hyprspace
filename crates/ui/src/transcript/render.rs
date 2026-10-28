@@ -32,6 +32,7 @@ const GUTTER: f32 = 24.;
 const ENTER: Duration = Duration::from_millis(280);
 const UNFOLD: Duration = Duration::from_millis(200);
 const WORKING_IN: Duration = Duration::from_millis(240);
+const REVEAL: Duration = Duration::from_millis(420);
 
 pub fn view(
     v: &mut TranscriptView,
@@ -153,11 +154,42 @@ pub fn view(
     );
     let jump = v.follow.away(&v.list).then(|| jump(cx));
     let ticks = ticks(v, &prompts, window, cx);
+    // the first layout of fresh rows draws from the top before the list settles at the bottom
+    let last = last_shown(v);
+    if let Some((start, settled @ None)) = v.appear.as_mut()
+        && start.elapsed() > Duration::from_millis(40)
+        && (last || start.elapsed() > Duration::from_secs(1))
+    {
+        *settled = Some(Instant::now());
+    }
+    let shown = match v.appear {
+        Some((_, None)) => 0.,
+        Some((_, Some(at))) => (at.elapsed().as_secs_f32() / REVEAL.as_secs_f32()).min(1.),
+        None => 1.,
+    };
+    if shown < 1. {
+        crate::pace::next(window, cx);
+    } else {
+        v.appear = None;
+    }
     let rows = list(
         v.list.clone(),
         cx.processor(|v, ix: usize, _, cx| list_row(v, ix, cx)),
     )
     .size_full();
+    let cover = (shown < 1.).then(|| {
+        div()
+            .absolute()
+            .inset_0()
+            .bg(colors::bg())
+            .opacity(1. - shown * shown * (3. - 2. * shown))
+            .child(centered(
+                column()
+                    .pt(px(24. - 10. * ease_out((shown * 2.).min(1.))))
+                    .opacity(1. - ease_out((shown * 2.).min(1.)))
+                    .child(skeleton()),
+            ))
+    });
     let bar = v.find_bar(cx);
     div()
         .id("transcript")
@@ -195,6 +227,7 @@ pub fn view(
                 // before any text, so selection knows this transcript's elements
                 .child(markdown::select::reset(surface.clone()))
                 .child(rows)
+                .children(cover)
                 .child(markdown::select::tail(surface, {
                     let view = cx.weak_entity();
                     move |text, window, cx| {
@@ -278,11 +311,7 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
         return div().into_any_element();
     };
     let body = match row {
-        Row::Loading => div()
-            .text_size(px(12.))
-            .text_color(colors::text3())
-            .child("Loading the conversation...")
-            .into_any_element(),
+        Row::Loading => skeleton(),
         Row::Empty => div()
             .pt(px(80.))
             .flex()
@@ -367,6 +396,55 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
         ),
         _ => el.into_any_element(),
     }
+}
+
+fn last_shown(v: &TranscriptView) -> bool {
+    let view = v.list.viewport_bounds();
+    v.rows.len().checked_sub(1).is_some_and(|last| {
+        v.list
+            .bounds_for_item(last)
+            .is_some_and(|b| b.top() < view.bottom())
+    })
+}
+
+fn skeleton() -> AnyElement {
+    let bar = |width: f32, h: f32| {
+        div()
+            .w(relative(width))
+            .h(px(h))
+            .rounded(px(h / 2.))
+            .bg(colors::ink(0.06))
+    };
+    let turn = |ask: f32, lines: &[f32]| {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .child(bar(ask, 36.).rounded(px(18.))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .pt(px(8.))
+                    .children(lines.iter().map(|&w| bar(w, 12.))),
+            )
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(36.))
+        .child(turn(0.42, &[0.94, 0.86, 0.58]))
+        .child(turn(0.3, &[0.9, 0.72]))
+        .looping(1400, |d, t| {
+            d.opacity(0.45 + 0.55 * (0.5 + 0.5 * (t * std::f32::consts::TAU).cos()))
+        })
+        .into_any_element()
 }
 
 fn turn_key(v: &TranscriptView, prompt: usize) -> String {
@@ -1898,6 +1976,7 @@ fn composer(
     centered(
         column()
             .pb(px(12.))
+            .children(super::banner::provider(v, cx))
             .children(super::aside::card(v, cx))
             .children(super::approval::dock(v, cx))
             .children(tray(v, cx))

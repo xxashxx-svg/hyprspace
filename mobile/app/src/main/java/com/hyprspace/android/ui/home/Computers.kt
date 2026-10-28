@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,9 +36,11 @@ import com.hyprspace.android.R
 import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.Desktop
 import com.hyprspace.android.service.LinkService
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.ago
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 
 @Composable
 fun ComputerRow(
@@ -48,6 +51,7 @@ fun ComputerRow(
     trailing: @Composable () -> Unit = {},
 ) {
     val h = LocalHues.current
+    val host = LocalView.current
     val (dot, status) = when {
         !current -> null to (d.last?.let { "Last at $it" } ?: "Paired ${ago(d.paired, System.currentTimeMillis())} ago")
         conn is Conn.Online -> h.ok to ("Connected" + (d.last?.let { " at $it" } ?: ""))
@@ -58,7 +62,7 @@ fun ComputerRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickableQuiet(onClick) else Modifier)
+            .then(if (onClick != null) Modifier.clickableQuiet { host.feel(Feel.Tick); onClick() } else Modifier)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

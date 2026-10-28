@@ -2,6 +2,7 @@ package com.hyprspace.android
 
 import com.hyprspace.android.net.Down
 import com.hyprspace.android.net.Entry
+import com.hyprspace.android.net.FolderEvt
 import com.hyprspace.android.net.RunEvent
 import com.hyprspace.android.net.Span
 import com.hyprspace.android.net.Tool
@@ -29,7 +30,7 @@ class WireTest {
     @Test
     fun readsEveryMessageTheDesktopSends() {
         val all = lines("down.jsonl").map { wire.decodeFromString(Down.serializer(), it) }
-        assertEquals(13, all.size)
+        assertEquals(20, all.size)
         val slashes = all.filterIsInstance<Down.Commands>().single().list
         assertEquals(listOf(null, com.hyprspace.android.net.Agent.Claude), slashes.map { it.agent })
         val asides = all.filterIsInstance<Down.Aside>()
@@ -52,6 +53,19 @@ class WireTest {
         assertEquals(Span.RGB or 0x102030L, spans[0].bg)
         assertEquals(Span.BOLD or Span.INVERSE, spans[0].s)
         assertEquals(listOf(1, 4), frame.cursor)
+        assertEquals("/code/app", board.threads[0].cwd)
+        assertEquals(42.0, board.usage.single().bars.single().percent, 0.0)
+        val fetched = all.filterIsInstance<Down.Fetched>()
+        assertEquals("/media/0a1b2c", fetched[0].url)
+        assertEquals(null, fetched[1].url)
+        val folder = all.filterIsInstance<Down.Folder>().map { it.event }
+        assertEquals("src", (folder[0] as FolderEvt.Dir).entries.ok!!.single().name)
+        assertEquals("Not text", (folder[1] as FolderEvt.File).text.err)
+        val git = (folder[2] as FolderEvt.Git).status
+        assertEquals("main", git.branch.branch)
+        assertEquals(false, git.changes.single().staged)
+        assertEquals("Committed", (folder[3] as FolderEvt.GitDone).result.ok)
+        assertEquals("@@ -1 +1 @@", (folder[4] as FolderEvt.Diff).text.ok)
     }
 
     private fun bare(e: JsonElement): JsonElement = when (e) {

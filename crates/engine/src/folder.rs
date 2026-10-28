@@ -124,9 +124,14 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
                 .map(|_| String::new());
             done(cwd, result)
         }
-        FolderCommand::Commit { cwd, message, push } => {
+        FolderCommand::Commit {
+            cwd,
+            message,
+            push,
+            stage_all,
+        } => {
             let _g = git_lock();
-            let result = git::commit(&cwd, &message, push, false);
+            let result = git::commit(&cwd, &message, push, stage_all);
             done(cwd, result)
         }
         FolderCommand::Push { cwd } => {
@@ -431,6 +436,7 @@ mod tests {
             cwd: sub.clone(),
             message: "Add two\n\nThe second line.".into(),
             push: false,
+            stage_all: false,
         });
         assert_eq!(
             out[0],
@@ -461,6 +467,24 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&log.stdout).trim(), "Add two");
+
+        // nothing staged: stage_all takes a new file and a change in the one step
+        std::fs::write(cwd.join("b.rs"), "new\n").unwrap();
+        std::fs::write(sub.join("a.rs"), "one\ntwo\nthree\n").unwrap();
+        let out = run1(FolderCommand::Commit {
+            cwd: cwd.clone(),
+            message: "Add three".into(),
+            push: false,
+            stage_all: true,
+        });
+        assert!(
+            matches!(&out[0], FolderEvent::GitDone { result: Ok(_), .. }),
+            "{out:?}"
+        );
+        let FolderEvent::Git { status, .. } = &out[1] else {
+            panic!("no status after the commit")
+        };
+        assert!(status.changes.is_empty());
     }
 
     #[test]

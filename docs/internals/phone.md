@@ -119,9 +119,20 @@ A message sent while a structured thread works joins the desktop's queue, the sa
 desktop's box fills. The board carries each thread's queue and background tasks, and the phone
 acts on them with `Steer`, `Unqueue` and `StopTask`. A queued message is named by its place and
 its words, since the queue can move between a board and the tap. The phone shows this, and the
-permission chip, only for a desktop new enough to answer (`Link.desktopAtLeast`, which keeps
+permission picker in its model sheet, only for a desktop new enough to answer (`Link.desktopAtLeast`, which keeps
 the last version it saw while reconnecting); an older one gets the box as it was. The browser
 page shows the same queue and tasks.
+
+A thread's folder is the board's `cwd`. The phone reads it and works its git with the same
+`FolderCommand`s another computer sends, less the ones that change files, add or remove
+worktrees, or open apps (`Bridge::folder`), so a phone commits and pushes but never writes a file.
+A phone's requests stay inside the board's thread and space folders, checked after following
+links and `..`; another computer's don't. Images and videos a reply points at come over `Fetch`,
+which answers with a `/media/<token>` link on the bridge's own port. The phone downloads it over
+the pinned connection, so files of any size stay off the WebSocket. A token is random, names one
+file, and lasts an hour. A fork from a reply sends the count of prompts to keep and the last
+one's words; the desktop forks there when the words match, and finds the prompt by its words
+when they don't.
 
 A run the app's closing cut off has no end in the journal. The phone and the page close it when
 the next CLI process starts: always on a whole journal, and live only when a steer came first,
@@ -155,6 +166,11 @@ fonts (Geist, and the terminal's Nerd Font build).
   keyboard as an editor holding nothing, so whatever the keyboard commits, deletes or presses
   becomes terminal bytes, and a Ctrl key leaves no stray letters. The screen follows its bottom
   line unless the reader scrolled up, so the prompt stays in view when the keyboard opens.
+- Haptics go through `View.performHapticFeedback` (`ui/Feel.kt`), so the phone's own touch
+  feedback setting turns them off and the app has no switch of its own. Android's newer effects
+  play nothing on older phones, so each kind names a fallback that exists from Android 10. The
+  thread on screen gets no notification, so it buzzes instead: ticks while a reply streams, a
+  firmer one when it waits on you, and one when the run ends.
 - The QR reader is ML Kit from Google Play services, which fetches its model once; bundling it
   would add 20 MB of native code.
 - The wire fixtures in `app/src/test/resources/wire` are written by the proto test

@@ -1,7 +1,7 @@
 // Install and sign-in checks for the provider CLIs, copied from src-tauri/src/devtools. Reads
 // only the display fields the CLIs keep on disk; no token is used for anything.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use hyprspace_proto::agents::ProviderStatus;
@@ -24,7 +24,15 @@ pub fn status(id: &str) -> ProviderStatus {
         st.detail = Some(format!("`{id}` is not installed or not on PATH."));
         return st;
     }
-    sign_in(&home_dir(), &mut st, std::env::var("XAI_API_KEY").is_ok());
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    let env = Env {
+        xai_key: var("XAI_API_KEY").is_some(),
+        claude_dir: var("CLAUDE_CONFIG_DIR").map(PathBuf::from),
+        claude_token: var("CLAUDE_CODE_OAUTH_TOKEN")
+            .or(var("ANTHROPIC_API_KEY"))
+            .is_some(),
+    };
+    sign_in(&home_dir(), &mut st, &env);
     st
 }
 
@@ -65,19 +73,33 @@ fn parse_version(s: &str) -> Option<String> {
 }
 
 // account, plan and a detail line from the files each CLI writes when you sign in
-fn sign_in(home: &Path, st: &mut ProviderStatus, xai_key: bool) {
+#[derive(Default)]
+struct Env {
+    xai_key: bool,
+    claude_dir: Option<PathBuf>,
+    claude_token: bool,
+}
+
+fn sign_in(home: &Path, st: &mut ProviderStatus, env: &Env) {
     match st.id.as_str() {
         "claude" => {
-            if let Some(v) = read_json(&home.join(".claude.json")) {
+            let (settings, dir) = match &env.claude_dir {
+                Some(dir) => (dir.join(".claude.json"), dir.clone()),
+                None => (home.join(".claude.json"), home.join(".claude")),
+            };
+            if let Some(v) = read_json(&settings) {
                 st.account = v["oauthAccount"]["emailAddress"].as_str().map(String::from);
             }
-            if let Some(v) = read_json(&home.join(".claude").join(".credentials.json"))
+            if let Some(v) = read_json(&dir.join(".credentials.json"))
                 && let Some(sub) = v["claudeAiOauth"]["subscriptionType"].as_str()
             {
                 st.plan = Some(format!("Claude {} Subscription", title_case(sub)));
             }
             if st.account.is_none() {
-                st.detail = Some("Not signed in".into());
+                st.detail = Some(match env.claude_token {
+                    true => "Signed in with a token".into(),
+                    false => ProviderStatus::SIGNED_OUT.into(),
+                });
             }
         }
         "codex" => {
@@ -95,7 +117,7 @@ fn sign_in(home: &Path, st: &mut ProviderStatus, xai_key: bool) {
                 }
             }
             if st.account.is_none() && st.detail.is_none() {
-                st.detail = Some("Not signed in".into());
+                st.detail = Some(ProviderStatus::SIGNED_OUT.into());
             }
         }
         "opencode" => {
@@ -131,7 +153,7 @@ fn sign_in(home: &Path, st: &mut ProviderStatus, xai_key: bool) {
                     .find(|e| e["key"].is_string())
                     .cloned()
             });
-            if xai_key {
+            if env.xai_key {
                 st.detail = Some("Authenticated with XAI_API_KEY".into());
             } else if let Some(entry) = login {
                 st.account = entry["email"].as_str().map(String::from);
@@ -174,7 +196,7 @@ mod tests {
             id: id.into(),
             ..Default::default()
         };
-        sign_in(home, &mut st, false);
+        sign_in(home, &mut st, &Env::default());
         st
     }
 
@@ -190,6 +212,35 @@ mod tests {
         );
         assert_eq!(parse_version("weird\n").as_deref(), Some("weird"));
         assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn claude_signs_in_from_its_config_dir_or_a_token() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[".claude.json"],
+            json!({ "oauthAccount": { "emailAddress": "a@b.c" } }),
+        );
+        let claude = |env: Env| {
+            let mut st = ProviderStatus {
+                id: "claude".into(),
+                ..Default::default()
+            };
+            sign_in(home.path(), &mut st, &env);
+            st
+        };
+        let moved = claude(Env {
+            claude_dir: Some(dir.path().to_path_buf()),
+            ..Env::default()
+        });
+        assert_eq!(moved.account.as_deref(), Some("a@b.c"));
+        let token = claude(Env {
+            claude_token: true,
+            ..Env::default()
+        });
+        assert_ne!(token.detail.as_deref(), Some(ProviderStatus::SIGNED_OUT));
     }
 
     #[test]

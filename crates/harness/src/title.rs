@@ -28,7 +28,13 @@ pub fn clean(said: &str) -> Option<String> {
     let line = said.lines().map(str::trim).find(|l| !l.is_empty())?;
     let line = line.strip_prefix("Title:").unwrap_or(line);
     let line = line
-        .trim_matches(|c: char| c.is_whitespace() || "\"'`*#".contains(c))
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '#')
+        .trim_matches(|c: char| c.is_whitespace() || c == '*');
+    let line = ['"', '\'', '`']
+        .into_iter()
+        .find_map(|q| line.strip_prefix(q)?.strip_suffix(q))
+        .unwrap_or(line)
+        .trim()
         .trim_end_matches('.');
     if line.is_empty() {
         return None;
@@ -150,6 +156,10 @@ mod tests {
         assert_eq!(
             clean("Title: **Speed up the sidebar**"),
             Some("Speed up the sidebar".into())
+        );
+        assert_eq!(
+            clean("Create notes.txt with \"hi\""),
+            Some("Create notes.txt with \"hi\"".into())
         );
         assert_eq!(clean("  \n "), None);
         assert_eq!(clean(&"word ".repeat(30)).unwrap().chars().count(), 60);

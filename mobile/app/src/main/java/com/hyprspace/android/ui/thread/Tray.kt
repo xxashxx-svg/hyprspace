@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,8 +43,10 @@ import com.hyprspace.android.net.AsideView
 import com.hyprspace.android.net.BgTask
 import com.hyprspace.android.net.TaskKind
 import com.hyprspace.android.ui.Eclipse
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 
 /** A side question (`/btw`) and its answer so far, with a cross that closes it. */
 @Composable
@@ -123,6 +126,7 @@ fun Tray(
 private fun TaskRow(t: BgTask, items: List<Item>, canAct: Boolean, onStop: (String) -> Unit) {
     val h = LocalHues.current
     var open by rememberSaveable(t.id) { mutableStateOf(false) }
+    val host = LocalView.current
     val (icon, kind) = when (t.kind) {
         TaskKind.Command -> R.drawable.ic_terminal to "Background command"
         TaskKind.Monitor -> R.drawable.ic_gauge to "Monitor"
@@ -139,7 +143,7 @@ private fun TaskRow(t: BgTask, items: List<Item>, canAct: Boolean, onStop: (Stri
         Row(
             Modifier
                 .fillMaxWidth()
-                .then(if (t.kind == TaskKind.Subagent) Modifier.clickableQuiet { open = !open } else Modifier)
+                .then(if (t.kind == TaskKind.Subagent) Modifier.clickableQuiet { host.feel(Feel.Tick); open = !open } else Modifier)
                 .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),

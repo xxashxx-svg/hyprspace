@@ -114,6 +114,13 @@ sealed interface Up {
 
     @Serializable @SerialName("upload")
     data class Upload(val id: Long, val data: String, val name: String? = null) : Up
+
+    /** An image or video a reply points at, by its path on the computer. */
+    @Serializable @SerialName("fetch")
+    data class Fetch(val id: Long, val path: String) : Up
+
+    @Serializable @SerialName("folder")
+    data class Folder(val cmd: FolderCmd) : Up
 }
 
 @Serializable
@@ -147,6 +154,16 @@ sealed interface Ask {
 
     @Serializable @SerialName("pin")
     data class Pin(val thread: Long, val on: Boolean) : Ask
+
+    @Serializable @SerialName("rename")
+    data class Rename(val thread: Long, val title: String) : Ask
+
+    /** A new thread that keeps the first [keep] prompts of [thread] and their replies; [prompt] is the last kept one's words. */
+    @Serializable @SerialName("fork")
+    data class Fork(val thread: Long, val keep: Int, val prompt: String = "") : Ask
+
+    @Serializable @SerialName("retitle")
+    data class Retitle(val thread: Long) : Ask
 
     @Serializable @SerialName("permission")
     data class SetPermission(val thread: Long, val permission: Permission) : Ask
@@ -229,7 +246,102 @@ sealed interface Down {
 
     @Serializable @SerialName("uploaded")
     data class Uploaded(val id: Long, val path: String? = null, val error: String? = null) : Down
+
+    /** A [Up.Fetch] answered: a `/media/` link on the computer's port, good for an hour. */
+    @Serializable @SerialName("fetched")
+    data class Fetched(val id: Long, val url: String? = null, val error: String? = null) : Down
+
+    @Serializable @SerialName("folder")
+    data class Folder(val event: FolderEvt) : Down
 }
+
+/** What the phone may ask about a thread's folder: read it, and work its git. */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("op")
+sealed interface FolderCmd {
+    @Serializable @SerialName("listDir")
+    data class ListDir(val path: String) : FolderCmd
+
+    @Serializable @SerialName("readFile")
+    data class ReadFile(val path: String) : FolderCmd
+
+    @Serializable @SerialName("gitStatus")
+    data class GitStatus(val cwd: String) : FolderCmd
+
+    /** One file's working tree diff, [path] relative to the repo. */
+    @Serializable @SerialName("diff")
+    data class Diff(val cwd: String, val path: String) : FolderCmd
+
+    /** Every file when [path] is empty. */
+    @Serializable @SerialName("stage")
+    data class Stage(val cwd: String, val path: String, val stage: Boolean) : FolderCmd
+
+    /** With [stageAll], everything changed goes in, staged first in the same step. */
+    @Serializable @SerialName("commit")
+    data class Commit(val cwd: String, val message: String, val push: Boolean, val stageAll: Boolean = false) : FolderCmd
+
+    @Serializable @SerialName("push")
+    data class Push(val cwd: String) : FolderCmd
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("op")
+sealed interface FolderEvt {
+    @Serializable @SerialName("dir")
+    data class Dir(val path: String, val entries: Outcome<List<DirEntry>>) : FolderEvt
+
+    @Serializable @SerialName("file")
+    data class File(val path: String, val text: Outcome<String>) : FolderEvt
+
+    @Serializable @SerialName("git")
+    data class Git(val cwd: String, val status: GitState) : FolderEvt
+
+    /** A stage, commit or push ended; a fresh [Git] follows either way. */
+    @Serializable @SerialName("gitDone")
+    data class GitDone(val cwd: String, val result: Outcome<String>) : FolderEvt
+
+    @Serializable @SerialName("diff")
+    data class Diff(val cwd: String, val path: String, val text: Outcome<String>) : FolderEvt
+}
+
+/** The desktop's `Result`, as serde writes it: `{"Ok": value}` or `{"Err": why}`. */
+@Serializable
+data class Outcome<T>(@SerialName("Ok") val ok: T? = null, @SerialName("Err") val err: String? = null)
+
+@Serializable
+data class DirEntry(val name: String, val dir: Boolean)
+
+@Serializable
+data class GitState(val root: String? = null, val branch: BranchInfo = BranchInfo(), val changes: List<GitChange> = emptyList())
+
+@Serializable
+data class BranchInfo(
+    val branch: String = "",
+    val ahead: Int = 0,
+    val behind: Int = 0,
+    val upstream: Boolean = false,
+    val isRepo: Boolean = false,
+)
+
+/** [status] is git's two-letter code: staged first, then the working tree (`M `, ` M`, `??`). */
+@Serializable
+data class GitChange(val path: String, val status: String, val added: Int = 0, val removed: Int = 0) {
+    val staged: Boolean get() = status.firstOrNull()?.let { it != ' ' && it != '?' } == true
+}
+
+@Serializable
+data class BoardUsage(
+    val agent: Agent,
+    val plan: String? = null,
+    val bars: List<BoardBar> = emptyList(),
+    val note: String? = null,
+)
+
+/** One of an account's limits: how much is used, and when it resets (ms since the epoch). */
+@Serializable
+data class BoardBar(val label: String, val percent: Double = 0.0, val resetsAt: Long? = null)
 
 @Serializable
 data class Board(
@@ -240,6 +352,7 @@ data class Board(
     val theme: BoardTheme = BoardTheme(),
     /** Someone used the computer's keyboard or mouse in the last two minutes. */
     val present: Boolean = false,
+    val usage: List<BoardUsage> = emptyList(),
 )
 
 @Serializable
@@ -289,6 +402,8 @@ data class BoardThread(
     val unseen: Boolean = false,
     val place: String = "",
     val branch: Boolean = false,
+    /** The folder it works in, on the computer. */
+    val cwd: String = "",
     val touched: Long = 0,
     val shelf: Shelf = Shelf.Active,
     val rank: Long = 0,

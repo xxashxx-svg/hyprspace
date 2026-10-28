@@ -6,8 +6,8 @@ pub(crate) mod qr;
 
 use gpui::{App, Context, Window};
 use hyprspace_proto::phone::{
-    Ask, Board, BoardKind, BoardSpace, BoardStatus, BoardTheme, BoardThread, Pairing, Palette,
-    PhoneCommand, PhoneEvent, PhoneStatus, Shelf, Slash, StartPrefs,
+    Ask, Board, BoardBar, BoardKind, BoardSpace, BoardStatus, BoardTheme, BoardThread, BoardUsage,
+    Pairing, Palette, PhoneCommand, PhoneEvent, PhoneStatus, Shelf, Slash, StartPrefs,
 };
 use hyprspace_proto::{Agent, Command, Launch, SessionId, ThreadKind};
 use hyprspace_theme::Theme;
@@ -203,7 +203,35 @@ impl Root {
             },
             // the engine knows whether someone is at the computer, and fills it in
             present: false,
+            usage: self.board_usage(cx),
         }
+    }
+
+    fn board_usage(&self, cx: &App) -> Vec<BoardUsage> {
+        let readings = &self.limits.read(cx).readings;
+        [
+            (Agent::Claude, &readings.claude),
+            (Agent::Codex, &readings.codex),
+        ]
+        .into_iter()
+        .filter_map(|(agent, u)| {
+            let u = u.as_ref()?;
+            Some(BoardUsage {
+                agent,
+                plan: u.plan.clone(),
+                bars: u
+                    .bars
+                    .iter()
+                    .map(|b| BoardBar {
+                        label: b.label.clone(),
+                        percent: b.percent,
+                        resets_at: b.resets_at,
+                    })
+                    .collect(),
+                note: u.note.clone(),
+            })
+        })
+        .collect()
     }
 
     fn board_thread(
@@ -279,6 +307,7 @@ impl Root {
             unseen: self.unseen.contains(&id),
             place,
             branch,
+            cwd: cwd.display().to_string(),
             touched: t.last_touch(),
             shelf: if t.settled {
                 Shelf::Settled
@@ -344,6 +373,16 @@ impl Root {
                     v.update(cx, |v, cx| v.drop_aside(cx));
                 }
             }
+            Ask::Fork {
+                thread,
+                keep,
+                prompt,
+            } => {
+                if let Some(v) = self.structured_view(thread, cx) {
+                    v.update(cx, |v, cx| v.fork_keeping(keep as usize, &prompt, cx));
+                }
+            }
+            Ask::Retitle { thread } => self.regenerate_title(thread, cx),
             Ask::Approve {
                 thread,
                 request,

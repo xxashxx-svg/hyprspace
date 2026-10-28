@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -60,10 +61,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.hyprspace.android.R
 import com.hyprspace.android.model.TermView
 import com.hyprspace.android.net.Span
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.Hues
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.TermFont
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 
@@ -349,13 +352,14 @@ private fun Keys(
 @Composable
 private fun Key(text: String? = null, icon: Int? = null, on: Boolean = false, onClick: () -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
     Box(
         Modifier
             .height(34.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (on) h.accent else h.surface3)
             .border(1.dp, h.border1, RoundedCornerShape(8.dp))
-            .clickableQuiet(onClick)
+            .clickableQuiet { host.feel(Feel.Key); onClick() }
             .padding(horizontal = 11.dp),
         contentAlignment = Alignment.Center,
     ) {

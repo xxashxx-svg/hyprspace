@@ -396,7 +396,7 @@ impl TranscriptView {
     }
 
     /// The whole conversation, carried on in a new thread that starts where this one is.
-    fn branch(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn branch(&mut self, cx: &mut Context<Self>) {
         if self.remote {
             self.model
                 .note("/branch works for threads on this computer.");

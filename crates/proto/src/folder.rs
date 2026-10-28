@@ -45,11 +45,18 @@ pub enum FolderCommand {
         path: String,
         stage: bool,
     },
-    /// Commit what is staged, then push when asked. Answered with `GitDone`.
+    /// Commit what is staged, or everything when `stage_all`, then push when asked. Answered
+    /// with `GitDone`.
     Commit {
         cwd: PathBuf,
         message: String,
         push: bool,
+        #[serde(
+            default,
+            rename = "stageAll",
+            skip_serializing_if = "std::ops::Not::not"
+        )]
+        stage_all: bool,
     },
     Push {
         cwd: PathBuf,

@@ -264,10 +264,16 @@ pub fn marker(word: &str, n: usize) -> String {
     format!("[{word} {n}]")
 }
 
-const WORDS: [&str; 3] = ["Image", "Video", "File"];
+const WORDS: [&str; 4] = ["Image", "Video", "Thread", "File"];
 
 pub fn word(path: &Path) -> &'static str {
-    if is_video(path) {
+    if path
+        .parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|n| n == hyprspace_proto::wire::THREAD_EXPORTS)
+    {
+        "Thread"
+    } else if is_video(path) {
         "Video"
     } else if is_image(path) {
         "Image"

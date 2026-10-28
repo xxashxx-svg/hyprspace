@@ -381,15 +381,15 @@ impl Root {
                 let catalog = agents
                     .iter()
                     .find(|a| a.agent == launch.agent)
-                    .map(|a| (a.catalog.clone(), a.status.version.clone()));
+                    .map(|a| (a.catalog.clone(), a.status.clone()));
                 let v = cx.new(|cx| {
                     let mut v =
                         TranscriptView::new(session, launch, thread, history, first, client, cx);
                     if remote.is_some() {
                         v.set_remote();
                     }
-                    if let Some((c, version)) = catalog {
-                        v.set_catalog(c, version, cx);
+                    if let Some((c, status)) = catalog {
+                        v.set_catalog(c, status, cx);
                     }
                     v
                 });
@@ -417,6 +417,7 @@ impl Root {
                     TerminalEvent::OpenFile { path, line, col } => {
                         root.open_file(path.clone(), *line, *col, cx)
                     }
+                    TerminalEvent::AddToChat(_) => {}
                 });
                 self._subs.push(sub);
                 View::Terminal(v)
@@ -509,6 +510,7 @@ impl Root {
                 self.work.settings = Some(*tab);
                 return cx.notify();
             }
+            TranscriptEvent::Reference(target) => return self.reference(thread, *target, cx),
             _ => {}
         }
         if self.machines.remote(thread).is_some() {
@@ -539,7 +541,9 @@ impl Root {
             return;
         }
         match e {
-            TranscriptEvent::Rename(_) | TranscriptEvent::Settings(_) => {}
+            TranscriptEvent::Rename(_)
+            | TranscriptEvent::Settings(_)
+            | TranscriptEvent::Reference(_) => {}
             TranscriptEvent::NewThread => {
                 self.work.compose = self.state.thread(thread).map(|(s, _)| s.id);
             }

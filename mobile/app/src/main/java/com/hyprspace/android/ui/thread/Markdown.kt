@@ -59,6 +59,7 @@ import org.commonmark.node.HardLineBreak
 import org.commonmark.node.Heading
 import org.commonmark.node.HtmlBlock
 import org.commonmark.node.HtmlInline
+import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link
 import org.commonmark.node.ListItem
@@ -78,7 +79,7 @@ private val parser: Parser = Parser.builder()
 fun Markdown(text: String, modifier: Modifier = Modifier) {
     val parts = remember(text) { stretches(text) }
     SelectionContainer(modifier) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             for (p in parts) Stretch(p)
         }
     }
@@ -88,7 +89,7 @@ fun Markdown(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun Stretch(text: String) {
     val doc = remember(text) { parser.parse(text) }
-    Column(Modifier.graphicsLayer(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.graphicsLayer(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Blocks(doc)
     }
 }
@@ -142,24 +143,39 @@ private fun Block(n: Node) {
     val h = LocalHues.current
     val body = MaterialTheme.typography.bodyLarge
     when (n) {
-        is Paragraph -> Text(inline(n, h), style = body, color = h.text1)
-        is Heading -> Text(
-            inline(n, h),
-            style = body.copy(
-                fontSize = when (n.level) { 1 -> 20.sp; 2 -> 18.sp; else -> 16.sp },
-                lineHeight = 26.sp,
-            ),
-            fontWeight = FontWeight.SemiBold,
-            color = h.text1,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        is BulletList, is OrderedList -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            var i = (n as? OrderedList)?.markerStartNumber ?: 1
-            for (item in n.children()) {
-                val marker = if (n is OrderedList) "${i++}." else "•"
+        is Paragraph -> {
+            val kids = n.children()
+            val pics = kids.filterIsInstance<Image>()
+            val words = kids.any { it !is Image && it !is SoftLineBreak && it !is HardLineBreak && !(it is org.commonmark.node.Text && it.literal.isBlank()) }
+            if (words || pics.isEmpty()) Text(inline(n, h), style = body, color = h.text1)
+            for (p in pics) Media(p.destination, inline(p, h).text)
+        }
+        is Heading -> {
+            val size = when (n.level) { 1 -> 21; 2 -> 19; 3 -> 17; else -> 16 }
+            Text(
+                inline(n, h),
+                style = body.copy(fontSize = size.sp, lineHeight = (size * 1.35f).sp),
+                fontWeight = FontWeight.SemiBold,
+                color = h.text1,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        is BulletList, is OrderedList -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val first = (n as? OrderedList)?.markerStartNumber ?: 1
+            val items = n.children()
+            // wide enough for the longest number, so "10." never wraps its dot
+            val gutter = if (n is OrderedList) (12 + 9 * "${first + items.size - 1}".length).dp else 18.dp
+            items.forEachIndexed { i, item ->
                 Row {
-                    Text(marker, Modifier.width(22.dp), style = body, color = h.text3)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        if (n is OrderedList) "${first + i}." else "•",
+                        Modifier.width(gutter),
+                        style = body,
+                        fontWeight = if (n is OrderedList) FontWeight.Normal else FontWeight.Bold,
+                        color = if (n is OrderedList) h.text2 else h.text1,
+                        softWrap = false,
+                    )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (c in item.children()) Block(c)
                     }
                 }
@@ -185,8 +201,8 @@ fun CodeBlock(code: String, lang: String?) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(h.ink(0.035f)),
+            .clip(RoundedCornerShape(12.dp))
+            .background(h.ink(0.045f)),
     ) {
         lang?.takeIf { it.isNotBlank() }?.let {
             Text(
@@ -200,8 +216,8 @@ fun CodeBlock(code: String, lang: String?) {
             code,
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp),
             fontFamily = Mono,
-            fontSize = 12.5.sp,
-            lineHeight = 18.sp,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
             color = h.text1,
             softWrap = false,
         )
@@ -246,11 +262,11 @@ private fun inline(n: Node, h: Hues): AnnotatedString = buildAnnotatedString {
     fun walk(node: Node) {
         for (c in node.children()) when (c) {
             is org.commonmark.node.Text -> append(c.literal)
-            is Code -> withStyle(SpanStyle(fontFamily = Mono, fontSize = 13.sp, background = h.ink(0.06f))) {
+            is Code -> withStyle(SpanStyle(fontFamily = Mono, fontSize = 14.sp, color = h.text2, background = h.ink(0.06f))) {
                 append(" ${c.literal} ")
             }
             is Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { walk(c) }
-            is StrongEmphasis -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { walk(c) }
+            is StrongEmphasis -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { walk(c) }
             is Strikethrough -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { walk(c) }
             is Link -> withLink(
                 LinkAnnotation.Url(c.destination, TextLinkStyles(SpanStyle(color = h.link, textDecoration = TextDecoration.Underline))),

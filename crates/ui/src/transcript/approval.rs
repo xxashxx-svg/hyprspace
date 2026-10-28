@@ -137,8 +137,9 @@ pub fn open(v: &TranscriptView) -> Vec<&Item> {
         .items
         .iter()
         .filter(|i| {
-            matches!(i, Item::Approval { tool, answer: None, expired: false, .. }
-                if !matches!(super::ask::named(tool), Some((super::ask::QUESTION | super::ask::PLAN, _))))
+            matches!(i, Item::Approval { request, tool, answer: None, expired: false, .. }
+                if !v.held.contains(request)
+                    && !matches!(super::ask::named(tool), Some((super::ask::QUESTION | super::ask::PLAN, _))))
         })
         .collect()
 }

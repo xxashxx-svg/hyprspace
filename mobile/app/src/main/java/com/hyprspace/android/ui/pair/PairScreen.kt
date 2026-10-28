@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -55,9 +56,11 @@ import com.hyprspace.android.R
 import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.PairLink
 import com.hyprspace.android.service.LinkService
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.Screen
+import com.hyprspace.android.ui.feel
 import kotlinx.coroutines.launch
 
 private enum class Mode { Intro, Scan, Type }
@@ -66,6 +69,7 @@ private enum class Mode { Intro, Scan, Type }
 fun PairScreen(app: App, onDone: () -> Unit, onCancel: (() -> Unit)?) {
     val h = LocalHues.current
     val scope = rememberCoroutineScope()
+    val host = LocalView.current
     var mode by remember { mutableStateOf(Mode.Intro) }
     var busy by remember { mutableStateOf<String?>(null) }
     // the computer removed this phone: say so where it pairs again
@@ -80,10 +84,12 @@ fun PairScreen(app: App, onDone: () -> Unit, onCancel: (() -> Unit)?) {
             val r = app.link.pair(link)
             busy = null
             r.onSuccess { d ->
+                host.feel(Feel.Done)
                 app.link.restart()
                 LinkService.sync(app)
                 onDone()
             }.onFailure {
+                host.feel(Feel.Fail)
                 error = it.message
                 mode = Mode.Intro
             }

@@ -181,6 +181,36 @@ fn tail_start(lines: &[&str], budget: usize) -> usize {
     0
 }
 
+pub fn markdown(title: &str, entries: &[Entry]) -> String {
+    let mut out = format!("# {title}\n");
+    let mut said = false;
+    for entry in entries {
+        match entry {
+            Entry::Prompt { prompt } => {
+                let asked = prompt.text.trim();
+                out.push_str(&format!("\n## You\n\n{asked}\n\n## Agent\n\n"));
+                said = false;
+            }
+            Entry::Run {
+                event: RunEvent::Text { text },
+            } => {
+                out.push_str(text);
+                said = true;
+            }
+            Entry::Run {
+                event: RunEvent::Finished { text, .. },
+            } => {
+                if !said {
+                    out.push_str(text);
+                }
+                out.push('\n');
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 pub fn import(file: &Path, conversation: &str) {
     let Some(all) = hyprspace_harness::claude::history(None, conversation) else {
         return;
@@ -434,6 +464,36 @@ mod tests {
         // the reply split where the watcher came in, and replays the same
         let all = load(&path(dir.path(), "thread-2"));
         assert_eq!(all[1..], [run(text("Hel")), run(text("lo"))]);
+    }
+
+    #[test]
+    fn an_export_reads_as_prompts_and_replies() {
+        let entries = [
+            Entry::Prompt {
+                prompt: Prompt::text("fix it "),
+            },
+            run(text("Fixed")),
+            run(text(".")),
+            run(RunEvent::Finished {
+                status: hyprspace_proto::RunStatus::Done,
+                ms: 1,
+                text: "Fixed.".into(),
+                error: None,
+            }),
+            Entry::Prompt {
+                prompt: Prompt::text("thanks"),
+            },
+            run(RunEvent::Finished {
+                status: hyprspace_proto::RunStatus::Done,
+                ms: 1,
+                text: "Any time.".into(),
+                error: None,
+            }),
+        ];
+        assert_eq!(
+            markdown("Auth", &entries),
+            "# Auth\n\n## You\n\nfix it\n\n## Agent\n\nFixed.\n\n## You\n\nthanks\n\n## Agent\n\nAny time.\n"
+        );
     }
 
     #[test]

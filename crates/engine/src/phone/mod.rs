@@ -92,6 +92,8 @@ struct Hub {
     commands: Vec<Slash>,
     terms: HashMap<SessionId, Term>,
     journals: HashMap<String, Weak<Journal>>,
+    /// Files lent to phones by a token in a `/media/` link, until the instant each runs out.
+    media: HashMap<String, (PathBuf, Instant)>,
 }
 
 struct Secret {
@@ -171,6 +173,7 @@ impl Phone {
             commands: Vec::new(),
             terms: HashMap::new(),
             journals: HashMap::new(),
+            media: HashMap::new(),
         })))
     }
 
@@ -531,6 +534,28 @@ impl Phone {
         ))
     }
 
+    /// A link a phone downloads `file` from, over the bridge's own port.
+    fn lend(&self, file: PathBuf) -> String {
+        let token: String = store::random(24)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let mut hub = self.hub();
+        let now = Instant::now();
+        hub.media.retain(|_, (_, until)| *until > now);
+        hub.media.insert(token.clone(), (file, now + LENT_FOR));
+        format!("/media/{token}")
+    }
+
+    /// The file behind a `/media/` token, while it lasts.
+    pub(super) fn lent(&self, token: &str) -> Option<PathBuf> {
+        let hub = self.hub();
+        hub.media
+            .get(token)
+            .filter(|(_, until)| *until > Instant::now())
+            .map(|(file, _)| file.clone())
+    }
+
     pub(super) fn serves_page(&self) -> bool {
         let hub = self.hub();
         hub.on && hub.browser
@@ -617,7 +642,9 @@ impl Phone {
                     | Ask::Steer { thread, .. }
                     | Ask::Unqueue { thread, .. }
                     | Ask::StopTask { thread, .. }
-                    | Ask::DropAside { thread } => known(*thread),
+                    | Ask::DropAside { thread }
+                    | Ask::Fork { thread, .. }
+                    | Ask::Retitle { thread } => known(*thread),
                 };
                 if ok {
                     let _ = hub
@@ -644,6 +671,19 @@ impl Phone {
                     };
                     if let Some(c) = me.hub().conns.get(&conn) {
                         let _ = c.tx.unbounded_send(Down::Uploaded { id, path, error });
+                    }
+                });
+            }
+            Up::Fetch { id, path } => {
+                let roots = self.hub().roots();
+                let me = self.clone();
+                tokio::task::spawn_blocking(move || {
+                    let (url, error) = match media_file(Path::new(&path), &roots) {
+                        Ok(file) => (Some(me.lend(file)), None),
+                        Err(e) => (None, Some(e.to_string())),
+                    };
+                    if let Some(c) = me.hub().conns.get(&conn) {
+                        let _ = c.tx.unbounded_send(Down::Fetched { id, url, error });
                     }
                 });
             }
@@ -764,19 +804,48 @@ impl Phone {
         if matches!(cmd, FolderCommand::Openers | FolderCommand::OpenIn { .. }) {
             return;
         }
+        // a phone reads files and works git; changing files or worktrees is for computers
+        let phone_may = matches!(
+            cmd,
+            FolderCommand::ListDir { .. }
+                | FolderCommand::ReadFile { .. }
+                | FolderCommand::GitStatus { .. }
+                | FolderCommand::Diff { .. }
+                | FolderCommand::Stage { .. }
+                | FolderCommand::Commit { .. }
+                | FolderCommand::Push { .. }
+        );
         let hub = self.hub();
-        let Some(down) = hub
+        let Some((down, computer)) = hub
             .conns
             .get(&conn)
-            .filter(|c| c.computer)
-            .map(|c| c.tx.clone())
+            .filter(|c| c.computer || phone_may)
+            .map(|c| (c.tx.clone(), c.computer))
         else {
             return;
         };
         let folders = hub.folders.clone();
+        let roots = hub.roots();
         drop(hub);
         let (tx, mut rx) = futures::channel::mpsc::unbounded();
-        folders.handle(cmd, tx);
+        // a phone stays inside its threads' folders, as another computer need not
+        let asked = match &cmd {
+            FolderCommand::ListDir { path } | FolderCommand::ReadFile { path } => path.clone(),
+            FolderCommand::GitStatus { cwd }
+            | FolderCommand::Diff { cwd, .. }
+            | FolderCommand::Stage { cwd, .. }
+            | FolderCommand::Commit { cwd, .. }
+            | FolderCommand::Push { cwd } => cwd.clone(),
+            _ => PathBuf::new(),
+        };
+        let refusal = tx.clone();
+        tokio::task::spawn_blocking(move || {
+            if computer || within(&roots, &asked) {
+                folders.handle(cmd, tx);
+            } else if let Some(event) = refused(cmd) {
+                let _ = refusal.unbounded_send(Event::Folder(event));
+            }
+        });
         tokio::spawn(async move {
             use futures::StreamExt;
             while let Some(e) = rx.next().await {
@@ -1049,6 +1118,18 @@ impl Phone {
 }
 
 impl Hub {
+    /// The folders phones may read: each thread's and each space's.
+    fn roots(&self) -> Vec<PathBuf> {
+        self.board
+            .threads
+            .iter()
+            .map(|t| &t.cwd)
+            .chain(self.board.spaces.iter().map(|s| &s.path))
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+            .collect()
+    }
+
     fn broadcast(&self, down: Down) {
         for c in self.conns.values() {
             let _ = c.tx.unbounded_send(down.clone());
@@ -1316,6 +1397,66 @@ fn is_upload(path: &Path) -> bool {
             .file_name()
             .and_then(|n| n.to_str())
             .is_some_and(|n| n.starts_with("phone-") && !n.contains(".."))
+}
+
+const MEDIA: [&str; 10] = [
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "mov", "webm", "m4v",
+];
+/// How long a `/media/` link works.
+const LENT_FOR: Duration = Duration::from_secs(60 * 60);
+const OUTSIDE: &str = "That's outside this thread's folders.";
+
+/// An image or video in one of the threads' folders, for a phone to show inline.
+fn media_file(path: &Path, roots: &[PathBuf]) -> Result<PathBuf, &'static str> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    if !MEDIA.contains(&ext.as_str()) {
+        return Err("Only images and videos show on the phone.");
+    }
+    let file = std::fs::canonicalize(path).map_err(|_| "That file isn't on the computer.")?;
+    if !within(roots, &file) {
+        return Err(OUTSIDE);
+    }
+    Ok(file)
+}
+
+/// `path`, with its links followed and `..` gone, sits in one of `roots`.
+fn within(roots: &[PathBuf], path: &Path) -> bool {
+    let Ok(path) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    roots
+        .iter()
+        .filter_map(|r| std::fs::canonicalize(r).ok())
+        .any(|r| path.starts_with(r))
+}
+
+/// The answer to a folder request a phone made outside its threads' folders.
+fn refused(cmd: FolderCommand) -> Option<hyprspace_proto::FolderEvent> {
+    use hyprspace_proto::FolderEvent;
+    fn no<T>() -> Result<T, String> {
+        Err(OUTSIDE.to_string())
+    }
+    Some(match cmd {
+        FolderCommand::ListDir { path } => FolderEvent::Dir {
+            path,
+            entries: no(),
+        },
+        FolderCommand::ReadFile { path } => FolderEvent::File { path, text: no() },
+        FolderCommand::Diff { cwd, path } => FolderEvent::Diff {
+            cwd,
+            path,
+            text: no(),
+        },
+        FolderCommand::GitStatus { cwd }
+        | FolderCommand::Stage { cwd, .. }
+        | FolderCommand::Commit { cwd, .. }
+        | FolderCommand::Push { cwd } => FolderEvent::GitDone { cwd, result: no() },
+        _ => return None,
+    })
 }
 
 fn save_upload(data: &str, name: Option<&str>) -> Result<PathBuf, &'static str> {

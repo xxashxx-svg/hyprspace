@@ -228,6 +228,8 @@ pub fn run(args: &[String]) {
             let _steer = read();
             say("absorbed");
             done("absorbed");
+        } else if text.contains("steer-gate") {
+            steer_into_approval();
         } else if text.contains("steer-tool") {
             steer_after_tool();
         } else if text.contains("steer") {
@@ -435,6 +437,17 @@ fn steer() {
     let reply = format!("steered({priority}): {}", prompt_text(&steer));
     say(&reply);
     done(&reply);
+}
+
+// The turn ends, then the steer's own turn stops on an approval and says nothing until answered.
+fn steer_into_approval() {
+    say("first");
+    let steer = read().unwrap_or_default();
+    done("first");
+    emit(steer);
+    control("r1", "Bash", json!({ "command": "ls" }), Value::Null);
+    say("after the gate");
+    done("after the gate");
 }
 
 // With a tool open, the steer must wait for it (`next`) and lands in the same turn.

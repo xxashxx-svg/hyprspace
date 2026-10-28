@@ -69,7 +69,7 @@ impl Root {
             Some(d) => d.open = !d.open,
             None => {
                 self.work.drawers.insert(thread, Drawer::new());
-                self.add_shell(thread, None, cx);
+                self.add_shell(thread, None, window, cx);
             }
         }
         self.focus_drawer(thread, window, cx);
@@ -99,11 +99,17 @@ impl Root {
             .entry(thread)
             .or_insert_with(Drawer::new)
             .open = true;
-        self.add_shell(thread, Some(agent), cx);
+        self.add_shell(thread, Some(agent), window, cx);
         self.focus_drawer(thread, window, cx);
     }
 
-    fn add_shell(&mut self, thread: u64, sign_in: Option<Agent>, cx: &mut Context<Self>) {
+    fn add_shell(
+        &mut self,
+        thread: u64,
+        sign_in: Option<Agent>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(cwd) = self.state.thread(thread).and_then(|(_, t)| match &t.kind {
             ThreadKind::Structured { launch } => Some(launch.cwd.clone()),
             _ => None,
@@ -113,15 +119,28 @@ impl Root {
         let session = SessionId(self.next_session);
         self.next_session += 1;
         let client = self.client.clone();
-        let view = cx.new(|cx| TerminalView::new(session, client, cwd, None, None, sign_in, cx));
-        let sub = cx.subscribe(&view, |root, _, e: &TerminalEvent, cx| match e {
-            TerminalEvent::OpenFile {
-                path, line: None, ..
-            } if crate::attach::previews(path) => root.show_media(path.clone(), cx),
-            TerminalEvent::OpenFile { path, line, col } => {
-                root.open_file(path.clone(), *line, *col, cx)
-            }
+        let view = cx.new(|cx| {
+            let mut v = TerminalView::new(session, client, cwd, None, None, sign_in, cx);
+            v.offer_chat();
+            v
         });
+        let sub = cx.subscribe_in(
+            &view,
+            window,
+            move |root, _, e: &TerminalEvent, window, cx| match e {
+                TerminalEvent::AddToChat(text) => {
+                    if let Some(View::Structured(v)) = root.views.get(&thread) {
+                        v.update(cx, |v, cx| v.add_output(text, window, cx));
+                    }
+                }
+                TerminalEvent::OpenFile {
+                    path, line: None, ..
+                } if crate::attach::previews(path) => root.show_media(path.clone(), cx),
+                TerminalEvent::OpenFile { path, line, col } => {
+                    root.open_file(path.clone(), *line, *col, cx)
+                }
+            },
+        );
         if let Some(d) = self.work.drawers.get_mut(&thread) {
             d.shells.push(Shell {
                 session,
@@ -308,7 +327,7 @@ impl Root {
                     .ml(px(2.))
                     .tooltip(crate::widgets::tip("New terminal"))
                     .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                        r.add_shell(thread, None, cx);
+                        r.add_shell(thread, None, window, cx);
                         r.focus_drawer(thread, window, cx)
                     })),
             )

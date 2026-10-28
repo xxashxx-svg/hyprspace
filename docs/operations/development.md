@@ -94,9 +94,10 @@ between calls runs steps 1 to 3 as one script and reads the PID back from `$dir\
    `AttachThreadInput` and `SetKeyboardState`. Posted clicks don't reach the sidebar, so pick the
    thread that opens with `active` instead.
 
-5. Close it with `$app.CloseMainWindow()` and wait for it to exit, so it ends its terminals. Force
-   it by that PID only if it hangs, then check for a leftover `OpenConsole.exe` whose parent was
-   that PID.
+5. Close it with `$app.CloseMainWindow()` and wait for it to exit, so it ends its terminals. A
+   thread still working makes it ask first, and a second `CloseMainWindow()` is the yes. Force it
+   by that PID only if it hangs, then check for a leftover `OpenConsole.exe` whose parent was that
+   PID.
 
 ## The check
 

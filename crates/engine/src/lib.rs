@@ -396,6 +396,26 @@ async fn serve(
                     let _ = events.unbounded_send(Event::Journal { id, entries });
                 });
             }
+            Command::ExportThread {
+                thread,
+                journal,
+                title,
+            } => {
+                let file = journal::path(&journals, &journal);
+                let events = tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let text = journal::markdown(&title, &journal::load(&file));
+                    let dir = std::env::temp_dir().join(hyprspace_proto::wire::THREAD_EXPORTS);
+                    let path = dir.join(format!("{journal}.md"));
+                    let written = std::fs::create_dir_all(&dir)
+                        .and_then(|_| std::fs::write(&path, text))
+                        .is_ok();
+                    let _ = events.unbounded_send(Event::ThreadExported {
+                        thread,
+                        path: written.then_some(path),
+                    });
+                });
+            }
             Command::TrimJournal { journal, keep } => {
                 let file = journal::path(&journals, &journal);
                 block_in_place(|| journal::trim(&file, keep));

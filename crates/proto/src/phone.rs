@@ -94,6 +94,11 @@ pub enum Up {
     Folders {
         path: String,
     },
+    /// An image or video a reply points at, to show it inline. Answered with `Fetched`.
+    Fetch {
+        id: u64,
+        path: String,
+    },
     /// From another computer: a terminal thread's raw output, the last 512 KB it printed and
     /// then everything as it comes, in `OUTPUT` frames. Its keystrokes go up in `INPUT` frames.
     Attach {
@@ -190,6 +195,19 @@ pub enum Ask {
     Pin {
         thread: u64,
         on: bool,
+    },
+    /// A new structured thread that carries on from `thread`, keeping its first `keep` prompts
+    /// and their replies. `prompt` is the last kept prompt's words, which find it when the
+    /// count has moved.
+    Fork {
+        thread: u64,
+        keep: u32,
+        #[serde(default)]
+        prompt: String,
+    },
+    /// Names the thread again from what it's about, as the sidebar's Regenerate title does.
+    Retitle {
+        thread: u64,
     },
     /// Sets a structured thread's model and effort for its next message. Empty means the default.
     Model {
@@ -308,6 +326,13 @@ pub enum Down {
         path: Option<String>,
         error: Option<String>,
     },
+    /// A `Fetch` answered: a `/media/` link on this port that serves the file for an hour, or
+    /// why not.
+    Fetched {
+        id: u64,
+        url: Option<String>,
+        error: Option<String>,
+    },
     /// The thread an `Ask::New` with a `request` made.
     Started {
         request: u64,
@@ -345,6 +370,31 @@ pub struct Board {
     /// Someone used this computer's keyboard or mouse in the last two minutes, so the phone holds
     /// back its notifications. The engine fills it in; the UI's board leaves it false.
     pub present: bool,
+    /// Each agent's limits, as the usage meter last read them.
+    pub usage: Vec<BoardUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardUsage {
+    pub agent: Agent,
+    #[serde(default)]
+    pub plan: Option<String>,
+    #[serde(default)]
+    pub bars: Vec<BoardBar>,
+    /// Why the numbers are missing or old.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BoardBar {
+    pub label: String,
+    /// 0-100
+    pub percent: f64,
+    /// unix ms
+    pub resets_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -379,6 +429,8 @@ pub struct BoardThread {
     pub unseen: bool,
     /// The branch, or the folder's name when it isn't a repo.
     pub place: String,
+    /// The folder it works in, for its files and git.
+    pub cwd: String,
     pub branch: bool,
     /// When it last did something, unix ms.
     pub touched: u64,
@@ -722,6 +774,8 @@ mod tests {
     #[test]
     fn the_phone_reads_and_writes_these_exact_lines() {
         use crate::agents::{AgentCatalog, AgentInfo, ModelInfo, ProviderStatus};
+        use crate::folder::{DirEntry, FolderCommand, FolderEvent, GitStatus};
+        use crate::git::BranchInfo;
         use crate::run::{ChangeKind, FileChange, Prompt, RunEvent, RunStatus, Tool};
         use crate::state::Entry;
         let tool = |kind: &str| match kind {
@@ -888,6 +942,7 @@ mod tests {
                         unseen: true,
                         place: "main".into(),
                         branch: true,
+                        cwd: "/code/app".into(),
                         touched: 8,
                         shelf: Shelf::Snoozed,
                         rank: -3,
@@ -935,6 +990,16 @@ mod tests {
                         dark: palette,
                     },
                     present: true,
+                    usage: vec![BoardUsage {
+                        agent: Agent::Claude,
+                        plan: Some("Max".into()),
+                        bars: vec![BoardBar {
+                            label: "5 hours".into(),
+                            percent: 42.0,
+                            resets_at: Some(1_760_000_000_000),
+                        }],
+                        note: None,
+                    }],
                 }),
             },
             Down::Transcript {
@@ -1016,6 +1081,65 @@ mod tests {
                 path: "C:\\Users\\ash".into(),
                 parent: Some("C:\\Users".into()),
                 dirs: vec!["C:\\Users\\ash\\code".into()],
+            },
+            Down::Fetched {
+                id: 3,
+                url: Some("/media/0a1b2c".into()),
+                error: None,
+            },
+            Down::Fetched {
+                id: 4,
+                url: None,
+                error: Some("That's outside this thread's folders.".into()),
+            },
+            Down::Folder {
+                event: Box::new(FolderEvent::Dir {
+                    path: "/code/app".into(),
+                    entries: Ok(vec![DirEntry {
+                        name: "src".into(),
+                        dir: true,
+                    }]),
+                }),
+            },
+            Down::Folder {
+                event: Box::new(FolderEvent::File {
+                    path: "/code/app/a.rs".into(),
+                    text: Err("Not text".into()),
+                }),
+            },
+            Down::Folder {
+                event: Box::new(FolderEvent::Git {
+                    cwd: "/code/app".into(),
+                    status: GitStatus {
+                        root: Some("/code/app".into()),
+                        branch: BranchInfo {
+                            branch: "main".into(),
+                            ahead: 1,
+                            behind: 0,
+                            upstream: true,
+                            is_repo: true,
+                        },
+                        changes: vec![crate::git::FileChange {
+                            path: "src/a.rs".into(),
+                            status: " M".into(),
+                            added: 3,
+                            removed: 1,
+                        }],
+                    },
+                }),
+            },
+            Down::Folder {
+                event: Box::new(FolderEvent::GitDone {
+                    cwd: "/code/app".into(),
+                    result: Ok("Committed".into()),
+                }),
+            },
+            Down::Folder {
+                event: Box::new(FolderEvent::Diff {
+                    cwd: "/code/app".into(),
+                    path: "src/a.rs".into(),
+                    text: Ok("@@ -1 +1 @@".into()),
+                }),
             },
         ];
         let up = [
@@ -1154,6 +1278,12 @@ mod tests {
                 },
             },
             Up::Ask {
+                ask: Ask::Rename {
+                    thread: 2,
+                    title: "Fix the login form".into(),
+                },
+            },
+            Up::Ask {
                 ask: Ask::Model {
                     thread: 2,
                     model: "opus".into(),
@@ -1161,9 +1291,64 @@ mod tests {
                     fast: false,
                 },
             },
+            Up::Ask {
+                ask: Ask::Fork {
+                    thread: 2,
+                    keep: 1,
+                    prompt: "fix it".into(),
+                },
+            },
+            Up::Ask {
+                ask: Ask::Retitle { thread: 2 },
+            },
             Up::Leave,
             Up::Folders {
                 path: String::new(),
+            },
+            Up::Fetch {
+                id: 3,
+                path: "/code/app/shot.png".into(),
+            },
+            Up::Folder {
+                cmd: FolderCommand::ListDir {
+                    path: "/code/app".into(),
+                },
+            },
+            Up::Folder {
+                cmd: FolderCommand::ReadFile {
+                    path: "/code/app/a.rs".into(),
+                },
+            },
+            Up::Folder {
+                cmd: FolderCommand::GitStatus {
+                    cwd: "/code/app".into(),
+                },
+            },
+            Up::Folder {
+                cmd: FolderCommand::Diff {
+                    cwd: "/code/app".into(),
+                    path: "src/a.rs".into(),
+                },
+            },
+            Up::Folder {
+                cmd: FolderCommand::Stage {
+                    cwd: "/code/app".into(),
+                    path: String::new(),
+                    stage: true,
+                },
+            },
+            Up::Folder {
+                cmd: FolderCommand::Commit {
+                    cwd: "/code/app".into(),
+                    message: "Fix it".into(),
+                    push: true,
+                    stage_all: true,
+                },
+            },
+            Up::Folder {
+                cmd: FolderCommand::Push {
+                    cwd: "/code/app".into(),
+                },
             },
             Up::Upload {
                 id: 1,

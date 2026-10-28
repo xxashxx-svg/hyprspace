@@ -192,6 +192,7 @@ impl Dock {
             cwd,
             message: message(&summary, &body),
             push,
+            stage_all: false,
         }));
         cx.notify();
     }

@@ -88,6 +88,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
+        self.chip = None;
         let Some(grid) = self.grid else {
             return;
         };
@@ -183,9 +184,13 @@ impl TerminalView {
         cx.notify();
     }
 
-    pub(super) fn on_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        self.drag = None;
+    pub(super) fn on_up(&mut self, e: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let selected = self.drag.take().is_some_and(|d| d.armed);
         self.bar_grab = None;
+        if self.chat && selected && self.emu().selection_text().is_some() {
+            self.chip = Some(e.position);
+            cx.notify();
+        }
     }
 
     /// Right-click pastes, as it did in the Tauri app.

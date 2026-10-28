@@ -35,6 +35,8 @@ data class Saved(
     val finished: Boolean = false,
     /** Ask for a terminal sized to the phone when it opens. */
     val fit: Boolean = true,
+    /** On top of the phone's own font size. */
+    val textScale: Float = 1f,
     val theme: BoardTheme? = null,
 ) {
     fun current(): Desktop? = desktops.firstOrNull { it.id == active } ?: desktops.firstOrNull()

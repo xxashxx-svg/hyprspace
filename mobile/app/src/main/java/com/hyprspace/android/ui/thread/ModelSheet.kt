@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,8 +41,10 @@ import com.hyprspace.android.net.Agent
 import com.hyprspace.android.net.AgentCatalog
 import com.hyprspace.android.net.ModelInfo
 import com.hyprspace.android.ui.AgentMark
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
 
 @Composable
 fun ModelChip(agent: Agent?, label: String, effort: String, enabled: Boolean, onClick: () -> Unit) {
@@ -73,10 +76,12 @@ fun ModelSheet(
     onDismiss: () -> Unit,
     note: String = "Applies from your next message.",
     top: (@Composable () -> Unit)? = null,
+    bottom: (@Composable () -> Unit)? = null,
 ) {
     val h = LocalHues.current
     var picked by remember(catalog?.agent) { mutableStateOf(model.substringBefore('[')) }
     var level by remember(catalog?.agent) { mutableStateOf(effort) }
+    val host = LocalView.current
     fun pick(m: String, e: String) {
         picked = m
         level = e
@@ -100,7 +105,7 @@ fun ModelSheet(
                 val options = listOf(ModelInfo(id = "", label = "Default", note = "The agent's own pick")) +
                     catalog.models.filter { it.id.isNotEmpty() }
                 for (m in options) {
-                    ModelRow(m, m.id == picked) { pick(m.id, level.takeIf { it in catalog.effortsFor(m.id) } ?: "") }
+                    ModelRow(m, m.id == picked) { host.feel(Feel.Tick); pick(m.id, level.takeIf { it in catalog.effortsFor(m.id) } ?: "") }
                 }
             }
             val efforts = catalog?.effortsFor(picked).orEmpty()
@@ -108,6 +113,7 @@ fun ModelSheet(
                 val fallback = catalog?.models?.firstOrNull { it.id == picked }?.defaultEffort
                 EffortSlider(efforts, level, fallback) { pick(picked, it) }
             }
+            bottom?.invoke()
             if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall, color = h.text3)
             Spacer(Modifier.height(8.dp))
         }
@@ -116,10 +122,15 @@ fun ModelSheet(
 
 @Composable
 private fun ModelRow(m: ModelInfo, on: Boolean, onClick: () -> Unit) {
+    val note = m.note?.trim().orEmpty()
+    PickRow(m.label, note, on, badge = note.isNotEmpty() && note.length <= 14 && m.id.isNotEmpty(), onClick)
+}
+
+/** A row in a sheet's list of choices, with its note under it or, when short, beside it. */
+@Composable
+internal fun PickRow(label: String, note: String, on: Boolean, badge: Boolean = false, onClick: () -> Unit) {
     val h = LocalHues.current
     val fill by animateColorAsState(if (on) h.accent.copy(alpha = 0.13f) else Color.Transparent, label = "pick")
-    val note = m.note?.trim().orEmpty()
-    val badge = note.isNotEmpty() && note.length <= 14 && m.id.isNotEmpty()
     Row(
         Modifier
             .fillMaxWidth()
@@ -132,7 +143,7 @@ private fun ModelRow(m: ModelInfo, on: Boolean, onClick: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    m.label,
+                    label,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
                     color = h.text1,
@@ -150,7 +161,7 @@ private fun ModelRow(m: ModelInfo, on: Boolean, onClick: () -> Unit) {
                 }
             }
             if (note.isNotEmpty() && !badge) {
-                Text(note, style = MaterialTheme.typography.bodySmall, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(note, style = MaterialTheme.typography.bodySmall, color = h.text3, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
         Icon(

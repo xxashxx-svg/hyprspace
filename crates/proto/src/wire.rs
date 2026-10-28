@@ -17,6 +17,8 @@ use crate::state::{AppState, Background, Effect, Entry};
 use crate::update::{UpdateCommand, UpdateEvent};
 use crate::usage::{UsageCommand, UsageEvent};
 
+pub const THREAD_EXPORTS: &str = "hyprspace-threads";
+
 /// Picked by whoever opens the session (the UI today), unique for the life of the engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SessionId(pub u64);
@@ -60,6 +62,11 @@ pub enum Command {
     /// Stop the side question, if it's still answering.
     DropAside {
         id: SessionId,
+    },
+    ExportThread {
+        thread: u64,
+        journal: String,
+        title: String,
     },
     Title {
         thread: u64,
@@ -251,6 +258,10 @@ pub enum Event {
     Title {
         thread: u64,
         title: Option<String>,
+    },
+    ThreadExported {
+        thread: u64,
+        path: Option<PathBuf>,
     },
     /// Coalesced PTY output: at most one batch per frame under load.
     TerminalOutput {

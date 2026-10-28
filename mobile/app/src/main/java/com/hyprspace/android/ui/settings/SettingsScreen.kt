@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,8 @@ import com.hyprspace.android.R
 import com.hyprspace.android.net.Conn
 import com.hyprspace.android.net.Desktop
 import com.hyprspace.android.service.LinkService
+import com.hyprspace.android.ui.Feel
+import com.hyprspace.android.ui.feel
 import com.hyprspace.android.update.Update
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
@@ -133,6 +136,10 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onPair: () -> Unit) {
                         saved.finished,
                     ) { on -> app.store.update { it.copy(finished = on) } }
                 }
+            }
+
+            Group("Text") {
+                TextSize(saved.textScale) { s -> app.store.update { it.copy(textScale = s) } }
             }
 
             Group("Terminals") {
@@ -221,6 +228,42 @@ private fun Updates(app: App) {
     }
 }
 
+private val SIZES = listOf(0.9f to "Smaller", 1f to "Default", 1.12f to "Larger", 1.25f to "Largest")
+
+/** On top of the phone's own font size, for the whole app. */
+@Composable
+private fun TextSize(scale: Float, onPick: (Float) -> Unit) {
+    val h = LocalHues.current
+    val host = LocalView.current
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Text size", style = MaterialTheme.typography.bodyLarge, color = h.text1)
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(h.ink(0.05f)).padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            for ((s, label) in SIZES) {
+                val on = kotlin.math.abs(s - scale) < 0.01f
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (on) h.ink(0.12f) else h.ink(0f))
+                        .clickableQuiet {
+                            if (!on) {
+                                host.feel(Feel.Tick)
+                                onPick(s)
+                            }
+                        }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) h.text1 else h.text2, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun Group(title: String, content: @Composable () -> Unit) {
     val h = LocalHues.current
@@ -233,8 +276,13 @@ private fun Group(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun Toggle(title: String, about: String, on: Boolean, onChange: (Boolean) -> Unit) {
     val h = LocalHues.current
+    val host = LocalView.current
+    val flip = { to: Boolean ->
+        host.feel(if (to) Feel.On else Feel.Off)
+        onChange(to)
+    }
     Row(
-        Modifier.fillMaxWidth().clickableQuiet { onChange(!on) }.padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickableQuiet { flip(!on) }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -244,7 +292,7 @@ private fun Toggle(title: String, about: String, on: Boolean, onChange: (Boolean
         Spacer(Modifier.width(12.dp))
         Switch(
             checked = on,
-            onCheckedChange = onChange,
+            onCheckedChange = flip,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = h.accent,
                 checkedThumbColor = h.onAccent,

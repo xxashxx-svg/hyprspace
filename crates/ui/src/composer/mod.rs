@@ -801,13 +801,17 @@ impl Render for Composer {
                             .child(card::card(self, window, cx))
                             .children(self.suggest.open.as_ref().map(|open| {
                                 let composer = cx.entity().downgrade();
-                                crate::suggest::render(open, true, move |ix, _, cx| {
-                                    if let Some(c) = composer.upgrade() {
-                                        c.update(cx, |c, cx| {
-                                            c.suggest.accept(Some(ix), &c.input, cx)
-                                        });
-                                    }
-                                })
+                                gpui::deferred(crate::suggest::render(
+                                    open,
+                                    true,
+                                    move |ix, _, cx| {
+                                        if let Some(c) = composer.upgrade() {
+                                            c.update(cx, |c, cx| {
+                                                c.suggest.accept(Some(ix), &c.input, cx)
+                                            });
+                                        }
+                                    },
+                                ))
                             })),
                     )
                     .child(card::footer(self, cx))

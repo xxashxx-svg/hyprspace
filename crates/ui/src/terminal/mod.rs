@@ -53,6 +53,7 @@ pub enum TerminalEvent {
         line: Option<u32>,
         col: Option<u32>,
     },
+    AddToChat(String),
 }
 
 pub struct TerminalView {
@@ -79,6 +80,8 @@ pub struct TerminalView {
     bar_hot: bool,
     /// The pointer is over the grid. The scrollbar only shows then, as in the Tauri app.
     hovered: bool,
+    chat: bool,
+    chip: Option<gpui::Point<Pixels>>,
     hover: Option<Hover>,
     /// Wheel movement short of a whole line.
     wheel: f32,
@@ -107,6 +110,10 @@ pub struct TerminalView {
 impl EventEmitter<TerminalEvent> for TerminalView {}
 
 impl TerminalView {
+    pub fn offer_chat(&mut self) {
+        self.chat = true;
+    }
+
     /// Opens a shell in `cwd`. With `run`, the engine starts that agent in it, and types `prompt`
     /// once the agent is ready.
     pub fn new(
@@ -186,6 +193,8 @@ impl TerminalView {
             bar_grab: None,
             bar_hot: false,
             hovered: false,
+            chat: false,
+            chip: None,
             hover: None,
             wheel: 0.0,
             exists: HashMap::new(),
@@ -470,6 +479,40 @@ impl Render for TerminalView {
         } else {
             CursorStyle::IBeam
         };
+        let chip = self.chip.map(|at| {
+            gpui::deferred(
+                gpui::anchored()
+                    .position(at + gpui::point(px(8.), px(10.)))
+                    .child(
+                        div()
+                            .id("add-to-chat")
+                            .occlude()
+                            .flex()
+                            .items_center()
+                            .h(px(24.))
+                            .px(px(9.))
+                            .rounded(px(6.))
+                            .border_1()
+                            .border_color(colors::border2())
+                            .bg(colors::surface2())
+                            .hover(|s| s.bg(colors::surface3()))
+                            .cursor_pointer()
+                            .text_size(px(12.))
+                            .text_color(colors::text1())
+                            .child("Add to chat")
+                            .on_click(cx.listener(|v, _: &gpui::ClickEvent, _, cx| {
+                                let text = v.emu().selection_text();
+                                if let Some(text) = text {
+                                    cx.emit(TerminalEvent::AddToChat(text));
+                                    v.emu().clear_selection();
+                                }
+                                v.chip = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .with_priority(1)
+        });
         div()
             .id(("terminal", self.id.0))
             .key_context("Terminal")
@@ -479,6 +522,7 @@ impl Render for TerminalView {
             .flex_col()
             .bg(hsla(theme().term_bg))
             .on_key_down(cx.listener(Self::on_key))
+            .children(chip)
             .child(
                 div()
                     .id(("terminal-grid", self.id.0))
