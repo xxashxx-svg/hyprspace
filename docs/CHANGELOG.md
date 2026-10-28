@@ -4,6 +4,18 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.37 — 2026-10-28
+
+- Your phone can open a thread's files, see what changed, and commit and push
+- Fork a thread from any reply on your phone, and regenerate its title there
+- Images and videos in replies show on your phone
+- An approval that lands while you type waits until you stop, so Enter can't deny it
+- Select terminal output and add it to the chat
+- Closing HyprSpace while a thread works asks first
+- A thread whose agent is signed out or not installed says so and offers the fix
+- Type @ to give the agent another thread's conversation
+- Fixed a redirect that could leave a run waiting on a hidden approval
+
 ## 0.24.36 — 2026-10-26
 
 - Finished runs fold their work under one Worked for line
