@@ -146,6 +146,8 @@ pub struct TranscriptView {
     pub(super) expanded: HashSet<usize>,
     pub(super) unfolded: HashSet<usize>,
     typed_at: Option<Instant>,
+    /// What each message in the box's Up history had attached, in the history's order.
+    recall_images: Vec<Vec<PathBuf>>,
     pub(super) held: HashSet<String>,
     pub(super) turn_flip: Option<(usize, bool)>,
     pub(super) turn_primed: bool,
@@ -235,6 +237,15 @@ impl TranscriptView {
                 this.keep_draft(cx);
                 cx.notify();
             }
+            // a message brought back comes with what it had attached, as the box sent it
+            InputEvent::Recalled(at) => {
+                this.images = at
+                    .and_then(|i| this.recall_images.get(i))
+                    .map(|all| all.iter().filter(|p| p.exists()).cloned().collect())
+                    .unwrap_or_default();
+                this.keep_draft(cx);
+                cx.notify();
+            }
             InputEvent::Changed => {
                 this.typed_at = Some(Instant::now());
                 this.keep_draft(cx);
@@ -312,6 +323,7 @@ impl TranscriptView {
             expanded: HashSet::new(),
             unfolded: HashSet::new(),
             typed_at: None,
+            recall_images: Vec::new(),
             held: HashSet::new(),
             turn_flip: None,
             turn_primed: false,
@@ -552,12 +564,9 @@ impl TranscriptView {
     /// A message from the phone, sent the way the reply box sends one. A command runs here as it
     /// would from the box, and the lines it adds come back for the phone.
     pub fn send_prompt(&mut self, prompt: Prompt, cx: &mut Context<Self>) -> Vec<String> {
-        let known = crate::suggest::commands_of(self.launch.agent, cx);
-        if prompt.images.is_empty()
-            && let Some(slash) = commands::parse(prompt.text.trim(), &known)
-        {
+        if let Some(slash) = self.command(prompt.text.trim(), !prompt.images.is_empty(), cx) {
             let before = self.model.items.len();
-            self.run_slash(slash, true, cx);
+            self.run_slash(slash, true, prompt.images, cx);
             return self.model.items[before.min(self.model.items.len())..]
                 .iter()
                 .filter_map(|i| match i {
@@ -624,12 +633,11 @@ impl TranscriptView {
         if text.is_empty() && self.images.is_empty() {
             return;
         }
-        if self.images.is_empty()
-            && let Some(slash) =
-                commands::parse(&text, &crate::suggest::commands_of(self.launch.agent, cx))
-        {
+        if let Some(slash) = self.command(&text, !self.images.is_empty(), cx) {
             self.input.update(cx, |i, cx| i.set_text("", cx));
-            self.run_slash(slash, false, cx);
+            let images = std::mem::take(&mut self.images);
+            self.run_slash(slash, false, images, cx);
+            self.keep_draft(cx);
             return;
         }
         let prompt = Prompt {
@@ -638,6 +646,13 @@ impl TranscriptView {
         };
         self.input.update(cx, |i, cx| i.set_text("", cx));
         self.redirect(prompt, cx);
+    }
+
+    /// The command `text` runs. With something attached only `/btw` is one, since it takes the
+    /// attachments along; anything else goes to the agent as a message.
+    fn command(&self, text: &str, attached: bool, cx: &mut gpui::App) -> Option<commands::Slash> {
+        let slash = commands::parse(text, &crate::suggest::commands_of(self.launch.agent, cx))?;
+        (!attached || matches!(slash, commands::Slash::Own(commands::Own::Btw, _))).then_some(slash)
     }
 
     fn release_held(&mut self, cx: &mut Context<Self>) {
@@ -1536,15 +1551,18 @@ impl TranscriptView {
         } else {
             IDLE_HINT
         };
-        let prompts: Vec<String> = self
+        let (prompts, images): (Vec<String>, Vec<Vec<PathBuf>>) = self
             .model
             .items
             .iter()
             .filter_map(|i| match i {
-                Item::User { text, .. } if !text.trim().is_empty() => Some(text.clone()),
+                Item::User { text, images, .. } if !text.trim().is_empty() => {
+                    Some((text.clone(), images.clone()))
+                }
                 _ => None,
             })
-            .collect();
+            .unzip();
+        self.recall_images = images;
         self.input.update(cx, |i, cx| {
             i.set_placeholder(hint, cx);
             i.set_history(prompts);

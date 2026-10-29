@@ -71,6 +71,12 @@ fn aside(args: &[String]) {
         has("--fork-session") && has("--max-turns") && !has("--dangerously-skip-permissions");
     say("Side: ");
     say(if forked { "forked once" } else { "wrong flags" });
+    let images = msg["message"]["content"].as_array().map_or(0, |blocks| {
+        blocks.iter().filter(|b| b["type"] == "image").count()
+    });
+    if images > 0 {
+        say(&format!(", {images} image"));
+    }
     done("");
 }
 

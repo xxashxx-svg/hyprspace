@@ -58,6 +58,9 @@ pub enum Command {
         id: SessionId,
         launch: Launch,
         question: String,
+        /// What the box had attached, which goes along with the question.
+        #[serde(default)]
+        images: Vec<PathBuf>,
     },
     /// Stop the side question, if it's still answering.
     DropAside {

@@ -34,7 +34,8 @@ impl Find {
                 InputEvent::Images(_)
                 | InputEvent::Unmarked(_)
                 | InputEvent::Peek(_)
-                | InputEvent::Open(_) => {}
+                | InputEvent::Open(_)
+                | InputEvent::Recalled(_) => {}
             },
         );
         Self {

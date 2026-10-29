@@ -702,11 +702,41 @@ async fn a_background_task_s_output_is_read_on_request() {
 }
 
 async fn aside(launch: Launch, question: &str) -> Vec<Aside> {
+    aside_with(launch, question, Vec::new()).await
+}
+
+async fn aside_with(launch: Launch, question: &str, images: Vec<std::path::PathBuf>) -> Vec<Aside> {
     let mut heard = Vec::new();
     claude()
-        .aside(launch, question.into(), |a| heard.push(a))
+        .aside(launch, question.into(), images, |a| heard.push(a))
         .await;
     heard
+}
+
+fn said(heard: &[Aside]) -> String {
+    heard
+        .iter()
+        .filter_map(|a| match a {
+            Aside::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_side_question_takes_its_images_along() {
+    let dir = tempfile::tempdir().unwrap();
+    // the smallest PNG: its signature is what the content builder checks
+    let png = dir.path().join("shot.png");
+    std::fs::write(
+        &png,
+        [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0],
+    )
+    .unwrap();
+    let mut launch = Launch::new(Agent::Claude, dir.path());
+    launch.resume = Some("fake-session".into());
+    let heard = aside_with(launch, "what is this? [Image 1]", vec![png]).await;
+    assert_eq!(said(&heard), "Side: forked once, 1 image");
 }
 
 #[tokio::test]

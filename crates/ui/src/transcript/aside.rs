@@ -19,7 +19,12 @@ pub(super) struct Card {
 }
 
 impl TranscriptView {
-    pub(super) fn ask_aside(&mut self, question: String, cx: &mut Context<Self>) {
+    pub(super) fn ask_aside(
+        &mut self,
+        question: String,
+        images: Vec<std::path::PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
         let why = if self.launch.agent != Agent::Claude {
             Some("/btw works in Claude threads.")
         } else if self.remote {
@@ -40,6 +45,7 @@ impl TranscriptView {
             id: self.id,
             launch: self.launch.clone(),
             question: question.clone(),
+            images,
         });
         self.aside = Some(Card {
             question,

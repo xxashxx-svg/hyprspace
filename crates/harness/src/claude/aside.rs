@@ -15,8 +15,14 @@ const FRAME: &str = "This is a side question, asked while you work. Answer it br
 impl Claude {
     /// Asks `question` of the conversation `launch.resume` names, telling `said` the answer as it
     /// streams and then `Done` or `Failed`. Dropping the future stops the CLI.
-    pub async fn aside(&self, launch: Launch, question: String, mut said: impl FnMut(Aside)) {
-        match self.ask_aside(launch, &question, &mut said).await {
+    pub async fn aside(
+        &self,
+        launch: Launch,
+        question: String,
+        images: Vec<std::path::PathBuf>,
+        mut said: impl FnMut(Aside),
+    ) {
+        match self.ask_aside(launch, &question, images, &mut said).await {
             Ok(()) => said(Aside::Done),
             Err(message) => said(Aside::Failed { message }),
         }
@@ -26,6 +32,7 @@ impl Claude {
         &self,
         mut launch: Launch,
         question: &str,
+        images: Vec<std::path::PathBuf>,
         said: &mut impl FnMut(Aside),
     ) -> Result<(), String> {
         let Some(thread) = launch.resume.clone() else {
@@ -59,9 +66,10 @@ impl Claude {
         }
         let mut proc = spawn(&self.program, &args, &cwd)
             .map_err(|e| format!("Could not start Claude: {e}"))?;
-        let ask = wire::user_line(wire::content(&Prompt::text(format!(
-            "{FRAME}\n\n{question}"
-        ))));
+        let ask = wire::user_line(wire::content(&Prompt {
+            text: format!("{FRAME}\n\n{question}"),
+            images,
+        }));
         let mut lines = BufReader::new(proc.stdout).lines();
         proc.stdin
             .write_all(format!("{ask}\n").as_bytes())

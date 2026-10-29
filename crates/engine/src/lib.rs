@@ -504,6 +504,7 @@ async fn serve(
                 id,
                 launch,
                 question,
+                images,
             } => {
                 let _ = tx.unbounded_send(Event::Aside {
                     id,
@@ -517,7 +518,7 @@ async fn serve(
                 };
                 let task = tokio::spawn(async move {
                     hyprspace_harness::Claude::default()
-                        .aside(launch, question, said)
+                        .aside(launch, question, images, said)
                         .await
                 });
                 // aborting drops the CLI, which is spawned to die with it

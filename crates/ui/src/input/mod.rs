@@ -118,6 +118,8 @@ pub enum InputEvent {
     Peek(Option<(usize, Point<Pixels>)>),
     /// Ctrl+click (Cmd on macOS) on an image marker, by its number.
     Open(usize),
+    /// Up or Down brought back this history entry, or left the history for an empty box.
+    Recalled(Option<usize>),
 }
 
 pub struct TextInput {
@@ -203,6 +205,7 @@ impl TextInput {
         self.recall = next;
         let text = next.map(|i| self.history[i].clone()).unwrap_or_default();
         self.set_text(text, cx);
+        cx.emit(InputEvent::Recalled(next));
         true
     }
 

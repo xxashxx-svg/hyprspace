@@ -169,7 +169,13 @@ pub(crate) fn items() -> Vec<Suggestion> {
 impl TranscriptView {
     /// Runs a command typed in the box, or sent from the phone (`phone`), where something that
     /// only shows on this screen says so instead.
-    pub(super) fn run_slash(&mut self, slash: Slash, phone: bool, cx: &mut Context<Self>) {
+    pub(super) fn run_slash(
+        &mut self,
+        slash: Slash,
+        phone: bool,
+        images: Vec<std::path::PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
         let (own, arg) = match slash {
             Slash::Own(own, arg) => (own, arg),
             Slash::TerminalOnly(name) => {
@@ -207,7 +213,7 @@ impl TranscriptView {
                 self.model.note("This thread already plans first.");
             }
             Own::Plan => self.pick_permission(Permission::Plan, cx),
-            Own::Btw => self.ask_aside(arg, cx),
+            Own::Btw => self.ask_aside(arg, images, cx),
             Own::Context => {
                 let line = self.context_line();
                 self.model.note(line);
