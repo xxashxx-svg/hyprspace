@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.38 — 2026-10-30
+
+- /btw with images attached runs as a side question right away instead of waiting in the queue
+- Pressing Up to bring back a sent message brings back its images too
+
 ## 0.24.37 — 2026-10-28
 
 - Your phone can open a thread's files, see what changed, and commit and push
