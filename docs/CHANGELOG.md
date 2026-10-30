@@ -4,6 +4,12 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.40 — 2026-10-30
+
+- Fixed a thread that could hang on Working, then on Stopping, when the first message after the app started had an image
+- Stop now always ends a Claude run within a few seconds, even when Claude stops responding
+- /btw with a large screenshot no longer hangs
+
 ## 0.24.39 — 2026-10-30
 
 - Click the mouse wheel in a thread to autoscroll. Move up or down to set the speed, and click or press Esc to stop
