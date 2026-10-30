@@ -4,6 +4,14 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.39 — 2026-10-30
+
+- Click the mouse wheel in a thread to autoscroll. Move up or down to set the speed, and click or press Esc to stop
+- Start selecting text from beside or between lines, not only on the words
+- Shift+click extends a selection, and a drag after a double click selects whole words
+- Command input and output in a thread can be selected
+- Dragging across a link selects it instead of opening it
+
 ## 0.24.38 — 2026-10-30
 
 - /btw with images attached runs as a side question right away instead of waiting in the queue
