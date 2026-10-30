@@ -112,6 +112,17 @@ impl Follow {
         }
     }
 
+    /// Autoscroll's move for one frame, taken at once. Positive scrolls down.
+    pub fn drift(&mut self, list: &ListState, by: Pixels) {
+        self.trip = None;
+        self.wheel = px(0.);
+        self.velocity = 0.;
+        if by < px(0.) {
+            self.stick = false;
+        }
+        set(list, (y(list) + by).clamp(px(0.), max(list)));
+    }
+
     /// A turn of the mouse wheel, eased out over the next frames. Positive scrolls down.
     pub fn spin(&mut self, by: Pixels) {
         self.trip = None;

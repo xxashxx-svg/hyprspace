@@ -407,6 +407,10 @@ pub fn inline(i: &Inline, key: &str, at: usize, fade: &[(Range<usize>, f32)]) ->
         let urls: Vec<String> = links.into_iter().map(|(_, l)| l).collect();
         InteractiveText::new(SharedString::from(format!("md-{key}")), text)
             .on_click(ranges, move |ix, window, cx| {
+                // a drag that ends on the link it started on selected its words
+                if select::selected_text().is_some() {
+                    return;
+                }
                 if let Some(url) = urls.get(ix) {
                     match &handler {
                         Some(h) => (h.open)(url, window, cx),

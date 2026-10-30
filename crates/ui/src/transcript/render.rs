@@ -56,6 +56,7 @@ pub fn view(
         ];
     }
     v.follow.ease(&v.list, window);
+    super::autoscroll::step(v, window);
     if !v.finding() {
         v.follow.step(&v.list, v.model.running(), window, cx);
     }
@@ -191,6 +192,7 @@ pub fn view(
             ))
     });
     let bar = v.find_bar(cx);
+    let marker = super::autoscroll::marker(v, window);
     div()
         .id("transcript")
         .key_context("Thread")
@@ -208,6 +210,13 @@ pub fn view(
         .flex_col()
         .bg(colors::bg())
         .text_color(colors::text1())
+        // a click that ends autoscroll does nothing else
+        .capture_any_mouse_down(cx.listener(|v, e: &gpui::MouseDownEvent, _, cx| {
+            if e.button != MouseButton::Middle && v.autoscroll.take().is_some() {
+                cx.stop_propagation();
+                cx.notify();
+            }
+        }))
         .on_drop(
             cx.listener(|v, paths: &ExternalPaths, window, cx| v.drop_paths(paths, window, cx)),
         )
@@ -217,6 +226,28 @@ pub fn view(
                 .relative()
                 .flex_1()
                 .min_h_0()
+                .on_mouse_down(
+                    MouseButton::Middle,
+                    cx.listener(|v, e: &gpui::MouseDownEvent, window, cx| {
+                        v.autoscroll = match v.autoscroll.take() {
+                            Some(_) => None,
+                            None => Some(super::autoscroll::Autoscroll::new(e.position, cx)),
+                        };
+                        // Esc ends it through the box, so the box takes the keys
+                        window.focus(&v.input.focus_handle(cx), cx);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Middle,
+                    cx.listener(|v, _: &gpui::MouseUpEvent, _, cx| {
+                        if v.autoscroll.as_ref().is_some_and(|a| a.dragged()) {
+                            v.autoscroll = None;
+                            cx.notify();
+                        }
+                    }),
+                )
                 .on_scroll_wheel(cx.listener(|v, e: &ScrollWheelEvent, _, cx| {
                     let dy = e.delta.pixel_delta(px(20.)).y;
                     v.follow.wheel(dy > px(0.));
@@ -236,7 +267,8 @@ pub fn view(
                 }))
                 .children(ticks)
                 .children(jump)
-                .children(bar),
+                .children(bar)
+                .children(marker),
         )
         .child(composer(v, window, cx))
         .children(model_menu(v, window, cx))
@@ -1697,6 +1729,7 @@ pub(super) fn tool_card(
     };
     let shown = done.map_or(live, |(_, out)| out.as_str());
     let body_id: ElementId = (key.clone(), 0usize).into();
+    let (asked, said) = (format!("{key}-in"), format!("{key}-out"));
     let head = fold_head(
         (key, 0),
         open,
@@ -1729,7 +1762,7 @@ pub(super) fn tool_card(
                     .flex()
                     .flex_col()
                     .gap(px(6.))
-                    .children(tool::input(t).map(|i| tool::mono(&i)))
+                    .children(tool::input(t).map(|i| tool::selectable(&asked, &i)))
                     .when_some(
                         match t {
                             Tool::Edit { changes } => Some(tool::diffs(changes)),
@@ -1737,7 +1770,9 @@ pub(super) fn tool_card(
                         },
                         |d, diffs| d.child(diffs),
                     )
-                    .when(!shown.trim().is_empty(), |d| d.child(tool::mono(shown))),
+                    .when(!shown.trim().is_empty(), |d| {
+                        d.child(tool::selectable(&said, shown))
+                    }),
             ))
         })
         .into_any_element()

@@ -5,6 +5,7 @@
 mod approval;
 mod aside;
 mod ask;
+mod autoscroll;
 mod background;
 mod banner;
 mod branch;
@@ -152,6 +153,7 @@ pub struct TranscriptView {
     pub(super) turn_flip: Option<(usize, bool)>,
     pub(super) turn_primed: bool,
     pub(super) appear: Option<(Instant, Option<Instant>)>,
+    autoscroll: Option<autoscroll::Autoscroll>,
     pub(super) turn_anim: Option<(usize, bool, HashSet<usize>)>,
     pub(super) answered: std::collections::HashMap<String, Vec<(String, String)>>,
     /// What was typed for each question's Other choice, and the field open for one.
@@ -203,6 +205,8 @@ impl TranscriptView {
         });
         let sub = cx.subscribe(&input, |this, _, event: &InputEvent, cx| match event {
             InputEvent::Submit => this.submit(cx),
+            // Esc ends autoscroll before it stops the agent
+            InputEvent::Cancel if this.autoscroll.take().is_some() => cx.notify(),
             InputEvent::Cancel => this.interrupt(cx),
             InputEvent::Images(images) => {
                 let asked = images.len();
@@ -328,6 +332,7 @@ impl TranscriptView {
             turn_flip: None,
             turn_primed: false,
             appear: None,
+            autoscroll: None,
             turn_anim: None,
             answered: Default::default(),
             others: Default::default(),

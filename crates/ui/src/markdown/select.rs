@@ -2,7 +2,8 @@
 // reply is many text elements (paragraphs, list items, table cells, code blocks), so each one
 // registers itself as it paints, in paint order, which is document order. A drag anchored in one
 // element resolves against that list into spans: partial in the end elements, whole in between.
-// Ctrl+C in the reply box copies the spans joined by newlines.
+// A press beside or between elements starts at the nearest one, and Shift+click extends. Ctrl+C
+// in the reply box copies the spans joined by newlines.
 //
 // Adapted from zeron's crates/ui/src/markdown/selection.rs and the selection half of its
 // render.rs (MIT, see THIRD_PARTY_NOTICES.md). The transcript is a virtual list that only paints
@@ -26,7 +27,10 @@ struct Selection {
     /// The transcript it lives in. Keys only need to be unique within one.
     surface: Arc<str>,
     anchor: Arc<str>,
-    anchor_ix: usize,
+    /// What the press picked in the anchor: a point, a word or the whole element.
+    anchor_range: Range<usize>,
+    /// The press's click count, so a drag after a double click grows by words.
+    clicks: usize,
     dragging: bool,
     /// Each selected element's key, the byte range picked out of it, and its text.
     spans: Vec<(Arc<str>, Range<usize>, SharedString)>,
@@ -53,16 +57,16 @@ thread_local! {
 /// the last frame and marks the text painted after it as its own.
 pub fn reset(surface: Arc<str>) -> impl IntoElement {
     canvas(
-        |_, _, _| {},
-        move |_, _, window, _| {
+        |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+        move |_, area, window, _| {
             PAINTED.with(|p| p.borrow_mut().retain(|e| e.surface != surface));
             SURFACE.with(|s| *s.borrow_mut() = surface.clone());
             super::find::reset();
-            track(window, surface.clone());
+            track(window, surface.clone(), area);
         },
     )
     .absolute()
-    .size_0()
+    .size_full()
 }
 
 pub(super) fn surface() -> Arc<str> {
@@ -217,14 +221,17 @@ pub fn wrap(key: &str, text: SharedString, layout: TextLayout, body: AnyElement)
                     layout: layout.clone(),
                 })
             });
-            listen(
-                window,
-                hitbox,
-                surface,
-                key.clone(),
-                text.clone(),
-                layout.clone(),
-            );
+            let layout = layout.clone();
+            window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _| {
+                if phase == DispatchPhase::Bubble
+                    && e.button == MouseButton::Left
+                    && hitbox.is_hovered(window)
+                    && layout.bounds().contains(&e.position)
+                    && press(&surface, e)
+                {
+                    window.refresh();
+                }
+            });
         },
     )
     .absolute()
@@ -242,37 +249,21 @@ pub fn selected_text() -> Option<String> {
     })
 }
 
-fn listen(
-    window: &mut gpui::Window,
-    hitbox: gpui::Hitbox,
-    surface: Arc<str>,
-    key: Arc<str>,
-    text: SharedString,
-    layout: TextLayout,
-) {
-    window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _| {
-        if phase != DispatchPhase::Bubble || e.button != MouseButton::Left {
-            return;
-        }
-        if hitbox.is_hovered(window) && layout.bounds().contains(&e.position) {
-            let ix = index(&layout, e.position);
-            let range = match e.click_count {
-                1 => ix..ix,
-                2 => word(&text, ix),
-                _ => 0..text.len(),
-            };
-            begin(&surface, &key, &text, range);
-            window.refresh();
-        }
-    });
-}
-
-// elements hear a press before this, so a press that started no selection clears a settled one
-fn track(window: &mut gpui::Window, surface: Arc<str>) {
+// elements hear a press on their text before this. The area's hitbox is under everything in the
+// transcript, so what blocks the mouse (the find bar, the Cite chip) keeps its presses, and a press
+// outside the area clears a settled selection
+fn track(window: &mut gpui::Window, surface: Arc<str>, area: gpui::Hitbox) {
     {
         let surface = surface.clone();
         window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _| {
-            if phase == DispatchPhase::Bubble && e.button == MouseButton::Left && clear(&surface) {
+            if phase != DispatchPhase::Bubble || e.button != MouseButton::Left || held(&surface) {
+                return;
+            }
+            let changed = match area.is_hovered(window) {
+                true => press(&surface, e),
+                false => clear(&surface),
+            };
+            if changed {
                 window.refresh();
             }
         });
@@ -302,7 +293,73 @@ fn index(layout: &TextLayout, at: Point<Pixels>) -> usize {
     }
 }
 
-fn begin(surface: &Arc<str>, key: &Arc<str>, text: &SharedString, range: Range<usize>) {
+/// A press in the transcript: Shift grows the selection to it, else one starts at the nearest
+/// element, a word on a double click and the whole element on a triple.
+fn press(surface: &Arc<str>, e: &MouseDownEvent) -> bool {
+    if e.modifiers.shift && extend(surface, e.position) {
+        return true;
+    }
+    let near = PAINTED.with(|p| {
+        let p = p.borrow();
+        let mine: Vec<&Painted> = p.iter().filter(|e| e.surface == *surface).collect();
+        nearest(&mine, e.position).map(|n| {
+            let ix = index(&n.layout, e.position);
+            (n.key.clone(), n.text.clone(), ix)
+        })
+    });
+    let Some((key, text, ix)) = near else {
+        return clear(surface);
+    };
+    begin(
+        surface,
+        &key,
+        &text,
+        pick(&text, ix, e.click_count),
+        e.click_count,
+    );
+    true
+}
+
+/// What a press `clicks` times at `ix` picks: a point, the word there, or all of `text`.
+fn pick(text: &str, ix: usize, clicks: usize) -> Range<usize> {
+    match clicks {
+        0 | 1 => ix..ix,
+        2 => word(text, ix),
+        _ => 0..text.len(),
+    }
+}
+
+fn held(surface: &Arc<str>) -> bool {
+    SELECTION.with(|s| {
+        s.borrow()
+            .as_ref()
+            .is_some_and(|s| s.surface == *surface && s.dragging)
+    })
+}
+
+fn extend(surface: &Arc<str>, at: Point<Pixels>) -> bool {
+    let held = SELECTION.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(sel) = s.as_mut().filter(|s| s.surface == *surface && !s.dragging) else {
+            return false;
+        };
+        sel.dragging = true;
+        sel.at = Some(at);
+        true
+    });
+    if held {
+        drag_to(surface);
+    }
+    held
+}
+
+fn begin(
+    surface: &Arc<str>,
+    key: &Arc<str>,
+    text: &SharedString,
+    range: Range<usize>,
+    clicks: usize,
+) {
     let seen = PAINTED.with(|p| {
         p.borrow()
             .iter()
@@ -314,7 +371,8 @@ fn begin(surface: &Arc<str>, key: &Arc<str>, text: &SharedString, range: Range<u
         *s.borrow_mut() = Some(Selection {
             surface: surface.clone(),
             anchor: key.clone(),
-            anchor_ix: range.start,
+            anchor_range: range.clone(),
+            clicks,
             dragging: true,
             spans: vec![(key.clone(), range, text.clone())],
             seen,
@@ -356,7 +414,6 @@ fn end(surface: &Arc<str>) -> bool {
             return false;
         };
         sel.dragging = false;
-        sel.seen.clear();
         if sel.spans.iter().all(|(_, r, _)| r.is_empty()) {
             *s = None;
         }
@@ -398,15 +455,6 @@ fn drag_to(surface: &Arc<str>) -> bool {
     PAINTED.with(|p| {
         let painted = p.borrow();
         let mine: Vec<&Painted> = painted.iter().filter(|e| e.surface == *surface).collect();
-        let gap = |lo: Pixels, hi: Pixels, v: Pixels| -> f32 {
-            if v < lo {
-                (lo - v).into()
-            } else if v > hi {
-                (v - hi).into()
-            } else {
-                0.
-            }
-        };
         SELECTION.with(|s| {
             let mut s = s.borrow_mut();
             let Some(sel) = s.as_mut().filter(|s| s.surface == *surface && s.dragging) else {
@@ -415,16 +463,7 @@ fn drag_to(surface: &Arc<str>) -> bool {
             let Some(at) = sel.at else {
                 return false;
             };
-            let Some(head) = mine.iter().min_by(|a, b| {
-                let d = |e: &Painted| {
-                    let b = e.layout.bounds();
-                    (
-                        gap(b.top(), b.bottom(), at.y),
-                        gap(b.left(), b.right(), at.x),
-                    )
-                };
-                d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
-            }) else {
+            let Some(head) = nearest(&mine, at) else {
                 return false;
             };
             let now: Vec<_> = mine
@@ -437,14 +476,12 @@ fn drag_to(surface: &Arc<str>) -> bool {
                 return false;
             };
             let texts: Vec<&str> = sel.seen.iter().map(|(_, t)| t.as_ref()).collect();
-            let spans: Vec<_> = resolve(
-                &texts,
-                (anchor, sel.anchor_ix),
-                (to, index(&head.layout, at)),
-            )
-            .into_iter()
-            .map(|(i, r)| (sel.seen[i].0.clone(), r, sel.seen[i].1.clone()))
-            .collect();
+            let picked = pick(&head.text, index(&head.layout, at), sel.clicks);
+            let (a, b) = ends((anchor, sel.anchor_range.clone()), (to, picked));
+            let spans: Vec<_> = resolve(&texts, a, b)
+                .into_iter()
+                .map(|(i, r)| (sel.seen[i].0.clone(), r, sel.seen[i].1.clone()))
+                .collect();
             if spans == sel.spans {
                 return false;
             }
@@ -452,6 +489,30 @@ fn drag_to(surface: &Arc<str>) -> bool {
             true
         })
     })
+}
+
+/// The element under `at`, or the nearest one, vertical distance first so a point past the end of
+/// a short line keeps that line.
+fn nearest<'a>(mine: &[&'a Painted], at: Point<Pixels>) -> Option<&'a Painted> {
+    let gap = |lo: Pixels, hi: Pixels, v: Pixels| -> f32 {
+        if v < lo {
+            (lo - v).into()
+        } else if v > hi {
+            (v - hi).into()
+        } else {
+            0.
+        }
+    };
+    let d = |e: &Painted| {
+        let b = e.layout.bounds();
+        (
+            gap(b.top(), b.bottom(), at.y),
+            gap(b.left(), b.right(), at.x),
+        )
+    };
+    mine.iter()
+        .copied()
+        .min_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal))
 }
 
 /// The range of `key` to wash in `surface`, if it is selected.
@@ -464,6 +525,20 @@ fn wash(surface: &Arc<str>, key: &Arc<str>) -> Option<Range<usize>> {
             .find(|(k, r, _)| k == key && !r.is_empty())
             .map(|(_, r, _)| r.clone())
     })
+}
+
+/// The two ends of a drag from what the press picked to what the pointer is on, each an (element,
+/// byte offset): whichever comes first gives its start and the other its end, so the words or
+/// elements at both ends stay whole.
+fn ends(
+    anchor: (usize, Range<usize>),
+    head: (usize, Range<usize>),
+) -> ((usize, usize), (usize, usize)) {
+    if (head.0, head.1.start) >= (anchor.0, anchor.1.start) {
+        ((anchor.0, anchor.1.start), (head.0, head.1.end))
+    } else {
+        ((head.0, head.1.start), (anchor.0, anchor.1.end))
+    }
 }
 
 /// The spans between `a` and `b`, each an (element, byte offset) into `texts`, in either order:
@@ -615,6 +690,26 @@ mod tests {
         assert_eq!(seen.len(), 8);
         assert_eq!(item("plan12-0"), Some(12));
         assert_eq!(item("agent3"), Some(3));
+    }
+
+    #[test]
+    fn a_drag_after_a_double_click_takes_whole_words_either_way() {
+        let t = "first paragraph";
+        let forward = ends((0, word(t, 1)), (2, word(TEXTS[2], 7)));
+        assert_eq!(
+            picked(&resolve(&TEXTS, forward.0, forward.1)),
+            ["first paragraph", "second", "third one"]
+        );
+        let back = ends((2, word(TEXTS[2], 7)), (0, word(t, 9)));
+        assert_eq!(
+            picked(&resolve(&TEXTS, back.0, back.1)),
+            ["paragraph", "second", "third one"]
+        );
+        let inside = ends((0, word(t, 9)), (0, word(t, 2)));
+        assert_eq!(
+            picked(&resolve(&TEXTS, inside.0, inside.1)),
+            ["first paragraph"]
+        );
     }
 
     #[test]

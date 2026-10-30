@@ -2,7 +2,7 @@
 // output and, for file edits, the diff. A run of calls in a row folds into one line that counts
 // them, after zeron's "Ran 4 commands · read 1 file". Approval prompts reuse the same summary.
 
-use gpui::{AnyElement, FontWeight, IntoElement, SharedString, div, prelude::*};
+use gpui::{AnyElement, Div, FontWeight, IntoElement, SharedString, StyledText, div, prelude::*};
 use hyprspace_proto::Tool;
 use hyprspace_proto::run::{ChangeKind, FileChange};
 use hyprspace_theme::MONO;
@@ -176,6 +176,27 @@ pub fn input(tool: &Tool) -> Option<String> {
 
 /// A block of mono text, for inputs and outputs.
 pub fn mono(text: &str) -> AnyElement {
+    block()
+        .child(text.trim_end().to_string())
+        .into_any_element()
+}
+
+/// `mono` in a transcript, where it can be selected. `key` as `select::wrap` wants it.
+pub fn selectable(key: &str, text: &str) -> AnyElement {
+    let text: SharedString = text.trim_end().to_string().into();
+    let styled = StyledText::new(text.clone());
+    let layout = styled.layout().clone();
+    block()
+        .child(crate::markdown::select::wrap(
+            key,
+            text,
+            layout,
+            styled.into_any_element(),
+        ))
+        .into_any_element()
+}
+
+fn block() -> Div {
     div()
         .px(px(12.))
         .py(px(8.))
@@ -185,8 +206,6 @@ pub fn mono(text: &str) -> AnyElement {
         .text_size(px(11.5))
         .line_height(px(17.))
         .text_color(colors::text2())
-        .child(text.trim_end().to_string())
-        .into_any_element()
 }
 
 /// The diffs of a file edit, one card per file.
