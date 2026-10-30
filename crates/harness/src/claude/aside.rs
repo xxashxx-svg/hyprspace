@@ -4,10 +4,10 @@
 
 use hyprspace_proto::{Answer, Aside, Launch, Permission, Prompt};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::{Claude, args, chrome_file, chrome_on, mcp_config, resume, wire};
-use crate::spawn::{exit_message, spawn};
+use crate::spawn::{exit_message, spawn, writer};
 
 const FRAME: &str = "This is a side question, asked while you work. Answer it briefly from what \
     you already know in this conversation. Don't use any tools.";
@@ -71,10 +71,8 @@ impl Claude {
             images,
         }));
         let mut lines = BufReader::new(proc.stdout).lines();
-        proc.stdin
-            .write_all(format!("{ask}\n").as_bytes())
-            .await
-            .map_err(|e| format!("Could not ask Claude: {e}"))?;
+        let stdin = writer(proc.stdin);
+        let _ = stdin.send(ask);
         let mut streamed = false;
         while let Ok(Some(line)) = lines.next_line().await {
             let Ok(v) = serde_json::from_str::<Value>(&line) else {
@@ -99,7 +97,7 @@ impl Claude {
                         Value::Null,
                         Answer::Deny,
                     );
-                    let _ = proc.stdin.write_all(format!("{deny}\n").as_bytes()).await;
+                    let _ = stdin.send(deny);
                 }
                 Some("result") => {
                     return match v["subtype"].as_str() {

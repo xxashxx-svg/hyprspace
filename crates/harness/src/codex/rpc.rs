@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot};
 
@@ -44,8 +44,7 @@ impl Rpc {
         stdin: ChildStdin,
         stdout: ChildStdout,
     ) -> (Self, mpsc::UnboundedReceiver<Incoming>) {
-        let (writer, lines) = mpsc::unbounded_channel();
-        tokio::spawn(write_loop(stdin, lines));
+        let writer = crate::spawn::writer(stdin);
         let pending = Pending::default();
         let (tx, incoming) = mpsc::unbounded_channel();
         tokio::spawn(read_loop(stdout, pending.clone(), tx));
@@ -91,19 +90,6 @@ impl Rpc {
     fn send(&self, message: Value) {
         // a closed writer means the server is gone, which the reader reports
         let _ = self.writer.send(message.to_string());
-    }
-}
-
-async fn write_loop(mut stdin: ChildStdin, mut lines: mpsc::UnboundedReceiver<String>) {
-    while let Some(line) = lines.recv().await {
-        let wrote = async {
-            stdin.write_all(line.as_bytes()).await?;
-            stdin.write_all(b"\n").await?;
-            stdin.flush().await
-        };
-        if wrote.await.is_err() {
-            return;
-        }
     }
 }
 

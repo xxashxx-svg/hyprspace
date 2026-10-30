@@ -55,6 +55,13 @@ fn control(id: &str, tool: &str, input: Value, rules: Value) -> Value {
 
 // a side question: one turn on a fork that isn't saved, with every tool refused
 fn aside(args: &[String]) {
+    if std::env::current_dir()
+        .unwrap_or_default()
+        .join("loud")
+        .exists()
+    {
+        emit(json!({ "type": "system", "subtype": "init", "padding": "x".repeat(1 << 20) }));
+    }
     let Some(msg) = read() else {
         return;
     };
@@ -115,18 +122,29 @@ pub fn run(args: &[String]) {
     let session = flag("--resume").unwrap_or_else(|| "fake-session".into());
     let model = flag("--model").unwrap_or_else(|| "claude-fake".into());
     let cwd = std::env::current_dir().unwrap_or_default();
+    if cwd.join("deaf").exists() {
+        std::thread::sleep(std::time::Duration::from_secs(600));
+    }
     let mut controls = Vec::new();
     while let Some(msg) = read() {
         if msg["type"] == "control_request" {
             let req = &msg["request"];
             if req["subtype"] == "initialize" {
+                // the real one lists every skill and plugin here, far more than a pipe holds
+                let loud = cwd.join("loud").exists();
+                let lots = if loud {
+                    "x".repeat(1 << 20)
+                } else {
+                    String::new()
+                };
                 emit(json!({ "type": "control_response", "response": {
                     "subtype": "success", "request_id": msg["request_id"], "response": {
                         "commands": [
                             { "name": "compact", "description": "Clear history", "builtin": true },
                             { "name": "show-me", "description": "Take a screenshot (user)" },
                             { "name": "lualink:inspect_game (MCP)", "description": "Look around" },
-                        ] } } }));
+                        ],
+                        "padding": lots } } }));
                 continue;
             }
             let response = if req["model"] == "nope" {

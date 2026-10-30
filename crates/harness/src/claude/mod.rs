@@ -28,11 +28,11 @@ use hyprspace_proto::{
     Agent, CommandInfo, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
 };
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Child;
 use tokio::sync::mpsc;
 
-use crate::spawn::{Tail, exit_message, spawn};
+use crate::spawn::{Tail, exit_message, spawn, writer};
 use crate::{Emit, Harness, Input, Session};
 
 pub struct Claude {
@@ -226,7 +226,7 @@ impl Harness for Claude {
         let (tx, rx) = mpsc::unbounded_channel();
         let actor = Actor {
             child: proc.child,
-            stdin: proc.stdin,
+            stdin: writer(proc.stdin),
             stderr: proc.stderr,
             emit,
             cwd,
@@ -285,7 +285,7 @@ impl Run {
 
 struct Actor {
     child: Child,
-    stdin: ChildStdin,
+    stdin: mpsc::UnboundedSender<String>,
     stderr: Tail,
     emit: Emit,
     cwd: PathBuf,
@@ -321,7 +321,7 @@ impl Actor {
     async fn serve(mut self, mut lines: Lines, mut rx: mpsc::UnboundedReceiver<Input>) {
         // its reply lists every command and skill, plugins' included, with what each does
         let hello = json!({ "subtype": "initialize" });
-        self.write(wire::control_line("hs-init", hello)).await;
+        self.write(wire::control_line("hs-init", hello));
         loop {
             let wake = self.run.as_ref().and_then(|r| {
                 let held = r.held.as_ref().map(|(_, at)| *at);
@@ -333,7 +333,7 @@ impl Actor {
                         let resend = self.first_word();
                         self.line(&line);
                         if resend {
-                            self.write(wire::interrupt_line("hs-interrupt")).await;
+                            self.write(wire::interrupt_line("hs-interrupt"));
                         }
                     }
                     _ => break,
@@ -367,15 +367,10 @@ impl Actor {
         (self.emit)(RunEvent::Failed { message });
     }
 
-    async fn write(&mut self, line: String) {
-        // a dead child shows up as stdout EOF, which ends the session, so a failed write is
-        // not reported twice
-        let _ = async {
-            self.stdin.write_all(line.as_bytes()).await?;
-            self.stdin.write_all(b"\n").await?;
-            self.stdin.flush().await
-        }
-        .await;
+    // a dead child shows up as stdout EOF, which ends the session, so a failed write is
+    // not reported twice
+    fn write(&self, line: String) {
+        let _ = self.stdin.send(line);
     }
 
     async fn input(&mut self, input: Input) {
@@ -387,17 +382,15 @@ impl Actor {
                 };
                 run.interrupted = true;
                 run.kill_at = Some(Instant::now() + self.patience);
-                self.write(wire::interrupt_line("hs-interrupt")).await;
+                self.write(wire::interrupt_line("hs-interrupt"));
             }
             Input::TaskOutput(task) => {
                 let request = json!({ "subtype": "get_task_output", "task_id": task });
-                self.write(wire::control_line(&format!("{OUTPUT}{task}"), request))
-                    .await;
+                self.write(wire::control_line(&format!("{OUTPUT}{task}"), request));
             }
             Input::StopTask(task) => {
                 let request = json!({ "subtype": "stop_task", "task_id": task });
-                self.write(wire::control_line(&format!("{STOP}{task}"), request))
-                    .await;
+                self.write(wire::control_line(&format!("{STOP}{task}"), request));
             }
             Input::Configure(launch) => {
                 if launch.model != self.model {
@@ -406,7 +399,7 @@ impl Actor {
                         None => json!({ "subtype": "set_model" }),
                     };
                     self.model = launch.model;
-                    self.write(wire::control_line("hs-model", request)).await;
+                    self.write(wire::control_line("hs-model", request));
                 }
                 if launch.effort != self.effort {
                     self.effort = launch.effort;
@@ -414,7 +407,7 @@ impl Actor {
                         "subtype": "apply_flag_settings",
                         "settings": { "effortLevel": self.effort },
                     });
-                    self.write(wire::control_line("hs-effort", request)).await;
+                    self.write(wire::control_line("hs-effort", request));
                 }
                 if launch.fast != self.fast {
                     self.fast = launch.fast;
@@ -422,7 +415,7 @@ impl Actor {
                         "subtype": "apply_flag_settings",
                         "settings": { "fastMode": self.fast },
                     });
-                    self.write(wire::control_line("hs-fast", request)).await;
+                    self.write(wire::control_line("hs-fast", request));
                 }
                 if launch.permission != self.permission {
                     self.permission = launch.permission;
@@ -430,8 +423,7 @@ impl Actor {
                         "subtype": "set_permission_mode",
                         "mode": mode(launch.permission),
                     });
-                    self.write(wire::control_line("hs-permission", request))
-                        .await;
+                    self.write(wire::control_line("hs-permission", request));
                 }
             }
             Input::Answer {
@@ -442,7 +434,7 @@ impl Actor {
                 if let Some((mut input, rules)) = self.approvals.remove(&request) {
                     // a turned-down question that still carries answers is "Chat about this"
                     if answer == hyprspace_proto::Answer::Deny && !answers.is_empty() {
-                        self.write(wire::clarify_line(&request, &answers)).await;
+                        self.write(wire::clarify_line(&request, &answers));
                         return;
                     }
                     if !answers.is_empty() && input.is_object() {
@@ -452,8 +444,7 @@ impl Actor {
                             .collect();
                         input["answers"] = Value::Object(map);
                     }
-                    self.write(wire::answer_line(&request, input, rules, answer))
-                        .await;
+                    self.write(wire::answer_line(&request, input, rules, answer));
                 }
             }
         }
@@ -470,7 +461,7 @@ impl Actor {
             self.run = Some(Run::new());
             wire::user_line(content)
         };
-        self.write(line).await;
+        self.write(line);
     }
 
     /// A deadline passed. True when the session is over.

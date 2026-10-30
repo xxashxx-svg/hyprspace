@@ -443,6 +443,30 @@ async fn a_steer_the_cli_never_echoes_still_ends_the_run() {
 }
 
 #[tokio::test]
+async fn a_big_prompt_reaches_a_cli_that_says_a_lot_as_it_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("loud"), "").unwrap();
+    let (session, mut events) = start(&claude(), dir.path());
+    let big = "y".repeat(1 << 20);
+    session.send(Prompt::text(&big));
+    let run = events.run().await;
+    assert_eq!(finished(&run).0, RunStatus::Done);
+    assert_eq!(text(&run).len(), "echo: ".len() + big.len());
+}
+
+#[tokio::test]
+async fn stop_ends_a_run_the_cli_never_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("deaf"), "").unwrap();
+    let harness = claude().with_patience(Duration::from_millis(300));
+    let (session, mut events) = start(&harness, dir.path());
+    session.send(Prompt::text("y".repeat(1 << 20)));
+    session.interrupt();
+    let run = events.run().await;
+    assert_eq!(finished(&run).0, RunStatus::Interrupted);
+}
+
+#[tokio::test]
 async fn interrupt_ends_the_run_and_keeps_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let (session, mut events) = start(&claude(), dir.path());
@@ -737,6 +761,19 @@ async fn a_side_question_takes_its_images_along() {
     launch.resume = Some("fake-session".into());
     let heard = aside_with(launch, "what is this? [Image 1]", vec![png]).await;
     assert_eq!(said(&heard), "Side: forked once, 1 image");
+}
+
+#[tokio::test]
+async fn a_big_side_question_reaches_a_cli_that_says_a_lot_as_it_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("loud"), "").unwrap();
+    let mut launch = Launch::new(Agent::Claude, dir.path());
+    launch.resume = Some("fake-session".into());
+    let question = "y".repeat(3 << 20);
+    let heard = tokio::time::timeout(Duration::from_secs(20), aside(launch, &question))
+        .await
+        .expect("an answer within 20s");
+    assert_eq!(said(&heard), "Side: forked once");
 }
 
 #[tokio::test]

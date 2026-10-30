@@ -50,6 +50,10 @@ how Claude is driven.
   `priority: "next"` while a tool call is open, because `now` aborts the tool.
 - **Interrupts give up after 5 seconds.** Then the CLI is killed and the session reports `Failed`.
   Both adapters take the patience as `with_patience`, so tests run at 300 ms.
+- **Nothing writes to a CLI's stdin inline.** Lines go through `spawn::writer`, a task of their
+  own. Claude writes hundreds of KB as it starts and reads stdin only after, so a session that
+  awaited a big prompt (an image) stopped reading stdout and both sides waited on full pipes. The
+  kill timer lives in the same loop, so Stop hung too.
 - **"Chat about this" is a Deny that carries answers.** A plain Skip is a Deny with none. Claude
   gets its own clarify message with the answers so far, Codex gets a note as each answer. It
   needs no new `Answer` variant, which the phone would fail to read in the journal.

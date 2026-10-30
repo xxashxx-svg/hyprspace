@@ -7,8 +7,9 @@ use std::path::Path;
 use std::process::{ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::sync::mpsc;
 
 use crate::SESSION_ENV;
 
@@ -68,6 +69,25 @@ pub(crate) fn spawn(program: &Path, args: &[String], cwd: &Path) -> io::Result<P
         stdout,
         stderr,
     })
+}
+
+/// Writes each line to a child's stdin on a task of its own. Writing inline stops the caller
+/// reading stdout, and Claude says a lot as it starts, so both sides would wait on full pipes.
+pub(crate) fn writer(mut stdin: ChildStdin) -> mpsc::UnboundedSender<String> {
+    let (tx, mut lines) = mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        while let Some(line) = lines.recv().await {
+            let wrote = async {
+                stdin.write_all(line.as_bytes()).await?;
+                stdin.write_all(b"\n").await?;
+                stdin.flush().await
+            };
+            if wrote.await.is_err() {
+                return;
+            }
+        }
+    });
+    tx
 }
 
 /// The last few lines a child wrote to stderr.
