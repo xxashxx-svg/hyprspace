@@ -90,7 +90,9 @@ back-to-back runs don't make it jump) or needs you.
 - **Coming back writes `order`, like waking from a snooze.** T3 sorts its whole inbox by return
   time while the shelf is on; that would undo the order rows were dragged into, so only the
   returning thread moves.
-- **Only a status change moves a thread**, so Codex in a terminal and plain shells never go.
-  Threads on another computer move on and off by status but keep the host's order.
+- **Busy means working, or subagents still running after the run ended.** Subagents ending
+  change no status, so each run event and subagent update looks again. Codex in a terminal and
+  plain shells never say they work, so they never go. Threads on another computer move on and
+  off but keep the host's order.
 - Pinned, snoozed and settled threads stay where they are, and a subagent's thread stays under
   its parent. The phone doesn't show the shelf yet.

@@ -604,7 +604,7 @@ impl Root {
         let (mut working, inbox): (Vec<&Thread>, Vec<&Thread>) = active
             .iter()
             .filter(|t| !nested(t))
-            .partition(|t| self.on_working_shelf(t));
+            .partition(|t| self.on_working_shelf(t, cx));
         if inbox.is_empty() && working.is_empty() {
             items.push(Item::Nothing {
                 searching: !q.is_empty(),

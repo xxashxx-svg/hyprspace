@@ -487,7 +487,7 @@ impl Root {
         if before.is_some_and(|b| b != status) || (before.is_none() && status == Status::Working) {
             self.touched(thread, status);
         }
-        self.shelf_status(thread, before, status, cx);
+        self.shelf_look(thread, cx);
     }
 
     pub(super) fn retitle(&mut self, thread: u64, name: String) {

@@ -164,8 +164,9 @@ pub struct Root {
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
     pub(crate) working_open: bool,
-    /// When each thread on the Working shelf stopped working, while it waits to come back.
-    pub(crate) left_work: HashMap<u64, Instant>,
+    /// Threads on the Working shelf: busy, or since when they stopped, while they wait to come
+    /// back.
+    pub(crate) shelf: HashMap<u64, Option<Instant>>,
     /// The sidebar row under the pointer and since when, for its hover card.
     pub(crate) hover_row: Option<(u64, Instant)>,
     pub(crate) _hover_timer: Option<Task<()>>,
@@ -402,7 +403,7 @@ impl Root {
             settled_open: false,
             snoozed_open: false,
             working_open: false,
-            left_work: HashMap::new(),
+            shelf: HashMap::new(),
             hover_row: None,
             _hover_timer: None,
             row_bounds: Default::default(),
@@ -502,6 +503,9 @@ impl Root {
             Event::Run { id, event } => {
                 if let Some(View::Structured(v)) = self.view_of(id) {
                     v.update(cx, |v, cx| v.apply(event, cx));
+                    if let Some(&thread) = self.sessions.get(&id) {
+                        self.shelf_look(thread, cx);
+                    }
                 }
             }
             Event::ThreadExported { thread, path } => match (path, self.views.get(&thread)) {
@@ -658,6 +662,7 @@ impl Root {
             Event::AgentActivity { id, doing, subs } => {
                 if let Some(&thread) = self.sessions.get(&id) {
                     self.activity.insert(thread, Activity { doing, subs });
+                    self.shelf_look(thread, cx);
                     self.tick(cx);
                     cx.notify();
                 }
