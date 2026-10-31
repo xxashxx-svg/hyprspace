@@ -178,6 +178,7 @@ pub struct Transcript {
     pub context: Option<(u64, u64)>,
     pub compacting: bool,
     pub background: Vec<Task>,
+    pub goal: Option<hyprspace_proto::Goal>,
     last: Option<RunStatus>,
     failed: bool,
 }
@@ -487,6 +488,7 @@ impl Transcript {
             RunEvent::Steered | RunEvent::Usage { .. } | RunEvent::Limited { .. } => {}
             RunEvent::Error { message } => self.items.push(Item::Error(message)),
             RunEvent::Compacting => self.compacting = true,
+            RunEvent::Goal { goal } => self.goal = goal,
             RunEvent::Background { tasks } => self.background = tasks,
             RunEvent::TaskOutput { .. } => {}
             RunEvent::Compacted { before, after } => {

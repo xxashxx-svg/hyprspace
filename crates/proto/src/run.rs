@@ -27,6 +27,15 @@ pub enum Permission {
 /// Everything a structured session starts with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Goal {
+    pub objective: String,
+    /// Where it stands, when the CLI says: Claude's reason it isn't met yet, or why Codex is
+    /// holding off.
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Launch {
     pub agent: Agent,
     pub cwd: PathBuf,
@@ -230,6 +239,11 @@ pub enum RunEvent {
     /// The plan's usage limit stopped the run. `resets` is unix ms, when the CLI said.
     Limited {
         resets: Option<u64>,
+    },
+    /// The `/goal` the agent keeps working toward across runs, or `None` once it's met or
+    /// cleared. Kept off the phone, which doesn't know it.
+    Goal {
+        goal: Option<Goal>,
     },
     Finished {
         status: RunStatus,

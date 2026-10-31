@@ -3,6 +3,7 @@
 
 use hyprspace_proto::Agent;
 use hyprspace_proto::agents::AgentCatalog;
+use hyprspace_proto::state::Pick;
 
 /// A model's name from the agent's catalog. Ids arrive in three shapes: the catalog's own, the
 /// CLI's (`claude-opus-5-5[1m]`, a dated Haiku), and an alias the user typed (`haiku`, `opus`).
@@ -10,7 +11,10 @@ use hyprspace_proto::agents::AgentCatalog;
 /// model of that family, and an unlisted Claude id is still turned into a name.
 pub(crate) fn name(catalog: Option<&AgentCatalog>, id: &str) -> String {
     if id.is_empty() {
-        return "Default".into();
+        // no model picked runs the catalog's default, so that's its name
+        return catalog
+            .and_then(AgentCatalog::default_model)
+            .map_or_else(String::new, |m| m.label.clone());
     }
     let key = bare(id);
     let listed = || {
@@ -40,6 +44,16 @@ pub(crate) fn name(catalog: Option<&AgentCatalog>, id: &str) -> String {
         name = format!("{name} {}", version.join("."));
     }
     name
+}
+
+/// `pick` with an empty model or effort filled from the catalog's defaults, the same ones the
+/// engine launches, so a picker always shows and checks a real model and level.
+pub(crate) fn resolve(catalog: &AgentCatalog, mut pick: Pick) -> Pick {
+    pick.model = catalog.model_or_default(&pick.model).to_string();
+    if pick.effort.is_empty() {
+        pick.effort = catalog.default_effort(&pick.model).unwrap_or_default();
+    }
+    pick
 }
 
 /// The tag that puts a Claude model on its 1M context window.
@@ -107,7 +121,6 @@ mod tests {
         AgentCatalog {
             agent: Agent::Claude,
             models: vec![
-                m("", "Default"),
                 m("claude-opus-5-5", "Opus 5.5"),
                 m("claude-opus-5", "Opus 5"),
                 m("claude-haiku-5-5", "Haiku 5.5"),
@@ -120,7 +133,8 @@ mod tests {
     #[test]
     fn models_show_by_name_never_by_id() {
         let c = catalog();
-        assert_eq!(name(Some(&c), ""), "Default");
+        assert_eq!(name(Some(&c), ""), "Opus 5.5");
+        assert_eq!(name(None, ""), "");
         assert_eq!(name(Some(&c), "claude-opus-5-5"), "Opus 5.5");
         assert_eq!(name(Some(&c), "claude-opus-5-5[1m]"), "Opus 5.5");
         assert_eq!(name(Some(&c), "claude-opus-5"), "Opus 5");

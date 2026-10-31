@@ -177,6 +177,14 @@ pub fn run(args: &[String]) {
             );
             say(&reply);
             done(&reply);
+        } else if text.contains("goalset") {
+            emit(
+                json!({ "type": "active_goal", "uuid": "g1", "session_id": session,
+                "value": { "condition": "tests pass", "iterations": 1, "set_at": 0,
+                           "tokens_at_start": 0, "last_reason": "2 still fail" } }),
+            );
+            say("working on it");
+            done("working on it");
         } else if text.contains("hello") {
             hello();
         } else if text.contains("bgwedge") {

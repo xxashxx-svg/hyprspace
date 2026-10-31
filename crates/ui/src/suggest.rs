@@ -46,6 +46,7 @@ struct Known {
     version: u64,
     chips: HashMap<(Agent, PathBuf), (u64, Chips)>,
     files: HashMap<PathBuf, (Instant, Vec<String>)>,
+    prs: HashMap<PathBuf, (Instant, Vec<Item>)>,
     skills: HashMap<PathBuf, (Instant, Vec<SkillItem>)>,
     asked: HashMap<(PathBuf, bool), Instant>,
     threads: Vec<Item>,
@@ -75,6 +76,20 @@ pub fn set_info(agent: Agent, cwd: PathBuf, info: Vec<CommandInfo>, cx: &mut App
 
 pub fn set_threads(threads: Vec<Item>, cx: &mut App) {
     cx.default_global::<Known>().threads = threads;
+}
+
+pub fn set_prs(cwd: PathBuf, prs: &[hyprspace_proto::git::PullRequest], cx: &mut App) {
+    let items = prs
+        .iter()
+        .map(|p| Item {
+            label: format!("#{} {}", p.number, p.title),
+            detail: p.branch.clone(),
+            insert: format!("{} ", p.url),
+        })
+        .collect();
+    cx.default_global::<Known>()
+        .prs
+        .insert(cwd, (Instant::now(), items));
 }
 
 pub fn set_files(cwd: PathBuf, files: Vec<String>, cx: &mut App) {
@@ -120,6 +135,7 @@ fn want(client: &Client, cwd: &Path, files: bool, cx: &mut App) {
 pub enum Kind {
     Command,
     File,
+    Pr,
 }
 
 #[derive(Clone, PartialEq)]
@@ -253,6 +269,9 @@ fn detect(
         Some(_) => return None,
         None => match word.strip_prefix('$') {
             Some(q) => (q, true),
+            None if word.starts_with('#') => {
+                return prs(word, start..cursor, cwd, muted, client, cx);
+            }
             None => return files(word, start..cursor, cwd, (muted, threads), client, cx),
         },
     };
@@ -272,6 +291,53 @@ fn detect(
 /// A typed path, `/usr/bin` or `/c/Main`, rather than a command.
 fn path(q: &str) -> bool {
     q.contains(['/', '\\'])
+}
+
+/// The repo's pull requests for a `#`, newest first, asked of `gh` when the list is stale.
+fn prs(
+    word: &str,
+    range: Range<usize>,
+    cwd: &Path,
+    muted: Option<usize>,
+    client: &Client,
+    cx: &mut App,
+) -> Option<Open> {
+    let q = word.strip_prefix('#')?;
+    if muted == Some(range.start) {
+        return None;
+    }
+    let known = cx.default_global::<Known>();
+    let fresh = known
+        .prs
+        .get(cwd)
+        .is_some_and(|(at, _)| at.elapsed() < STALE);
+    let key = (cwd.join("#"), false);
+    let asked = known
+        .asked
+        .get(&key)
+        .is_some_and(|at| at.elapsed() < ASK_AGAIN);
+    if !fresh && !asked {
+        known.asked.insert(key, Instant::now());
+        client.send(Command::Folder(FolderCommand::PullRequests {
+            cwd: cwd.to_path_buf(),
+        }));
+    }
+    let all = known
+        .prs
+        .get(cwd)
+        .map(|(_, p)| p.clone())
+        .unwrap_or_default();
+    let items = if q.is_empty() {
+        all.into_iter().take(SHOWN).collect()
+    } else {
+        rank(&all, q)
+    };
+    (!items.is_empty()).then_some(Open {
+        kind: Kind::Pr,
+        range,
+        items,
+        sel: 0,
+    })
 }
 
 fn files(
@@ -492,6 +558,7 @@ pub fn render(
             Kind::Command => ("square-slash", format!("/{}", item.label)),
             Kind::File if item.insert.starts_with(THREAD) => ("message-square", item.label.clone()),
             Kind::File => ("file", item.label.clone()),
+            Kind::Pr => ("github", item.label.clone()),
         };
         div()
             .id(("suggest", i))
@@ -561,6 +628,7 @@ pub fn render(
                         "Files and threads"
                     }
                     Kind::File => "Files",
+                    Kind::Pr => "Pull requests",
                 }),
         )
         .children(rows)

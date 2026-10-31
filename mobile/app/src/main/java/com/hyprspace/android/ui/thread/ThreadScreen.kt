@@ -286,7 +286,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                     attach = if (app.link.desktopAtLeast(PHOTOS)) { onPick -> rememberAttach(app, app.link.desktopAtLeast(FILES), onPick) } else null,
                     modifier = Modifier.weight(1f),
                     model = catalog?.let {
-                        { ModelChip(t.agent, t.model ?: "Default", t.effort, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting) { picking = true } }
+                        { ModelChip(t.agent, t.model.orEmpty(), t.effort, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting) { picking = true } }
                     },
                     extras = if (queueing) {
                         Extras(

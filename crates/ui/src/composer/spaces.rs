@@ -13,6 +13,7 @@ pub struct Place {
     pub space: u64,
     pub name: String,
     pub look: crate::sidebar::Look,
+    pub cwd: Option<std::path::PathBuf>,
 }
 
 impl Composer {

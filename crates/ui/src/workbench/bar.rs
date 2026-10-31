@@ -181,7 +181,11 @@ impl Root {
                     .truncate()
                     .mr(px(6.))
                     .text_size(px(12.))
-                    .text_color(colors::error())
+                    .text_color(if self.work.calm {
+                        colors::text2()
+                    } else {
+                        colors::error()
+                    })
                     .child(n)
             }))
             .child(

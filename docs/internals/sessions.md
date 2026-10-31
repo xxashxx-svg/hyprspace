@@ -114,6 +114,12 @@ how Claude is driven.
   this, since it drops the subscription login. The name lands only if the thread still has the
   title it had when it asked, so a rename in between wins. On by default, with a switch in
   Settings, General.
+- **There is no "Default" model or effort.** A launch without one runs the catalog's first model
+  and that model's default effort (`AgentCatalog::default_model`, `default_effort`). The engine
+  fills both in before a session or terminal starts, the UI resolves picks with the same rule,
+  and the Android app mirrors it, so the name a thread shows is what the CLI runs. The harness
+  puts each agent's own configured model first (Claude's `settings.json`, aliases included;
+  Codex's `config.toml`), so the user's setup still wins.
 - **Changes apply in place.** Claude takes a model, 1M window included, as `set_model`, a
   permission as `set_permission_mode`, and effort and fast mode as `apply_flag_settings`. Every
   launch passes `--allow-dangerously-skip-permissions`, or the CLI refuses a later switch to

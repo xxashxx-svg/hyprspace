@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent_update::{AgentUpdateCommand, AgentUpdateEvent};
 use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
 use crate::peer::{PeerCommand, PeerEvent};
@@ -238,8 +239,20 @@ pub enum Command {
     Skills(SkillCommand),
     /// A reading for Settings' Resources view, answered with `Event::Resources`.
     Resources,
+    /// The ports each session's processes listen on, answered with `Event::Servers`.
+    Servers,
+    /// Ends the process behind a server, when it belongs to a session.
+    StopServer {
+        pid: u32,
+    },
+    /// Holds the screenshot shortcut, or lets it go. Each press answers with `Event::Snapshot`.
+    Snapshots {
+        on: bool,
+    },
     /// The app updating itself (`update.rs`).
     Update(UpdateCommand),
+    /// The agent CLIs updating with their own updaters (`agent_update.rs`).
+    AgentUpdate(AgentUpdateCommand),
     /// The bridge a paired phone reaches the app through (`phone.rs`).
     Phone(PhoneCommand),
     Peer(PeerCommand),
@@ -367,7 +380,12 @@ pub enum Event {
     Usage(UsageEvent),
     Skills(SkillEvent),
     Resources(Resources),
+    /// Each session that has servers, with them in port order.
+    Servers(Vec<(SessionId, Vec<crate::resources::Server>)>),
+    /// The window in front, captured by the screenshot shortcut, and its title.
+    Snapshot(Result<(PathBuf, String), String>),
     Update(UpdateEvent),
+    AgentUpdate(AgentUpdateEvent),
     Phone(PhoneEvent),
     Peer(PeerEvent),
     Delegate {
@@ -520,6 +538,9 @@ mod tests {
                 provider: "codex".into(),
             }),
             Command::Resources,
+            Command::Servers,
+            Command::StopServer { pid: 7 },
+            Command::Snapshots { on: true },
             Command::Skills(SkillCommand::Write {
                 cwd: PathBuf::from("/w"),
                 scope: crate::agents::SkillScope::Project,
@@ -532,6 +553,10 @@ mod tests {
                 replaces: Some((crate::agents::SkillScope::User, "old".into())),
             }),
             Command::Update(UpdateCommand::Install),
+            Command::AgentUpdate(AgentUpdateCommand::Revert {
+                agent: Agent::Claude,
+                version: "2.1.314".into(),
+            }),
         ];
         for cmd in &cmds {
             assert_eq!(&round_trip(cmd), cmd);
@@ -673,6 +698,23 @@ mod tests {
             }),
             Event::Update(UpdateEvent::Step {
                 step: crate::update::Step::Downloading { percent: Some(40) },
+            }),
+            Event::AgentUpdate(AgentUpdateEvent::Found {
+                agent: Agent::Codex,
+                install: crate::agent_update::Install {
+                    version: Some("0.164.0".into()),
+                    how: crate::agent_update::How::Standalone,
+                    command: "codex update".into(),
+                    latest: Some("0.166.0".into()),
+                    held: false,
+                },
+            }),
+            Event::AgentUpdate(AgentUpdateEvent::Done {
+                agent: Agent::Claude,
+                outcome: crate::agent_update::Outcome::Updated {
+                    from: "2.1.314".into(),
+                    to: "2.1.316".into(),
+                },
             }),
             Event::Resources(Resources {
                 sessions: vec![(

@@ -168,7 +168,7 @@ impl Root {
             _ => return None,
         };
         let info = self.agents.iter().find(|a| a.agent == agent)?;
-        let pick = self.state.composer.pick(agent);
+        let pick = crate::models::resolve(&info.catalog, self.state.composer.pick(agent));
         Some(match picker {
             Picker::Model(_) => {
                 div()
@@ -205,8 +205,7 @@ impl Root {
                     }))
             }
             _ => {
-                let levels = std::iter::once(String::new())
-                    .chain(info.catalog.efforts_for(&pick.model).iter().cloned());
+                let levels = info.catalog.efforts_for(&pick.model).to_vec().into_iter();
                 div()
                     .flex()
                     .flex_col()

@@ -8,6 +8,21 @@ use hyprspace_proto::agents::ProviderStatus;
 
 use crate::util::{decode_jwt, home_dir, no_window, read_json, title_case};
 
+/// Fills a launch's missing model and effort with the catalog's defaults, so a thread runs the
+/// model and effort it shows instead of whatever the CLI would pick on its own.
+pub fn concrete(launch: &mut hyprspace_proto::Launch) {
+    let catalog = hyprspace_harness::catalog::catalog(launch.agent, &home_dir());
+    if launch.model.as_deref().is_none_or(str::is_empty) {
+        launch.model = catalog.default_model().map(|m| m.id.clone());
+    }
+    if launch.effort.as_deref().is_none_or(str::is_empty) {
+        launch.effort = launch
+            .model
+            .as_deref()
+            .and_then(|m| catalog.default_effort(m));
+    }
+}
+
 /// Install and sign-in state for one provider: claude, codex, opencode or grok. Blocks
 /// on `<cli> --version`, so run it off the UI thread.
 pub fn status(id: &str) -> ProviderStatus {
@@ -38,7 +53,7 @@ pub fn status(id: &str) -> ProviderStatus {
 
 // run "<cli> --version". On Windows go through `cmd /c` so a .cmd or .ps1 shim on PATH resolves,
 // but pass the args separately (never build a shell string) so `cli` can't be misread as syntax.
-fn cli_version(cli: &str) -> Option<String> {
+pub(crate) fn cli_version(cli: &str) -> Option<String> {
     let mut cmd = if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.args(["/c", cli, "--version"]);

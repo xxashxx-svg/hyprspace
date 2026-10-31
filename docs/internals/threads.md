@@ -39,9 +39,35 @@ place to put a thread that the dock, the Open menu and resume all had to special
 is still an `Option` so old state loads.
 
 "No project" keeps that rule. It is an ordinary space on `scratch` in the state folder, and each
-thread started there gets a new folder of its own inside it, named after its title, so two
-threads never write over each other's files. A terminal opened on the space runs in `scratch`
+thread started there gets a new folder of its own inside it, so two threads never write over each
+other's files. The folder is the day and a random token, not the prompt: the title arrives after
+the first run has started there, and like a worktree's, the folder can't move after that. A terminal opened on the space runs in `scratch`
 itself.
+
+## Several at once
+
+Shift+click in a new thread's model menu adds or drops more models the message also goes to. Each
+pick is its own thread in its own worktree, so a git project is needed; the first opens and the
+rest start in the background. Ctrl+Enter (Cmd on macOS) starts a thread without leaving the new
+thread screen. A worktree can be ready after the screen moved on, so `ComposerEvent::Start`
+carries the space it was sent from instead of reading the screen.
+
+## Scheduled tasks
+
+A message in a new thread's box can run later instead (the clock beside Send): every hour or six,
+daily or weekly at a time, or when CI fails, a pull request opens or an issue gets a label. Each
+run is a new thread with the box's project, agent, model, permission and worktree choice. Tasks
+live in `AppState.scheduled` and are run by the UI's 15 second tick, so they run only while the
+app is open; a clock time missed while it was closed runs once on opening, up to a week back.
+Watches ask `gh` every five minutes. A watch's first look only records the newest run or number,
+so making one never starts threads for what was already there, and one look starts at most three.
+
+## Handing off
+
+`/handoff`, or the button on a usage-limit line, starts a thread with the other agent in the same
+folder and worktree. Neither CLI can read the other's saved conversation, so the new thread's first
+message carries it as text (`transcript/handoff.rs`): the first request, then the latest turns that
+fit in about 40,000 characters, with tool calls named but not their output.
 
 ## Drafts
 
@@ -83,6 +109,57 @@ idle agents behind. Settle and snooze replaced it.
 - Opening a settled or snoozed thread doesn't bring it back; sending it a message does. Settling
   and snoozing show a toast with Undo for five seconds.
 - Saved `archived` threads load as settled, and an archived space loads with its threads settled.
+
+## Worktree folders
+
+A worktree's folder is `<repo>-hs-<random token>` and never moves, because Claude and Codex keep
+their conversations by folder, so a thread resumes only at the path it started in. Only the branch
+takes a name: it starts as `hs/<token>` and becomes `hs/<title>` once the thread has a title,
+unless it was pushed by then. The title part is its first three words that aren't filler, at
+most 24 characters, so a branch fits in the footer and a PR title.
+
+A new worktree starts from its base branch's upstream, fetched first, when the local branch has
+nothing the upstream lacks, so it isn't days behind; with local commits of its own it starts from
+the local branch, so nothing unpushed is left out. The branch is made with `--no-track`: started
+off `origin/main` it would otherwise track it, and a push from the worktree would land on `main`.
+Then the repo's `.worktreeinclude` (gitignore patterns, the file Claude Code reads too) picks the
+ignored files a checkout leaves behind, such as `.env`, to copy in, and the space's setup command
+(composer, branch menu) runs there before the agent starts. A failed command only shows a notice.
+
+A worktree whose threads have all sat settled for the wait in Settings, General (three days by
+default) loses its folder, since a Rust checkout carries gigabytes of `target/`. The branch stays,
+and the engine records the worktree in `shelved.json`. Before a session, a terminal or a worktree
+action opens at that path again, the engine checks the branch out there again. The folder only
+goes when no thread on it has a view (so no agent or shell is in it) and `git status` shows
+nothing uncommitted or untracked; ignored files such as `.env` go with it. Git for Windows before
+2.54 deletes through NTFS junctions while removing a worktree, so on Windows nothing is removed
+with an older Git.
+
+## Pull requests
+
+An unsettled thread on a branch (its worktree's, or its folder's when that isn't main or master)
+shows that branch's pull request beside it, read every five minutes as one `gh pr list` per repo,
+with a dot while its checks fail or run. An open one is preferred over an older closed one for the
+same branch. A thread whose pull request goes from open to merged while the app watches settles,
+unless it's at work or on screen; one that was merged before stays where the user put it. `#` in a
+reply box lists the repo's pull requests and inserts the chosen one's link.
+
+## The screenshot shortcut
+
+Ctrl+Alt+S, from any app, captures the window in front and attaches it to the thread on screen
+(`engine/src/snapshot.rs`). It's off by default: a system-wide hotkey takes those keys from every
+other app while it's held. The capture copies the window's rectangle off the screen rather than
+asking the window to draw itself, which DirectX apps such as Roblox Studio answer with black. It
+is Windows only; macOS would need its own hotkey and the screen recording permission.
+
+## Servers a thread started
+
+The title row shows the ports a thread's processes listen on, read every 15 seconds and when a
+thread comes on screen (`engine/src/servers.rs`), with a click to open one and a button to stop
+it. A port counts only when a shell sits between its process and the session: a CLI's own MCP
+servers are its children and some of them listen too (Roblox Studio's MCP does), while an agent's
+commands and a terminal's run under a shell. Stop ends only a process inside one of our sessions'
+trees, so an id reused by Windows can't stop someone else's.
 
 ## The Working shelf
 

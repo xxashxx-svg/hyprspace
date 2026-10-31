@@ -151,6 +151,7 @@ impl Root {
             ThreadKind::Structured { .. } => return div().into_any_element(),
         };
         let title: SharedString = t.title.clone().into();
+        let servers = self.servers.get(&thread).cloned().unwrap_or_default();
         div()
             .id("pane-head")
             .flex_none()
@@ -194,6 +195,14 @@ impl Root {
                         )
                     }),
             )
+            .children(servers.into_iter().map(|server| {
+                super::server_link(&server).on_click(cx.listener(
+                    move |r, e: &ClickEvent, _, cx| {
+                        cx.stop_propagation();
+                        r.open_server(e.position(), server, cx)
+                    },
+                ))
+            }))
             .child(
                 head_button(("pane-close", 0), "x", true).on_click(cx.listener(
                     move |r, _: &ClickEvent, window, cx| {

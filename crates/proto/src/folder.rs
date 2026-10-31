@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::git::{BranchInfo, FileChange, Worktree, WorktreeAction};
+use crate::git::{BranchInfo, FileChange, PullRequest, Worktree, WorktreeAction};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
@@ -75,10 +75,30 @@ pub enum FolderCommand {
         name: String,
         #[serde(default)]
         base: Option<String>,
+        /// The space's command to run in the new worktree before its agent starts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        setup: Option<String>,
+    },
+    /// The recent pull requests of the repo holding `cwd`, through `gh`. Answered with
+    /// `PullRequests`, empty when gh is missing or the repo isn't on GitHub.
+    PullRequests {
+        cwd: PathBuf,
+    },
+    /// What a scheduled task's watch looks for in the repo holding `cwd`, through `gh`. Answered
+    /// with `Happened`, newest first.
+    Happened {
+        cwd: PathBuf,
+        when: crate::schedule::When,
     },
     /// The repo's local branches a worktree can start from. Answered with `Branches`.
     Branches {
         cwd: PathBuf,
+    },
+    /// Remove the folder of a worktree no thread is using and keep its branch, when nothing in it
+    /// is uncommitted. The folder comes back at the same path before a session or terminal opens
+    /// there. Not answered.
+    ShelveWorktree {
+        worktree: Worktree,
     },
     /// Name a worktree's placeholder branch after its thread's `title`, while the branch has no
     /// upstream. Answered with `BranchRenamed` when it was renamed.
@@ -143,6 +163,9 @@ pub enum FolderEvent {
     WorktreeAdded {
         request: u64,
         result: Result<Worktree, String>,
+        /// Why the setup command failed. The worktree is there either way.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        setup_failed: Option<String>,
     },
     WorktreeDone {
         path: PathBuf,
@@ -153,6 +176,15 @@ pub enum FolderEvent {
         path: PathBuf,
         from: String,
         to: String,
+    },
+    PullRequests {
+        cwd: PathBuf,
+        prs: Vec<PullRequest>,
+    },
+    Happened {
+        cwd: PathBuf,
+        when: crate::schedule::When,
+        items: Vec<crate::schedule::Happening>,
     },
     Openers {
         openers: Vec<Opener>,

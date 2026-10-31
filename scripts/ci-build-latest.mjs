@@ -89,6 +89,18 @@ if (!added.length) {
   process.exit(1);
 }
 
+// Agent CLI versions that break HyprSpace's threads, so the app won't offer them. Written only
+// while a list has entries: the Tauri updater still reads this file, and an unchanged shape is the
+// safe one for it.
+const avoidPath = new URL("./avoid-agents.json", import.meta.url);
+const avoid = existsSync(avoidPath) ? JSON.parse(readFileSync(avoidPath, "utf8")) : {};
+const held = Object.fromEntries(
+  Object.entries(avoid).filter(([, versions]) => Array.isArray(versions) && versions.length),
+);
+if (Object.keys(held).length) {
+  manifest.avoid_agents = held;
+}
+
 writeFileSync(join(dir, "latest.json"), JSON.stringify(manifest, null, 2));
 console.log("added:", added.join(", "));
 console.log(JSON.stringify(manifest, null, 2));

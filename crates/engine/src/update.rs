@@ -33,7 +33,13 @@ pub fn handle(cmd: UpdateCommand, tx: UnboundedSender<Event>) {
         UpdateCommand::Check => {
             tokio::spawn(async move {
                 let unfinished = unfinished();
-                send(match hyprspace_update::check(VERSION).await {
+                let checked = hyprspace_update::check_all(VERSION)
+                    .await
+                    .map(|(up, avoid)| {
+                        crate::agent_update::set_avoid(avoid);
+                        up
+                    });
+                send(match checked {
                     Ok(Some(up)) => {
                         let version = up.version.clone();
                         tokio::spawn(fetch(up.clone()));

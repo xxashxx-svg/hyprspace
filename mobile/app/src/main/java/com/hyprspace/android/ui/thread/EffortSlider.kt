@@ -41,7 +41,6 @@ import com.hyprspace.android.ui.feel
 import kotlin.math.roundToInt
 
 fun effortLabel(e: String): String = when (e) {
-    "" -> "Default"
     "xhigh" -> "Extra high"
     else -> e.replaceFirstChar { it.uppercase() }
 }

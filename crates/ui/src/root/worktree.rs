@@ -43,7 +43,25 @@ impl Root {
             }
         };
         self.send_worktree(worktree, action, message);
-        self.notify(doing, cx);
+        self.tell(doing, cx);
+    }
+
+    /// Gives back the disk of worktrees whose threads have all sat settled for the chosen wait.
+    /// The engine keeps the branch, and goes ahead only when nothing in the folder is uncommitted.
+    pub(crate) fn clean_worktrees(&mut self, now: u64) {
+        let Some(wait) = self.state.clean_worktrees.ms() else {
+            return;
+        };
+        for (worktree, threads) in self.state.idle_worktrees(now, wait) {
+            // a thread with a view may still have its agent or shell in the folder
+            if threads.iter().any(|t| self.views.contains_key(t)) || !worktree.path.exists() {
+                continue;
+            }
+            if self.shelving.insert(worktree.path.clone()) {
+                self.client
+                    .send(Command::Folder(FolderCommand::ShelveWorktree { worktree }));
+            }
+        }
     }
 
     pub(crate) fn send_worktree(
@@ -103,7 +121,9 @@ impl Root {
             }
             self.save();
         }
-        let (Ok(line) | Err(line)) = result;
-        self.notify(line.clone(), cx);
+        match result {
+            Ok(line) => self.tell(line.clone(), cx),
+            Err(line) => self.notify(line.clone(), cx),
+        }
     }
 }

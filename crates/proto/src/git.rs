@@ -25,6 +25,37 @@ impl Worktree {
     }
 }
 
+/// A pull request as `gh` lists it, for the thread whose branch it comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequest {
+    pub number: u64,
+    pub title: String,
+    pub branch: String,
+    pub url: String,
+    pub state: PrState,
+    pub checks: Checks,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrState {
+    Open,
+    Draft,
+    Merged,
+    Closed,
+}
+
+/// What its checks add up to: any failing is failing, then any still running is pending.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Checks {
+    None,
+    Pending,
+    Passing,
+    Failing,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WorktreeAction {

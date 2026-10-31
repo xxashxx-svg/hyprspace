@@ -1008,14 +1008,17 @@ impl Root {
 
     fn update_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let u = self.updater.read(cx);
+        let behind = u.agents.behind();
+        let updating = u.agents.running.clone();
         let (name, tint) = match &u.phase {
             Phase::Available(_) => ("download", colors::accent()),
+            _ if !behind.is_empty() => ("download", colors::accent()),
             Phase::UpToDate if u.checked_by_hand() => ("check", colors::ok()),
             Phase::Failed(_) => ("refresh-cw", colors::error()),
             _ => ("refresh-cw", colors::text3()),
         };
         let glyph = icon(name, 15., tint);
-        let glyph = if matches!(u.phase, Phase::Checking | Phase::Busy(_)) {
+        let glyph = if matches!(u.phase, Phase::Checking | Phase::Busy(_)) || !updating.is_empty() {
             glyph
                 .looping(800, |s, t| {
                     s.with_transformation(Transformation::rotate(percentage(t)))
@@ -1024,12 +1027,24 @@ impl Root {
         } else {
             glyph.into_any_element()
         };
+        let verb = if behind.len() == 1 { "is" } else { "are" };
         let tip = match &u.phase {
+            _ if !updating.is_empty() => format!("Updating {}", crate::update::names(&updating)),
+            Phase::Available(_) => u.status(),
+            _ if !behind.is_empty() => {
+                format!(
+                    "{} {verb} out. Click to update.",
+                    crate::update::versions(&behind)
+                )
+            }
             Phase::Idle => "Check for updates".to_string(),
             _ => u.status(),
         };
         let install = matches!(u.phase, Phase::Available(_));
-        let off = matches!(u.phase, Phase::Unmanaged | Phase::Busy(_));
+        let agents: Vec<_> = behind.iter().map(|(a, _)| *a).collect();
+        let off = !updating.is_empty()
+            || matches!(u.phase, Phase::Busy(_))
+            || (matches!(u.phase, Phase::Unmanaged) && agents.is_empty());
         div()
             .id("sidebar-update")
             .flex()
@@ -1046,9 +1061,12 @@ impl Root {
             .when(!off, |b| {
                 b.on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
                     let working = r.working();
+                    let agents = agents.clone();
                     r.updater.update(cx, |u, cx| {
                         if install {
                             u.install(working, cx)
+                        } else if !agents.is_empty() {
+                            u.update_agents(&agents, true, cx)
                         } else {
                             u.check(false, cx)
                         }

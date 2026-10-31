@@ -15,6 +15,7 @@ mod machines;
 mod phone;
 mod picker;
 mod resources;
+mod scheduled;
 mod shortcuts;
 mod sidebar_art;
 
@@ -44,6 +45,7 @@ pub(crate) enum Tab {
     Agents,
     Usage,
     Resources,
+    Scheduled,
     Phone,
     Computers,
     Skills,
@@ -142,6 +144,12 @@ pub(crate) const TABS: &[Entry] = &[
         icon: "activity",
     },
     Entry {
+        tab: Tab::Scheduled,
+        label: "Scheduled",
+        desc: "Threads that start on a schedule or on GitHub",
+        icon: "clock",
+    },
+    Entry {
         tab: Tab::Phone,
         label: "Phone",
         desc: "Your threads on your phone",
@@ -186,6 +194,7 @@ impl Root {
             Tab::Agents => self.agents_page(cx),
             Tab::Usage => self.usage_page(cx),
             Tab::Resources => self.resources_page(cx),
+            Tab::Scheduled => self.scheduled_page(cx),
             Tab::Phone => self.phone_page(cx),
             Tab::Computers => self.machines_page(cx),
             Tab::Skills => self.skills_page(window, cx),
@@ -259,6 +268,9 @@ impl Root {
                 .child(e.label)
                 .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
                     r.settings.set_tab(tab);
+                    if tab == Tab::Agents {
+                        r.updater.read(cx).look_at_agents();
+                    }
                     cx.notify();
                 }))
         });

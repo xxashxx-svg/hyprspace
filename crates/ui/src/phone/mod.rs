@@ -291,8 +291,8 @@ impl Root {
             },
             agent: t.agent().map(|l| l.agent),
             model: t.agent().map(|l| self.model_label(l)),
-            model_id: t.agent().and_then(|l| l.model.clone()).unwrap_or_default(),
-            effort: t.agent().and_then(|l| l.effort.clone()).unwrap_or_default(),
+            model_id: t.agent().map(|l| self.runs(l).0).unwrap_or_default(),
+            effort: t.agent().map(|l| self.runs(l).1).unwrap_or_default(),
             permission: t.agent().map(|l| l.permission).unwrap_or_default(),
             status: match status {
                 Status::Idle => BoardStatus::Idle,

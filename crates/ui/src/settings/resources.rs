@@ -1,5 +1,6 @@
 // Settings, Resources: what HyprSpace and the processes it started use, read by the engine
-// (`engine/src/resources.rs`) every two seconds while this view is open and never otherwise.
+// (`engine/src/resources.rs`) every two seconds while this view is open and never otherwise. The
+// last reading stays after it closes, so coming back shows it dimmed until a fresh one lands.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -13,6 +14,7 @@ use super::controls::{block, row, row_with, section, text};
 use crate::assets::icon;
 use crate::colors;
 use crate::root::Screen;
+use crate::time::ago;
 use crate::zoom::px;
 
 const EVERY: Duration = Duration::from_secs(2);
@@ -22,10 +24,14 @@ const IO_NOTE: &str = "Disk, pipes and network";
 #[cfg(not(windows))]
 const IO_NOTE: &str = "Disk";
 
-/// The last reading, and when the next one was asked for.
+/// The last reading, kept after the page closes so it shows at once next time, and when the next
+/// one was asked for.
 #[derive(Default)]
 pub(crate) struct Watch {
     reading: Option<Resources>,
+    read: Option<Instant>,
+    /// The reading came while the page has been open this time.
+    fresh: bool,
     asked: Option<Instant>,
 }
 
@@ -52,7 +58,7 @@ fn plural(n: u32, one: &str) -> String {
 }
 
 /// One figure: a quiet label, the value, and a line under it.
-fn figure(label: &str, value: String, under: String) -> AnyElement {
+fn figure(label: &str, value: String, under: String, dim: bool) -> AnyElement {
     div()
         .flex()
         .flex_col()
@@ -69,29 +75,58 @@ fn figure(label: &str, value: String, under: String) -> AnyElement {
                 .text_size(px(20.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(colors::text1())
+                .when(dim, |d| d.opacity(0.45))
                 .child(value),
         )
         .child(text(under).truncate())
         .into_any_element()
 }
 
-/// A row's CPU and memory, in columns that line up down the list.
-fn numbers(load: &Load) -> AnyElement {
+/// A row's CPU and memory, in columns that line up down the list, or dashes before a reading.
+fn numbers(load: Option<&Load>, dim: bool) -> AnyElement {
     let col = |s: String| {
         div()
             .w(px(72.))
             .flex()
             .justify_end()
             .text_size(px(13.))
-            .text_color(colors::text2())
+            .text_color(if load.is_some() {
+                colors::text2()
+            } else {
+                colors::text3()
+            })
             .child(s)
     };
     div()
         .flex()
         .items_center()
-        .child(col(cpu(load.cpu)))
-        .child(col(bytes(load.memory)))
+        .when(dim, |d| d.opacity(0.45))
+        .child(col(load.map_or("-".into(), |l| cpu(l.cpu))))
+        .child(col(load.map_or("-".into(), |l| bytes(l.memory))))
         .into_any_element()
+}
+
+/// What the page is waiting on, beside its first heading.
+fn status(watch: &Watch) -> Option<AnyElement> {
+    let line = match watch.read {
+        None => "Reading".to_string(),
+        Some(_) if watch.fresh => return None,
+        Some(at) => match ago(0, at.elapsed().as_millis() as u64).as_str() {
+            "now" => "Updating".to_string(),
+            since => format!("Updating, read {since} ago"),
+        },
+    };
+    Some(
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .text_size(px(12.))
+            .text_color(colors::text3())
+            .child(crate::spinner::ring("resources-reading", colors::text3()))
+            .child(line)
+            .into_any_element(),
+    )
 }
 
 impl Root {
@@ -100,7 +135,8 @@ impl Root {
         let showing = self.screen == Screen::Settings && self.settings.tab == super::Tab::Resources;
         let watch = &mut self.settings.watch;
         if !showing {
-            *watch = Watch::default();
+            watch.asked = None;
+            watch.fresh = false;
             return;
         }
         if watch.asked.is_none_or(|t| t.elapsed() >= EVERY) {
@@ -111,30 +147,52 @@ impl Root {
 
     pub(crate) fn resources_arrived(&mut self, reading: Resources, cx: &mut Context<Self>) {
         if self.settings.watch.asked.is_some() {
-            self.settings.watch.reading = Some(reading);
+            let watch = &mut self.settings.watch;
+            watch.reading = Some(reading);
+            watch.read = Some(Instant::now());
+            watch.fresh = true;
             cx.notify();
         }
     }
 
     pub(super) fn resources_page(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Some(r) = &self.settings.watch.reading else {
-            return block(vec![row("Reading this computer's processes", "", div())])
-                .into_any_element();
-        };
-        let total = r.total();
-        let used = r.machine_memory.saturating_sub(r.machine_free);
-        // a thread can have more than one session, and a session the UI no longer knows is
-        // counted as the app's
-        let mut app = r.app;
-        let mut threads: HashMap<u64, Load> = HashMap::new();
-        for (id, load) in &r.sessions {
-            match self.sessions.get(id) {
-                Some(thread) => threads.entry(*thread).or_default().add(load),
-                None => app.add(load),
+        let watch = &self.settings.watch;
+        let r = watch.reading.as_ref();
+        let dim = r.is_some() && !watch.fresh;
+        let (threads, app) = match r {
+            Some(r) => {
+                // a thread can have more than one session, and a session the UI no longer knows
+                // is counted as the app's
+                let mut app = r.app;
+                let mut threads: HashMap<u64, Load> = HashMap::new();
+                for (id, load) in &r.sessions {
+                    match self.sessions.get(id) {
+                        Some(thread) => threads.entry(*thread).or_default().add(load),
+                        None => app.add(load),
+                    }
+                }
+                let mut threads: Vec<_> = threads.into_iter().collect();
+                threads.sort_by(|a, b| b.1.cpu.total_cmp(&a.1.cpu).then(a.0.cmp(&b.0)));
+                let threads: Vec<_> = threads.into_iter().map(|(id, l)| (id, Some(l))).collect();
+                (threads, Some(app))
             }
-        }
-        let mut threads: Vec<_> = threads.into_iter().collect();
-        threads.sort_by(|a, b| b.1.cpu.total_cmp(&a.1.cpu).then(a.0.cmp(&b.0)));
+            None => {
+                let mut ids: Vec<u64> = self
+                    .sessions
+                    .values()
+                    .copied()
+                    .filter(|t| self.machines.remote(*t).is_none())
+                    .collect();
+                ids.sort_unstable();
+                ids.dedup();
+                (ids.into_iter().map(|id| (id, None)).collect(), None)
+            }
+        };
+        let total = r.map(|r| r.total());
+        let read = |f: &dyn Fn(&Resources, &Load) -> String| {
+            r.zip(total.as_ref())
+                .map_or("-".to_string(), |(r, t)| f(r, t))
+        };
 
         let figures = div()
             .grid()
@@ -144,37 +202,46 @@ impl Root {
             .py(px(16.))
             .child(figure(
                 "CPU",
-                cpu(total.cpu),
-                format!("This computer: {}", cpu(r.machine_cpu)),
+                read(&|_, t| cpu(t.cpu)),
+                format!("This computer: {}", read(&|r, _| cpu(r.machine_cpu))),
+                dim,
             ))
             .child(figure(
                 "Memory",
-                bytes(total.memory),
+                read(&|_, t| bytes(t.memory)),
                 format!(
-                    "This computer: {} of {}",
-                    bytes(used),
-                    bytes(r.machine_memory)
+                    "This computer: {}",
+                    read(&|r, _| format!(
+                        "{} of {}",
+                        bytes(r.machine_memory.saturating_sub(r.machine_free)),
+                        bytes(r.machine_memory)
+                    ))
                 ),
+                dim,
             ))
             .child(figure(
                 "Processes",
-                total.processes.to_string(),
+                read(&|_, t| t.processes.to_string()),
                 "Started by HyprSpace".into(),
+                dim,
             ))
             .child(figure(
                 "Read",
-                format!("{}/s", bytes(total.read)),
+                read(&|_, t| format!("{}/s", bytes(t.read))),
                 IO_NOTE.into(),
+                dim,
             ))
             .child(figure(
                 "Write",
-                format!("{}/s", bytes(total.write)),
+                read(&|_, t| format!("{}/s", bytes(t.write))),
                 IO_NOTE.into(),
+                dim,
             ))
             .child(figure(
                 "Threads",
-                threads.len().to_string(),
+                read(&|_, _| threads.len().to_string()),
                 "Running on this computer".into(),
+                dim,
             ));
 
         let mut rows: Vec<AnyElement> = threads
@@ -190,7 +257,10 @@ impl Root {
                 } else {
                     title
                 };
-                let under = format!("{space} \u{b7} {}", plural(load.processes, "process"));
+                let under = match &load {
+                    Some(l) => format!("{space} \u{b7} {}", plural(l.processes, "process")),
+                    None => space,
+                };
                 div()
                     .id(("resources-thread", id))
                     .cursor_pointer()
@@ -205,7 +275,7 @@ impl Root {
                             .flex()
                             .items_center()
                             .gap(px(6.))
-                            .child(numbers(&load))
+                            .child(numbers(load.as_ref(), dim))
                             .child(icon("chevron-right", 14., colors::text3())),
                     ))
                     .into_any_element()
@@ -217,21 +287,38 @@ impl Root {
         rows.push(row_with(
             None,
             "HyprSpace",
-            text(format!(
-                "The app, its terminal hosts and helpers \u{b7} {}",
-                plural(app.processes, "process")
-            )),
-            div().pr(px(20.)).child(numbers(&app)),
+            text(match &app {
+                Some(app) => format!(
+                    "The app, its terminal hosts and helpers \u{b7} {}",
+                    plural(app.processes, "process")
+                ),
+                None => "The app, its terminal hosts and helpers".to_string(),
+            }),
+            div().pr(px(20.)).child(numbers(app.as_ref(), dim)),
         ));
 
         div()
             .flex()
             .flex_col()
             .gap(px(28.))
-            .child(section(
-                "HyprSpace and everything it started",
-                block(vec![figures.into_any_element()]),
-            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px(px(4.))
+                            .text_size(px(13.))
+                            .text_color(colors::text3())
+                            .child("HyprSpace and everything it started")
+                            .children(status(watch)),
+                    )
+                    .child(block(vec![figures.into_any_element()])),
+            )
             .child(section("By thread", block(rows)))
             .child(
                 div()

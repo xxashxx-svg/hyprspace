@@ -79,3 +79,44 @@ install the current app on both platforms.
   which an update keeps. So the certificate must never change: a new one asks every Mac user again.
   `scripts/make-macos-signing-cert.sh` makes it once and keeps a copy in `~/.hyprspace-signing`.
 - The uninstaller never touches user data (`~/.hyprspace`).
+
+## Agent updates
+
+HyprSpace also updates Claude and Codex, the way T3 Code does, with each CLI's own updater
+(`engine/src/agent_update.rs`). Settings, Agents shows each one's install and update; the corner
+card and the sidebar's update button offer what's behind; "Restart and update" updates the agents
+first. Only this computer's agents, and only on a click.
+
+- **It updates the file the harness starts.** `<cli>.exe` first on PATH, then the shim `cmd`
+  finds, resolved through links and junctions. How it was installed comes from that path:
+  `~/.local/bin/claude` is Claude's own installer (`claude update`), a release under
+  `.codex/packages/standalone` is Codex's (`codex update`, with that `.codex` as `CODEX_HOME`),
+  npm only when `npm prefix -g` holds both the command and the package, Homebrew from the keg.
+  Anything else (WinGet, bun, pnpm, a project's `node_modules`) shows the command instead of
+  running it: WinGet's Claude answers `claude update` with success and stays as it was.
+- **A running binary is fine.** `claude update` renames the locked `claude.exe` aside and writes
+  the new one; `codex update` installs a new release folder and repoints its junction. Running
+  sessions keep their version until they next start, so nothing is closed for an update. Tested on
+  Windows in a scratch home with a session holding each binary.
+- **Updaters run as plain children**: no terminal, no stdin, never typed into (the Codex
+  update dialog that ate an Enter is why). A failure shows the last line the updater printed,
+  which is where they put the reason, minus any crash backtrace. Success is the version moving; a
+  run that leaves it where it was says "already the newest on its channel".
+- **A slow updater is never killed.** Stopping `claude update` while it copies the new
+  `claude.exe` into place would leave no working Claude. After 15 minutes HyprSpace says it
+  stopped waiting, keeps the agent's lock until the updater exits, then reports where the version
+  ended up. HyprSpace puts no job object on its children, so an updater also outlives the app.
+- **npm on Windows waits for its package to be free.** npm can't replace files a running process
+  holds and stops halfway, so with anything running from the package's folder the update refuses
+  and says to close the agent's threads. The native installers cope with a running binary;
+  npm doesn't.
+- **System32 goes first on the updater's PATH.** Codex's installer runs `tar`, and Git's GNU tar
+  ahead of Windows' own reads `C:` as a remote host and the update fails.
+- **The newest version comes from npm**, alongside the app's own update check, behind Settings,
+  General, "Check for agent updates". The switch is read from saved state before the first
+  check, so a user who turned it off never sends one. npm only knows Claude's `latest` channel,
+  so a Claude on `stable` isn't called behind.
+- **Bad versions are held back** through `avoid_agents` in `latest.json`
+  (`scripts/avoid-agents.json`). Native Claude can go back with `claude install <version>`.
+- **Codex terminal threads start with `check_for_update_on_startup=false`**, so Codex's own
+  update prompt never opens under a thread.

@@ -5,9 +5,11 @@
 mod delegate;
 mod drafts;
 mod frames;
+mod prs;
 mod quit;
 mod refs;
 mod render;
+mod scheduled;
 mod settle;
 mod switch;
 mod threads;
@@ -15,6 +17,7 @@ pub mod titlebar;
 mod titles;
 mod worktree;
 
+pub(crate) use scheduled::next as next_run;
 pub(crate) use threads::{folder_name, same_folder, scratch_root};
 
 use std::collections::{HashMap, HashSet};
@@ -177,6 +180,17 @@ pub struct Root {
         std::rc::Rc<std::cell::RefCell<HashMap<u64, gpui::Bounds<gpui::Pixels>>>>,
     /// The snooze menu: where it opened, for which thread.
     pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
+    /// Worktree folders asked to be shelved this run, so one with changes isn't asked again.
+    pub(crate) shelving: HashSet<std::path::PathBuf>,
+    /// Each repo's pull requests as `gh` last listed them, and the threads seen with one open.
+    pub(crate) prs: HashMap<std::path::PathBuf, Vec<hyprspace_proto::git::PullRequest>>,
+    pub(crate) pr_open: HashSet<u64>,
+    /// Scheduled runs waiting on their worktree, by the request that asked for it.
+    pub(crate) scheduled_starts: HashMap<u64, (u64, Start)>,
+    /// Worktree requests made here, numbered apart from the composer's.
+    pub(crate) next_request: u64,
+    /// The servers each thread's processes listen on, as of the last look.
+    pub(crate) servers: HashMap<u64, Vec<hyprspace_proto::resources::Server>>,
     pub(crate) icon_picker: Option<crate::sidebar::IconPicker>,
     /// The dev build's frame readout.
     pub(crate) frames: frames::Frames,
@@ -344,6 +358,11 @@ impl Root {
                         r.git_poll(Duration::from_secs(600));
                     }
                     r.tidy_threads(cx);
+                    r.client.send(Command::Servers);
+                    if ticks % 20 == 1 {
+                        r.poll_prs();
+                        r.poll_watches();
+                    }
                 });
                 if alive.is_err() {
                     break;
@@ -410,6 +429,12 @@ impl Root {
             _hover_timer: None,
             row_bounds: Default::default(),
             snooze_menu: None,
+            shelving: HashSet::new(),
+            servers: HashMap::new(),
+            prs: HashMap::new(),
+            pr_open: HashSet::new(),
+            scheduled_starts: HashMap::new(),
+            next_request: 1 << 40,
             icon_picker: None,
             frames: Default::default(),
             undo: None,
@@ -619,6 +644,60 @@ impl Root {
             Event::SidebarArt(result) => self.sidebar_art_arrived(result, cx),
             Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
             Event::Resources(reading) => self.resources_arrived(reading, cx),
+            Event::Snapshot(Err(why)) => self.notify(why, cx),
+            Event::Snapshot(Ok((path, title))) => {
+                let into = match self.screen {
+                    Screen::Thread(id) => match self.views.get(&id) {
+                        Some(View::Structured(v)) => {
+                            v.update(cx, |v, cx| v.attach_files(vec![path], cx));
+                            true
+                        }
+                        _ => false,
+                    },
+                    Screen::Compose(_) => {
+                        self.composer
+                            .update(cx, |c, cx| c.attach_files(vec![path], cx));
+                        true
+                    }
+                    _ => false,
+                };
+                let what = if title.is_empty() {
+                    "the window".to_string()
+                } else {
+                    title
+                };
+                if into {
+                    self.tell(format!("Attached a screenshot of {what}."), cx);
+                } else {
+                    self.notify(
+                        "Open a structured thread or a new one to attach screenshots to.".into(),
+                        cx,
+                    );
+                }
+            }
+            Event::Servers(found) => {
+                let mut servers: HashMap<u64, Vec<_>> = HashMap::new();
+                for (id, list) in found {
+                    // a thread's own session, or a shell in its terminal drawer
+                    let thread = self.sessions.get(&id).copied().or_else(|| {
+                        let mut drawers = self.work.drawers.iter();
+                        drawers.find(|(_, d)| d.holds(id)).map(|(t, _)| *t)
+                    });
+                    if let Some(thread) = thread {
+                        servers.entry(thread).or_default().extend(list);
+                    }
+                }
+                for (id, view) in &self.views {
+                    if let View::Structured(v) = view {
+                        let list = servers.get(id).cloned().unwrap_or_default();
+                        v.update(cx, |v, cx| v.set_servers(list, cx));
+                    }
+                }
+                if self.servers != servers {
+                    self.servers = servers;
+                    cx.notify();
+                }
+            }
             Event::Skills(e) => {
                 if let hyprspace_proto::SkillEvent::List { cwd, items } = &e {
                     crate::suggest::set_skills(cwd.clone(), items.clone(), cx);
@@ -630,6 +709,14 @@ impl Root {
                     self.composer.update(cx, |c, cx| c.refresh_suggest(cx));
                 }
                 self.skills.update(cx, |s, cx| s.event(e, window, cx))
+            }
+            Event::AgentUpdate(e) => {
+                let done = matches!(e, hyprspace_proto::AgentUpdateEvent::Done { .. });
+                self.updater.update(cx, |u, cx| u.agent_event(e, cx));
+                // the version Settings, Agents shows comes from here
+                if done {
+                    self.client.send(Command::LoadAgents);
+                }
             }
             Event::Update(e) => {
                 let quit = e == hyprspace_proto::UpdateEvent::Quit;
@@ -770,6 +857,9 @@ impl Root {
     fn loaded(&mut self, state: AppState, window: &mut Window, cx: &mut Context<Self>) {
         self.state = state;
         self.loaded = true;
+        if self.state.snapshots {
+            self.client.send(Command::Snapshots { on: true });
+        }
         for agent in [
             hyprspace_proto::Agent::Claude,
             hyprspace_proto::Agent::Codex,
@@ -796,6 +886,8 @@ impl Root {
         let prefs = self.state.composer.clone();
         self.composer.update(cx, |c, cx| c.set_prefs(prefs, cx));
         let seen = self.state.seen_version.clone();
+        let checks = self.state.agent_checks;
+        self.updater.update(cx, |u, _| u.set_agent_checks(checks));
         let updated = self.updater.update(cx, |u, cx| u.launched_after(&seen, cx));
         if updated {
             self.state.seen_version = crate::update::VERSION.into();
@@ -909,6 +1001,45 @@ impl Root {
             }
             ComposerEvent::Machine(machine) => self.pick_machine(machine.clone(), window, cx),
             ComposerEvent::Space(space) => self.compose(Some(*space), window, cx),
+            ComposerEvent::Schedule {
+                space,
+                name,
+                prompt,
+                pick,
+                permission,
+                worktree,
+                when,
+            } => {
+                let label = when.label();
+                let task = hyprspace_proto::schedule::Scheduled {
+                    id: self.state.take_id(),
+                    name: name.clone(),
+                    prompt: prompt.clone(),
+                    space: *space,
+                    pick: pick.clone(),
+                    permission: *permission,
+                    worktree: *worktree,
+                    when: when.clone(),
+                    paused: false,
+                    last: crate::time::now_ms(),
+                    seen: None,
+                };
+                self.state.scheduled.push(task);
+                self.save();
+                self.tell(
+                    format!("Scheduled: {label}. It's in Settings, Scheduled."),
+                    cx,
+                );
+                if when.watch() {
+                    self.poll_watches();
+                }
+            }
+            ComposerEvent::Setup { space, command } => {
+                if let Some(s) = self.state.space_mut(*space) {
+                    s.setup = command.clone();
+                    self.save();
+                }
+            }
             ComposerEvent::NoProject => self.no_project(window, cx),
             ComposerEvent::OtherFolder => self.other_folder(window, cx),
             ComposerEvent::ShowMedia(path) => self.show_media(path.clone(), cx),
@@ -941,15 +1072,40 @@ impl Root {
 
     /// A model's label from the agent's catalog, or the agent's name for its default.
     pub(crate) fn model_label(&self, launch: &hyprspace_proto::Launch) -> String {
-        let Some(id) = launch.model.as_deref() else {
-            return launch.agent.name().to_string();
-        };
-        let catalog = self
-            .agents
+        crate::models::name(
+            self.catalog(launch.agent),
+            launch.model.as_deref().unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn catalog(
+        &self,
+        agent: hyprspace_proto::Agent,
+    ) -> Option<&hyprspace_proto::agents::AgentCatalog> {
+        self.agents
             .iter()
-            .find(|a| a.agent == launch.agent)
-            .map(|a| &a.catalog);
-        crate::models::name(catalog, id)
+            .find(|a| a.agent == agent)
+            .map(|a| &a.catalog)
+    }
+
+    /// The model id and effort a launch runs, with an empty pick filled from the catalog's
+    /// defaults the way the engine fills it.
+    pub(crate) fn runs(&self, launch: &hyprspace_proto::Launch) -> (String, String) {
+        let model = launch.model.clone().unwrap_or_default();
+        let effort = launch.effort.clone().unwrap_or_default();
+        let Some(catalog) = self.catalog(launch.agent) else {
+            return (model, effort);
+        };
+        let pick = crate::models::resolve(
+            catalog,
+            hyprspace_proto::state::Pick {
+                agent: launch.agent,
+                model,
+                effort,
+                fast: launch.fast,
+            },
+        );
+        (pick.model, pick.effort)
     }
 
     pub(crate) fn save(&self) {

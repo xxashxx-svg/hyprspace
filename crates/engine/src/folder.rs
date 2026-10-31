@@ -68,17 +68,39 @@ fn list_files(cwd: &Path) -> Vec<String> {
 pub struct Folders {
     git: Arc<Mutex<()>>,
     watch: crate::watch::Watch,
+    /// The state folder, where shelved worktrees are recorded.
+    dir: PathBuf,
 }
 
 impl Folders {
+    pub fn new(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            ..Self::default()
+        }
+    }
+
     pub fn handle(&self, cmd: FolderCommand, tx: UnboundedSender<Event>) {
         if let FolderCommand::Watch { cwds } = cmd {
             let watch = self.watch.clone();
             tokio::task::spawn_blocking(move || watch.set(cwds, tx));
             return;
         }
-        let lock = self.git.clone();
+        let (lock, dir) = (self.git.clone(), self.dir.clone());
         tokio::task::spawn_blocking(move || {
+            match &cmd {
+                FolderCommand::ShelveWorktree { worktree } => {
+                    let _g = lock.lock().unwrap_or_else(|e| e.into_inner());
+                    if git::shelve(worktree).is_ok() {
+                        crate::shelf::record(&dir, worktree);
+                    }
+                    return;
+                }
+                FolderCommand::Worktree { worktree, .. } => {
+                    crate::shelf::restore(&dir, &worktree.path)
+                }
+                _ => {}
+            }
             for event in run(cmd, &lock) {
                 let _ = tx.unbounded_send(Event::Folder(event));
             }
@@ -89,7 +111,7 @@ impl Folders {
 fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
     let git_lock = || lock.lock().unwrap_or_else(|e| e.into_inner());
     match cmd {
-        FolderCommand::Watch { .. } => Vec::new(),
+        FolderCommand::Watch { .. } | FolderCommand::ShelveWorktree { .. } => Vec::new(),
         FolderCommand::ListDir { path } => {
             let entries = list_dir(&path);
             vec![FolderEvent::Dir { path, entries }]
@@ -144,11 +166,25 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
             vec![FolderEvent::Diff { cwd, path, text }]
         }
         FolderCommand::AddWorktree {
-            request, cwd, base, ..
+            request,
+            cwd,
+            base,
+            setup,
+            ..
         } => {
-            let _g = git_lock();
-            let result = git::create_worktree(&cwd, base.as_deref());
-            vec![FolderEvent::WorktreeAdded { request, result }]
+            let result = {
+                let _g = git_lock();
+                git::create_worktree(&cwd, base.as_deref())
+            };
+            let setup_failed = result
+                .as_ref()
+                .ok()
+                .and_then(|wt| git::prepare(wt, setup.as_deref()).err());
+            vec![FolderEvent::WorktreeAdded {
+                request,
+                result,
+                setup_failed,
+            }]
         }
         FolderCommand::RenameBranch { worktree, title } => {
             let _g = git_lock();
@@ -166,6 +202,14 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
                 ],
                 Err(_) => Vec::new(),
             }
+        }
+        FolderCommand::Happened { cwd, when } => {
+            let items = git::happened(&cwd, &when);
+            vec![FolderEvent::Happened { cwd, when, items }]
+        }
+        FolderCommand::PullRequests { cwd } => {
+            let prs = git::pull_requests(&cwd);
+            vec![FolderEvent::PullRequests { cwd, prs }]
         }
         FolderCommand::Branches { cwd } => {
             let branches = git::branches(&cwd);

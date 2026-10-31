@@ -29,6 +29,7 @@ pub(crate) enum Own {
     Clear,
     Rewind,
     Login,
+    Handoff,
 }
 
 const OWN: &[(&str, Own, &str)] = &[
@@ -71,6 +72,11 @@ const OWN: &[(&str, Own, &str)] = &[
     ("new", Own::Clear, "Start a new thread here"),
     ("rewind", Own::Rewind, "Go back to an earlier message"),
     ("login", Own::Login, "Sign in again in a terminal below"),
+    (
+        "handoff",
+        Own::Handoff,
+        "Carry this thread on with the other agent",
+    ),
 ];
 
 // the interactive CLI's own screens, which its machine mode answers with "isn't available"
@@ -225,6 +231,7 @@ impl TranscriptView {
                 self.model.note("Copied the conversation as Markdown.");
             }
             Own::Branch => self.branch(cx),
+            Own::Handoff => self.hand_off(arg, cx),
             Own::Rename if arg.is_empty() => self.model.note("Write the new name after /rename."),
             Own::Rename => cx.emit(TranscriptEvent::Rename(arg)),
             Own::Diff => cx.emit(TranscriptEvent::ViewChanges),

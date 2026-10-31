@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use hyprspace_proto::{
-    Agent, CommandInfo, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
+    Agent, CommandInfo, Goal, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -701,6 +701,15 @@ impl Actor {
                 self.approvals
                     .remove(v["request_id"].as_str().unwrap_or_default());
             }
+            "active_goal" => (self.emit)(RunEvent::Goal {
+                goal: v["value"]["condition"].as_str().map(|c| Goal {
+                    objective: c.to_string(),
+                    note: v["value"]["last_reason"]
+                        .as_str()
+                        .filter(|r| !r.trim().is_empty())
+                        .map(str::to_string),
+                }),
+            }),
             "rate_limit_event" if v["rate_limit_info"]["status"] == "rejected" => {
                 self.limited(resets(&v["rate_limit_info"]["resetsAt"]));
             }

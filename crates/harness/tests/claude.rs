@@ -10,7 +10,8 @@ use common::{count, events, fake, finished, text};
 use hyprspace_harness::{Claude, Harness, Session};
 use hyprspace_proto::run::{ChangeKind, FileChange};
 use hyprspace_proto::{
-    Agent, Answer, Aside, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
+    Agent, Answer, Aside, Goal, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind,
+    Tool,
 };
 use serde_json::json;
 
@@ -464,6 +465,22 @@ async fn stop_ends_a_run_the_cli_never_reads() {
     session.interrupt();
     let run = events.run().await;
     assert_eq!(finished(&run).0, RunStatus::Interrupted);
+}
+
+#[tokio::test]
+async fn a_goal_reports_what_it_waits_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session, mut events) = start(&claude(), dir.path());
+    session.send(Prompt::text("goalset"));
+    let run = events.run().await;
+    let goal = Goal {
+        objective: "tests pass".into(),
+        note: Some("2 still fail".into()),
+    };
+    assert!(
+        run.contains(&RunEvent::Goal { goal: Some(goal) }),
+        "{run:?}"
+    );
 }
 
 #[tokio::test]

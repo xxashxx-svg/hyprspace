@@ -138,6 +138,7 @@ impl Root {
             )
         });
         let popup = self.bar_popup(window, cx);
+        let server_menu = self.server_menu(window, cx);
         div()
             .id("workbench")
             .size_full()
@@ -154,6 +155,7 @@ impl Root {
             .child(div().flex_1().min_w_0().h_full().child(body))
             .children(dock)
             .children(popup)
+            .children(server_menu)
             .into_any_element()
     }
 

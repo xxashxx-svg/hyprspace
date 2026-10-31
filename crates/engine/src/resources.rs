@@ -51,13 +51,7 @@ impl Sampler {
         self.at = Some(Instant::now());
 
         let procs = self.sys.processes();
-        let rows: Vec<(u32, u32, u64)> = procs
-            .iter()
-            .map(|(pid, p)| {
-                let parent = p.parent().map_or(0, |p| p.as_u32());
-                (pid.as_u32(), parent, p.start_time())
-            })
-            .collect();
+        let rows = rows(&self.sys);
         let cores = self.sys.cpus().len().max(1) as f32;
         let mut app = Load::default();
         let mut sessions: HashMap<SessionId, Load> = HashMap::new();
@@ -90,10 +84,21 @@ impl Sampler {
     }
 }
 
+/// Every process as (pid, parent, start), for `assign`.
+pub(crate) fn rows(sys: &System) -> Vec<(u32, u32, u64)> {
+    sys.processes()
+        .iter()
+        .map(|(pid, p)| {
+            let parent = p.parent().map_or(0, |p| p.as_u32());
+            (pid.as_u32(), parent, p.start_time())
+        })
+        .collect()
+}
+
 /// The session each process under `roots` or `me` belongs to, None for HyprSpace's own. `rows` is
 /// every process as (pid, parent, start). A child counts only if it started after its parent:
 /// Windows leaves a dead parent's id on its children and can hand that id to a new process.
-fn assign(
+pub(crate) fn assign(
     rows: &[(u32, u32, u64)],
     me: u32,
     roots: &[(SessionId, u32)],

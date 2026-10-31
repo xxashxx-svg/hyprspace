@@ -27,6 +27,14 @@ impl Load {
     }
 }
 
+/// A port a session's process listens on, such as a dev server an agent started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Server {
+    pub port: u16,
+    pub pid: u32,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Resources {

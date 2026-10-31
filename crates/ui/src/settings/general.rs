@@ -155,6 +155,27 @@ impl Root {
                 }),
         );
 
+        let clean = self.state.clean_worktrees;
+        let cleanup = widgets::segments().children(
+            hyprspace_proto::SettleAfter::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, value)| {
+                    let name = match value {
+                        hyprspace_proto::SettleAfter::Never => "Never",
+                        hyprspace_proto::SettleAfter::Day => "1 day",
+                        hyprspace_proto::SettleAfter::ThreeDays => "3 days",
+                        hyprspace_proto::SettleAfter::Week => "1 week",
+                    };
+                    widgets::segment(("clean-worktrees", i), None, name, clean == value, false)
+                        .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
+                            r.state.clean_worktrees = value;
+                            r.save();
+                            cx.notify();
+                        }))
+                }),
+        );
+
         let named = self.state.titles;
         let titles = widgets::switch("titles", named).on_click(cx.listener(
             move |r, _: &ClickEvent, _, cx| {
@@ -168,6 +189,27 @@ impl Root {
         let working = widgets::switch("working-shelf", shelf).on_click(cx.listener(
             move |r, _: &ClickEvent, _, cx| {
                 r.state.working_shelf = !shelf;
+                r.save();
+                cx.notify();
+            },
+        ));
+
+        let snapping = self.state.snapshots;
+        let snapshots = widgets::switch("snapshots", snapping).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| {
+                r.state.snapshots = !snapping;
+                r.client
+                    .send(hyprspace_proto::Command::Snapshots { on: !snapping });
+                r.save();
+                cx.notify();
+            },
+        ));
+
+        let checking = self.state.agent_checks;
+        let agent_checks = widgets::switch("agent-checks", checking).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| {
+                r.state.agent_checks = !checking;
+                r.updater.update(cx, |u, _| u.set_agent_checks(!checking));
                 r.save();
                 cx.notify();
             },
@@ -203,11 +245,28 @@ impl Root {
                         settle,
                     ),
                     row(
+                        "Screenshot shortcut",
+                        if cfg!(windows) {
+                            "Ctrl+Alt+S, from any app, captures the window you're in and attaches it to the thread on screen."
+                        } else {
+                            "Only on Windows for now."
+                        },
+                        snapshots,
+                    ),
+                    row(
                         "Name new threads",
                         "Sends a new thread's first message to a small model on your plan for a short title: Haiku for Claude, GPT Luna for Codex.",
                         titles,
                     ),
                 ],
+            ))
+            .child(group(
+                "Updates",
+                vec![row(
+                    "Check for agent updates",
+                    "When HyprSpace checks for its own update, it also asks registry.npmjs.org for the newest Claude Code and Codex. Only the two package names are sent. Nothing updates until you click Update.",
+                    agent_checks,
+                )],
             ))
             .child(self.snoozed_group(cx))
             .child(group(
@@ -227,11 +286,18 @@ impl Root {
             ))
             .child(group(
                 "Folders",
-                vec![row(
-                    "Open folders in",
-                    "Where the Open button goes.",
-                    open_control,
-                )],
+                vec![
+                    row(
+                        "Open folders in",
+                        "Where the Open button goes.",
+                        open_control,
+                    ),
+                    row(
+                        "Clean up worktrees",
+                        "Removes a worktree's folder once every thread in it has been settled this long, if nothing in it is uncommitted. The branch stays, and the folder comes back when you use the thread again.",
+                        cleanup,
+                    ),
+                ],
             ));
         #[cfg(target_os = "macos")]
         let page = page.child(self.mac_group(cx));

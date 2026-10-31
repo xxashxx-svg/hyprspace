@@ -48,6 +48,14 @@ pub struct AppState {
     pub drafts: Vec<Draft>,
     /// Working threads fold into a Working shelf and come back when they finish or need you.
     pub working_shelf: bool,
+    /// How long every thread in a worktree sits settled and untouched before its folder goes.
+    pub clean_worktrees: SettleAfter,
+    /// Ctrl+Alt+S anywhere captures the window in front for the thread on screen.
+    pub snapshots: bool,
+    /// Asks npm for the newest Claude and Codex alongside the app's own update check.
+    pub agent_checks: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scheduled: Vec<crate::schedule::Scheduled>,
 }
 
 impl Default for AppState {
@@ -71,6 +79,10 @@ impl Default for AppState {
             titles: true,
             drafts: Vec::new(),
             working_shelf: false,
+            clean_worktrees: SettleAfter::default(),
+            snapshots: false,
+            agent_checks: true,
+            scheduled: Vec::new(),
         }
     }
 }
@@ -128,6 +140,34 @@ pub fn state_dir() -> PathBuf {
 }
 
 impl AppState {
+    /// This computer's worktrees whose threads have all sat settled and untouched for `wait`,
+    /// each with those threads.
+    pub fn idle_worktrees(&self, now: u64, wait: u64) -> Vec<(Worktree, Vec<u64>)> {
+        let mut seen: Vec<(Worktree, Vec<u64>, bool)> = Vec::new();
+        for t in self
+            .spaces
+            .iter()
+            .filter(|s| s.machine.is_none())
+            .flat_map(|s| &s.threads)
+        {
+            let Some(w) = &t.worktree else {
+                continue;
+            };
+            let idle = t.settled && now.saturating_sub(t.last_touch()) >= wait;
+            match seen.iter_mut().find(|(o, ..)| o.path == w.path) {
+                Some((_, ids, all)) => {
+                    ids.push(t.id);
+                    *all &= idle;
+                }
+                None => seen.push((w.clone(), vec![t.id], idle)),
+            }
+        }
+        seen.into_iter()
+            .filter(|(.., all)| *all)
+            .map(|(w, ids, _)| (w, ids))
+            .collect()
+    }
+
     pub fn take_id(&mut self) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -213,6 +253,9 @@ pub struct Space {
     pub hue: Option<u16>,
     /// Newest first.
     pub threads: Vec<Thread>,
+    /// Run in each new worktree of this space before its agent starts, such as `npm install`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub setup: String,
     /// Another computer's space, mirrored from it while it is paired: never saved here.
     #[serde(skip)]
     pub machine: Option<String>,
@@ -567,6 +610,8 @@ pub struct ComposerPrefs {
     #[serde(rename = "structuredThreads")]
     pub structured: bool,
     pub terminal: bool,
+    /// The folder the last clone went into, offered first next time.
+    pub clone_into: Option<std::path::PathBuf>,
 }
 
 impl Default for ComposerPrefs {
@@ -577,6 +622,7 @@ impl Default for ComposerPrefs {
             picks: Vec::new(),
             structured: true,
             terminal: false,
+            clone_into: None,
         }
     }
 }
@@ -680,6 +726,38 @@ mod tests {
         assert!(!snoozed.settles(40 * DAY, SettleAfter::Day));
         // no known time at all: nothing to count from
         assert!(!Thread::default().settles(40 * DAY, SettleAfter::Day));
+    }
+
+    #[test]
+    fn a_worktree_is_idle_once_every_thread_in_it_has_sat_settled() {
+        let day = 24 * 60 * 60 * 1000;
+        let worktree = |path: &str| Worktree {
+            path: path.into(),
+            branch: "hs/a".into(),
+            base: "main".into(),
+            repo: "/r".into(),
+        };
+        let thread = |id, path: &str, settled, touched| Thread {
+            id,
+            settled,
+            touched,
+            worktree: Some(worktree(path)),
+            ..Thread::default()
+        };
+        let mut state = AppState::default();
+        state.spaces.push(Space {
+            threads: vec![
+                thread(1, "/w/a", true, 0),
+                thread(2, "/w/b", true, 0),
+                thread(3, "/w/b", false, 0),
+                thread(4, "/w/c", true, 3 * day),
+            ],
+            ..Space::default()
+        });
+        let idle = state.idle_worktrees(4 * day, 3 * day);
+        assert_eq!(idle, vec![(worktree("/w/a"), vec![1])]);
+        state.spaces[0].machine = Some("other".into());
+        assert!(state.idle_worktrees(4 * day, 3 * day).is_empty());
     }
 
     #[test]

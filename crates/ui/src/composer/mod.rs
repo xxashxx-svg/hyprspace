@@ -10,6 +10,7 @@ pub(crate) mod machine;
 pub(crate) mod model_menu;
 pub(crate) mod pickers;
 pub(crate) mod repo;
+mod schedule;
 pub(crate) mod spaces;
 mod worktree;
 
@@ -20,6 +21,7 @@ use gpui::{
     IntoElement, KeyBinding, PathPromptOptions, Pixels, Point, Render, Subscription, Task, Window,
     actions, div, prelude::*, relative,
 };
+
 use hyprspace_proto::agents::{AgentInfo, AgentSession};
 use hyprspace_proto::state::{ComposerPrefs, Pick};
 use hyprspace_proto::{Agent, Client, Command, Draft, Launch, Prompt};
@@ -30,6 +32,7 @@ use crate::{attach, colors};
 use clone::CloneCard;
 use model_menu::{Anchor, Choice, Host as _, ModelMenu, Spec};
 pub use pickers::{effort_label, permission_label};
+pub(crate) use schedule::glyph as schedule_glyph;
 
 actions!(composer, [Background]);
 
@@ -47,6 +50,8 @@ pub struct Target {
     pub space: u64,
     pub name: String,
     pub cwd: Option<PathBuf>,
+    /// The space's command for each new worktree.
+    pub setup: String,
     /// The paired computer the space is on, None for this one.
     pub machine: Option<String>,
 }
@@ -81,6 +86,21 @@ pub enum ComposerEvent {
     /// The next thread runs on another computer, or on this one with None.
     Machine(Option<String>),
     Space(u64),
+    /// Run the box's message as a new thread on a schedule instead of now.
+    Schedule {
+        space: u64,
+        name: String,
+        prompt: String,
+        pick: Pick,
+        permission: hyprspace_proto::Permission,
+        worktree: bool,
+        when: hyprspace_proto::schedule::When,
+    },
+    /// The space's command for each new worktree changed.
+    Setup {
+        space: u64,
+        command: String,
+    },
     NoProject,
     OtherFolder,
     ShowMedia(PathBuf),
@@ -129,9 +149,15 @@ pub struct Composer {
     branch: Option<String>,
     worktree: bool,
     waiting: Vec<worktree::Waiting>,
+    /// More models the next message also goes to, each in a worktree of its own.
+    also: Vec<Pick>,
     base: Option<String>,
     branches: Vec<String>,
     branch_menu: Option<Point<Pixels>>,
+    setup: Entity<TextInput>,
+    schedule_menu: Option<Point<Pixels>>,
+    schedule_at: Entity<TextInput>,
+    schedule_label: Entity<TextInput>,
     suggest: crate::suggest::Suggest,
     draft: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -149,6 +175,17 @@ impl Composer {
             )
         });
         let name = cx.new(|cx| TextInput::new("folder name", false, cx));
+        let setup = cx.new(|cx| TextInput::new("npm install", false, cx));
+        let schedule_at = cx.new(|cx| {
+            let mut i = TextInput::new("9:00", false, cx);
+            i.set_text("9:00", cx);
+            i
+        });
+        let schedule_label = cx.new(|cx| {
+            let mut i = TextInput::new("bug", false, cx);
+            i.set_text("bug", cx);
+            i
+        });
         let subs = vec![
             cx.subscribe(&input, |this, _, e: &InputEvent, cx| match e {
                 InputEvent::Submit => this.submit(false, cx),
@@ -199,6 +236,24 @@ impl Composer {
                 }
                 cx.notify();
             }),
+            cx.subscribe(&setup, |this, _, e: &InputEvent, cx| {
+                if let InputEvent::Submit = e {
+                    this.save_setup(cx);
+                    this.branch_menu = None;
+                    cx.notify();
+                }
+            }),
+            cx.subscribe(&schedule_at, |this, _, e: &InputEvent, cx| {
+                if let InputEvent::Submit = e {
+                    this.schedule_daily(cx);
+                }
+                cx.notify();
+            }),
+            cx.subscribe(&schedule_label, |this, _, e: &InputEvent, cx| {
+                if let InputEvent::Submit = e {
+                    this.schedule_labeled(cx);
+                }
+            }),
         ];
         Self {
             client,
@@ -224,23 +279,30 @@ impl Composer {
             asked: None,
             clone: CloneCard {
                 url: String::new(),
-                parent: PathBuf::new(),
                 name,
+                pick: 0,
+                off: false,
+                elsewhere: None,
+                here_ok: false,
+                into: None,
                 here: false,
-                open_here: false,
                 request: None,
                 line: None,
                 error: None,
-                parent_empty: None,
             },
             next_request: 1,
             error: None,
             branch: None,
             worktree: false,
             waiting: Vec::new(),
+            also: Vec::new(),
             base: None,
             branches: Vec::new(),
             branch_menu: None,
+            setup,
+            schedule_menu: None,
+            schedule_at,
+            schedule_label,
             suggest: Default::default(),
             draft: None,
             _subs: subs,
@@ -256,10 +318,12 @@ impl Composer {
         cx: &mut Context<Self>,
     ) {
         if self.target != target {
+            let command = target.as_ref().map(|t| t.setup.clone()).unwrap_or_default();
+            self.setup.update(cx, |i, cx| i.set_text(command, cx));
             self.folder = None;
             self.error = None;
+            self.also.clear();
             self.target = target;
-            self.clone.open_here = false;
             self.branch = None;
             self.base = None;
             self.branches.clear();
@@ -345,14 +409,23 @@ impl Composer {
     }
 
     fn pick(&self) -> Option<Pick> {
-        self.agent().map(|a| self.prefs.pick(a.agent))
+        self.agent()
+            .map(|a| crate::models::resolve(&a.catalog, self.prefs.pick(a.agent)))
+    }
+
+    pub(super) fn also_count(&self) -> usize {
+        self.also.len()
     }
 
     fn launch(&self, cwd: PathBuf) -> Option<Launch> {
-        let agent = self.agent()?.agent;
-        let pick = self.prefs.pick(agent);
+        let pick = self.pick()?;
+        Some(self.launch_with(cwd, pick))
+    }
+
+    fn launch_with(&self, cwd: PathBuf, pick: Pick) -> Launch {
+        let agent = pick.agent;
         let fast = pick.fast && crate::models::takes_fast(agent, &pick.model);
-        Some(Launch {
+        Launch {
             agent,
             cwd,
             model: Some(pick.model).filter(|m| !m.is_empty()),
@@ -361,7 +434,7 @@ impl Composer {
             resume: None,
             fast,
             rewind: None,
-        })
+        }
     }
 
     fn set_pick(&mut self, pick: Pick, cx: &mut Context<Self>) {
@@ -428,7 +501,7 @@ impl Composer {
                 if let Some(launch) = self.launch(path.clone()) {
                     cx.emit(ComposerEvent::Cloned {
                         path,
-                        open_here: self.clone.open_here && self.target.is_some(),
+                        open_here: self.clone.here && self.target.is_some(),
                         launch,
                         prompt,
                         terminal: self.terminal(),
@@ -453,12 +526,21 @@ impl Composer {
     }
 
     fn suggest_prev(&mut self, _: &crate::suggest::Prev, _: &mut Window, cx: &mut Context<Self>) {
-        self.suggest.step(-1);
+        if self.suggest.open.is_none() && self.cloning(cx) {
+            self.clone.pick = self.clone.pick.saturating_sub(1);
+        } else {
+            self.suggest.step(-1);
+        }
         cx.notify();
     }
 
     fn suggest_next(&mut self, _: &crate::suggest::Next, _: &mut Window, cx: &mut Context<Self>) {
-        self.suggest.step(1);
+        if self.suggest.open.is_none() && self.cloning(cx) {
+            let last = self.clone_rows().len().saturating_sub(1);
+            self.clone.pick = (self.clone.pick + 1).min(last);
+        } else {
+            self.suggest.step(1);
+        }
         cx.notify();
     }
 
@@ -468,7 +550,11 @@ impl Composer {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.suggest.accept(None, &self.input, cx);
+        if self.suggest.open.is_none() && self.cloning(cx) {
+            self.start_clone(cx);
+        } else {
+            self.suggest.accept(None, &self.input, cx);
+        }
     }
 
     fn suggest_dismiss(
@@ -477,7 +563,107 @@ impl Composer {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.suggest.dismiss();
+        if self.suggest.open.is_none() && self.cloning(cx) && !self.clone.busy() {
+            self.clone.off = true;
+        } else {
+            self.suggest.dismiss();
+        }
+        cx.notify();
+    }
+
+    /// The text starts with a repository link and the clone list is showing.
+    fn cloning(&self, cx: &App) -> bool {
+        !self.remote() && !self.clone.off && repo::split(self.input.read(cx).text()).is_some()
+    }
+
+    /// The clone list's rows: the folder picked with "somewhere else", the one the last clone
+    /// went into, then the folders the projects sit in, at most two of those; a way to pick
+    /// another; and this project's own folder when it's empty.
+    pub(super) fn clone_rows(&self) -> Vec<clone::Row> {
+        fn add(rows: &mut Vec<clone::Row>, parent: &std::path::Path, why: String) {
+            let taken = rows.iter().any(|r| {
+                matches!(r, clone::Row::Into { parent: p, .. } if crate::root::same_folder(p, parent))
+            });
+            if !taken && !parent.as_os_str().is_empty() {
+                rows.push(clone::Row::Into {
+                    parent: parent.to_path_buf(),
+                    why,
+                });
+            }
+        }
+        let mut rows: Vec<clone::Row> = Vec::new();
+        if let Some(p) = &self.clone.elsewhere {
+            add(&mut rows, p, "The folder you picked".into());
+        }
+        if let Some(p) = &self.prefs.clone_into {
+            add(&mut rows, p, "Where you cloned last".into());
+        }
+        for place in &self.places {
+            if let Some(parent) = place.cwd.as_deref().and_then(std::path::Path::parent) {
+                add(&mut rows, parent, format!("Next to {}", place.name));
+            }
+        }
+        if rows.is_empty() {
+            add(&mut rows, &home(), "Your home folder".into());
+        }
+        rows.truncate(2);
+        rows.push(clone::Row::Elsewhere);
+        if self.clone.here_ok
+            && let Some(cwd) = self.target.as_ref().and_then(|t| t.cwd.clone())
+        {
+            rows.push(clone::Row::Here(cwd));
+        }
+        rows
+    }
+
+    /// Runs one row of the clone list: clones into it, or opens the folder picker.
+    pub(super) fn run_row(&mut self, row: clone::Row, cx: &mut Context<Self>) {
+        if self.clone.busy() {
+            return;
+        }
+        let Some((repo, _)) = repo::split(self.input.read(cx).text()) else {
+            return;
+        };
+        let name = self.clone.name.read(cx).text().trim().to_string();
+        let (parent, here) = match row {
+            clone::Row::Elsewhere => {
+                self.pick_folder(PickFor::CloneParent, cx);
+                return;
+            }
+            clone::Row::Into { parent, .. } => (parent, false),
+            clone::Row::Here(cwd) => (cwd, true),
+        };
+        if !here && name.is_empty() {
+            self.clone.error = Some("Give the clone a folder name.".into());
+            cx.notify();
+            return;
+        }
+        if self.agent().is_none() {
+            self.error = Some(no_agent());
+            cx.notify();
+            return;
+        }
+        if !here {
+            self.prefs.clone_into = Some(parent.clone());
+            cx.emit(ComposerEvent::Prefs(self.prefs.clone()));
+        }
+        let request = self.next_request;
+        self.next_request += 1;
+        self.clone.into = Some(if here {
+            parent.clone()
+        } else {
+            parent.join(&name)
+        });
+        self.clone.here = here;
+        self.clone.request = Some(request);
+        self.clone.error = None;
+        self.client.send(Command::Clone {
+            request,
+            url: repo.url,
+            parent,
+            name,
+            here,
+        });
         cx.notify();
     }
 
@@ -492,13 +678,19 @@ impl Composer {
         if repo.url != self.clone.url {
             self.clone.url = repo.url.clone();
             self.clone.error = None;
+            self.clone.pick = 0;
+            self.clone.off = false;
+            self.clone.elsewhere = None;
+            self.clone.here_ok = self
+                .target
+                .as_ref()
+                .and_then(|t| t.cwd.as_ref())
+                .filter(|c| !crate::root::same_folder(c, &crate::root::scratch_root()))
+                .and_then(|c| std::fs::read_dir(c).ok())
+                .is_some_and(|mut d| d.next().is_none());
             self.clone
                 .name
                 .update(cx, |n, cx| n.set_text(repo.name, cx));
-            if self.clone.parent.as_os_str().is_empty() {
-                let parent = self.cwd().unwrap_or_else(home);
-                self.clone.set_parent(parent);
-            }
         }
     }
 
@@ -558,7 +750,7 @@ impl Composer {
         self.menu = None;
         self.models = None;
         let text = self.input.read(cx).text().trim().to_string();
-        if !self.remote() && repo::split(&text).is_some() {
+        if !self.remote() && !self.clone.off && repo::split(&text).is_some() {
             self.start_clone(cx);
             return;
         }
@@ -577,6 +769,16 @@ impl Composer {
         };
         let title = title_of(&text);
         let prompt = self.prompt(text);
+        if !self.also.is_empty() {
+            let cwd = launch.cwd.clone();
+            let picks = std::mem::take(&mut self.also);
+            self.start_in_worktree(space, launch, prompt.clone(), title.clone(), background, cx);
+            for pick in picks {
+                let launch = self.launch_with(cwd.clone(), pick);
+                self.start_in_worktree(space, launch, prompt.clone(), title.clone(), true, cx);
+            }
+            return;
+        }
         if self.worktree_on() {
             self.start_in_worktree(space, launch, prompt, title, background, cx);
             return;
@@ -615,36 +817,13 @@ impl Composer {
         self.reset(cx);
     }
 
+    /// Runs the highlighted row of the clone list.
     fn start_clone(&mut self, cx: &mut Context<Self>) {
-        if self.clone.busy() {
-            return;
-        }
-        let Some((repo, _)) = repo::split(self.input.read(cx).text()) else {
+        let rows = self.clone_rows();
+        let Some(row) = rows.get(self.clone.pick.min(rows.len().saturating_sub(1))) else {
             return;
         };
-        let name = self.clone.name.read(cx).text().trim().to_string();
-        if self.clone.parent.as_os_str().is_empty() || (!self.clone.here && name.is_empty()) {
-            self.clone.error = Some("Pick a folder and a name for the clone.".into());
-            cx.notify();
-            return;
-        }
-        if self.agent().is_none() {
-            self.error = Some(no_agent());
-            cx.notify();
-            return;
-        }
-        let request = self.next_request;
-        self.next_request += 1;
-        self.clone.request = Some(request);
-        self.clone.error = None;
-        self.client.send(Command::Clone {
-            request,
-            url: repo.url,
-            parent: self.clone.parent.clone(),
-            name,
-            here: self.clone.here,
-        });
-        cx.notify();
+        self.run_row(row.clone(), cx);
     }
 
     pub fn pick_folder(&mut self, why: PickFor, cx: &mut Context<Self>) {
@@ -667,7 +846,10 @@ impl Composer {
                         c.folder = Some(path);
                         c.ask_resumable();
                     }
-                    PickFor::CloneParent => c.clone.set_parent(path),
+                    PickFor::CloneParent => {
+                        c.clone.elsewhere = Some(path);
+                        c.clone.pick = 0;
+                    }
                     PickFor::Project => cx.emit(ComposerEvent::AddProject(path)),
                 }
                 cx.notify();
@@ -716,6 +898,12 @@ impl Composer {
             self.models = Some(ModelMenu::open_effort(&spec, window, cx));
             cx.notify();
         }
+    }
+
+    pub fn attach_files(&mut self, files: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.attach(files, cx);
+        self.keep_draft(cx);
+        cx.notify();
     }
 
     fn attach(&mut self, files: Vec<PathBuf>, cx: &mut Context<Self>) {
@@ -779,7 +967,7 @@ impl Render for Composer {
         let text = self.input.read(cx).text().to_string();
         let repo = repo::split(&text)
             .map(|(r, _)| r)
-            .filter(|_| !self.remote());
+            .filter(|_| !self.remote() && !self.clone.off);
         // a clone says what it will do
         let heading = div()
             .flex()
@@ -792,15 +980,10 @@ impl Render for Composer {
                 Some(r) => d.child("Clone ").child(bold(r.label.clone())),
                 None => d.child("What should we work on?"),
             });
-        let agent_name = self.agent().map(|a| a.agent.name()).unwrap_or("The agent");
+        let rows = self.clone_rows();
+        let target = self.target.as_ref().map(|t| t.name.clone());
         let below = match &repo {
-            Some(r) => Some(clone::render(
-                &self.clone,
-                r,
-                agent_name,
-                self.target.is_some(),
-                cx,
-            )),
+            Some(r) => Some(clone::render(&self.clone, r, &rows, target.as_deref(), cx)),
             None => card::resume_list(self, cx),
         };
         let menu = self
@@ -815,6 +998,9 @@ impl Render for Composer {
         let branches = self
             .branch_menu
             .map(|at| worktree::branch_menu(self, at, window, cx));
+        let schedules = self
+            .schedule_menu
+            .map(|at| schedule::menu(self, at, window, cx));
         let models = self
             .models
             .as_ref()
@@ -864,7 +1050,9 @@ impl Render for Composer {
                         div()
                             .relative()
                             .w_full()
-                            .when(self.suggest.open.is_some(), |d| d.key_context("Suggest"))
+                            .when(self.suggest.open.is_some() || repo.is_some(), |d| {
+                                d.key_context("Suggest")
+                            })
                             .on_action(cx.listener(Self::suggest_prev))
                             .on_action(cx.listener(Self::suggest_next))
                             .on_action(cx.listener(Self::suggest_accept))
@@ -899,6 +1087,7 @@ impl Render for Composer {
             .children(machines)
             .children(places)
             .children(branches)
+            .children(schedules)
             .children(models)
     }
 }
@@ -922,15 +1111,19 @@ impl model_menu::Host for Composer {
         Some(Spec {
             models,
             efforts: catalog.efforts_for(&pick.model).to_vec(),
-            default_effort: catalog
-                .model(&pick.model)
-                .and_then(|m| m.default_effort.clone()),
+            default_effort: catalog.default_effort(&pick.model),
             long: crate::models::takes_long(pick.agent, &pick.model)
                 .then(|| crate::models::is_long(&pick.model)),
             fast: crate::models::takes_fast(pick.agent, &pick.model).then_some(pick.fast),
             agent: pick.agent,
             model: pick.model,
             effort: pick.effort,
+            also: self
+                .also
+                .iter()
+                .map(|p| (p.agent, p.model.clone()))
+                .collect(),
+            multi: !self.remote() && self.branch.is_some(),
             foot: None,
         })
     }
@@ -941,6 +1134,38 @@ impl model_menu::Host for Composer {
 
     fn choose(&mut self, choice: Choice, cx: &mut Context<Self>) {
         match choice {
+            Choice::Also(agent, model) => {
+                let primary = self
+                    .pick()
+                    .is_some_and(|p| p.agent == agent && p.model == model);
+                if primary {
+                    return;
+                }
+                if self.remote() || self.branch.is_none() {
+                    self.error = Some(
+                        "Sending to several models needs a git project, since each gets its own worktree."
+                            .into(),
+                    );
+                    cx.notify();
+                    return;
+                }
+                match self
+                    .also
+                    .iter()
+                    .position(|p| p.agent == agent && p.model == model)
+                {
+                    Some(at) => {
+                        self.also.remove(at);
+                    }
+                    None => self.also.push(Pick {
+                        agent,
+                        model,
+                        effort: String::new(),
+                        fast: false,
+                    }),
+                }
+                cx.notify();
+            }
             Choice::Model(agent, model) => {
                 let old = self.prefs.pick(agent);
                 // keep the effort when the new model takes it

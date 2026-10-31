@@ -1,10 +1,11 @@
 // Settings, Agents: one row per installed agent with the model and effort its new threads start
-// with, which are the composer's saved picks. Agents that are not installed share one row at the
-// foot, with a way to look again after installing one.
+// with, which are the composer's saved picks, how it's installed and its update. Agents that are
+// not installed share one row at the foot, with a way to look again after installing one.
 
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, div, prelude::*};
-use hyprspace_proto::Command;
+use gpui::{AnyElement, ClickEvent, ClipboardItem, Context, FontWeight, div, prelude::*};
+use hyprspace_proto::agent_update::{How, Outcome};
 use hyprspace_proto::agents::{AgentCatalog, AgentInfo};
+use hyprspace_proto::{Agent, Command};
 
 use super::controls::{block, row_with, section, text};
 use super::{Picker, Root};
@@ -18,11 +19,7 @@ pub(super) fn model_label(catalog: &AgentCatalog, model: &str) -> String {
 }
 
 pub(super) fn effort_name(effort: &str) -> String {
-    if effort.is_empty() {
-        "Default effort".into()
-    } else {
-        effort_label(effort)
-    }
+    effort_label(effort)
 }
 
 impl Root {
@@ -54,7 +51,7 @@ impl Root {
 
     fn agent_row(&self, info: &AgentInfo, cx: &mut Context<Self>) -> AnyElement {
         let agent = info.agent;
-        let pick = self.state.composer.pick(agent);
+        let pick = crate::models::resolve(&info.catalog, self.state.composer.pick(agent));
         let (brand, _) = colors::brand(agent);
         let status = &info.status;
         // a plan already says it is signed in
@@ -63,7 +60,23 @@ impl Root {
             (None, Some(_)) => "Signed in".to_string(),
             (None, None) => status.detail.clone().unwrap_or_else(|| "Installed".into()),
         }];
-        facts.extend(status.version.as_ref().map(|v| format!("v{v}")));
+        let updater = self.updater.read(cx);
+        let install = updater.agents.install(agent).cloned();
+        let version = install
+            .as_ref()
+            .and_then(|i| i.version.clone())
+            .or_else(|| status.version.clone());
+        facts.extend(version.map(|v| format!("v{v}")));
+        facts.extend(install.as_ref().and_then(|i| match i.how {
+            How::Native => Some("Native install".to_string()),
+            How::Standalone => Some("Standalone install".to_string()),
+            How::Npm => Some("Installed with npm".to_string()),
+            How::Homebrew => Some("Installed with Homebrew".to_string()),
+            How::Unknown => None,
+        }));
+        let running = updater.agents.running.contains(&agent);
+        let outcome = updater.agents.outcome(agent).cloned();
+        let update = update_line(agent, install, outcome, running, cx);
         let lead = div()
             .flex_none()
             .flex()
@@ -90,10 +103,111 @@ impl Root {
         row_with(
             Some(lead),
             agent.name(),
-            text(facts.join(" · ")).font_weight(FontWeight::NORMAL),
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(text(facts.join(" · ")).font_weight(FontWeight::NORMAL))
+                .children(update),
             controls,
         )
     }
+}
+
+fn small(b: gpui::Stateful<gpui::Div>) -> gpui::Stateful<gpui::Div> {
+    b.h(px(24.)).px(px(9.)).text_size(px(12.))
+}
+
+fn copy_button(id: (&'static str, usize), command: String) -> gpui::Stateful<gpui::Div> {
+    small(widgets::button(id, "Copy command")).on_click(move |_: &ClickEvent, _, cx| {
+        cx.write_to_clipboard(ClipboardItem::new_string(command.clone()))
+    })
+}
+
+/// The update under an agent's name: running, how the last one went, or a newer version.
+fn update_line(
+    agent: Agent,
+    install: Option<hyprspace_proto::agent_update::Install>,
+    outcome: Option<Outcome>,
+    running: bool,
+    cx: &mut Context<Root>,
+) -> Option<AnyElement> {
+    let line = |s: String| text(s).font_weight(FontWeight::NORMAL);
+    let row = div().flex().flex_wrap().items_center().gap(px(8.));
+    let column = div().flex().flex_col().items_start().gap(px(6.));
+    if running {
+        return Some(
+            row.child(crate::spinner::ring(
+                ("agent-updating", agent as usize),
+                colors::text3(),
+            ))
+            .child(line("Updating".into()))
+            .into_any_element(),
+        );
+    }
+    let install = install?;
+    let id = |name: &'static str| (name, agent as usize);
+    if let Some(outcome) = outcome {
+        let said = crate::update::said(agent, &outcome);
+        let mut row = column.child(match &outcome {
+            Outcome::Failed { .. } => line(said).text_color(colors::error()),
+            _ => line(said),
+        });
+        match outcome {
+            Outcome::Updated { from, .. }
+                if agent == Agent::Claude && install.how == How::Native =>
+            {
+                row = row.child(
+                    small(widgets::button(
+                        id("agent-revert"),
+                        format!("Go back to {from}"),
+                    ))
+                    .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
+                        let from = from.clone();
+                        r.updater
+                            .update(cx, |u, cx| u.revert_agent(agent, from, cx));
+                    })),
+                );
+            }
+            Outcome::Failed { .. } => {
+                row = row.child(copy_button(id("agent-copy"), install.command.clone()));
+            }
+            _ => {}
+        }
+        return Some(row.into_any_element());
+    }
+    let latest = install.latest.clone()?;
+    if install.held {
+        return Some(
+            line(format!(
+                "{latest} is out, but HyprSpace holds it back because it breaks threads."
+            ))
+            .into_any_element(),
+        );
+    }
+    if !install.runs() {
+        return Some(
+            column
+                .child(line(format!(
+                    "{latest} is out. Run `{}` to update.",
+                    install.command
+                )))
+                .child(copy_button(id("agent-copy"), install.command))
+                .into_any_element(),
+        );
+    }
+    Some(
+        row.child(line(format!("{latest} is out")))
+            .child(
+                small(widgets::primary(id("agent-update"), "Update")).on_click(cx.listener(
+                    move |r, _: &ClickEvent, _, cx| {
+                        r.updater
+                            .update(cx, |u, cx| u.update_agents(&[agent], false, cx));
+                    },
+                )),
+            )
+            .into_any_element(),
+    )
 }
 
 fn not_installed(missing: &[&AgentInfo], cx: &mut Context<Root>) -> AnyElement {
@@ -145,8 +259,8 @@ mod tests {
             efforts: Vec::new(),
         };
         assert_eq!(model_label(&catalog, "claude-opus-5-5"), "Opus 5.5");
-        assert_eq!(model_label(&catalog, ""), "Default");
+        assert_eq!(model_label(&catalog, ""), "Opus 5.5");
         assert_eq!(model_label(&catalog, "claude-gone-1"), "Gone 1");
-        assert_eq!(effort_name(""), "Default effort");
+        assert_eq!(effort_name("high"), "High");
     }
 }

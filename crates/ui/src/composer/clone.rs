@@ -1,12 +1,11 @@
-// The clone card, shown under the composer when its text starts with a repository link: where
-// the clone goes, where it opens, and git's progress while it runs. Carried over from the
-// Tauri app's ClonePanel.
+// The clone list, shown under the composer when its text starts with a repository link: each row
+// is one whole action, a folder to clone into, with the usual one first so Enter clones it. Up
+// and Down pick another; Escape keeps the text as a message instead. While git runs, the list is
+// one row with its progress. Text after the link becomes the new project's first message.
 
 use std::path::{Path, PathBuf};
 
-use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, IntoElement, div, prelude::*, relative,
-};
+use gpui::{AnyElement, ClickEvent, Context, Entity, IntoElement, div, prelude::*, relative};
 use hyprspace_theme::MONO;
 
 use super::Composer;
@@ -17,35 +16,39 @@ use crate::input::TextInput;
 use crate::zoom::px;
 
 pub struct CloneCard {
-    /// The link the card was set up for; a different one resets it.
+    /// The link the list was set up for; a different one resets it.
     pub url: String,
-    pub parent: PathBuf,
     pub name: Entity<TextInput>,
-    /// Straight into `parent` rather than a new folder inside it.
+    /// The highlighted row.
+    pub pick: usize,
+    /// Escape put the list away, so Enter sends the text as a message.
+    pub off: bool,
+    /// A folder picked with "Clone somewhere else", offered first.
+    pub elsewhere: Option<PathBuf>,
+    /// The current project's folder is empty, so the clone can go straight into it.
+    pub here_ok: bool,
+    /// Where the running clone goes.
+    pub into: Option<PathBuf>,
+    /// The running clone goes straight into the current project's folder and starts there.
     pub here: bool,
-    /// Start the thread in the current space rather than a new one.
-    pub open_here: bool,
     pub request: Option<u64>,
     pub line: Option<String>,
     pub error: Option<String>,
-    /// Whether `parent` has nothing in it; None while it doesn't exist (the clone makes it).
-    pub parent_empty: Option<bool>,
 }
 
 impl CloneCard {
     pub fn busy(&self) -> bool {
         self.request.is_some()
     }
+}
 
-    pub fn set_parent(&mut self, parent: PathBuf) {
-        self.parent_empty = std::fs::read_dir(&parent)
-            .ok()
-            .map(|mut d| d.next().is_none());
-        if self.parent_empty == Some(false) {
-            self.here = false;
-        }
-        self.parent = parent;
-    }
+/// One row: a folder to clone a new folder into, a way to pick one, or the current project's
+/// own (empty) folder.
+#[derive(Clone, PartialEq)]
+pub enum Row {
+    Into { parent: PathBuf, why: String },
+    Elsewhere,
+    Here(PathBuf),
 }
 
 // git's counters, in the words someone waiting on them would use
@@ -69,12 +72,7 @@ pub fn progress(line: Option<&str>) -> (String, Option<u8>) {
         return ("Connecting".into(), None);
     }
     let Some((phase, rest)) = line.split_once(':') else {
-        let label = if line.starts_with("Cloning into") {
-            "Connecting"
-        } else {
-            "Working"
-        };
-        return (label.into(), None);
+        return ("Working".into(), None);
     };
     let pct = rest
         .trim()
@@ -88,374 +86,296 @@ pub fn progress(line: Option<&str>) -> (String, Option<u8>) {
     (label.to_string(), pct)
 }
 
-fn base(p: &Path) -> String {
-    p.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| p.display().to_string())
+fn shown(p: &Path) -> String {
+    p.display().to_string()
 }
 
-/// One button of a segmented pick (clone-seg in composer.css).
-fn seg(
-    id: &'static str,
-    label: impl Into<gpui::SharedString>,
-    on: bool,
-    enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+/// "C:\Main" and "hyprcall" as a path with the new folder's name in full color.
+fn path(parent: &Path, name: &str) -> gpui::Div {
+    let sep = std::path::MAIN_SEPARATOR;
+    let parent = shown(parent);
+    let parent = parent.trim_end_matches(['\\', '/']).to_string();
     div()
-        .id(id)
-        .flex_1()
+        .flex()
         .min_w_0()
+        .font_family(MONO)
+        .text_size(px(12.))
+        .child(
+            div()
+                .truncate()
+                .text_color(colors::text2())
+                .child(format!("{parent}{sep}")),
+        )
+        .child(
+            div()
+                .flex_none()
+                .text_color(colors::text1())
+                .child(name.to_string()),
+        )
+}
+
+fn row_frame(i: usize, on: bool) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(("clone-row", i))
         .flex()
         .items_center()
-        .justify_center()
-        .gap(px(6.))
-        .h(px(26.))
+        .gap(px(10.))
         .px(px(10.))
-        .rounded(px(6.))
-        .text_size(px(12.))
-        .when(on, |d| d.bg(colors::surface3()).text_color(colors::text1()))
-        .when(!on && enabled, |d| d.text_color(colors::text2()))
-        .when(!on && !enabled, |d| d.text_color(colors::text3()))
-        .when(enabled, |d| {
-            d.cursor_pointer().hover(|s| s.text_color(colors::text1()))
-        })
-        .child(div().truncate().child(label.into()))
+        .py(px(8.))
+        .rounded(px(9.))
+        .cursor_pointer()
+        .when(on, |d| d.bg(colors::ink(0.07)))
+        .when(!on, |d| d.hover(|s| s.bg(colors::ink(0.04))))
 }
 
-fn segs(children: impl IntoIterator<Item = AnyElement>) -> gpui::Div {
+fn hint(keys: &'static str, says: &'static str) -> gpui::Div {
     div()
         .flex()
-        .gap(px(3.))
-        .p(px(3.))
-        .rounded(px(8.))
+        .items_center()
+        .gap(px(5.))
+        .child(
+            div()
+                .font_family(MONO)
+                .text_size(px(10.5))
+                .text_color(colors::text2())
+                .child(keys),
+        )
+        .child(says)
+}
+
+fn frame() -> gpui::Div {
+    div()
+        .mt(px(10.))
+        .w_full()
+        .flex()
+        .flex_col()
+        .rounded(px(14.))
         .border_1()
-        .border_color(colors::border1())
-        .bg(colors::ink(0.04))
-        .children(children)
+        .border_color(colors::border2())
+        .bg(colors::surface2())
+        .overflow_hidden()
+        .text_size(px(12.5))
+        .text_color(colors::text1())
 }
 
 pub fn render(
     c: &CloneCard,
     repo: &RepoRef,
-    agent: &str,
-    can_open_here: bool,
+    rows: &[Row],
+    target: Option<&str>,
     cx: &mut Context<Composer>,
 ) -> AnyElement {
-    let busy = c.busy();
-    let folder = if c.here {
-        base(&c.parent)
-    } else {
-        c.name.read(cx).text().trim().to_string()
-    };
-    let shown = repo
+    let name = c.name.read(cx).text().trim().to_string();
+    let link = repo
         .url
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_start_matches("git@")
         .trim_end_matches(".git")
         .to_string();
-    let parent_label = if c.parent.as_os_str().is_empty() {
-        "Pick a folder".to_string()
-    } else {
-        c.parent.display().to_string()
-    };
-    let into_new = seg("clone-new", "New folder inside", !c.here, !busy)
-        .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
-            v.clone.here = false;
-            cx.notify();
-        }))
-        .into_any_element();
-    let can_here = !busy && c.parent_empty != Some(false);
-    let into_here = seg(
-        "clone-here",
-        if c.parent_empty == Some(false) {
-            format!("Straight into {} (not empty)", base(&c.parent))
-        } else {
-            format!("Straight into {}", base(&c.parent))
-        },
-        c.here,
-        can_here,
-    )
-    .when(can_here, |d| {
-        d.on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
-            v.clone.here = true;
-            cx.notify();
-        }))
-    })
-    .into_any_element();
-    // not a mode, just a shortcut to the picker: the two choices beside it then apply to it
-    let other = div()
-        .id("clone-other")
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(px(6.))
-        .h(px(26.))
-        .px(px(10.))
-        .rounded(px(6.))
-        .text_size(px(12.))
-        .text_color(colors::text3())
-        .cursor_pointer()
-        .hover(|s| s.text_color(colors::text1()))
-        .child(icon("folder-open", 13., colors::text3()))
-        .child("Other folder")
-        .on_click(
-            cx.listener(|v, _: &ClickEvent, _, cx| v.pick_folder(super::PickFor::CloneParent, cx)),
-        )
-        .into_any_element();
-    let open_new = seg("clone-open-new", "A new space", !c.open_here, !busy)
-        .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
-            v.clone.open_here = false;
-            cx.notify();
-        }))
-        .into_any_element();
-    let open_here = seg(
-        "clone-open-here",
-        "This space",
-        c.open_here,
-        !busy && can_open_here,
-    )
-    .when(can_open_here, |d| {
-        d.on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
-            v.clone.open_here = true;
-            cx.notify();
-        }))
-    })
-    .into_any_element();
-    let folder_shown = if folder.is_empty() {
-        "the clone".to_string()
-    } else {
-        folder
-    };
-    let says = if c.open_here {
-        format!("{agent} starts in this space, working in {folder_shown}.")
-    } else {
-        format!("Adds {folder_shown} to the sidebar as its own space.")
-    };
-    let path = div()
+    let top = div()
         .flex()
         .items_center()
-        .max_w_full()
-        .h(px(30.))
-        .pr(px(4.))
-        .rounded(px(7.))
-        .border_1()
+        .gap(px(10.))
+        .px(px(14.))
+        .py(px(11.))
+        .border_b_1()
         .border_color(colors::border1())
-        .bg(colors::bg())
-        .font_family(MONO)
-        .text_size(px(12.))
+        .child(icon("github", 15., colors::text1()))
         .child(
             div()
-                .id("clone-parent")
-                .flex()
-                .items_center()
-                .gap(px(6.))
                 .min_w_0()
-                .h_full()
-                .px(px(8.))
-                .border_r_1()
-                .border_color(colors::border1())
-                .text_color(colors::text2())
-                .cursor_pointer()
-                .hover(|s| s.text_color(colors::text1()))
-                .child(icon("folder-open", 13., colors::text3()))
-                .child(div().truncate().child(parent_label))
-                .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
-                    v.pick_folder(super::PickFor::CloneParent, cx)
-                })),
-        )
-        .when(!c.here, |d| {
-            d.child(
-                div()
-                    .min_w(px(120.))
-                    .px(px(8.))
-                    .text_color(colors::text1())
-                    .child(c.name.clone()),
-            )
-        });
-    let row = |label: &'static str, body: AnyElement| {
-        div()
-            .flex()
-            .gap(px(12.))
+                .truncate()
+                .font_family(MONO)
+                .text_size(px(12.))
+                .child(link),
+        );
+    if let (true, Some(into)) = (c.busy(), &c.into) {
+        let (label, pct) = progress(c.line.as_deref());
+        return frame()
+            .child(top)
             .child(
                 div()
-                    .w(px(56.))
-                    .flex_none()
-                    .pt(px(7.))
-                    .text_color(colors::text3())
-                    .child(label),
+                    .flex()
+                    .items_start()
+                    .gap(px(10.))
+                    .p(px(14.))
+                    .child(
+                        div()
+                            .pt(px(1.))
+                            .child(crate::spinner::ring("clone-spin", colors::text2())),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .gap(px(7.))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(px(5.))
+                                    .min_w_0()
+                                    .child(div().flex_none().child("Cloning into"))
+                                    .child(path(into.parent().unwrap_or(into), &shown_name(into))),
+                            )
+                            .child(
+                                div().h(px(3.)).rounded(px(2.)).bg(colors::ink(0.08)).child(
+                                    div()
+                                        .h_full()
+                                        .rounded(px(2.))
+                                        .bg(colors::text1())
+                                        .w(relative(pct.map_or(0.04, |p| p as f32 / 100.))),
+                                ),
+                            )
+                            .child(div().text_size(px(11.5)).text_color(colors::text3()).child(
+                                match pct {
+                                    Some(p) => format!("{label} {p}%"),
+                                    None => label,
+                                },
+                            )),
+                    ),
             )
-            .child(div().flex_1().min_w_0().child(body))
-    };
-    let (label, pct) = progress(c.line.as_deref());
-    let status = if let Some(e) = &c.error {
-        Some(
-            div()
-                .flex()
-                .items_start()
-                .gap_2()
-                .text_size(px(12.))
-                .text_color(colors::error())
-                .child(icon("circle-alert", 13., colors::error()))
-                .child(e.clone())
-                .into_any_element(),
-        )
-    } else if busy {
-        Some(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(10.))
-                .text_size(px(11.5))
-                .text_color(colors::text2())
-                .child(
-                    div()
-                        .w(relative(0.38))
-                        .h(px(4.))
-                        .rounded(px(2.))
-                        .bg(colors::ink(0.08))
-                        .child(
-                            div()
-                                .h_full()
-                                .rounded(px(2.))
-                                .bg(colors::accent())
-                                .w(relative(pct.map_or(0.35, |p| p as f32 / 100.0))),
-                        ),
-                )
-                .child(match pct {
-                    Some(p) => format!("{label} {p}%"),
-                    None => label,
-                })
-                .into_any_element(),
-        )
-    } else {
-        None
-    };
-    let go = div()
-        .id("clone-go")
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap_2()
-        .h(px(30.))
-        .pl(px(12.))
-        .pr(px(if busy { 12. } else { 6. }))
-        .rounded(px(7.))
-        .bg(colors::accent())
-        .text_color(colors::on_accent())
-        .text_size(px(12.5))
-        .font_weight(FontWeight::MEDIUM)
-        .when(busy, |d| d.opacity(0.55))
-        .when(!busy, |d| {
-            d.cursor_pointer()
-                .hover(|s| s.bg(colors::accent_hover()))
-                .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.start_clone(cx)))
-        })
-        .child(if busy { "Cloning" } else { "Clone" })
-        .when(!busy, |d| {
-            d.child(
+            .into_any_element();
+    }
+    let list = rows.iter().enumerate().map(|(i, row)| {
+        let on = i == c.pick.min(rows.len().saturating_sub(1));
+        let lead = |glyph: &str| {
+            icon(
+                glyph,
+                14.,
+                if on { colors::text1() } else { colors::text3() },
+            )
+        };
+        let (main, sub): (AnyElement, String) = match row {
+            Row::Into { parent, why } => (
                 div()
-                    .px(px(5.))
-                    .py(px(1.))
-                    .rounded(px(4.))
-                    .bg(colors::ink(0.18))
-                    .font_family(MONO)
-                    .text_size(px(10.))
-                    .child("Enter"),
+                    .flex()
+                    .gap(px(5.))
+                    .min_w_0()
+                    .child(div().flex_none().child("Clone into"))
+                    .child(path(parent, &name))
+                    .into_any_element(),
+                if i == 0 {
+                    format!("{why}. Adds it as a new project.")
+                } else {
+                    why.clone()
+                },
+            ),
+            Row::Elsewhere => (
+                div().child("Clone somewhere else…").into_any_element(),
+                "Pick a folder, then Enter".into(),
+            ),
+            Row::Here(cwd) => (
+                div()
+                    .flex()
+                    .gap(px(5.))
+                    .min_w_0()
+                    .child(div().flex_none().child("Clone into"))
+                    .child(path(cwd.parent().unwrap_or(cwd), &shown_name(cwd)))
+                    .into_any_element(),
+                format!(
+                    "{} is empty, so it goes straight in and starts there",
+                    target.unwrap_or("This project's folder")
+                ),
+            ),
+        };
+        let glyph = if matches!(row, Row::Elsewhere) {
+            "folder-plus"
+        } else {
+            "folder"
+        };
+        let row = row.clone();
+        row_frame(i, on)
+            .child(lead(glyph))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(1.))
+                    .child(main)
+                    .child(
+                        div()
+                            .truncate()
+                            .text_size(px(11.5))
+                            .text_color(colors::text3())
+                            .child(sub),
+                    ),
             )
-        });
-    div()
-        .mt(px(10.))
-        .w_full()
+            .when(on, |d| {
+                d.child(icon("corner-down-left", 13., colors::text3()))
+            })
+            .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+                v.clone.pick = i;
+                v.run_row(row.clone(), cx);
+            }))
+            .into_any_element()
+    });
+    let error = c.error.clone().map(|e| {
+        div()
+            .flex()
+            .items_start()
+            .gap_2()
+            .mx(px(14.))
+            .mb(px(8.))
+            .text_size(px(12.))
+            .text_color(colors::error())
+            .child(icon("circle-alert", 13., colors::error()))
+            .child(e)
+    });
+    let foot = div()
         .flex()
-        .flex_col()
-        .gap(px(10.))
-        .pt(px(12.))
+        .flex_wrap()
+        .items_center()
+        .gap(px(14.))
         .px(px(14.))
-        .pb(px(11.))
-        .rounded(px(10.))
-        .border_1()
-        .border_color(colors::border2())
-        .bg(colors::surface2().opacity(0.85))
-        .text_size(px(12.5))
-        .text_color(colors::text2())
+        .py(px(8.))
+        .border_t_1()
+        .border_color(colors::border1())
+        .text_size(px(11.))
+        .text_color(colors::text3())
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(px(7.))
+                .child("Folder name")
                 .child(
                     div()
+                        .min_w(px(110.))
+                        .h(px(22.))
                         .flex()
-                        .flex_none()
                         .items_center()
-                        .justify_center()
-                        .size(px(30.))
-                        .rounded(px(8.))
-                        .bg(colors::surface3())
-                        .child(icon("git-branch", 15., colors::text1())),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(1.))
-                        .child(
-                            div()
-                                .truncate()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(colors::text1())
-                                .child(repo.label.clone()),
-                        )
-                        .child(
-                            div()
-                                .truncate()
-                                .font_family(MONO)
-                                .text_size(px(11.))
-                                .text_color(colors::text3())
-                                .child(shown),
-                        ),
-                )
-                .child(go),
+                        .px(px(7.))
+                        .rounded(px(5.))
+                        .border_1()
+                        .border_color(colors::border1())
+                        .bg(colors::bg())
+                        .font_family(MONO)
+                        .text_size(px(11.5))
+                        .text_color(colors::text1())
+                        .child(c.name.clone()),
+                ),
         )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(12.))
-                .pt(px(10.))
-                .border_t_1()
-                .border_color(colors::border0())
-                .child(row(
-                    "Folder",
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.))
-                        .child(segs([into_new, into_here, other]))
-                        .child(path)
-                        .into_any_element(),
-                ))
-                .child(row(
-                    "Open in",
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.))
-                        .child(segs([open_new, open_here]))
-                        .child(
-                            div()
-                                .text_size(px(11.5))
-                                .text_color(colors::text3())
-                                .child(says),
-                        )
-                        .into_any_element(),
-                )),
-        )
-        .children(status)
+        .child(div().flex_1())
+        .child(hint("↑↓", "choose"))
+        .child(hint("Enter", "clone"))
+        .child(hint("Esc", "send as text"));
+    frame()
+        .child(top)
+        .child(div().p(px(6.)).flex().flex_col().gap(px(2.)).children(list))
+        .children(error)
+        .child(foot)
         .into_any_element()
+}
+
+fn shown_name(p: &Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| shown(p))
 }
 
 #[cfg(test)]

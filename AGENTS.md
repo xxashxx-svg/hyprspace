@@ -28,8 +28,13 @@ itself, so it is asked at most once every 180 seconds; the engine enforces that 
 ### 2. Boring, honest networking
 
 The app sends no analytics: no events, no install id. The only requests it makes on its own are
-the update check (`latest.json` on GitHub releases, then the installer it names) and the usage
-endpoints above. This repo is public. Adding analytics is Ash's call, needs an off switch in
+the update check (`latest.json` on GitHub releases, then the installer it names), the usage
+endpoints above, and, alongside the update check, `registry.npmjs.org` for the newest
+`@anthropic-ai/claude-code` and `@openai/codex` (only those package names go out; Settings,
+General switches it off). Besides those, it runs the user's own `gh` and `git`, signed in as the user, to
+read the pull requests of the branches its threads are on, the CI runs, pull requests and issues
+a scheduled task watches, and to fetch a new worktree's base branch; nothing about the app or the
+user goes with them. This repo is public. Adding analytics is Ash's call, needs an off switch in
 Settings, and the Settings copy must say exactly what is sent. Never send prompts, terminal output,
 paths, project names, or anything joined to an account.
 
@@ -146,8 +151,9 @@ the one `scripts/dev.ps1` runs: that one is Ash's, and Ash chats in it. The reci
 
 - **Your own exe and state.** A copy of the exe outside `target/`, started with
   `HYPRSPACE_STATE_DIR` on a scratch folder holding a `state.json` and journals you wrote.
-- **A fake agent.** The harness's fake CLI first on that copy's PATH only, and the composer on
-  Claude and Structured before you send.
+- **Real agents, sparingly.** The copy runs Ash's real `claude` and `codex`: one-line prompts on
+  the cheapest model, and never an agent's Update button. Each thread tests in a folder of its
+  own, since several test at once.
 - **Look before you act.** Capture the window before every click, and a burst of frames to judge
   motion.
 - **Close it by its PID**, with a close message, so its terminals end with it. When Ash wants to

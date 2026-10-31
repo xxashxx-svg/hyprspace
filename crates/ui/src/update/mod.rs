@@ -6,9 +6,15 @@
 //
 // After an update the first launch shows what's new in this version, from the changelog built
 // into the app, like the Tauri app's WhatsNew.tsx.
+//
+// The same checks ask about Claude and Codex (`agents.rs`). "Restart and update" updates any agent
+// that's behind first, then the app.
 
+mod agents;
 mod changelog;
 mod toast;
+
+pub(crate) use agents::{names, said, versions};
 
 pub use toast::overlay;
 
@@ -16,12 +22,15 @@ use std::time::{Duration, Instant};
 
 use gpui::{Context, Task};
 use hyprspace_proto::update::{Release, Step};
-use hyprspace_proto::{Client, Command, UpdateCommand, UpdateEvent};
+use hyprspace_proto::{
+    Agent, AgentUpdateCommand, AgentUpdateEvent, Client, Command, UpdateCommand, UpdateEvent,
+};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const RECHECK: Duration = Duration::from_secs(6 * 60 * 60);
 const FOCUS_THROTTLE: Duration = Duration::from_secs(15 * 60);
+const FOLD: Duration = Duration::from_secs(6);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Phase {
@@ -47,6 +56,17 @@ pub struct Updater {
     /// What's new in this version, until it is closed.
     pub(crate) whats_new: Option<Vec<String>>,
     pub(crate) swipe: Option<Swipe>,
+    pub(crate) agents: agents::Agents,
+    /// The npm check's switch, unknown until the saved state loads so a check never runs before
+    /// it can be honored.
+    agent_checks: Option<bool>,
+    /// "Restart and update" is waiting for the agent updates it started.
+    install_after: bool,
+    /// The corner chip is grown into its list.
+    pub(crate) open: bool,
+    /// How many things the update running now covers, for "1 of 3".
+    batch: usize,
+    fold: Option<Task<()>>,
     _poll: Task<()>,
 }
 
@@ -76,11 +96,20 @@ impl Updater {
             confirm: None,
             last_check: None,
             whats_new: None,
+            agents: Default::default(),
+            agent_checks: None,
+            install_after: false,
+            open: false,
+            batch: 0,
+            fold: None,
             _poll: poll,
         }
     }
 
     pub fn check(&mut self, silent: bool, cx: &mut Context<Self>) {
+        if let Some(latest) = self.agent_checks {
+            self.check_agents(latest);
+        }
         if matches!(
             self.phase,
             Phase::Checking | Phase::Busy(_) | Phase::Unmanaged
@@ -111,12 +140,138 @@ impl Updater {
         self.dismissed = false;
         if working > 0 && self.confirm.is_none() {
             self.confirm = Some(working);
+            self.open = true;
             cx.notify();
             return;
         }
         self.confirm = None;
+        self.open = false;
+        if self.install_after {
+            return;
+        }
+        let behind: Vec<Agent> = self.agents.behind().into_iter().map(|(a, _)| a).collect();
+        if !behind.is_empty() {
+            self.install_after = true;
+            self.update_agents(&behind, true, cx);
+            return;
+        }
+        self.start_install(cx);
+    }
+
+    fn start_install(&mut self, cx: &mut Context<Self>) {
         self.phase = Phase::Busy(Step::Preparing);
         self.client.send(Command::Update(UpdateCommand::Install));
+        cx.notify();
+    }
+
+    /// The saved switch for the npm check. The first time it's known, the agents get checked.
+    pub fn set_agent_checks(&mut self, on: bool) {
+        let first = self.agent_checks.is_none();
+        self.agent_checks = Some(on);
+        if first || on {
+            self.check_agents(on);
+        }
+    }
+
+    fn check_agents(&self, latest: bool) {
+        self.client
+            .send(Command::AgentUpdate(AgentUpdateCommand::Check { latest }));
+    }
+
+    /// Settings, Agents opened: how each one is installed now, without asking npm again.
+    pub fn look_at_agents(&self) {
+        self.check_agents(false);
+    }
+
+    /// `announce` puts the results on the corner chip.
+    pub fn update_agents(&mut self, list: &[Agent], announce: bool, cx: &mut Context<Self>) {
+        if announce {
+            self.open = false;
+            self.fold = None;
+            self.batch = list.len() + usize::from(self.install_after);
+        }
+        for &agent in list {
+            if self.agents.running.contains(&agent) {
+                continue;
+            }
+            self.agents.start(agent, announce);
+            self.client
+                .send(Command::AgentUpdate(AgentUpdateCommand::Run { agent }));
+        }
+        cx.notify();
+    }
+
+    pub fn revert_agent(&mut self, agent: Agent, version: String, cx: &mut Context<Self>) {
+        if self.agents.running.contains(&agent) {
+            return;
+        }
+        self.agents.start(agent, false);
+        self.client
+            .send(Command::AgentUpdate(AgentUpdateCommand::Revert {
+                agent,
+                version,
+            }));
+        cx.notify();
+    }
+
+    pub fn agent_event(&mut self, e: AgentUpdateEvent, cx: &mut Context<Self>) {
+        self.agents.event(e);
+        if self.install_after && self.agents.running.is_empty() {
+            self.install_after = false;
+            self.start_install(cx);
+        }
+        self.fold_when_done(cx);
+        cx.notify();
+    }
+
+    /// A batch that all went well folds its "Updated" chip away by itself after a few seconds; a
+    /// failure stays until it's read and closed.
+    fn fold_when_done(&mut self, cx: &mut Context<Self>) {
+        let done = self.agents.announced();
+        let clean = !done.is_empty()
+            && self.agents.running.is_empty()
+            && !done
+                .iter()
+                .any(|(_, o)| matches!(o, hyprspace_proto::agent_update::Outcome::Failed { .. }));
+        if !clean || self.fold.is_some() {
+            return;
+        }
+        self.fold = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(FOLD).await;
+            let _ = this.update(cx, |u, cx| {
+                u.fold = None;
+                if !u.open {
+                    u.agents.close_announced();
+                    cx.notify();
+                }
+            });
+        }));
+    }
+
+    /// The batch running now: how many are done, out of how many.
+    pub(crate) fn tally(&self) -> Option<(usize, usize)> {
+        let left = self.agents.running.len() + usize::from(self.install_after);
+        (self.batch > 1 && left <= self.batch).then(|| (self.batch - left, self.batch))
+    }
+
+    pub fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.open == open {
+            return;
+        }
+        self.open = open;
+        if !open {
+            self.confirm = None;
+        }
+        cx.notify();
+    }
+
+    /// The chip's close: everything it offered waits for the next version, and results go.
+    pub fn dismiss_all(&mut self, cx: &mut Context<Self>) {
+        self.dismissed = true;
+        self.confirm = None;
+        self.open = false;
+        self.agents.dismiss();
+        self.agents.close_announced();
         cx.notify();
     }
 

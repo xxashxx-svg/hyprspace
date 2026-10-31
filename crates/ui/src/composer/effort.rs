@@ -227,13 +227,21 @@ pub(super) fn body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> 
         .models
         .iter()
         .find(|x| x.agent == spec.agent && x.id == crate::models::windowed(&spec.model, false))
-        .map_or_else(|| "Default".to_string(), |x| x.label.clone());
+        .map_or_else(
+            || crate::models::name(None, &spec.model),
+            |x| x.label.clone(),
+        );
 
     let name = match now {
         Some(i) => div()
             .text_color(if top { peak(accent) } else { accent })
             .child(effort_label(&spec.efforts[i])),
-        None => div().text_color(colors::text1()).child("Default"),
+        None => div().text_color(colors::text1()).child(effort_label(
+            spec.default_effort
+                .as_deref()
+                .or(spec.efforts.first().map(String::as_str))
+                .unwrap_or_default(),
+        )),
     }
     .text_size(px(14.))
     .font_weight(FontWeight::SEMIBOLD);

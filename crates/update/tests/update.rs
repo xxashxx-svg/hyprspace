@@ -2,7 +2,8 @@ use std::io::Cursor;
 
 use base64::Engine as _;
 use hyprspace_update::{
-    Update, check_feed, download_with, newer, parse, stage, swap_bundle, verify, verify_with,
+    Update, avoided, check_feed, download_with, newer, parse, stage, swap_bundle, verify,
+    verify_with,
 };
 
 const FEED: &str = include_str!("fixtures/latest-0.21.1.json");
@@ -44,6 +45,20 @@ fn reads_the_real_feed() {
     // already current, or a platform the release doesn't carry: nothing to do
     assert_eq!(parse(FEED, "0.21.1", "windows-x86_64").unwrap(), None);
     assert_eq!(parse(FEED, "0.21.0", "plan9-mips").unwrap(), None);
+}
+
+#[test]
+fn a_feed_names_agent_versions_to_hold_back_or_none() {
+    assert!(avoided(FEED).is_empty());
+    let feed = FEED.replacen('{', r#"{"avoid_agents":{"claude":["2.1.320"]},"#, 1);
+    assert_eq!(avoided(&feed)["claude"], ["2.1.320"]);
+    assert_eq!(
+        parse(&feed, "0.21.0", "windows-x86_64")
+            .unwrap()
+            .unwrap()
+            .version,
+        "0.21.1"
+    );
 }
 
 #[test]

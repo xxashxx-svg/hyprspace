@@ -153,6 +153,15 @@ pub fn tag(hue: f64, dark: bool) -> (Color, Color) {
     }
 }
 
+/// A state's color for an icon and its text, like a pull request's: light on dark, deep on light.
+pub fn tone(hue: f64, dark: bool) -> Color {
+    if dark {
+        oklch_a(0.83, 0.12, hue, 0.9)
+    } else {
+        oklch(0.57, 0.17, hue)
+    }
+}
+
 pub fn rainbow(hue: f64, dark: bool) -> Color {
     if dark {
         oklch(0.76, 0.15, hue)

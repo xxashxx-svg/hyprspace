@@ -38,19 +38,22 @@ Checks that should have no side effects:
 
 ## A test copy of your own
 
-A copy of the app on state you wrote, with a fake agent, for seeing a change without touching
-anyone's threads. On Windows, in PowerShell from the repo root. A shell that keeps no variables
-between calls runs steps 1 to 3 as one script and reads the PID back from `$dir\pid.txt` later.
+A copy of the app on state you wrote, running the real `claude` and `codex`, for seeing a change
+without touching anyone's threads. On Windows, in PowerShell from the repo root. A shell that
+keeps no variables between calls runs steps 1 to 3 as one script and reads the PID back from
+`$dir\pid.txt` later.
 
-1. Build the app and the fake agent, and copy the app out of `target/`. A running exe is locked,
-   and the next build writes there.
+Several threads test at once, so each uses a folder of its own: one shared folder means another
+thread's build overwrites your exe and its stop closes your copy.
+
+1. Build the app and copy it out of `target/` into your folder. A running exe is locked, and the
+   next build writes there.
 
    ```powershell
-   $dir = "$env:TEMP\hyprspace-test"
-   cargo build -p hyprspace -p hyprspace-harness
-   New-Item -ItemType Directory -Force "$dir\bin", "$dir\state\journals" | Out-Null
+   $dir = "$env:TEMP\hyprspace-test-$($env:CLAUDE_CODE_SESSION_ID.Substring(0, 8))"
+   cargo build -p hyprspace
+   New-Item -ItemType Directory -Force "$dir\state\journals" | Out-Null
    Copy-Item target\debug\hyprspace.exe $dir
-   Copy-Item target\debug\fake-cli.exe "$dir\bin\claude.exe"
    ```
 
 2. Write `$dir\state\state.json`. Every field has a default except a launch's `agent`, `cwd` and
@@ -74,19 +77,18 @@ between calls runs steps 1 to 3 as one script and reads the PID back from `$dir\
    {"type":"run","event":{"type":"finished","status":"done","ms":0,"text":"","error":null}}
    ```
 
-3. Start it on that state, with usage and opens kept local and the fake agent first on its PATH:
+3. Start it on that state, with usage and opens kept local:
 
    ```powershell
    $env:HYPRSPACE_STATE_DIR = "$dir\state"; $env:HYPRSPACE_OPEN_LOG = "$dir\open.log"
-   $env:HYPRSPACE_USAGE_FIXTURES = "$dir\usage"; $env:PATH = "$dir\bin;$env:PATH"
+   $env:HYPRSPACE_USAGE_FIXTURES = "$dir\usage"
    $app = Start-Process "$dir\hyprspace.exe" -PassThru
    $app.Id | Out-File "$dir\pid.txt" -Encoding ascii
    ```
 
-   The fake agent plays what the prompt's text names (`crates/harness/fixtures/fake_cli/claude.rs`).
-   `wedge` starts a run that never ends, so what you send next queues behind it. Check that the
-   composer shows Claude and Structured before you send: a terminal thread's shell can still find
-   the real `claude`.
+   Every prompt it sends runs on Ash's subscription: one line ("Reply with the word ok") on the
+   cheapest model the composer offers. Send the next input only once a capture shows the reply,
+   never on a timer. Don't press an agent's Update in it; that updates Ash's real CLIs.
 
 4. Drive it by `$app.Id`. Find its window, post `WM_MOUSEMOVE`, `WM_LBUTTONDOWN`, `WM_LBUTTONUP`,
    `WM_CHAR` and `WM_KEYDOWN` to it in client pixels, and capture it with `PrintWindow` (flag 3)
@@ -94,7 +96,8 @@ between calls runs steps 1 to 3 as one script and reads the PID back from `$dir\
    `AttachThreadInput` and `SetKeyboardState`. Posted clicks don't reach the sidebar, so pick the
    thread that opens with `active` instead.
 
-5. Close it with `$app.CloseMainWindow()` and wait for it to exit, so it ends its terminals. A
+5. Close it with `$app.CloseMainWindow()` and wait for it to exit, so it ends its terminals.
+   Check first that `pid.txt`'s PID is still your folder's `hyprspace.exe`. A
    thread still working makes it ask first, and a second `CloseMainWindow()` is the yes. Force it
    by that PID only if it hangs, then check for a leftover `OpenConsole.exe` whose parent was that
    PID.

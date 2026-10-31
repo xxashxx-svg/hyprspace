@@ -57,12 +57,18 @@ pub struct Spec {
     /// Whether the picked model is on its 1M window, when it can be. None: it has one window.
     pub long: Option<bool>,
     pub fast: Option<bool>,
+    /// More models the next message also goes to, each a thread of its own. Shift+click adds or
+    /// drops one when `multi`.
+    pub also: Vec<(Agent, String)>,
+    pub multi: bool,
     /// A line at the bottom on what a change does.
     pub foot: Option<&'static str>,
 }
 
 pub enum Choice {
     Model(Agent, String),
+    /// Adds the model as another the next message goes to, or drops it.
+    Also(Agent, String),
     Effort(String),
     /// The 1M context window on or off.
     Long(bool),
@@ -414,7 +420,9 @@ pub fn render<H: Host>(
     } else {
         models_body(m, spec, cx)
     };
-    let foot = spec.foot.map(|line| {
+    let multi = (spec.multi && !m.effort)
+        .then_some("Shift+click a model to also run this message on it, in a thread of its own.");
+    let foot = spec.foot.or(multi).map(|line| {
         div()
             .px(px(12.))
             .py(px(8.))
@@ -614,8 +622,13 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
         // the highlight goes in front of every row
         rows.push(children.len() + 1);
         let (agent, id) = (model.agent, model.id.clone());
+        let also = spec
+            .also
+            .iter()
+            .any(|(a, m)| *a == model.agent && *m == model.id);
+        let multi = spec.multi;
         children.push(
-            model_row(i, model, is_pick(spec, model))
+            model_row(i, model, is_pick(spec, model) || also)
                 .on_mouse_move(cx.listener(move |h: &mut H, _: &MouseMoveEvent, _, cx| {
                     if let Some(m) = h.model_menu()
                         && (m.hi != i || m.legacy.is_some())
@@ -625,8 +638,12 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
                         cx.notify();
                     }
                 }))
-                .on_click(cx.listener(move |h: &mut H, _: &ClickEvent, window, cx| {
-                    pick(h, agent, id.clone(), window, cx)
+                .on_click(cx.listener(move |h: &mut H, e: &ClickEvent, window, cx| {
+                    if multi && e.modifiers().shift {
+                        h.choose(Choice::Also(agent, id.clone()), cx);
+                    } else {
+                        pick(h, agent, id.clone(), window, cx)
+                    }
                 }))
                 .into_any_element(),
         );
@@ -858,6 +875,8 @@ pub(super) mod tests {
             default_effort: Some("high".into()),
             long: Some(true),
             fast: None,
+            also: Vec::new(),
+            multi: false,
             foot: None,
         }
     }

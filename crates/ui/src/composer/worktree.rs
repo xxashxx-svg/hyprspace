@@ -7,6 +7,7 @@ use hyprspace_theme::MONO;
 
 use super::{Composer, ComposerEvent};
 use crate::assets::icon;
+use crate::input::TextInput;
 use crate::zoom::px;
 use crate::{colors, widgets};
 
@@ -65,6 +66,17 @@ impl Composer {
         cx.notify();
     }
 
+    /// Keeps what the setup box says as the space's command, when it changed.
+    pub(super) fn save_setup(&mut self, cx: &mut Context<Self>) {
+        let command = self.setup.read(cx).text().trim().to_string();
+        let Some(t) = self.target.as_mut().filter(|t| t.setup != command) else {
+            return;
+        };
+        t.setup = command.clone();
+        let space = t.space;
+        cx.emit(ComposerEvent::Setup { space, command });
+    }
+
     pub(super) fn start_in_worktree(
         &mut self,
         space: u64,
@@ -76,12 +88,18 @@ impl Composer {
     ) {
         let request = self.next_request;
         self.next_request += 1;
+        let setup = self
+            .target
+            .as_ref()
+            .map(|t| t.setup.clone())
+            .filter(|s| !s.trim().is_empty());
         self.client
             .send(Command::Folder(FolderCommand::AddWorktree {
                 request,
                 cwd: launch.cwd.clone(),
                 name: title.clone(),
                 base: self.base.clone(),
+                setup,
             }));
         self.waiting.push(Waiting {
             request,
@@ -92,7 +110,7 @@ impl Composer {
             terminal: self.terminal(),
             background,
         });
-        if background {
+        if background && self.waiting.iter().all(|w| w.background) {
             self.reset(cx);
         }
         cx.notify();
@@ -239,7 +257,7 @@ pub(super) fn branch_menu(
         })
         .collect();
     let body = div()
-        .w(px(260.))
+        .w(px(280.))
         .flex()
         .flex_col()
         .child(
@@ -261,8 +279,10 @@ pub(super) fn branch_menu(
                 .gap(px(1.))
                 .children(rows),
         )
+        .child(setup_box(&c.setup))
         .into_any_element();
     let close = cx.listener(|c, _: &(), _, cx| {
+        c.save_setup(cx);
         c.branch_menu = None;
         cx.notify();
     });
@@ -273,6 +293,52 @@ pub(super) fn branch_menu(
         move |w, cx| close(&(), w, cx),
         body,
     )
+}
+
+/// The space's command for each new worktree, under the branches it can start from.
+fn setup_box(input: &gpui::Entity<TextInput>) -> AnyElement {
+    div()
+        .mt(px(5.))
+        .pt(px(8.))
+        .px(px(10.))
+        .pb(px(5.))
+        .border_t_1()
+        .border_color(colors::border1())
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .child(
+            div()
+                .text_size(px(11.5))
+                .text_color(colors::text3())
+                .child("Set up each new worktree with"),
+        )
+        .child(
+            div()
+                .h(px(28.))
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .px(px(8.))
+                .rounded(px(7.))
+                .border_1()
+                .border_color(colors::border1())
+                .bg(colors::ink(0.03))
+                .child(icon("square-terminal", 13., colors::text3()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .font_family(MONO)
+                        .text_size(px(12.))
+                        .text_color(colors::text1())
+                        .child(input.clone()),
+                ),
+        )
+        .child(div().text_size(px(11.)).text_color(colors::text3()).child(
+            "Runs before the agent starts. Files named in .worktreeinclude are copied in first.",
+        ))
+        .into_any_element()
 }
 
 pub(super) fn chip(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElement> {

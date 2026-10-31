@@ -145,6 +145,8 @@ pub fn command(
                 }
                 .into(),
             );
+            // HyprSpace offers Codex's updates itself; Codex's own prompt took a typed Enter once
+            out.push("-c check_for_update_on_startup=false".into());
             if let Some(m) = model {
                 out.push(format!("-m {}", quote(m)));
             }
@@ -839,7 +841,7 @@ mod tests {
         c.effort = Some("low".into());
         assert_eq!(
             command(&c, None, false, false),
-            "codex resume th-1 --sandbox read-only --ask-for-approval on-request -m gpt-6-luna -c \"model_reasoning_effort=low\""
+            "codex resume th-1 --sandbox read-only --ask-for-approval on-request -c check_for_update_on_startup=false -m gpt-6-luna -c \"model_reasoning_effort=low\""
         );
     }
 

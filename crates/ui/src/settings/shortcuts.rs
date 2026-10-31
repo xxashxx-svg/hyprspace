@@ -119,6 +119,11 @@ pub(super) fn page() -> AnyElement {
                 line("New line", "", &[chord(&["Shift", "Enter"])]),
                 line("Interrupt the run", "", &["Esc".into()]),
                 line("Paste", "Images attach.", &[chord(&[MOD, "V"])]),
+                line(
+                    "Screenshot the window you're in",
+                    "From any app, once switched on in General. Windows only.",
+                    &[chord(&["Ctrl", "Alt", "S"])],
+                ),
             ],
         ))
         .child(group(

@@ -26,6 +26,10 @@ the draft when both are in.
 
 A dry run touches no release: `gh workflow run release.yml --ref <branch> -f dry_run=true`.
 
+A Claude or Codex release that breaks threads goes in `scripts/avoid-agents.json`. The next
+release's `latest.json` carries it as `avoid_agents`, and the app stops offering that version.
+The field is only written while a list has entries.
+
 ## Notes
 
 Written at ship time from `git log <lastTag>..HEAD`: a few short bullets a user cares about, in

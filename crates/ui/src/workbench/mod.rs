@@ -9,8 +9,10 @@ mod card;
 mod drawer;
 mod frame;
 mod header;
+mod servers;
 
 pub use header::{PaneDrag, short};
+pub use servers::link as server_link;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -71,8 +73,10 @@ pub struct Work {
     pub(crate) openers: Vec<Opener>,
     /// The Open button's menu, where it was opened.
     pub(crate) popup: Option<Point<Pixels>>,
+    pub(crate) server_menu: Option<(Point<Pixels>, hyprspace_proto::resources::Server)>,
     /// A launch that failed, shown in the bar for a few seconds.
     pub(crate) notice: Option<SharedString>,
+    pub(crate) calm: bool,
     notice_task: Option<Task<()>>,
     /// A path a terminal asked to open, waiting for the next draw to have the window.
     pub(crate) pending: Option<(PathBuf, Option<u32>, Option<u32>)>,
@@ -113,7 +117,9 @@ impl Work {
             viewing: None,
             openers: vec![Opener::Files],
             popup: None,
+            server_menu: None,
             notice: None,
+            calm: false,
             notice_task: None,
             pending: None,
             show: None,
@@ -377,9 +383,18 @@ impl Root {
             self.composer
                 .update(cx, |c, cx| c.set_branches(cwd, branches.clone(), cx));
         }
-        if let FolderEvent::WorktreeAdded { request, result } = &e {
+        if let FolderEvent::WorktreeAdded {
+            request,
+            result,
+            setup_failed,
+        } = &e
+        {
             self.composer
                 .update(cx, |c, cx| c.worktree_added(*request, result.clone(), cx));
+            self.scheduled_worktree(*request, result, cx);
+            if let Some(why) = setup_failed {
+                self.notify(why.clone(), cx);
+            }
         }
         if let FolderEvent::WorktreeDone {
             path,
@@ -388,6 +403,13 @@ impl Root {
         } = &e
         {
             self.worktree_done(path, *action, result, cx);
+        }
+        if let FolderEvent::Happened { cwd, when, items } = &e {
+            self.happened(cwd, when, items, cx);
+        }
+        if let FolderEvent::PullRequests { cwd, prs } = &e {
+            crate::suggest::set_prs(cwd.clone(), prs, cx);
+            self.prs_arrived(cwd.clone(), prs.clone(), cx);
         }
         if let FolderEvent::BranchRenamed { path, from, to } = &e {
             self.branch_renamed(path, from, to, cx);
@@ -438,7 +460,17 @@ impl Root {
 
     /// A line in the bar that fades after a few seconds.
     pub(crate) fn notify(&mut self, message: String, cx: &mut Context<Self>) {
+        self.notice(message, false, cx);
+    }
+
+    /// [`Root::notify`] for news that isn't a failure.
+    pub(crate) fn tell(&mut self, message: String, cx: &mut Context<Self>) {
+        self.notice(message, true, cx);
+    }
+
+    fn notice(&mut self, message: String, calm: bool, cx: &mut Context<Self>) {
         self.work.notice = Some(message.into());
+        self.work.calm = calm;
         self.work.notice_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(5)).await;
             let _ = this.update(cx, |r, cx| {

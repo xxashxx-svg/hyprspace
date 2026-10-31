@@ -70,22 +70,16 @@ pub(crate) fn scratch_root() -> PathBuf {
     hyprspace_proto::state::state_dir().join("scratch")
 }
 
-/// A new, empty folder under the scratch root, named after the thread.
-fn scratch_folder(title: &str) -> PathBuf {
-    let root = scratch_root();
-    let mut name = crate::skills::slug(title).to_lowercase();
-    name.truncate(40);
-    let name = match name.trim_matches('-') {
-        "" => "thread".to_string(),
-        n => n.to_string(),
-    };
-    let dir = (1..)
-        .map(|n| match n {
-            1 => root.join(&name),
-            n => root.join(format!("{name}-{n}")),
-        })
-        .find(|d| !d.exists())
-        .unwrap_or(root);
+/// A new, empty folder under the scratch root: the day and a random token, since the title
+/// isn't known yet and the folder can't move once a conversation starts in it.
+fn scratch_folder() -> PathBuf {
+    let day = chrono::Local::now().format("%Y-%m-%d");
+    let dir = std::iter::repeat_with(|| {
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        scratch_root().join(format!("{day}-{}", &token[..8]))
+    })
+    .find(|d| !d.exists())
+    .unwrap_or_else(scratch_root);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -241,6 +235,9 @@ impl Root {
             self.screen = Screen::Settings;
         }
         self.settings.set_tab(tab);
+        if tab == crate::settings::Tab::Agents {
+            self.updater.read(cx).look_at_agents();
+        }
         self.menu = None;
         window.focus(&self.settings.focus_handle(), cx);
         cx.notify();
@@ -302,6 +299,7 @@ impl Root {
             space: s.id,
             name: s.name.clone(),
             cwd: s.cwd.clone(),
+            setup: s.setup.clone(),
             machine: s.machine.clone(),
         });
         let host = target
@@ -323,6 +321,7 @@ impl Root {
                 space: s.id,
                 name: s.name.clone(),
                 look: self.look_of(s),
+                cwd: s.cwd.clone(),
             })
             .collect();
         self.composer.update(cx, |c, cx| {
@@ -573,6 +572,10 @@ impl Root {
                 images.clone(),
                 cx,
             ),
+            TranscriptEvent::Server(at, server) => self.open_server(*at, *server, cx),
+            TranscriptEvent::Handoff { launch, prompt } => {
+                self.hand_off(thread, launch.clone(), prompt.clone(), cx)
+            }
             TranscriptEvent::Status(s) => {
                 self.set_status(thread, *s, cx);
                 self.delegation_moved(thread, *s, cx);
@@ -721,6 +724,20 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
+        let id = self.add_thread(space, start, cx)?;
+        if show {
+            self.open_thread(id, window, cx);
+        }
+        Some(id)
+    }
+
+    /// A new thread in `space`, started but not on screen.
+    pub(crate) fn add_thread(
+        &mut self,
+        space: u64,
+        start: Start,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
         let Start {
             mut launch,
             prompt,
@@ -728,7 +745,7 @@ impl Root {
             terminal,
         } = start;
         if launch.resume.is_none() && same_folder(&launch.cwd, &scratch_root()) {
-            launch.cwd = scratch_folder(&title);
+            launch.cwd = scratch_folder();
         }
         let resumed = launch.resume.is_some() && !terminal;
         let ask = prompt
@@ -770,12 +787,8 @@ impl Root {
                 )
             });
         }
-        if show {
-            self.open_thread(thread.id, window, cx);
-        } else {
-            self.save();
-            cx.notify();
-        }
+        self.save();
+        cx.notify();
         Some(thread.id)
     }
 
@@ -815,6 +828,44 @@ impl Root {
         };
         s.threads.insert(0, thread.clone());
         self.make_view(&thread, None, true, cx);
+        self.work.open = Some(thread.id);
+        self.save();
+        cx.notify();
+    }
+
+    /// A new thread with the other agent where `from` works, starting with `prompt`: the
+    /// composer's picks for that agent, the same worktree.
+    fn hand_off(
+        &mut self,
+        from: u64,
+        mut launch: hyprspace_proto::Launch,
+        prompt: Prompt,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((space, title, worktree)) = self
+            .state
+            .thread(from)
+            .map(|(s, t)| (s.id, t.title.clone(), t.worktree.clone()))
+        else {
+            return;
+        };
+        let pick = self.state.composer.pick(launch.agent);
+        launch.model = Some(pick.model).filter(|m| !m.is_empty());
+        launch.effort = Some(pick.effort).filter(|e| !e.is_empty());
+        let thread = Thread {
+            id: self.state.take_id(),
+            title: format!("{title} ({})", launch.agent.name()),
+            kind: ThreadKind::Structured { launch },
+            created: now_ms(),
+            touched: now_ms(),
+            worktree,
+            ..Thread::default()
+        };
+        let Some(s) = self.state.space_mut(space) else {
+            return;
+        };
+        s.threads.insert(0, thread.clone());
+        self.make_view(&thread, Some(prompt), true, cx);
         self.work.open = Some(thread.id);
         self.save();
         cx.notify();
@@ -900,6 +951,7 @@ impl Root {
             v.update(cx, |v, _| v.come_on_screen());
         }
         self.screen = Screen::Thread(id);
+        self.client.send(Command::Servers);
         self.unseen.remove(&id);
         self.state.active = Some(id);
         self.save();
@@ -973,8 +1025,13 @@ impl Root {
             Action::Wake(id) => self.snooze(id, None, window, cx),
             Action::RemoveThread(id) => {
                 self.drop_view(id);
+                let shared = |w: &hyprspace_proto::git::Worktree| {
+                    self.state.spaces.iter().flat_map(|s| &s.threads).any(|o| {
+                        o.id != id && o.worktree.as_ref().is_some_and(|x| x.path == w.path)
+                    })
+                };
                 if let Some((_, t)) = self.state.thread(id)
-                    && let Some(w) = t.worktree.clone()
+                    && let Some(w) = t.worktree.clone().filter(|w| !shared(w))
                 {
                     let title = t.title.clone();
                     self.send_worktree(w, hyprspace_proto::git::WorktreeAction::Remove, title);

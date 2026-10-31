@@ -1968,8 +1968,16 @@ fn composer(
             div()
                 .flex()
                 .items_center()
-                .gap(px(14.))
-                .min_w_0()
+                .gap(px(10.))
+                .flex_none()
+                .children(v.servers.iter().map(|server| {
+                    let server = *server;
+                    crate::workbench::server_link(&server).on_click(cx.listener(
+                        move |_, e: &ClickEvent, _, cx| {
+                            cx.emit(TranscriptEvent::Server(e.position(), server))
+                        },
+                    ))
+                }))
                 .children(v.branch.clone().map(|b| {
                     div()
                         .flex()
@@ -1977,7 +1985,7 @@ fn composer(
                         .gap(px(6.))
                         .min_w_0()
                         .child(icon("git-branch", 12., colors::text3()))
-                        .child(div().truncate().child(b))
+                        .child(div().max_w(px(220.)).truncate().child(b))
                 }))
                 .children(v.model.context.map(context)),
         );
@@ -2031,6 +2039,34 @@ fn composer(
                         .child(div().min_w_0().truncate().child(now))
                 })
         });
+    let goal = v.model.goal.as_ref().map(|g| {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .px(px(12.))
+            .pb(px(8.))
+            .text_size(px(12.))
+            .text_color(colors::text3())
+            .child(icon("compass", 12., colors::text3()))
+            .child(div().flex_none().child("Goal"))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(colors::text2())
+                    .child(g.objective.clone()),
+            )
+            .children(g.note.clone().map(|n| {
+                div()
+                    .flex_none()
+                    .max_w(px(220.))
+                    .truncate()
+                    .text_size(px(11.5))
+                    .child(n)
+            }))
+    });
     centered(
         column()
             .pb(px(12.))
@@ -2038,6 +2074,7 @@ fn composer(
             .children(super::aside::card(v, cx))
             .children(super::approval::dock(v, cx))
             .children(tray(v, cx))
+            .children(goal)
             .children(tasks)
             .child(pill)
             .child(foot),
@@ -2084,6 +2121,22 @@ fn tray(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyEleme
             .child(
                 small(widgets::button("limit-now", "Continue now"))
                     .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.continue_now(cx))),
+            )
+            .child(
+                small(widgets::button(
+                    "limit-handoff",
+                    format!(
+                        "Continue in {}",
+                        super::handoff::other(v.launch.agent).name()
+                    ),
+                ))
+                .tooltip(widgets::tip(
+                    "Start a thread with the other agent, carrying this conversation",
+                ))
+                .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
+                    v.cancel_resume(cx);
+                    v.hand_off(String::new(), cx)
+                })),
             )
             .child(
                 widgets::icon_button("limit-cancel", "x", 24.)

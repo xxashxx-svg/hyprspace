@@ -1366,6 +1366,7 @@ fn for_phone(e: &Entry) -> bool {
             event: hyprspace_proto::RunEvent::Compacted { .. }
                 | hyprspace_proto::RunEvent::Changes { .. }
                 | hyprspace_proto::RunEvent::Undone { .. }
+                | hyprspace_proto::RunEvent::Goal { .. }
         }
     )
 }

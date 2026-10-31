@@ -4,8 +4,11 @@
 
 mod checkpoint;
 mod commit;
+mod prepare;
+mod prs;
 mod setup;
 mod status;
+mod watch;
 mod worktree;
 
 use std::path::Path;
@@ -13,12 +16,17 @@ use std::process::Command;
 
 pub use checkpoint::{changes as run_changes, snapshot, undo as undo_run};
 pub use commit::{commit, create_pr, file_op, pr_defaults, push};
+pub use prepare::prepare;
+pub use prs::pull_requests;
 pub use setup::{clone, create_project_dir, init, init_repo, new_project};
 pub use status::{
     branch_in_repo, branch_info, changes, changes_in_repo, diff, is_repo, ls_files, root,
     summary_in_repo,
 };
-pub use worktree::{branches, create_worktree, finish as finish_worktree, name_branch};
+pub use watch::happened;
+pub use worktree::{
+    branches, create_worktree, finish as finish_worktree, name_branch, shelve, unshelve,
+};
 
 pub type Result<T> = std::result::Result<T, String>;
 

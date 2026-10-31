@@ -20,7 +20,7 @@ use crate::assets::{icon, mark};
 use crate::zoom::px;
 use crate::{attach, colors, time, widgets};
 
-/// The picked model's label, or "Default".
+/// The picked model's label, the default model's when none was picked.
 pub fn model_label(c: &Composer, pick: &Pick) -> String {
     let catalog = c
         .all_agents()
@@ -57,6 +57,18 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             flat("composer-model")
                 .child(mark(p.agent, 13., colors::brand(p.agent).0))
                 .child(div().truncate().child(model_label(c, p)))
+                .when(c.also_count() > 0, |d| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .px(px(4.))
+                            .rounded(px(4.))
+                            .bg(colors::ink(0.08))
+                            .text_size(px(10.5))
+                            .text_color(colors::text2())
+                            .child(format!("+{}", c.also_count())),
+                    )
+                })
                 .child(widgets::caret())
                 .on_click(cx.listener(|c, _: &ClickEvent, window, cx| c.open_models(window, cx))),
         )
@@ -178,6 +190,15 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .child(div().flex_1())
                 .child(model_chip)
                 .children(effort_chip)
+                .when(c.can_schedule(), |d| {
+                    d.child(
+                        widgets::icon_button("composer-schedule", "clock", 28.)
+                            .tooltip(widgets::tip("Run on a schedule instead"))
+                            .on_click(
+                                cx.listener(|c, e: &ClickEvent, _, cx| c.open_schedule(e, cx)),
+                            ),
+                    )
+                })
                 .child(
                     send.ml(px(4.))
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -201,17 +222,19 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .children(super::worktree::branch_chip(c, cx))
         .children(super::worktree::chip(c, cx))
         .child(div().flex_1())
-        .child(
-            div()
-                .flex_none()
-                .text_size(px(11.5))
-                .text_color(colors::text3())
-                .child(if cfg!(target_os = "macos") {
-                    "Enter to send  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
-                } else {
-                    "Enter to send  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"
-                }),
-        )
+        .when(!c.cloning(cx), |d| {
+            d.child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.5))
+                    .text_color(colors::text3())
+                    .child(if cfg!(target_os = "macos") {
+                        "Enter to send  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
+                    } else {
+                        "Enter to send  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"
+                    }),
+            )
+        })
         .into_any_element()
 }
 

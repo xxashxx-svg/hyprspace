@@ -14,6 +14,7 @@ mod cites;
 mod commands;
 mod doing;
 mod find;
+mod handoff;
 mod links;
 mod model;
 mod motion;
@@ -77,6 +78,15 @@ pub enum TranscriptEvent {
         text: String,
         images: Vec<PathBuf>,
     },
+    /// Carry the thread on with the other agent, in a new thread that starts with `prompt`.
+    Handoff {
+        launch: Launch,
+        prompt: Prompt,
+    },
+    Server(
+        gpui::Point<gpui::Pixels>,
+        hyprspace_proto::resources::Server,
+    ),
 }
 
 pub struct TranscriptView {
@@ -163,6 +173,7 @@ pub struct TranscriptView {
     pub(super) others: std::collections::HashMap<String, Vec<String>>,
     pub(super) other: Option<ask::Other>,
     pub(super) perm_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(super) servers: Vec<hyprspace_proto::resources::Server>,
     follow: motion::Follow,
     reveal: Option<motion::Reveal>,
     partial: Option<(usize, Vec<crate::markdown::Block>)>,
@@ -345,6 +356,7 @@ impl TranscriptView {
             others: Default::default(),
             other: None,
             perm_menu: None,
+            servers: Vec::new(),
             follow: Default::default(),
             reveal: None,
             partial: None,
@@ -630,6 +642,17 @@ impl TranscriptView {
     }
 
     /// The thread runs on another computer, which keeps its journal and sends what it records.
+    pub fn set_servers(
+        &mut self,
+        servers: Vec<hyprspace_proto::resources::Server>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.servers != servers {
+            self.servers = servers;
+            cx.notify();
+        }
+    }
+
     pub fn set_remote(&mut self) {
         self.remote = true;
     }
@@ -1242,10 +1265,10 @@ impl TranscriptView {
     fn model_label(&self) -> String {
         let picked = self.launch.model.as_deref().filter(|m| !m.is_empty());
         let reported = self.model.model.as_deref().filter(|_| !self.repicked);
-        match picked.or(reported) {
-            Some(id) => crate::models::name(self.catalog.as_ref(), id),
-            None => "Default".into(),
-        }
+        crate::models::name(
+            self.catalog.as_ref(),
+            picked.or(reported).unwrap_or_default(),
+        )
     }
 
     pub fn apply(&mut self, event: RunEvent, cx: &mut Context<Self>) {
@@ -1662,39 +1685,38 @@ impl model_menu::Host for TranscriptView {
     fn model_spec(&self) -> Option<Spec> {
         let catalog = self.catalog.as_ref()?;
         let agent = self.launch.agent;
-        let model = self.launch.model.clone().unwrap_or_default();
-        // on Default, the CLI's own choice is the model it reported running
-        let resolved = self
-            .model
-            .model
-            .as_deref()
-            .filter(|_| model.is_empty() && !self.repicked)
-            .map(|id| crate::models::name(Some(catalog), id));
+        // a thread started without a pick runs the catalog's default; the engine launched it
+        let model = catalog
+            .model_or_default(self.launch.model.as_deref().unwrap_or_default())
+            .to_string();
+        let effort = self
+            .launch
+            .effort
+            .clone()
+            .filter(|e| !e.is_empty())
+            .or_else(|| catalog.default_effort(&model))
+            .unwrap_or_default();
         let models = catalog
             .models
             .iter()
-            .map(|m| {
-                let (label, note) = match &resolved {
-                    Some(r) if m.id.is_empty() => (format!("{} · {r}", m.label), None),
-                    _ => (m.label.clone(), m.note.clone()),
-                };
-                model_menu::Model {
-                    agent,
-                    id: m.id.clone(),
-                    label,
-                    note,
-                }
+            .map(|m| model_menu::Model {
+                agent,
+                id: m.id.clone(),
+                label: m.label.clone(),
+                note: m.note.clone(),
             })
             .collect();
         Some(Spec {
             models,
             efforts: catalog.efforts_for(&model).to_vec(),
-            default_effort: catalog.model(&model).and_then(|m| m.default_effort.clone()),
+            default_effort: catalog.default_effort(&model),
             long: crate::models::takes_long(agent, &model).then(|| crate::models::is_long(&model)),
             fast: crate::models::takes_fast(agent, &model).then_some(self.launch.fast),
             agent,
             model,
-            effort: self.launch.effort.clone().unwrap_or_default(),
+            effort,
+            also: Vec::new(),
+            multi: false,
             foot: self
                 .launch
                 .resume
@@ -1713,6 +1735,7 @@ impl model_menu::Host for TranscriptView {
             Choice::Effort(effort) => self.pick_effort(effort, cx),
             Choice::Long(long) => self.pick_long(long, cx),
             Choice::Fast(fast) => self.pick_fast(fast, cx),
+            Choice::Also(..) => {}
         }
     }
 }

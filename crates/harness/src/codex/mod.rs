@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use hyprspace_proto::{
-    Agent, Answer, CommandInfo, Launch, Permission, Prompt, Rewind, RunEvent, RunStatus, Tool,
+    Agent, Answer, CommandInfo, Goal, Launch, Permission, Prompt, Rewind, RunEvent, RunStatus, Tool,
 };
 use serde_json::{Value, json};
 use tokio::process::Child;
@@ -641,6 +641,10 @@ impl Actor {
                     images: Vec::new(),
                 });
             }
+            "thread/goal/updated" => (self.emit)(RunEvent::Goal {
+                goal: goal(&params["goal"]),
+            }),
+            "thread/goal/cleared" => (self.emit)(RunEvent::Goal { goal: None }),
             "thread/tokenUsage/updated" => {
                 let usage = &params["tokenUsage"];
                 let last = &usage["last"];
@@ -885,8 +889,37 @@ async fn sleep_until(at: Option<Instant>) {
     }
 }
 
+/// A goal as Codex reports it. A complete one is over, and a status other than active says why
+/// Codex is holding off.
+fn goal(g: &Value) -> Option<Goal> {
+    let note = match g["status"].as_str()? {
+        "complete" => return None,
+        "paused" => Some("Paused"),
+        "blocked" => Some("Blocked"),
+        "usageLimited" => Some("Waiting for the usage limit"),
+        "budgetLimited" => Some("Out of its token budget"),
+        _ => None,
+    };
+    Some(Goal {
+        objective: g["objective"].as_str()?.to_string(),
+        note: note.map(str::to_string),
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_goal_says_why_codex_holds_off_and_ends_when_complete() {
+        use serde_json::json;
+        let g = |status| json!({ "objective": "ship it", "status": status });
+        assert_eq!(super::goal(&g("active")).unwrap().note, None);
+        assert_eq!(
+            super::goal(&g("paused")).unwrap().note.as_deref(),
+            Some("Paused")
+        );
+        assert_eq!(super::goal(&g("complete")), None);
+    }
+
     #[test]
     fn usage_limits_are_told_apart() {
         use serde_json::json;

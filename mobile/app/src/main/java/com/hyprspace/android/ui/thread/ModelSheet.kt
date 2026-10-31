@@ -102,16 +102,15 @@ fun ModelSheet(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(h.ink(0.04f)).padding(4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                val options = listOf(ModelInfo(id = "", label = "Default", note = "The agent's own pick")) +
-                    catalog.models.filter { it.id.isNotEmpty() }
-                for (m in options) {
-                    ModelRow(m, m.id == picked) { host.feel(Feel.Tick); pick(m.id, level.takeIf { it in catalog.effortsFor(m.id) } ?: "") }
+                val shown = catalog.modelOr(picked)
+                for (m in catalog.models.filter { it.id.isNotEmpty() }) {
+                    ModelRow(m, m.id == shown) { host.feel(Feel.Tick); pick(m.id, level.takeIf { it in catalog.effortsFor(m.id) } ?: "") }
                 }
             }
-            val efforts = catalog?.effortsFor(picked).orEmpty()
+            val shown = catalog?.modelOr(picked) ?: picked
+            val efforts = catalog?.effortsFor(shown).orEmpty()
             if (efforts.isNotEmpty()) {
-                val fallback = catalog?.models?.firstOrNull { it.id == picked }?.defaultEffort
-                EffortSlider(efforts, level, fallback) { pick(picked, it) }
+                EffortSlider(efforts, catalog?.effortOr(shown, level) ?: level, null) { pick(shown, it) }
             }
             bottom?.invoke()
             if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall, color = h.text3)

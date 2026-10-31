@@ -32,6 +32,10 @@ pub(crate) struct Drawer {
 }
 
 impl Drawer {
+    pub(crate) fn holds(&self, session: SessionId) -> bool {
+        self.shells.iter().any(|s| s.session == session)
+    }
+
     fn new() -> Self {
         Self {
             shells: Vec::new(),

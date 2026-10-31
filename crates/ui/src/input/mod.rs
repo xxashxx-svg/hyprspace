@@ -131,6 +131,8 @@ pub struct TextInput {
     reversed: bool,
     marked: Option<Range<usize>>,
     selecting: bool,
+    /// The word or line a double or triple click took, so a drag from it grows by words or lines.
+    anchor: Option<(Range<usize>, bool)>,
     /// What the last paint laid out: each hard line's start offset and its wrapped layout.
     layout: Vec<(usize, WrappedLine)>,
     bounds: Option<Bounds<Pixels>>,
@@ -166,6 +168,7 @@ impl TextInput {
             reversed: false,
             marked: None,
             selecting: false,
+            anchor: None,
             layout: Vec::new(),
             bounds: None,
             line_height: Pixels::ZERO,
@@ -636,6 +639,18 @@ impl TextInput {
         cx.emit(InputEvent::Cancel);
     }
 
+    /// The word, or the line when `lines`, around `at`.
+    fn unit_at(&self, at: usize, lines: bool) -> Range<usize> {
+        if !lines {
+            return widen(&self.atoms(), word_at(&self.content, at));
+        }
+        let start = self.content[..at].rfind('\n').map_or(0, |i| i + 1);
+        let end = self.content[at..]
+            .find('\n')
+            .map_or(self.content.len(), |i| at + i);
+        start..end
+    }
+
     /// A click places the cursor (Shift+click selects to it), a double-click takes the word
     /// and a triple-click the line, as editors do.
     fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -657,24 +672,18 @@ impl TextInput {
         }
         let at = self.mouse_offset(e.position);
         match e.click_count {
-            2 => {
-                self.selecting = false;
-                self.selected = widen(&self.atoms(), word_at(&self.content, at));
-                self.reversed = false;
-                cx.notify();
-            }
-            n if n >= 3 => {
-                self.selecting = false;
-                let start = self.content[..at].rfind('\n').map_or(0, |i| i + 1);
-                let end = self.content[at..]
-                    .find('\n')
-                    .map_or(self.content.len(), |i| at + i);
-                self.selected = start..end;
+            n if n >= 2 => {
+                let lines = n >= 3;
+                let unit = self.unit_at(at, lines);
+                self.selecting = true;
+                self.anchor = Some((unit.clone(), lines));
+                self.selected = unit;
                 self.reversed = false;
                 cx.notify();
             }
             _ => {
                 self.selecting = true;
+                self.anchor = None;
                 if e.modifiers.shift {
                     self.select_to(at, cx);
                 } else {
@@ -705,7 +714,16 @@ impl TextInput {
             }
         } else if self.selecting {
             self.peek(None, cx);
-            self.select_to(self.mouse_offset(e.position), cx);
+            let at = self.mouse_offset(e.position);
+            match self.anchor.clone() {
+                Some((anchor, lines)) => {
+                    let unit = self.unit_at(at, lines);
+                    self.reversed = unit.start < anchor.start;
+                    self.selected = anchor.start.min(unit.start)..anchor.end.max(unit.end);
+                    cx.notify();
+                }
+                None => self.select_to(at, cx),
+            }
         } else {
             self.peek(self.marker_under(e.position), cx);
         }

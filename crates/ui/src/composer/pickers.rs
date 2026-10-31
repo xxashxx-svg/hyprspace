@@ -32,7 +32,6 @@ pub fn permission_note(p: Permission) -> &'static str {
 /// An effort level's name, from src/lib/models.ts.
 pub fn effort_label(level: &str) -> String {
     match level {
-        "" => "Default",
         "none" => "None",
         "minimal" => "Minimal",
         "low" => "Low",
@@ -144,7 +143,6 @@ mod tests {
     #[test]
     fn effort_words_match_the_tauri_app() {
         assert_eq!(effort_label("xhigh"), "Extra high");
-        assert_eq!(effort_label(""), "Default");
         assert_eq!(effort_label("turbo"), "turbo");
     }
 }

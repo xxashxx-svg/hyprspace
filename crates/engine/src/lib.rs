@@ -5,6 +5,7 @@
 //! The library modules (git, usage, skills...) were copied from the Tauri app's Rust and are
 //! called directly for now; each gains a command in proto when the UI first needs it.
 
+mod agent_update;
 mod background;
 mod backstop;
 pub mod delegate;
@@ -24,9 +25,12 @@ pub mod pty;
 mod requests;
 mod resources;
 mod running;
+mod servers;
 pub mod sessions;
+mod shelf;
 mod sidebar_art;
 pub mod skills;
+mod snapshot;
 pub mod terminal;
 mod update;
 pub mod usage;
@@ -89,7 +93,7 @@ impl Engine {
         let (event_tx, said) = mpsc::unbounded();
         let (ui_tx, events) = mpsc::unbounded();
         let ptys = PtyManager::default();
-        let folders = Folders::default();
+        let folders = Folders::new(dir.clone());
         let peers = Peers::new(ui_tx.clone(), &dir);
         let phone = Phone::new(ui_tx.clone(), ptys.clone(), folders.clone(), dir);
         runtime.spawn(tap(said, ui_tx, phone.clone()));
@@ -208,6 +212,18 @@ fn queue(session: &Session, shared: Shared) -> UnboundedSender<Ask> {
     tx
 }
 
+/// Each live session's shell or CLI, for walking down to everything it started.
+fn roots(terminals: &Terminals, structured: &HashMap<SessionId, Live>) -> Vec<(SessionId, u32)> {
+    let mut roots = terminals.ptys().pids();
+    roots.extend(
+        structured
+            .iter()
+            .filter(|(_, live)| !live.session.is_closed())
+            .filter_map(|(id, live)| Some((*id, live.session.pid()?))),
+    );
+    roots
+}
+
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -247,6 +263,7 @@ async fn serve(
     peers: Peers,
 ) {
     let journals = store.dir().join("journals");
+    let state_dir = store.dir().to_path_buf();
     let searching = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let requests = Requests::new(store, tx.clone());
     let delegates = delegate::Delegates::default();
@@ -260,11 +277,12 @@ async fn serve(
         match cmd {
             Command::OpenStructured {
                 id,
-                launch,
+                mut launch,
                 prompt,
                 journal,
                 delegate,
             } => {
+                providers::concrete(&mut launch);
                 // the old session's CLI dies with it, before the new one starts
                 structured.remove(&id);
                 let mcp = delegate.then(|| delegates.mcp(id, &tx)).flatten();
@@ -327,6 +345,7 @@ async fn serve(
                         }
                     })
                 };
+                block_in_place(|| shelf::restore(&state_dir, &launch.cwd));
                 match hyprspace_harness::with_mcp(agent, mcp).start(launch, emit) {
                     Ok(session) => {
                         let shared = Shared {
@@ -409,7 +428,8 @@ async fn serve(
                     live.session.task_output(task);
                 }
             }
-            Command::Configure { id, launch } => {
+            Command::Configure { id, mut launch } => {
+                providers::concrete(&mut launch);
                 if let Some(live) = structured.get(&id) {
                     live.session.configure(launch);
                 }
@@ -517,14 +537,19 @@ async fn serve(
                 cwd,
                 cols,
                 rows,
-                run,
+                mut run,
                 prompt,
                 sign_in,
             } => {
+                if let Some(launch) = run.as_mut() {
+                    providers::concrete(launch);
+                }
                 // before the shell starts, so the bridge keeps its first output too
                 phone.opened_terminal(id, cols, rows);
-                let opened =
-                    block_in_place(|| terminals.open(id, cwd, (cols, rows), run, prompt, sign_in));
+                let opened = block_in_place(|| {
+                    shelf::restore(&state_dir, &cwd);
+                    terminals.open(id, cwd, (cols, rows), run, prompt, sign_in)
+                });
                 if let Err(e) = opened {
                     let _ = tx.unbounded_send(Event::Failed {
                         id,
@@ -686,20 +711,29 @@ async fn serve(
             Command::Usage(cmd) => usage::handle(cmd, tx.clone()),
             Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
             Command::Resources => {
-                let mut roots = terminals.ptys().pids();
-                roots.extend(
-                    structured
-                        .iter()
-                        .filter(|(_, live)| !live.session.is_closed())
-                        .filter_map(|(id, live)| Some((*id, live.session.pid()?))),
-                );
+                let roots = roots(&terminals, &structured);
                 let (sampler, tx) = (sampler.clone(), tx.clone());
                 tokio::task::spawn_blocking(move || {
                     let reading = lock(&sampler).read(&roots);
                     let _ = tx.unbounded_send(Event::Resources(reading));
                 });
             }
+            Command::Servers => {
+                let (roots, tx) = (roots(&terminals, &structured), tx.clone());
+                tokio::task::spawn_blocking(move || {
+                    let _ = tx.unbounded_send(Event::Servers(servers::read(&roots)));
+                });
+            }
+            Command::StopServer { pid } => {
+                let (roots, tx) = (roots(&terminals, &structured), tx.clone());
+                tokio::task::spawn_blocking(move || {
+                    servers::stop(pid, &roots);
+                    let _ = tx.unbounded_send(Event::Servers(servers::read(&roots)));
+                });
+            }
+            Command::Snapshots { on } => snapshot::set(on, tx.clone()),
             Command::Update(cmd) => update::handle(cmd, tx.clone()),
+            Command::AgentUpdate(cmd) => agent_update::handle(cmd, tx.clone()),
             Command::Phone(cmd) => phone.command(cmd),
             Command::Peer(cmd) => peers.command(cmd),
             Command::Delegated { request, ok, text } => delegates.answer(request, ok, text),

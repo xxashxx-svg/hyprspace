@@ -152,6 +152,35 @@ impl AgentCatalog {
             _ => &self.efforts,
         }
     }
+
+    /// The model a start runs when none was picked: the catalog's first, which the harness puts
+    /// there. Shown by name and passed to the CLI, so the label is always what runs.
+    pub fn default_model(&self) -> Option<&ModelInfo> {
+        self.models.first()
+    }
+
+    /// `model`, or the default model when it's empty.
+    pub fn model_or_default<'a>(&'a self, model: &'a str) -> &'a str {
+        if model.is_empty() {
+            self.default_model().map_or("", |m| m.id.as_str())
+        } else {
+            model
+        }
+    }
+
+    /// The effort a start on `model` runs when none was picked: the model's own default, else
+    /// High for Claude and Medium for Codex, else the first level it takes.
+    pub fn default_effort(&self, model: &str) -> Option<String> {
+        let levels = self.efforts_for(model);
+        let own = self.model(model).and_then(|m| m.default_effort.clone());
+        let usual = match self.agent {
+            Agent::Claude => "high",
+            Agent::Codex => "medium",
+        };
+        own.filter(|e| levels.contains(e))
+            .or_else(|| levels.iter().find(|e| *e == usual).cloned())
+            .or_else(|| levels.first().cloned())
+    }
 }
 
 /// What the composer needs to know about one agent: whether it can start, and with what.

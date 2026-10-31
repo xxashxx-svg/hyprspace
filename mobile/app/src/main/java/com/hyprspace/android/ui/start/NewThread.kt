@@ -221,10 +221,11 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
                         }
                         val label = when {
                             agent == null -> "Shell"
-                            else -> catalog?.models?.firstOrNull { it.id == model.substringBefore('[') }?.label ?: model.ifEmpty { "Default" }
+                            else -> catalog?.label(model) ?: model
                         }
+                        val shownEffort = catalog?.let { it.effortOr(it.modelOr(model), effort) } ?: effort
                         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                            ModelChip(agent, label, effort, enabled = true) { picking = true }
+                            ModelChip(agent, label, shownEffort, enabled = true) { picking = true }
                         }
                         Spacer(Modifier.width(6.dp))
                         Box(

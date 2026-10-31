@@ -466,6 +466,23 @@ data class AgentCatalog(
         val m = models.firstOrNull { it.id == id }
         return if (m != null && m.efforts.isNotEmpty()) m.efforts else efforts
     }
+
+    /** The model a start runs without a pick: the first, as the desktop's engine launches it. */
+    fun modelOr(model: String): String = model.ifEmpty { models.firstOrNull { it.id.isNotEmpty() }?.id.orEmpty() }
+
+    /** The effort a start on [model] runs without a pick, by the desktop's same rule. */
+    fun effortOr(model: String, effort: String): String {
+        if (effort.isNotEmpty()) return effort
+        val levels = effortsFor(model)
+        val own = models.firstOrNull { it.id == model.substringBefore('[') }?.defaultEffort
+        val usual = if (agent == Agent.Claude) "high" else "medium"
+        return own?.takeIf { it in levels } ?: usual.takeIf { it in levels } ?: levels.firstOrNull().orEmpty()
+    }
+
+    fun label(model: String): String {
+        val id = modelOr(model)
+        return models.firstOrNull { it.id == id.substringBefore('[') }?.label ?: id
+    }
 }
 
 @Serializable

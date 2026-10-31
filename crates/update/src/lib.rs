@@ -60,6 +60,19 @@ struct Manifest {
     notes: String,
     #[serde(default)]
     platforms: std::collections::BTreeMap<String, Artifact>,
+    #[serde(default)]
+    avoid_agents: Avoid,
+}
+
+/// Agent CLI versions known to break HyprSpace's threads, by CLI name (`claude`, `codex`). The
+/// feed only carries the field while the list has entries.
+pub type Avoid = std::collections::BTreeMap<String, Vec<String>>;
+
+/// The feed's list of agent versions to hold back. Empty when the feed has none or won't parse.
+pub fn avoided(feed: &str) -> Avoid {
+    serde_json::from_str::<Manifest>(feed)
+        .map(|m| m.avoid_agents)
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +125,20 @@ pub async fn check(current: &str) -> anyhow::Result<Option<Update>> {
         return Ok(None);
     };
     check_feed(ENDPOINT, current, platform).await
+}
+
+/// [`check`], and the agent versions the same feed says to hold back.
+pub async fn check_all(current: &str) -> anyhow::Result<(Option<Update>, Avoid)> {
+    let feed = reqwest::get(ENDPOINT)
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let update = match platform_key() {
+        Some(platform) => parse(&feed, current, platform)?,
+        None => None,
+    };
+    Ok((update, avoided(&feed)))
 }
 
 /// [`check`] against any feed, for tests.

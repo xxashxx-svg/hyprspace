@@ -113,6 +113,10 @@ pub fn tag(name: &str, hue: Option<u16>) -> (Hsla, Hsla) {
     (hsla(fill), hsla(ink))
 }
 
+pub fn tone(hue: f32) -> Hsla {
+    hsla(hyprspace_theme::tone(hue as f64, theme().dark))
+}
+
 pub fn rainbow(hue: f32) -> Hsla {
     hsla(hyprspace_theme::rainbow(hue as f64, theme().dark))
 }

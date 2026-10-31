@@ -30,6 +30,52 @@ use crate::transcript::Status;
 use crate::widgets;
 
 /// A running count, the way a stopwatch shows it: 45s, 3m 05s, 1h 02m.
+/// A thread's pull request beside its branch: a tag with its state's icon and color and its number,
+/// and while it's open a mark for its checks failing, running or passing. A click opens it.
+fn pr_badge(thread: u64, pr: hyprspace_proto::git::PullRequest) -> AnyElement {
+    use hyprspace_proto::git::{Checks, PrState};
+    let (glyph, state, tint) = match pr.state {
+        PrState::Open => ("git-pull-request", "Open", colors::tone(163.)),
+        PrState::Draft => ("git-pull-request", "Draft", colors::text3()),
+        PrState::Merged => ("git-merge", "Merged", colors::tone(293.)),
+        PrState::Closed => ("git-pull-request-closed", "Closed", colors::tone(22.)),
+    };
+    let open = matches!(pr.state, PrState::Open | PrState::Draft);
+    let (checks, says) = match pr.checks {
+        Checks::Failing if open => (Some(colors::error()), ", checks failing"),
+        Checks::Pending if open => (Some(colors::busy()), ", checks running"),
+        Checks::Passing if open => (None, ", checks passed"),
+        _ => (None, ""),
+    };
+    let url = pr.url.clone();
+    div()
+        .id(("pr", thread))
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(3.))
+        .h(px(16.))
+        .px(px(4.))
+        .rounded(px(4.))
+        .cursor_pointer()
+        .text_color(tint)
+        .hover(|s| s.bg(colors::ink(0.06)))
+        .child(icon(glyph, 10., tint))
+        .child(
+            div()
+                .font_family(MONO)
+                .text_size(px(10.5))
+                .child(format!("#{}", pr.number)),
+        )
+        .children(checks.map(|c| div().ml(px(1.)).size(px(5.)).rounded_full().bg(c)))
+        .tooltip(widgets::tip_text(format!("{state}{says}: {}", pr.title)))
+        .on_click(move |_: &gpui::ClickEvent, _, cx| {
+            cx.stop_propagation();
+            cx.open_url(&url);
+        })
+        .into_any_element()
+}
+
 fn elapsed(secs: u64) -> String {
     match secs {
         0..60 => format!("{secs}s"),
@@ -688,6 +734,7 @@ impl Root {
                         .child(place.1),
                 ),
         };
+        let pr = self.pr_of(t).cloned().map(|pr| pr_badge(id, pr));
         let menu = self.thread_menu(t);
         let buttons = self.thread_buttons(t, cx);
         let row = div()
@@ -764,6 +811,7 @@ impl Root {
                     .text_size(px(11.))
                     .text_color(colors::text3())
                     .child(foot)
+                    .children(pr)
                     .children(state)
                     .child(agent_mark(agent, working)),
             )

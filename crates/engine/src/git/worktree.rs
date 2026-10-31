@@ -89,25 +89,117 @@ fn create_in(root_dir: &Path, cwd: &Path, name: &str, base: Option<&str>) -> Res
     if branch_exists {
         git(&repo, &["worktree", "add", &wt_s, &branch])?;
     } else {
-        git(&repo, &["worktree", "add", "-b", &branch, &wt_s, &base])?;
+        let from = fresh(&repo, &base);
+        // off a remote-tracking start git would make it the upstream, and a push would go there
+        git(
+            &repo,
+            &["worktree", "add", "--no-track", "-b", &branch, &wt_s, &from],
+        )?;
     }
     Ok(made(wt))
 }
 
-fn branch_for(name: &str) -> String {
-    let mut safe = String::new();
-    for c in name.chars().flat_map(char::to_lowercase) {
-        let c = if c.is_alphanumeric() || c == '_' {
-            c
-        } else {
-            '-'
-        };
-        if !(c == '-' && safe.ends_with('-')) {
-            safe.push(c);
-        }
+/// Where a new branch off `base` starts: its upstream, fetched just now, when `base` has nothing
+/// the upstream lacks, so the worktree isn't behind; `base` itself when it has commits of its own
+/// or no upstream.
+fn fresh(repo: &Path, base: &str) -> String {
+    let Ok(up) = git(
+        repo,
+        &["rev-parse", "--abbrev-ref", &format!("{base}@{{upstream}}")],
+    ) else {
+        return base.to_string();
+    };
+    let up = up.trim().to_string();
+    if let Some((remote, branch)) = up.split_once('/') {
+        let _ = git(repo, &["fetch", "-q", remote, branch]);
     }
-    let safe: String = safe.trim_matches('-').chars().take(48).collect();
-    format!("hs/{}", safe.trim_end_matches('-'))
+    match git(repo, &["merge-base", "--is-ancestor", base, &up]) {
+        Ok(_) => up,
+        Err(_) => base.to_string(),
+    }
+}
+
+const FILLER: &[&str] = &[
+    "a", "an", "the", "and", "or", "with", "for", "to", "of", "in", "on", "at", "by", "is", "it",
+    "my", "our", "this", "that",
+];
+
+/// A thread's title as a short branch: its first three words that say something, at most 24
+/// characters, cut between words.
+fn branch_for(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let words: Vec<String> = lower
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect();
+    let telling: Vec<&String> = words
+        .iter()
+        .filter(|w| !FILLER.contains(&w.as_str()))
+        .collect();
+    let pick = if telling.is_empty() {
+        words.iter().collect()
+    } else {
+        telling
+    };
+    let mut slug = String::new();
+    for w in pick.into_iter().take(3) {
+        let next = if slug.is_empty() {
+            w.chars().take(24).collect()
+        } else {
+            format!("{slug}-{w}")
+        };
+        if next.chars().count() > 24 {
+            break;
+        }
+        slug = next;
+    }
+    format!("hs/{slug}")
+}
+
+/// Removes a worktree's folder and keeps its branch, when nothing in it is uncommitted or
+/// untracked. Ignored files, such as build output, go with the folder.
+pub fn shelve(wt: &Worktree) -> Result<()> {
+    if !wt.path.exists() {
+        return Err("The worktree's folder is already gone.".into());
+    }
+    if cfg!(windows) && !removes_junctions_safely(&wt.repo) {
+        return Err("Git for Windows before 2.54 can delete through junctions.".into());
+    }
+    let changes = git(
+        &wt.path,
+        &["status", "--porcelain", "--untracked-files=normal"],
+    )?;
+    if !changes.trim().is_empty() {
+        return Err(format!("{} has uncommitted changes.", wt.branch));
+    }
+    git(
+        &wt.repo,
+        &["worktree", "remove", &wt.path.to_string_lossy()],
+    )?;
+    Ok(())
+}
+
+/// Puts a shelved worktree's folder back at its path, on its branch.
+pub fn unshelve(wt: &Worktree) -> Result<()> {
+    let _ = git(&wt.repo, &["worktree", "prune"]);
+    git(
+        &wt.repo,
+        &["worktree", "add", &wt.path.to_string_lossy(), &wt.branch],
+    )?;
+    Ok(())
+}
+
+// older Git for Windows follows an NTFS junction while removing a worktree and deletes its target
+fn removes_junctions_safely(repo: &Path) -> bool {
+    let version = git(repo, &["--version"]).unwrap_or_default();
+    let mut parts = version
+        .split_whitespace()
+        .nth(2)
+        .unwrap_or_default()
+        .split('.')
+        .map(|p| p.parse::<u32>().unwrap_or(0));
+    (parts.next().unwrap_or(0), parts.next().unwrap_or(0)) >= (2, 54)
 }
 
 pub fn branches(cwd: &Path) -> Vec<String> {
@@ -274,8 +366,18 @@ mod tests {
     #[test]
     fn branch_names_are_safe() {
         assert_eq!(branch_for("Fix login!"), "hs/fix-login");
-        assert_eq!(branch_for("a/b  c"), "hs/a-b-c");
-        assert_eq!(branch_for(&"x".repeat(80)).len(), 3 + 48);
+        assert_eq!(branch_for("a/b  c"), "hs/b-c");
+        assert_eq!(branch_for(&"x".repeat(80)).len(), 3 + 24);
+        assert_eq!(
+            branch_for("Background prompts with a Ctrl+Enter queue"),
+            "hs/background-prompts-ctrl"
+        );
+        assert_eq!(
+            branch_for("Ship HyprSpace open-in-editor button"),
+            "hs/ship-hyprspace-open"
+        );
+        assert_eq!(branch_for("The"), "hs/the");
+        assert_eq!(branch_for("!!"), "hs/");
     }
 
     #[test]
@@ -316,6 +418,66 @@ mod tests {
         git(&pushed.path, &["branch", "-u", "main"]).unwrap();
         assert!(name_branch(&pushed, "Anything").is_err());
         assert!(branches(&repo).contains("hs/1234abcd"));
+    }
+
+    #[test]
+    fn a_shelved_worktree_keeps_its_branch_and_comes_back_at_the_same_path() {
+        let (dir, repo, trees) = setup();
+        let wt = create_in(&trees, &repo, "0a1b2c3d", None).unwrap();
+        std::fs::write(wt.path.join("new.txt"), "x\n").unwrap();
+        assert!(shelve(&wt).is_err());
+        assert!(wt.path.join("new.txt").exists());
+        std::fs::remove_file(wt.path.join("new.txt")).unwrap();
+
+        let state = dir.path().join("state");
+        shelve(&wt).unwrap();
+        crate::shelf::record(&state, &wt);
+        assert!(!wt.path.exists());
+        assert!(branches(&repo).contains("hs/0a1b2c3d"));
+
+        crate::shelf::restore(&state, &wt.path.join("src"));
+        assert!(wt.path.join("a.txt").exists());
+        assert_eq!(current_branch(&wt.path).as_deref(), Some("hs/0a1b2c3d"));
+        shelve(&wt).unwrap();
+        crate::shelf::restore(&state, &wt.path);
+        assert!(!wt.path.exists(), "a restore happens once per shelving");
+    }
+
+    #[test]
+    fn a_new_worktree_starts_from_upstream_unless_local_has_its_own_commits() {
+        let (dir, repo, trees) = setup();
+        let remote = dir.path().join("remote.git");
+        testing::bare(&remote);
+        testing::push_upstream(&repo, &remote);
+        let other = dir.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        testing::repo(&other);
+        git(&other, &["pull", "-q", &remote.to_string_lossy(), "main"]).unwrap();
+        std::fs::write(
+            other.join("theirs.txt"),
+            "t
+",
+        )
+        .unwrap();
+        testing::commit_all(&other, "theirs");
+        git(&other, &["push", "-q", &remote.to_string_lossy(), "main"]).unwrap();
+
+        let behind = create_in(&trees, &repo, "0a0a0a0a", None).unwrap();
+        assert!(behind.path.join("theirs.txt").exists());
+        assert!(
+            name_branch(&behind, "Fresh work").is_ok(),
+            "no upstream of its own"
+        );
+
+        std::fs::write(
+            repo.join("mine.txt"),
+            "m
+",
+        )
+        .unwrap();
+        testing::commit_all(&repo, "mine");
+        let ahead = create_in(&trees, &repo, "1b1b1b1b", None).unwrap();
+        assert!(ahead.path.join("mine.txt").exists());
     }
 
     #[test]
@@ -361,7 +523,7 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "ours\n").unwrap();
         testing::commit_all(&repo, "ours");
         let err = finish(&wt, WorktreeAction::Merge, "Edit a").unwrap_err();
-        assert_eq!(err, "hs/edit-a conflicts with main, so nothing was merged.");
+        assert_eq!(err, "hs/edit conflicts with main, so nothing was merged.");
         assert!(!merging(&repo));
         assert_eq!(
             std::fs::read_to_string(repo.join("a.txt")).unwrap().trim(),

@@ -65,7 +65,7 @@ impl Root {
     }
 
     /// On screen, which auto-settle leaves alone.
-    fn on_screen(&self, thread: u64) -> bool {
+    pub(super) fn on_screen(&self, thread: u64) -> bool {
         self.screen == Screen::Thread(thread)
     }
 
@@ -417,6 +417,8 @@ impl Root {
             self.free(id);
         }
         self.resume_due(now, cx);
+        self.clean_worktrees(now);
+        self.run_scheduled(chrono::Local::now(), cx);
         woke.extend(self.state.wake_due(now, false));
         for s in self.state.spaces.iter_mut().filter(|s| s.machine.is_none()) {
             for t in &mut s.threads {

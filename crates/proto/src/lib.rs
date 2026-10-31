@@ -5,6 +5,7 @@
 //! starts with and reports, `state` what the app keeps between runs; the other modules hold the
 //! domain records those messages (and the engine's library calls) carry. Words follow docs/internals/glossary.md.
 
+pub mod agent_update;
 pub mod agents;
 pub mod channel;
 pub mod folder;
@@ -14,12 +15,14 @@ pub mod peer;
 pub mod phone;
 pub mod resources;
 pub mod run;
+pub mod schedule;
 pub mod skills;
 pub mod state;
 pub mod update;
 pub mod usage;
 pub mod wire;
 
+pub use agent_update::{AgentUpdateCommand, AgentUpdateEvent};
 pub use agents::{Agent, AgentState, SubAgent};
 pub use channel::{Client, Events};
 pub use folder::{FolderCommand, FolderEvent, Opener};
@@ -27,7 +30,7 @@ pub use pane::Pane;
 pub use peer::{PeerCommand, PeerEvent};
 pub use phone::{PhoneCommand, PhoneEvent};
 pub use run::{
-    Answer, Aside, CommandInfo, Delegation, Launch, Permission, Prompt, Rewind, RunEvent,
+    Answer, Aside, CommandInfo, Delegation, Goal, Launch, Permission, Prompt, Rewind, RunEvent,
     RunStatus, Task, TaskKind, Tool,
 };
 pub use skills::{SkillCommand, SkillEvent};
