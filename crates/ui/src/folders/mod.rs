@@ -161,6 +161,7 @@ impl FolderPicker {
                 | InputEvent::Unmarked(_)
                 | InputEvent::Peek(_)
                 | InputEvent::Open(_)
+                | InputEvent::PeekQuote(_)
                 | InputEvent::Recalled(_) => {}
             }),
             cx.subscribe(&query, |p, _, e: &InputEvent, cx| match e {
@@ -174,6 +175,7 @@ impl FolderPicker {
                 | InputEvent::Unmarked(_)
                 | InputEvent::Peek(_)
                 | InputEvent::Open(_)
+                | InputEvent::PeekQuote(_)
                 | InputEvent::Recalled(_) => {}
             }),
             cx.subscribe(&field, |p, _, e: &InputEvent, cx| match e {
@@ -188,6 +190,7 @@ impl FolderPicker {
                 | InputEvent::Unmarked(_)
                 | InputEvent::Peek(_)
                 | InputEvent::Open(_)
+                | InputEvent::PeekQuote(_)
                 | InputEvent::Recalled(_) => {}
             }),
         ];

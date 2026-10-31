@@ -228,7 +228,7 @@ impl Composer {
                     this.menu = None;
                     cx.notify();
                 }
-                InputEvent::Recalled(_) => {}
+                InputEvent::Recalled(_) | InputEvent::PeekQuote(_) => {}
             }),
             cx.subscribe(&name, |this, _, e: &InputEvent, cx| {
                 if let InputEvent::Submit = e {

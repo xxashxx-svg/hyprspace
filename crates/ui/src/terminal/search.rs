@@ -35,6 +35,7 @@ impl Find {
                 | InputEvent::Unmarked(_)
                 | InputEvent::Peek(_)
                 | InputEvent::Open(_)
+                | InputEvent::PeekQuote(_)
                 | InputEvent::Recalled(_) => {}
             },
         );

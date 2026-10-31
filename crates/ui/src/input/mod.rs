@@ -118,6 +118,7 @@ pub enum InputEvent {
     Peek(Option<(usize, Point<Pixels>)>),
     /// Ctrl+click (Cmd on macOS) on an image marker, by its number.
     Open(usize),
+    PeekQuote(Option<(usize, Point<Pixels>)>),
     /// Up or Down brought back this history entry, or left the history for an empty box.
     Recalled(Option<usize>),
 }
@@ -146,6 +147,8 @@ pub struct TextInput {
     /// How far a single line is slid left to keep the cursor in the box.
     shift: Pixels,
     hover: Option<usize>,
+    hover_quote: Option<usize>,
+    quotes: Vec<String>,
     /// Words drawn as chips and edited whole: the skills and commands the agent takes, as they
     /// are typed.
     chips: Rc<HashSet<String>>,
@@ -180,6 +183,8 @@ impl TextInput {
             grab: None,
             shift: Pixels::ZERO,
             hover: None,
+            hover_quote: None,
+            quotes: Vec::new(),
             chips: Rc::default(),
         }
     }
@@ -212,6 +217,13 @@ impl TextInput {
         true
     }
 
+    pub fn set_quotes(&mut self, quotes: Vec<String>, cx: &mut Context<Self>) {
+        if quotes != self.quotes {
+            self.quotes = quotes;
+            cx.notify();
+        }
+    }
+
     pub fn set_chips(&mut self, chips: Rc<HashSet<String>>) {
         self.chips = chips;
     }
@@ -220,6 +232,7 @@ impl TextInput {
     fn atoms(&self) -> Vec<Range<usize>> {
         let mut atoms: Vec<Range<usize>> = crate::attach::markers(&self.content)
             .into_iter()
+            .chain(quote_spans(&self.content, &self.quotes))
             .map(|(r, _)| r)
             .collect();
         atoms.extend(chip_spans(&self.content, &self.chips, false));
@@ -377,12 +390,24 @@ impl TextInput {
 
     /// The image marker under `pos` (window coordinates), and the window point at its top left.
     fn marker_under(&self, pos: Point<Pixels>) -> Option<(usize, Point<Pixels>)> {
+        self.under(crate::attach::markers(&self.content), pos)
+    }
+
+    fn quote_under(&self, pos: Point<Pixels>) -> Option<(usize, Point<Pixels>)> {
+        self.under(quote_spans(&self.content, &self.quotes), pos)
+    }
+
+    fn under(
+        &self,
+        found: Vec<(Range<usize>, usize)>,
+        pos: Point<Pixels>,
+    ) -> Option<(usize, Point<Pixels>)> {
         let b = self.bounds?;
         if !b.contains(&pos) {
             return None;
         }
         let at = self.raw_offset_at(pos - b.origin);
-        let (m, n) = crate::attach::markers(&self.content)
+        let (m, n) = found
             .into_iter()
             .find(|(m, _)| m.start <= at && at < m.end)?;
         Some((n, b.origin + self.position_of(m.start)?))
@@ -393,6 +418,14 @@ impl TextInput {
         if n != self.hover {
             self.hover = n;
             cx.emit(InputEvent::Peek(under));
+        }
+    }
+
+    fn peek_quote(&mut self, under: Option<(usize, Point<Pixels>)>, cx: &mut Context<Self>) {
+        let n = under.map(|(n, _)| n);
+        if n != self.hover_quote {
+            self.hover_quote = n;
+            cx.emit(InputEvent::PeekQuote(under));
         }
     }
 
@@ -714,6 +747,7 @@ impl TextInput {
             }
         } else if self.selecting {
             self.peek(None, cx);
+            self.peek_quote(None, cx);
             let at = self.mouse_offset(e.position);
             match self.anchor.clone() {
                 Some((anchor, lines)) => {
@@ -726,6 +760,7 @@ impl TextInput {
             }
         } else {
             self.peek(self.marker_under(e.position), cx);
+            self.peek_quote(self.quote_under(e.position), cx);
         }
     }
 }
@@ -802,6 +837,28 @@ fn widen(atoms: &[Range<usize>], mut range: Range<usize>) -> Range<usize> {
         }
     }
     range
+}
+
+pub fn quote_spans(text: &str, labels: &[String]) -> Vec<(Range<usize>, usize)> {
+    let mut found: Vec<(Range<usize>, usize)> = labels
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.is_empty())
+        .flat_map(|(n, l)| {
+            text.match_indices(l.as_str())
+                .map(move |(at, _)| (at..at + l.len(), n))
+        })
+        .collect();
+    found.sort_by_key(|(r, _)| (r.start, std::cmp::Reverse(r.end)));
+    let mut end = 0;
+    found.retain(|(r, _)| {
+        let keep = r.start >= end;
+        if keep {
+            end = r.end;
+        }
+        keep
+    });
+    found
 }
 
 /// Where `text` has one of `words` as a word of its own. A word at the very end counts only when

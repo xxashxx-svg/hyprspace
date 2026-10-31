@@ -112,7 +112,10 @@ pub struct TranscriptView {
     input: Entity<TextInput>,
     images: Vec<PathBuf>,
     cites: Vec<Cite>,
-    noting: Option<cites::Noting>,
+    quote_peek: Option<(usize, gpui::Point<gpui::Pixels>)>,
+    peek_held: bool,
+    quote_scroll: gpui::ScrollHandle,
+    peek_close: Option<Task<()>>,
     saving: usize,
     peek: Option<(usize, gpui::Point<gpui::Pixels>)>,
     /// A sent message's image whose marker the pointer is on: the row, and the image's number.
@@ -212,9 +215,16 @@ impl TranscriptView {
         client: Client,
         cx: &mut Context<Self>,
     ) -> Self {
+        let cites: Vec<Cite> = thread
+            .draft_cites
+            .iter()
+            .filter(|c| !c.label.is_empty() && thread.draft.contains(&c.label))
+            .cloned()
+            .collect();
         let input = cx.new(|cx| {
             let mut input = TextInput::new(IDLE_HINT, true, cx);
             input.set_text(thread.draft.clone(), cx);
+            input.set_quotes(cites::labels(&cites), cx);
             input
         });
         let sub = cx.subscribe(&input, |this, _, event: &InputEvent, cx| match event {
@@ -243,6 +253,7 @@ impl TranscriptView {
                     cx.notify();
                 })
             }
+            InputEvent::PeekQuote(at) => this.peek_quote(*at, cx),
             InputEvent::Peek(at) => {
                 this.peek = *at;
                 cx.notify();
@@ -263,6 +274,8 @@ impl TranscriptView {
                     .and_then(|i| this.recall_images.get(i))
                     .map(|all| all.iter().filter(|p| p.exists()).cloned().collect())
                     .unwrap_or_default();
+                this.cites.clear();
+                this.sync_quotes(cx);
                 this.keep_draft(cx);
                 cx.notify();
             }
@@ -303,8 +316,11 @@ impl TranscriptView {
                 .filter(|p| p.exists())
                 .cloned()
                 .collect(),
-            cites: thread.draft_cites.clone(),
-            noting: None,
+            cites,
+            quote_peek: None,
+            peek_held: false,
+            quote_scroll: gpui::ScrollHandle::new(),
+            peek_close: None,
             saving: 0,
             peek: None,
             lit: None,
@@ -543,7 +559,12 @@ impl TranscriptView {
     fn keep_draft(&mut self, cx: &mut Context<Self>) {
         let text = self.input.read(cx).text().to_string();
         let images = self.images.clone();
-        let cites = self.cites.clone();
+        let cites: Vec<Cite> = self
+            .cites
+            .iter()
+            .filter(|c| text.contains(&c.label))
+            .cloned()
+            .collect();
         if text.is_empty() && images.is_empty() && cites.is_empty() {
             self.draft = None;
             cx.emit(TranscriptEvent::Draft(text, images, cites));
@@ -675,12 +696,13 @@ impl TranscriptView {
             self.send_saved = Some(now);
             return;
         }
-        let text = cites::with_cites(&self.cites, self.input.read(cx).text().trim());
+        let text = cites::expand(self.input.read(cx).text(), &self.cites);
         if text.is_empty() && self.images.is_empty() {
             return;
         }
         self.cites.clear();
-        self.noting = None;
+        self.quote_peek = None;
+        self.sync_quotes(cx);
         if let Some(slash) = self.command(&text, !self.images.is_empty(), cx) {
             self.input.update(cx, |i, cx| i.set_text("", cx));
             let images = std::mem::take(&mut self.images);

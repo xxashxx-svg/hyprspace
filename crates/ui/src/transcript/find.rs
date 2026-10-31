@@ -83,6 +83,7 @@ impl TranscriptView {
                 | InputEvent::Unmarked(_)
                 | InputEvent::Peek(_)
                 | InputEvent::Open(_)
+                | InputEvent::PeekQuote(_)
                 | InputEvent::Recalled(_) => {}
             });
             self.find = Some(Find {

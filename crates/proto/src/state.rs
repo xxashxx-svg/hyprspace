@@ -268,13 +268,13 @@ pub enum SpaceIcon {
     Emoji { emoji: String },
 }
 
-/// Text picked out of a reply to quote in the next message, with what the user says about it.
+/// Text picked out of a reply to quote in the next message, and the short label that stands for
+/// it in the draft.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Cite {
     pub text: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub note: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

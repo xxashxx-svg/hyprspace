@@ -1858,13 +1858,12 @@ fn composer(
             )
         });
     // a live run with nothing typed can only be stopped; typed text steers it
-    let nothing = v.empty && v.images.is_empty() && v.cites.is_empty();
-    let action = if running && nothing {
+    let action = if running && v.empty && v.images.is_empty() {
         widgets::stop("stop")
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.interrupt(cx)))
     } else {
-        widgets::send("send", "arrow-up", !nothing)
+        widgets::send("send", "arrow-up", !v.empty || !v.images.is_empty())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(false, cx)))
     };
@@ -1876,7 +1875,7 @@ fn composer(
                 .bg(colors::accent().opacity(0.06))
         })
         .children(attach::peek(&v.images, v.peek))
-        .children(super::cites::tray(v, cx))
+        .children(super::cites::peek(v, window, cx))
         .when(!v.images.is_empty(), |d| {
             d.child(div().px(px(14.)).pt(px(12.)).child(attach::tray(
                 "thread-img",
@@ -2002,10 +2001,7 @@ fn composer(
         .w_full()
         .when(v.suggest.open.is_some(), |d| d.key_context("Suggest"))
         .capture_action(cx.listener(|v, _: &crate::input::Up, window, cx| {
-            if !v.queue.is_empty()
-                && v.input.read(cx).text().is_empty()
-                && v.input.focus_handle(cx).is_focused(window)
-            {
+            if !v.queue.is_empty() && v.input.read(cx).text().is_empty() {
                 v.edit_queued(v.queue.len() - 1, window, cx);
                 cx.stop_propagation();
             }
