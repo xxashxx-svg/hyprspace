@@ -4,6 +4,19 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.42 — 2026-11-01
+
+- Update Claude Code and Codex from the app: the update chip lists what's behind and updates each through its own updater
+- Every thread names a real model and effort instead of Default. Opus 5.5 starts at Medium
+- Ctrl+Enter starts a thread in the background, and steers the run in a thread
+- Search Settings, jump straight to a row, and reset what you changed
+- Answer approvals with Alt+Y, Alt+A and Alt+N. Ctrl+1-9 opens a thread, Ctrl+Shift+J the next one waiting on you
+- View changes shows what the last run changed, beside Uncommitted and Branch
+- Scheduled tasks run a message every few hours, daily, weekly, or when CI fails or a pull request opens
+- Paste a repository link to clone it, send one message to several models at once, and hand a thread to the other agent
+- Pull requests sit on the right of a thread's row, and the ports a thread opened show in its title row
+- Cites sit inline in the prompt, the next queued message sends after Stop, and notifications are under Experimental
+
 ## 0.24.41 — 2026-10-31
 
 - New threads save as drafts in the sidebar, with the agent, model, effort and access you picked
