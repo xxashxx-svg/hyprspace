@@ -16,12 +16,13 @@ mod worktree;
 use std::path::PathBuf;
 
 use gpui::{
-    ClickEvent, Context, Entity, EventEmitter, ExternalPaths, Focusable, FontWeight, IntoElement,
-    PathPromptOptions, Pixels, Point, Render, Subscription, Window, div, prelude::*, relative,
+    App, ClickEvent, Context, Entity, EventEmitter, ExternalPaths, Focusable, FontWeight,
+    IntoElement, PathPromptOptions, Pixels, Point, Render, Subscription, Task, Window, div,
+    prelude::*, relative,
 };
 use hyprspace_proto::agents::{AgentInfo, AgentSession};
 use hyprspace_proto::state::{ComposerPrefs, Pick};
-use hyprspace_proto::{Agent, Client, Command, Launch, Prompt};
+use hyprspace_proto::{Agent, Client, Command, Draft, Launch, Prompt};
 
 use crate::input::{InputEvent, TextInput};
 use crate::zoom::px;
@@ -60,6 +61,7 @@ pub enum ComposerEvent {
     },
     /// The picks changed; the root saves them.
     Prefs(ComposerPrefs),
+    Draft(Draft),
     /// With no space yet, a folder was picked to become the first one.
     AddProject(PathBuf),
     /// The next thread runs on another computer, or on this one with None.
@@ -117,6 +119,7 @@ pub struct Composer {
     branches: Vec<String>,
     branch_menu: Option<Point<Pixels>>,
     suggest: crate::suggest::Suggest,
+    draft: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
 
@@ -148,6 +151,7 @@ impl Composer {
                     attach::save_later(images.clone(), cx, move |this, saved, cx| {
                         this.saving -= asked;
                         this.images.extend(saved);
+                        this.keep_draft(cx);
                         if this.saving == 0 && std::mem::take(&mut this.send_saved) {
                             this.submit(cx);
                         }
@@ -222,6 +226,7 @@ impl Composer {
             branches: Vec::new(),
             branch_menu: None,
             suggest: Default::default(),
+            draft: None,
             _subs: subs,
         }
     }
@@ -242,6 +247,7 @@ impl Composer {
             self.branch = None;
             self.base = None;
             self.branches.clear();
+            self.keep_draft(cx);
         }
         self.host_agents = host_agents;
         self.machine_menu = None;
@@ -461,6 +467,7 @@ impl Composer {
 
     fn text_changed(&mut self, cx: &mut Context<Self>) {
         self.error = None;
+        self.keep_draft(cx);
         self.refresh_suggest(cx);
         let Some((repo, _)) = repo::split(self.input.read(cx).text()).filter(|_| !self.remote())
         else {
@@ -477,6 +484,38 @@ impl Composer {
                 self.clone.set_parent(parent);
             }
         }
+    }
+
+    pub fn snapshot(&self, cx: &App) -> Draft {
+        Draft {
+            space: self.target.as_ref().map_or(0, |t| t.space),
+            text: self.input.read(cx).text().to_string(),
+            images: self.images.clone(),
+            prefs: self.prefs.clone(),
+            worktree: self.worktree,
+            base: self.base.clone(),
+            ..Draft::default()
+        }
+    }
+
+    pub(super) fn keep_draft(&mut self, cx: &mut Context<Self>) {
+        self.draft = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(600))
+                .await;
+            let _ = this.update(cx, |c, cx| cx.emit(ComposerEvent::Draft(c.snapshot(cx))));
+        }));
+    }
+
+    pub fn load(&mut self, draft: Draft, cx: &mut Context<Self>) {
+        self.images = draft.images.into_iter().filter(|p| p.exists()).collect();
+        self.worktree = draft.worktree;
+        self.base = draft.base;
+        self.clone.url.clear();
+        self.clone.error = None;
+        self.error = None;
+        self.set_prefs(draft.prefs, cx);
+        self.input.update(cx, |i, cx| i.set_text(draft.text, cx));
     }
 
     /// The text and attached images as a prompt; None when both are empty.

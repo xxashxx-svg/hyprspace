@@ -12,6 +12,7 @@
 // nothing as it fades in, after T3 Code's, so the rows under it glide down instead of jumping.
 
 mod card;
+mod draft;
 mod drag;
 mod icon;
 mod icon_picker;
@@ -84,6 +85,9 @@ fn edge_scroll(y: f32, top: f32, bottom: f32) -> f32 {
 /// One line of the sidebar's list.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Item {
+    Draft(u64),
+    /// The line under the drafts.
+    Rule,
     /// A thread at work.
     Thread(u64),
     /// A thread on the Snoozed or Settled shelf.
@@ -91,11 +95,19 @@ enum Item {
     /// Room above the list, between shelves, or at the end.
     Gap(u8),
     /// The snoozed threads of every space.
-    Snoozed { count: usize, open: bool },
+    Snoozed {
+        count: usize,
+        open: bool,
+    },
     /// The settled threads of every space.
-    Settled { count: usize, open: bool },
+    Settled {
+        count: usize,
+        open: bool,
+    },
     /// Nothing to list: no threads yet, or a search with no hits.
-    Nothing { searching: bool },
+    Nothing {
+        searching: bool,
+    },
 }
 
 impl Item {
@@ -552,6 +564,25 @@ impl Root {
         };
         let recent = |t: &Thread| t.last_touch() as i64;
         let mut items = vec![Item::Gap(2)];
+        let mut drafts: Vec<_> = self
+            .state
+            .drafts
+            .iter()
+            .filter(|d| self.listed(d.id))
+            .filter(|d| {
+                self.state.space(d.space).is_some_and(|s| {
+                    !s.archived
+                        && (q.is_empty()
+                            || d.text.to_lowercase().contains(&q)
+                            || s.name.to_lowercase().contains(&q))
+                })
+            })
+            .collect();
+        if !drafts.is_empty() {
+            drafts.sort_by_key(|d| std::cmp::Reverse(d.created));
+            items.extend(drafts.iter().map(|d| Item::Draft(d.id)));
+            items.push(Item::Rule);
+        }
         let mut active = threads(Thread::active, Thread::rank);
         active.sort_by_key(|t| match t.pinned {
             Some(at) => (0, at),
@@ -620,6 +651,15 @@ impl Root {
                     .into_any_element(),
                 None => div().into_any_element(),
             },
+            Item::Draft(id) => match self.state.drafts.iter().find(|d| d.id == id) {
+                Some(d) => slot().child(self.draft_row(d, cx)).into_any_element(),
+                None => div().into_any_element(),
+            },
+            Item::Rule => div()
+                .px(px(EDGE + 10.))
+                .py(px(8.))
+                .child(div().h(px(1.)).bg(colors::ink(0.08)))
+                .into_any_element(),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
             Item::Snoozed { count, open } => slot()
                 .pt(px(10.))
@@ -821,6 +861,7 @@ impl Root {
                     .child(icon("plus", 16., colors::text2()))
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
                         r.menu = None;
+                        r.park_draft(cx);
                         r.pick_thread_folder(window, cx);
                     })),
             )

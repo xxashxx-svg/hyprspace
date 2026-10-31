@@ -15,7 +15,7 @@ use gpui::{
     prelude::*,
 };
 use hyprspace_proto::phone::Ask;
-use hyprspace_proto::{Agent, Snooze, Thread, ThreadKind};
+use hyprspace_proto::{Agent, Draft, Snooze, Thread, ThreadKind};
 
 use super::{Root, Screen};
 use crate::assets::icon;
@@ -35,6 +35,7 @@ pub(crate) struct Undo {
     what: &'static str,
     settled: bool,
     snooze: Option<Snooze>,
+    draft: Option<Draft>,
     at: Instant,
     /// Tells this toast from the last, so each one eases in.
     serial: usize,
@@ -90,15 +91,34 @@ impl Root {
         let Some((_, t)) = self.state.thread(thread) else {
             return;
         };
-        let serial = self.undo.as_ref().map_or(0, |u| u.serial + 1);
-        self.undo = Some(Undo {
+        let undo = Undo {
             thread,
             what,
             settled: t.settled,
             snooze: t.snooze,
+            draft: None,
             at: Instant::now(),
-            serial,
-        });
+            serial: 0,
+        };
+        self.offer_undo(undo, cx);
+    }
+
+    pub(crate) fn remember_draft(&mut self, draft: Draft, cx: &mut Context<Self>) {
+        let undo = Undo {
+            thread: draft.id,
+            what: "Discarded",
+            settled: false,
+            snooze: None,
+            draft: Some(draft),
+            at: Instant::now(),
+            serial: 0,
+        };
+        self.offer_undo(undo, cx);
+    }
+
+    fn offer_undo(&mut self, mut undo: Undo, cx: &mut Context<Self>) {
+        undo.serial = self.undo.as_ref().map_or(0, |u| u.serial + 1);
+        self.undo = Some(undo);
         // the toast leaves by itself
         self._undo_timer = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(UNDO_FOR).await;
@@ -194,6 +214,12 @@ impl Root {
         let Some(u) = self.undo.take() else {
             return;
         };
+        if let Some(draft) = u.draft {
+            self.state.drafts.push(draft);
+            self.save();
+            cx.notify();
+            return;
+        }
         self.ask_host(u.thread, |thread| match u.snooze {
             Some(until) => Ask::Snooze { thread, until },
             None => Ask::Settle {
@@ -487,13 +513,17 @@ impl Root {
     /// The toast after a settle or a snooze, with Undo, for a few seconds.
     pub(crate) fn undo_toast(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let u = self.undo.as_ref().filter(|u| u.at.elapsed() < UNDO_FOR)?;
-        let (title, snooze) = self
-            .state
-            .thread(u.thread)
-            .map(|(_, t)| (t.title.clone(), t.snooze))
-            .unwrap_or_default();
+        let (title, snooze) = match &u.draft {
+            Some(d) => (crate::composer::title_of(&d.text), None),
+            None => self
+                .state
+                .thread(u.thread)
+                .map(|(_, t)| (t.title.clone(), t.snooze))
+                .unwrap_or_default(),
+        };
         let (glyph, what) = match snooze.filter(|_| u.what == "Snoozed") {
             Some(s) => ("clock", format!("Snoozed until {}", self.wake_text(s))),
+            None if u.draft.is_some() => ("trash-2", u.what.to_string()),
             None => ("archive", u.what.to_string()),
         };
         let toast = div()

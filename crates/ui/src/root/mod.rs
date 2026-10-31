@@ -3,6 +3,7 @@
 // so runs go on while another thread is on screen, and routes the engine's events to them.
 
 mod delegate;
+mod drafts;
 mod frames;
 mod quit;
 mod refs;
@@ -140,6 +141,8 @@ pub struct Root {
     pub(crate) unseen: HashSet<u64>,
     pub(crate) screen: Screen,
     pub(crate) composer: Entity<Composer>,
+    composing: Option<u64>,
+    unlisted: Option<u64>,
     /// A thread being renamed: its box, and what ends the rename (Enter or Esc, and focus
     /// leaving the box).
     pub(crate) rename: Option<(Rename, Entity<TextInput>, [Subscription; 2])>,
@@ -373,6 +376,8 @@ impl Root {
             unseen: HashSet::new(),
             screen: Screen::Compose(None),
             composer,
+            composing: None,
+            unlisted: None,
             rename: None,
             menu: None,
             menu_sub: None,
@@ -804,6 +809,7 @@ impl Root {
                 terminal,
                 worktree,
             } => {
+                self.drop_draft();
                 if let Screen::Compose(Some(space)) = self.screen {
                     let start = Start {
                         launch: launch.clone(),
@@ -828,6 +834,7 @@ impl Root {
                 prompt,
                 terminal,
             } => {
+                self.drop_draft();
                 let here = match self.screen {
                     Screen::Compose(Some(space)) if *open_here => Some(space),
                     _ => None,
@@ -850,8 +857,15 @@ impl Root {
             }
             ComposerEvent::Prefs(prefs) => {
                 self.state.composer = prefs.clone();
+                if let Some(d) = self
+                    .composing
+                    .and_then(|id| self.state.drafts.iter_mut().find(|d| d.id == id))
+                {
+                    d.prefs = prefs.clone();
+                }
                 self.save();
             }
+            ComposerEvent::Draft(draft) => self.keep_draft(draft.clone(), cx),
             ComposerEvent::AddProject(path) => {
                 let space = self.add_project(path.clone(), cx);
                 self.compose(Some(space), window, cx);

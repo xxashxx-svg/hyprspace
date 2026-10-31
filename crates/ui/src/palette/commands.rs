@@ -351,7 +351,10 @@ impl Root {
         match cmd {
             Cmd::NewThread => match space {
                 Some(s) => self.act(Action::NewThread(s), window, cx),
-                None => self.pick_thread_folder(window, cx),
+                None => {
+                    self.park_draft(cx);
+                    self.pick_thread_folder(window, cx)
+                }
             },
             Cmd::NewTerminal => match space {
                 Some(s) => self.act(Action::NewTerminal(s), window, cx),

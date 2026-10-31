@@ -254,7 +254,7 @@ impl Render for Root {
         self.look_for_hosts();
         self.look_up_icons(cx);
         if let Some(space) = self.work.compose.take() {
-            self.compose(Some(space), window, cx);
+            self.new_thread(Some(space), window, cx);
         }
         if let Some(thread) = self.work.open.take() {
             self.open_thread(thread, window, cx);

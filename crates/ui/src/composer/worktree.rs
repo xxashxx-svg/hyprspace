@@ -28,6 +28,7 @@ impl Composer {
         if !self.worktree {
             self.base = None;
         }
+        self.keep_draft(cx);
         cx.notify();
     }
 
@@ -58,6 +59,7 @@ impl Composer {
             self.base = Some(branch);
             self.worktree = true;
         }
+        self.keep_draft(cx);
         cx.notify();
     }
 

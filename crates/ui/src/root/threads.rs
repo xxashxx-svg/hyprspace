@@ -283,6 +283,7 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.park_elsewhere(space, cx);
         self.screen = Screen::Compose(space);
         self.refresh_composer(cx);
         let focus = self.composer.focus_handle(cx);
@@ -946,7 +947,7 @@ impl Root {
         // a menu row that opens another menu opens it where this one was
         let at = self.menu.take().map(|(at, _)| at).unwrap_or_default();
         match action {
-            Action::NewThread(space) => self.compose(Some(space), window, cx),
+            Action::NewThread(space) => self.new_thread(Some(space), window, cx),
             Action::NewTerminal(space) if self.machines.space(space).is_some() => {
                 self.remote_terminal(space, cx);
             }

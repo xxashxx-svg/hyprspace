@@ -43,6 +43,22 @@ thread started there gets a new folder of its own inside it, named after its tit
 threads never write over each other's files. A terminal opened on the space runs in `scratch`
 itself.
 
+## Drafts
+
+Text typed in the composer is saved as a draft (`AppState.drafts`) 600 ms after the last change,
+with its images, picks and worktree choice, so a restart doesn't lose it. Drafts are rows at the
+top of the sidebar, after T3 Code's. A draft started on screen gets its row once the user leaves
+it, so the sidebar doesn't change under their typing.
+
+- New thread leaves a draft with text as its row and opens an empty composer. Sending removes it.
+- The composer's own space picker moves its draft to the new space. Reaching another space's
+  composer from anywhere else (a thread's close button, leaving a settled thread) parks the draft
+  instead, so it never changes project behind the user's back.
+- Structured sessions come from Settings, not the draft, when it loads.
+- Drafts are for this computer's spaces. Another computer's space ids are handed out per
+  session, so a draft saved on one could come back on the wrong space. Its composer keeps the
+  text in memory only.
+
 ## Settle and snooze
 
 Ash runs many threads and clears finished ones all the time. Archiving only hid a thread while its

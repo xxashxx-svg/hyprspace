@@ -135,7 +135,7 @@ impl Root {
                     .child(crate::assets::logo(14.))
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
                         r.menu = None;
-                        r.compose(r.current_space(), window, cx);
+                        r.new_thread(r.current_space(), window, cx);
                     })),
             )
             .child(

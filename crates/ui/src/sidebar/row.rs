@@ -203,7 +203,7 @@ impl Root {
     }
 
     /// A small icon button on a row's hover strip.
-    fn row_button(
+    pub(super) fn row_button(
         &self,
         id: u64,
         key: &'static str,

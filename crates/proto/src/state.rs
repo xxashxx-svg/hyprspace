@@ -44,6 +44,8 @@ pub struct AppState {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub command_info: BTreeMap<String, Vec<CommandInfo>>,
     pub titles: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub drafts: Vec<Draft>,
 }
 
 impl Default for AppState {
@@ -65,6 +67,7 @@ impl Default for AppState {
             commands: BTreeMap::new(),
             command_info: BTreeMap::new(),
             titles: true,
+            drafts: Vec::new(),
         }
     }
 }
@@ -253,6 +256,21 @@ pub struct Thread {
     /// first launch of the new version picks the run back up.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updating: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Draft {
+    pub id: u64,
+    pub space: u64,
+    pub created: u64,
+    pub text: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<PathBuf>,
+    pub prefs: ComposerPrefs,
+    pub worktree: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
 }
 
 /// When a snoozed thread comes back.
@@ -670,6 +688,7 @@ mod tests {
         assert_eq!(s.sidebar_width, 272.0);
         assert_eq!(s.appearance.theme, "t3");
         assert_eq!(s.appearance.terminal_font_size, 13.0);
+        assert!(s.drafts.is_empty());
     }
 
     #[test]
