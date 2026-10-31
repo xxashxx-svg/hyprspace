@@ -10,6 +10,7 @@ mod background;
 mod banner;
 mod branch;
 mod changes;
+mod cites;
 mod commands;
 mod doing;
 mod find;
@@ -31,7 +32,7 @@ use gpui::{
     ListAlignment, ListState, PathPromptOptions, Render, Subscription, Task, Window, actions,
 };
 use hyprspace_proto::agents::AgentCatalog;
-use hyprspace_proto::{Answer, Client, Command, Entry, Launch, Prompt, RunEvent, SessionId};
+use hyprspace_proto::{Answer, Cite, Client, Command, Entry, Launch, Prompt, RunEvent, SessionId};
 
 use crate::attach;
 use crate::composer::model_menu::{self, Anchor, Choice, ModelMenu, Spec};
@@ -54,7 +55,7 @@ pub enum TranscriptEvent {
     Queue(Vec<Prompt>),
     Limited(Option<u64>),
     ResumeAt(Option<u64>),
-    Draft(String, Vec<PathBuf>),
+    Draft(String, Vec<PathBuf>, Vec<Cite>),
     SwitchFailed,
     ShowMedia(PathBuf),
     Commands(
@@ -100,6 +101,8 @@ pub struct TranscriptView {
     after: Option<String>,
     input: Entity<TextInput>,
     images: Vec<PathBuf>,
+    cites: Vec<Cite>,
+    noting: Option<cites::Noting>,
     saving: usize,
     peek: Option<(usize, gpui::Point<gpui::Pixels>)>,
     /// A sent message's image whose marker the pointer is on: the row, and the image's number.
@@ -287,6 +290,8 @@ impl TranscriptView {
                 .filter(|p| p.exists())
                 .cloned()
                 .collect(),
+            cites: thread.draft_cites.clone(),
+            noting: None,
             saving: 0,
             peek: None,
             lit: None,
@@ -524,16 +529,19 @@ impl TranscriptView {
     fn keep_draft(&mut self, cx: &mut Context<Self>) {
         let text = self.input.read(cx).text().to_string();
         let images = self.images.clone();
-        if text.is_empty() && images.is_empty() {
+        let cites = self.cites.clone();
+        if text.is_empty() && images.is_empty() && cites.is_empty() {
             self.draft = None;
-            cx.emit(TranscriptEvent::Draft(text, images));
+            cx.emit(TranscriptEvent::Draft(text, images, cites));
             return;
         }
         self.draft = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(600))
                 .await;
-            let _ = this.update(cx, |_, cx| cx.emit(TranscriptEvent::Draft(text, images)));
+            let _ = this.update(cx, |_, cx| {
+                cx.emit(TranscriptEvent::Draft(text, images, cites))
+            });
         }));
     }
 
@@ -642,10 +650,12 @@ impl TranscriptView {
             self.send_saved = true;
             return;
         }
-        let text = self.input.read(cx).text().trim().to_string();
+        let text = cites::with_cites(&self.cites, self.input.read(cx).text().trim());
         if text.is_empty() && self.images.is_empty() {
             return;
         }
+        self.cites.clear();
+        self.noting = None;
         if let Some(slash) = self.command(&text, !self.images.is_empty(), cx) {
             self.input.update(cx, |i, cx| i.set_text("", cx));
             let images = std::mem::take(&mut self.images);
@@ -763,17 +773,6 @@ impl TranscriptView {
         let text = match draft.is_empty() {
             true => format!("{block}\n\n"),
             false => format!("{draft}\n\n{block}\n\n"),
-        };
-        self.input.update(cx, |i, cx| i.set_text(text, cx));
-        window.focus(&self.input.focus_handle(cx), cx);
-    }
-
-    pub(super) fn cite(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let quote = quoted(text);
-        let draft = self.input.read(cx).text().trim_end().to_string();
-        let text = match draft.is_empty() {
-            true => format!("{quote}\n\n"),
-            false => format!("{draft}\n\n{quote}\n\n"),
         };
         self.input.update(cx, |i, cx| i.set_text(text, cx));
         window.focus(&self.input.focus_handle(cx), cx);
@@ -1730,14 +1729,6 @@ pub fn bind_keys(cx: &mut gpui::App) {
 const IDLE_HINT: &str = "Ask anything, @ for files, / for commands";
 const CONTINUE: &str = "The usage limit has reset. Continue where you left off.";
 const RESUME: &str = "The app closed before your last run finished. Continue where you left off.";
-
-fn quoted(text: &str) -> String {
-    text.trim()
-        .lines()
-        .map(|l| format!("> {l}").trim_end().to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 /// The prompt that picks a run back up after an update, naming the background work that stopped.
 fn after_update(work: &[String]) -> String {

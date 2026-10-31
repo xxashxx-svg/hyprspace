@@ -624,12 +624,13 @@ impl Root {
             }
             TranscriptEvent::SwitchFailed => self.switch_back(thread, cx),
             TranscriptEvent::SignIn => self.work.sign_in = Some(thread),
-            TranscriptEvent::Draft(text, images) => {
+            TranscriptEvent::Draft(text, images, cites) => {
                 if let Some(t) = self.state.thread_mut(thread)
-                    && (t.draft != *text || t.draft_images != *images)
+                    && (t.draft != *text || t.draft_images != *images || t.draft_cites != *cites)
                 {
                     t.draft = text.clone();
                     t.draft_images = images.clone();
+                    t.draft_cites = cites.clone();
                     self.save();
                 }
             }

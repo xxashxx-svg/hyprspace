@@ -32,7 +32,7 @@ pub use run::{
 };
 pub use skills::{SkillCommand, SkillEvent};
 pub use state::{
-    AppState, Draft, Entry, SettleAfter, Snooze, Space, SpaceIcon, Thread, ThreadKind,
+    AppState, Cite, Draft, Entry, SettleAfter, Snooze, Space, SpaceIcon, Thread, ThreadKind,
 };
 pub use update::{UpdateCommand, UpdateEvent};
 pub use usage::{UsageCommand, UsageEvent};

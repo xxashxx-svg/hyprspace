@@ -15,9 +15,10 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, App, Bounds, CursorStyle, DispatchPhase, HitboxBehavior, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, TextAlign,
-    TextLayout, TextRun, Window, canvas, div, fill, point, prelude::*, size,
+    AnyElement, App, Bounds, CursorStyle, DispatchPhase, FontWeight, HitboxBehavior, IntoElement,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString,
+    TextAlign, TextLayout, TextRun, TransformationMatrix, Window, canvas, div, fill, point,
+    prelude::*, size,
 };
 
 use crate::colors;
@@ -81,10 +82,11 @@ pub fn tail(
     canvas(
         move |bounds, window, _| {
             let end = end_of(&at)?;
-            let style = window.text_style();
+            let mut font = window.text_style().font();
+            font.weight = FontWeight::MEDIUM;
             let run = TextRun {
                 len: CITE.len(),
-                font: style.font(),
+                font,
                 color: colors::text1(),
                 background_color: None,
                 underline: None,
@@ -92,13 +94,13 @@ pub fn tail(
             };
             let line = window
                 .text_system()
-                .shape_line(CITE.into(), px(12.), &[run], None);
-            let chip = size(line.width + px(18.), px(24.));
+                .shape_line(CITE.into(), px(12.5), &[run], None);
+            let chip = size(line.width + px(38.), px(28.));
             let x = end
                 .x
                 .min(bounds.right() - chip.width - px(8.))
                 .max(bounds.left() + px(8.));
-            let y = end.y + px(4.);
+            let y = end.y + px(6.);
             if y < bounds.top() || y + chip.height > bounds.bottom() {
                 return None;
             }
@@ -116,20 +118,35 @@ pub fn tail(
             let Some((rect, line, hitbox)) = chip else {
                 return;
             };
-            let ground = match hitbox.is_hovered(window) {
-                true => colors::surface3(),
-                false => colors::surface2(),
-            };
+            let hovered = hitbox.is_hovered(window);
             window.paint_quad(
-                fill(rect, ground)
-                    .corner_radii(px(6.))
+                fill(rect, colors::surface3())
+                    .corner_radii(px(8.))
                     .border_widths(px(1.))
                     .border_color(colors::border2()),
             );
-            let origin = point(
-                rect.left() + px(9.),
-                rect.top() + (rect.size.height - px(16.)) / 2.,
-            );
+            if hovered {
+                window.paint_quad(fill(rect, colors::ink(0.06)).corner_radii(px(8.)));
+            }
+            let mid = rect.top() + rect.size.height / 2.;
+            window
+                .paint_svg(
+                    Bounds::new(
+                        point(rect.left() + px(10.), mid - px(6.5)),
+                        size(px(13.), px(13.)),
+                    ),
+                    "icons/quote.svg".into(),
+                    None,
+                    TransformationMatrix::unit(),
+                    if hovered {
+                        colors::text1()
+                    } else {
+                        colors::text2()
+                    },
+                    cx,
+                )
+                .ok();
+            let origin = point(rect.left() + px(28.), mid - px(8.));
             line.paint(origin, px(16.), TextAlign::Left, None, window, cx)
                 .ok();
             window.set_cursor_style(CursorStyle::PointingHand, &hitbox);

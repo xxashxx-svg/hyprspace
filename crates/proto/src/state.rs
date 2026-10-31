@@ -225,6 +225,15 @@ pub enum SpaceIcon {
     Emoji { emoji: String },
 }
 
+/// Text picked out of a reply to quote in the next message, with what the user says about it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Cite {
+    pub text: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Thread {
@@ -251,6 +260,8 @@ pub struct Thread {
     pub draft: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub draft_images: Vec<PathBuf>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub draft_cites: Vec<Cite>,
     pub parent: Option<u64>,
     pub pinned: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -304,6 +315,7 @@ impl Default for Thread {
             resume_at: None,
             draft: String::new(),
             draft_images: Vec::new(),
+            draft_cites: Vec::new(),
             parent: None,
             pinned: None,
             worktree: None,
