@@ -189,13 +189,13 @@ pub(super) fn step(id: impl Into<ElementId>, glyph: &str, enabled: bool) -> Stat
         .when(!enabled, |d| d.opacity(0.5))
 }
 
-/// A key or a key chord as caps: "Ctrl+Shift+G" as three.
-pub(super) fn keys(chord: &str) -> Div {
+/// A key or a key chord as caps: Ctrl, Shift, G as three.
+pub(super) fn keys(chord: &[&str]) -> Div {
     div()
         .flex()
         .items_center()
         .gap(px(4.))
-        .children(chord.split('+').map(|k| {
+        .children(chord.iter().map(|k| {
             div()
                 .flex_none()
                 .min_w(px(22.))

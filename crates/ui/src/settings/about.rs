@@ -7,6 +7,7 @@ use gpui::{
 
 use super::Root;
 use super::controls::{group, row, row_with, text};
+use super::index::{self, INTRO, REPORT, SOURCE};
 use crate::assets::{icon, logo};
 use crate::pace::Looping;
 use crate::update::{Phase, VERSION};
@@ -17,7 +18,7 @@ const REPO: &str = "https://github.com/xxashxx-svg/hyprspace";
 
 impl Root {
     pub(super) fn about(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut app = vec![self.version_row(cx)];
+        let mut app = vec![self.spot(index::VERSION.spot(), self.version_row(cx), false)];
         if crate::update::has_notes() {
             let updater = self.updater.clone();
             app.push(row(
@@ -28,12 +29,15 @@ impl Root {
                 }),
             ));
         }
-        app.push(row(
-            "Intro",
-            "",
-            widgets::button("about-intro", "Show")
-                .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.show_intro(window, cx))),
-        ));
+        app.push(
+            self.item(
+                &INTRO,
+                widgets::button("about-intro", "Show").on_click(
+                    cx.listener(|r, _: &ClickEvent, window, cx| r.show_intro(window, cx)),
+                ),
+                cx,
+            ),
+        );
         let link = |id: &'static str, url: String| {
             widgets::button_frame(id)
                 .gap(px(6.))
@@ -49,15 +53,11 @@ impl Root {
             .child(group(
                 "Links",
                 vec![
-                    row(
-                        "Source code",
-                        "github.com/xxashxx-svg/hyprspace",
-                        link("about-repo", REPO.into()),
-                    ),
-                    row(
-                        "Report a problem",
-                        "",
+                    self.item(&SOURCE, link("about-repo", REPO.into()), cx),
+                    self.item(
+                        &REPORT,
                         link("about-issue", format!("{REPO}/issues/new")),
+                        cx,
                     ),
                 ],
             ))

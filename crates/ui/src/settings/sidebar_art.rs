@@ -5,7 +5,8 @@ use gpui::{
 use hyprspace_proto::Command;
 
 use super::Root;
-use super::controls::{group, row};
+use super::controls::group;
+use super::index::SIDEBAR_ART;
 use crate::zoom::px;
 use crate::{colors, widgets};
 
@@ -48,11 +49,7 @@ impl Root {
                         cx.listener(|r, _: &ClickEvent, _, cx| r.set_sidebar_art(None, cx)),
                     ))
                 });
-        let mut rows = vec![row(
-            "Picture",
-            "Fades into the top of the sidebar.",
-            controls.into_any_element(),
-        )];
+        let mut rows = vec![self.item(&SIDEBAR_ART, controls, cx)];
         if let Some(e) = &self.sidebar_art_error {
             rows.push(
                 div()

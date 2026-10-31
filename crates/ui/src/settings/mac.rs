@@ -7,7 +7,8 @@ use std::ffi::c_void;
 use gpui::{AnyElement, App, ClickEvent, Context, prelude::*};
 
 use super::Root;
-use super::controls::{group, row, text};
+use super::controls::{group, text};
+use super::index::{ACCESSIBILITY, SCREEN};
 use crate::widgets;
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -93,23 +94,17 @@ impl Root {
                     .into_any_element()
             }
         };
+        let screen = control("allow-screen", screen_allowed(), ask_screen);
+        let accessibility = control(
+            "allow-accessibility",
+            accessibility_allowed(),
+            ask_accessibility,
+        );
         group(
-            "This Mac",
+            SCREEN.section,
             vec![
-                row(
-                    "Screen recording",
-                    "Lets agents, and anything run in a HyprSpace terminal, see the whole screen. macOS may ask you to reopen HyprSpace.",
-                    control("allow-screen", screen_allowed(), ask_screen),
-                ),
-                row(
-                    "Accessibility",
-                    "Lets them click, type and read any app on this Mac.",
-                    control(
-                        "allow-accessibility",
-                        accessibility_allowed(),
-                        ask_accessibility,
-                    ),
-                ),
+                self.item(&SCREEN, screen, cx),
+                self.item(&ACCESSIBILITY, accessibility, cx),
             ],
         )
         .into_any_element()

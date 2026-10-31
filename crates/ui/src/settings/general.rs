@@ -4,10 +4,14 @@
 // composer's saved picks, so changing one here or in the composer changes both.
 
 use gpui::{AnyElement, ClickEvent, Context, div, prelude::*};
-use hyprspace_proto::{Agent, Permission, Snooze};
+use hyprspace_proto::{Agent, Permission, SettleAfter, Snooze};
 
 use super::controls::{group, row, row_with, text};
-use super::{Picker, Root};
+use super::index::{
+    AGENT, AGENT_CHECKS, CLEANUP, OPENER, PERMISSION, SETTLE, SNAPSHOTS, SNOOZED, STRUCTURED,
+    TITLES, WORKING,
+};
+use super::{Picker, Root, Tab};
 use crate::time::{left, now_ms};
 use crate::zoom::px;
 use crate::{colors, widgets};
@@ -35,6 +39,15 @@ pub(super) const MODES: [(Permission, &str, &str); 4] = [
         "Edits files and runs commands without asking.",
     ),
 ];
+
+pub(super) fn settle_name(after: SettleAfter) -> &'static str {
+    match after {
+        SettleAfter::Never => "Never",
+        SettleAfter::Day => "1 day",
+        SettleAfter::ThreeDays => "3 days",
+        SettleAfter::Week => "1 week",
+    }
+}
 
 impl Root {
     /// The agent the composer starts the next thread with: the saved pick if it is installed,
@@ -123,37 +136,38 @@ impl Root {
             .iter()
             .find(|m| m.0 == prefs.permission)
             .unwrap_or(&MODES[1]);
-        let permission = row_with(
-            None,
-            "Permission",
-            div()
-                .text_size(px(12.))
-                .text_color(colors::text3())
-                .child(mode.2),
-            self.dropdown(Picker::Permission, mode.1, cx),
+        let permission = self.spot(
+            PERMISSION.spot(),
+            row_with(
+                None,
+                PERMISSION.title,
+                div()
+                    .text_size(px(12.))
+                    .text_color(colors::text3())
+                    .child(mode.2),
+                self.with_reset(
+                    &PERMISSION,
+                    self.dropdown(Picker::Permission, mode.1, cx),
+                    cx,
+                ),
+            ),
+            false,
         );
 
         let after = self.state.settle_after;
-        let settle = widgets::segments().children(
-            hyprspace_proto::SettleAfter::ALL
-                .into_iter()
-                .enumerate()
-                .map(|(i, value)| {
-                    let name = match value {
-                        hyprspace_proto::SettleAfter::Never => "Never",
-                        hyprspace_proto::SettleAfter::Day => "1 day",
-                        hyprspace_proto::SettleAfter::ThreeDays => "3 days",
-                        hyprspace_proto::SettleAfter::Week => "1 week",
-                    };
-                    widgets::segment(("settle-after", i), None, name, after == value, false)
-                        .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                            r.state.settle_after = value;
-                            r.save();
-                            r.tidy_threads(cx);
-                            cx.notify();
-                        }))
-                }),
-        );
+        let settle = widgets::segments().children(SettleAfter::ALL.into_iter().enumerate().map(
+            |(i, value)| {
+                let name = settle_name(value);
+                widgets::segment(("settle-after", i), None, name, after == value, false).on_click(
+                    cx.listener(move |r, _: &ClickEvent, _, cx| {
+                        r.state.settle_after = value;
+                        r.save();
+                        r.tidy_threads(cx);
+                        cx.notify();
+                    }),
+                )
+            },
+        ));
 
         let clean = self.state.clean_worktrees;
         let cleanup = widgets::segments().children(
@@ -228,79 +242,42 @@ impl Root {
             .gap(px(28.))
             .child(group(
                 "New threads",
-                [
-                    Some(row("Agent", "What new threads start with.", agent_control)),
-                    Some(permission),
-                ]
-                .into_iter()
-                .flatten()
-                .collect(),
+                vec![self.item(&AGENT, agent_control, cx), permission],
             ))
             .child(group(
                 "Threads",
                 vec![
-                    row(
-                        "Settle untouched threads",
-                        "Idle threads move to Settled. Open or working ones stay.",
-                        settle,
-                    ),
-                    row(
-                        "Screenshot shortcut",
-                        if cfg!(windows) {
-                            "Ctrl+Alt+S, from any app, captures the window you're in and attaches it to the thread on screen."
-                        } else {
-                            "Only on Windows for now."
-                        },
-                        snapshots,
-                    ),
-                    row(
-                        "Name new threads",
-                        "Sends a new thread's first message to a small model on your plan for a short title: Haiku for Claude, GPT Luna for Codex.",
-                        titles,
-                    ),
+                    self.item(&SETTLE, settle, cx),
+                    self.item(&SNAPSHOTS, snapshots, cx),
+                    self.item(&TITLES, titles, cx),
                 ],
             ))
             .child(group(
                 "Updates",
-                vec![row(
-                    "Check for agent updates",
-                    "When HyprSpace checks for its own update, it also asks registry.npmjs.org for the newest Claude Code and Codex. Only the two package names are sent. Nothing updates until you click Update.",
-                    agent_checks,
-                )],
+                vec![self.item(&AGENT_CHECKS, agent_checks, cx)],
             ))
-            .child(self.snoozed_group(cx))
+            .child(self.spot(
+                SNOOZED.spot(),
+                self.snoozed_group(cx).into_any_element(),
+                true,
+            ))
             .child(group(
                 "Experimental",
                 vec![
-                    row(
-                        "Structured threads",
-                        "Adds a Structured button to the composer. Still being built.",
-                        switch,
-                    ),
-                    row(
-                        "Working section",
-                        "Threads move to a Working section in the sidebar while their agent works, and come back to the top when they finish or need you.",
-                        working,
-                    ),
+                    self.item(&STRUCTURED, switch, cx),
+                    self.item(&WORKING, working, cx),
                 ],
             ))
             .child(group(
                 "Folders",
                 vec![
-                    row(
-                        "Open folders in",
-                        "Where the Open button goes.",
-                        open_control,
-                    ),
-                    row(
-                        "Clean up worktrees",
-                        "Removes a worktree's folder once every thread in it has been settled this long, if nothing in it is uncommitted. The branch stays, and the folder comes back when you use the thread again.",
-                        cleanup,
-                    ),
+                    self.item(&OPENER, open_control, cx),
+                    self.item(&CLEANUP, cleanup, cx),
                 ],
             ));
         #[cfg(target_os = "macos")]
         let page = page.child(self.mac_group(cx));
-        page.into_any_element()
+        page.child(self.restore_group(Tab::General, cx))
+            .into_any_element()
     }
 }

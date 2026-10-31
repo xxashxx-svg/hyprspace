@@ -35,6 +35,7 @@ pub enum Cmd {
     OpenIn(Opener),
     Settings,
     SettingsTab(Tab),
+    SearchSettings,
     Intro,
     ShuffleWallpaper,
     Frames,
@@ -188,6 +189,12 @@ impl Root {
             "Settings",
             Glyph::Icon("settings"),
             Cmd::Settings,
+        ));
+        out.push(Item::new(
+            "Settings",
+            "Search settings",
+            Glyph::Icon("search"),
+            Cmd::SearchSettings,
         ));
         for t in TABS {
             out.push(
@@ -393,6 +400,10 @@ impl Root {
             }
             Cmd::Settings => self.open_settings(window, cx),
             Cmd::SettingsTab(tab) => self.open_settings_at(tab, window, cx),
+            Cmd::SearchSettings => {
+                self.open_settings(window, cx);
+                self.focus_search(window, cx);
+            }
             Cmd::Intro => self.show_intro(window, cx),
             Cmd::Frames => self.toggle_frame_meter(cx),
             Cmd::ShuffleWallpaper => self.shuffle_background(cx),

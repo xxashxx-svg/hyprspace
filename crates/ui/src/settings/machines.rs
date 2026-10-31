@@ -12,6 +12,7 @@ use hyprspace_proto::phone::PhoneCommand;
 
 use super::Root;
 use super::controls::{group, row, text};
+use super::index::{ADD_PEER, HOST, PEERS};
 use crate::input::{InputEvent, TextInput};
 use crate::time::{ago, local, now_ms};
 use crate::zoom::px;
@@ -119,11 +120,20 @@ impl Root {
             .flex()
             .flex_col()
             .gap(px(28.))
-            .child(group("Computers you can use", mine))
-            .child(group("Add a computer", add))
-            .child(group(
-                "Let other computers use this one",
-                self.host_rows(cx),
+            .child(self.spot(
+                PEERS.spot(),
+                group(PEERS.section, mine).into_any_element(),
+                true,
+            ))
+            .child(self.spot(
+                ADD_PEER.spot(),
+                group(ADD_PEER.section, add).into_any_element(),
+                true,
+            ))
+            .child(self.spot(
+                HOST.spot(),
+                group(HOST.section, self.host_rows(cx)).into_any_element(),
+                true,
             ))
             .into_any_element()
     }

@@ -8,6 +8,7 @@ use hyprspace_proto::phone::{Network, PhoneCommand};
 
 use super::Root;
 use super::controls::{group, row, text};
+use super::index::{NETWORKS, PHONE_CAN, PHONE_ON, PHONE_SECURITY, PHONES};
 use crate::assets::icon;
 use crate::time::{ago, local, now_ms};
 use crate::zoom::px;
@@ -49,18 +50,18 @@ impl Root {
             }),
         );
         let mut access = vec![
-            row(
-                "Let your phone connect",
-                "Direct and encrypted, no server. Works while HyprSpace is open.",
-                switch,
-            ),
-            row(
-                "Networks",
-                match prefs.network {
-                    Network::Everywhere => "Wi-Fi at home, Tailscale away.",
-                    Network::Tailscale => "Only devices on your tailnet.",
-                },
-                networks,
+            self.item(&PHONE_ON, switch, cx),
+            self.spot(
+                NETWORKS.spot(),
+                row(
+                    NETWORKS.title,
+                    match prefs.network {
+                        Network::Everywhere => NETWORKS.desc,
+                        Network::Tailscale => "Only devices on your tailnet.",
+                    },
+                    networks,
+                ),
+                false,
             ),
         ];
         if prefs.on {
@@ -95,20 +96,16 @@ impl Root {
             phones.push(self.pairing_row(cx));
         }
         phones.extend(self.device_rows(cx));
-        page = page.child(group("Phones", phones));
+        page = page.child(self.spot(
+            PHONES.spot(),
+            group(PHONES.section, phones).into_any_element(),
+            true,
+        ));
         page.child(group(
             "The app",
             vec![
-                row(
-                    "What it can do",
-                    "See your threads, terminals and files, send messages, answer approvals, start threads, and commit and push.",
-                    div(),
-                ),
-                row(
-                    "Security",
-                    "TLS pinned to this computer's certificate. The pairing code is never sent.",
-                    div(),
-                ),
+                self.item(&PHONE_CAN, div(), cx),
+                self.item(&PHONE_SECURITY, div(), cx),
                 self.get_app(),
             ],
         ))

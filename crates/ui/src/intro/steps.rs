@@ -59,7 +59,7 @@ const SHORTCUTS: [(&str, &str); 6] = [
     ("Ctrl+K", "Command palette"),
     ("Ctrl+Shift+P", "Command palette, too"),
     ("Ctrl+Shift+G", "Files and git"),
-    ("Ctrl+F", "Find in a thread or terminal"),
+    ("Ctrl+F", "Find in threads, terminals and Settings"),
     ("Ctrl+click", "Open a path from a terminal"),
     ("Esc", "Leave Settings"),
 ];

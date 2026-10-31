@@ -1,21 +1,26 @@
 // The Settings screen, laid out like zeron's: it takes the whole window, with a plain list of
 // views on the left and the open view on the right in one centered column. Views edit
 // `Root::state` in place and save through `Root::save`, the same path the composer's picks take.
-// A new view is one more `Tab` and one row in `TABS`; the palette lists every row too.
+// A new view is one more `Tab` and one row in `TABS`; the palette lists every row too. A new
+// fixed row goes in `index` and takes its name from there, so search finds it.
 
 mod about;
 mod agents;
 mod appearance;
 mod background;
 mod controls;
+mod defaults;
 mod general;
+mod index;
 #[cfg(target_os = "macos")]
 mod mac;
 mod machines;
 mod phone;
 mod picker;
 mod resources;
+mod restore;
 mod scheduled;
+mod search;
 mod shortcuts;
 mod sidebar_art;
 
@@ -24,15 +29,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, FocusHandle, FontWeight, IntoElement,
-    KeyDownEvent, Pixels, Point, SharedString, Window, div, prelude::*,
+    AnyElement, App, Bounds, ClickEvent, Context, Entity, FocusHandle, FontWeight, IntoElement,
+    KeyDownEvent, MouseButton, Pixels, Point, ScrollHandle, SharedString, Window, div, prelude::*,
 };
 use hyprspace_proto::Agent;
 use hyprspace_proto::state::ComposerPrefs;
 
 pub(crate) use appearance::{set_terminal_font, terminal_font, terminal_line_height, ui_font};
+pub use search::bind_keys;
 
 use crate::assets::icon;
+use crate::input::TextInput;
 use crate::root::Root;
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH, resize_edge};
 use crate::zoom::px;
@@ -76,6 +83,13 @@ pub struct Settings {
     /// The installed monospace families, read once when the Font menu first opens.
     fonts: RefCell<Option<Vec<String>>>,
     watch: resources::Watch,
+    search: Option<Entity<TextInput>>,
+    sel: usize,
+    hits: ScrollHandle,
+    page: ScrollHandle,
+    jump: Option<search::Jump>,
+    jumps: usize,
+    restore: Option<Tab>,
 }
 
 impl Settings {
@@ -86,6 +100,8 @@ impl Settings {
     pub(crate) fn set_tab(&mut self, tab: Tab) {
         self.tab = tab;
         self.menu = None;
+        self.jump = None;
+        self.restore = None;
     }
 
     pub(crate) fn focus_handle(&self) -> FocusHandle {
@@ -100,6 +116,13 @@ impl Settings {
             fields: Rc::default(),
             fonts: RefCell::default(),
             watch: Default::default(),
+            search: None,
+            sel: 0,
+            hits: ScrollHandle::new(),
+            page: ScrollHandle::new(),
+            jump: None,
+            jumps: 0,
+            restore: None,
         }
     }
 }
@@ -198,27 +221,48 @@ impl Root {
             Tab::Phone => self.phone_page(cx),
             Tab::Computers => self.machines_page(cx),
             Tab::Skills => self.skills_page(window, cx),
-            Tab::Shortcuts => shortcuts::page(),
+            Tab::Shortcuts => self.shortcuts_page(),
             Tab::About => self.about(cx),
         };
         let menu = self.picker(window, cx);
+        let input = self.search_input(window, cx);
         div()
             .id("settings")
+            .key_context("Settings")
             .track_focus(&self.settings.focus)
+            .on_action(
+                cx.listener(|r, _: &search::FindSetting, window, cx| r.focus_search(window, cx)),
+            )
             .on_key_down(cx.listener(|r, e: &KeyDownEvent, window, cx| {
-                if e.keystroke.key == "escape" {
-                    if r.settings.menu.take().is_none() {
-                        r.close_settings(window, cx);
+                match e.keystroke.key.as_str() {
+                    "escape" => r.settings_escape(window, cx),
+                    // only with nothing else focused, or it would eat a typed slash; stopping it keeps
+                    // Windows from typing the slash into the box it just focused
+                    "/" if r.settings.focus.is_focused(window)
+                        && !e.keystroke.modifiers.modified() =>
+                    {
+                        cx.stop_propagation();
+                        r.focus_search(window, cx)
                     }
-                    cx.notify();
+                    _ => {}
                 }
             }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|r, _, _, cx| {
+                    if r.settings.jump.take().is_some() {
+                        cx.notify();
+                    }
+                }),
+            )
+            .relative()
             .size_full()
             .flex()
-            .child(self.settings_nav(cx))
+            .child(self.settings_nav(&input, window, cx))
             .child(
                 div()
                     .id("settings-page")
+                    .track_scroll(&self.settings.page)
                     .flex_1()
                     .min_w_0()
                     .h_full()
@@ -234,10 +278,20 @@ impl Root {
                     )),
             )
             .children(menu)
+            .children(self.restore_dialog(cx))
             .into_any_element()
     }
 
-    fn settings_nav(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn settings_nav(
+        &self,
+        input: &Entity<TextInput>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let query = input.read(cx).text().to_string();
+        let searching = !query.trim().is_empty();
+        let search = self.search_box(input, window, cx);
+        let hits = searching.then(|| self.search_hits(&query, cx));
         let items = TABS.iter().enumerate().map(|(i, e)| {
             let on = e.tab == self.settings.tab;
             let tab = e.tab;
@@ -288,7 +342,7 @@ impl Root {
             .hover(|s| s.bg(colors::ink(0.04)).text_color(colors::text1()))
             .child(icon("arrow-left", 15., colors::text3()))
             .child(div().flex_1().child("Back"))
-            .child(widgets::keycap("Esc"))
+            .when(!searching, |d| d.child(widgets::keycap("Esc")))
             .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.close_settings(window, cx)));
         div()
             .relative()
@@ -311,8 +365,9 @@ impl Root {
                     .text_color(colors::text3())
                     .child("Settings"),
             )
-            .children(items)
-            .child(div().flex_1())
+            .child(search)
+            .children(hits)
+            .when(!searching, |d| d.children(items).child(div().flex_1()))
             .child(back)
             .child(resize_edge())
             .into_any_element()

@@ -233,6 +233,7 @@ impl Root {
         if self.screen != Screen::Settings {
             self.back = self.screen;
             self.screen = Screen::Settings;
+            self.clear_search(cx);
         }
         self.settings.set_tab(tab);
         if tab == crate::settings::Tab::Agents {

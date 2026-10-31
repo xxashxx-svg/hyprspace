@@ -6,7 +6,8 @@ use hyprspace_proto::Command;
 use hyprspace_proto::state::Effect;
 
 use super::Root;
-use super::controls::{group, row};
+use super::controls::group;
+use super::index::{EFFECT, GLASS, PICTURE, PICTURE_ZOOM, WALLPAPERS};
 use crate::zoom::px;
 use crate::{colors, widgets};
 
@@ -185,20 +186,12 @@ impl Root {
             .child(div().grid().grid_cols(6).gap(px(8.)).children(tiles))
             .into_any_element();
         let mut rows = vec![
-            row("Picture", "Shows behind the new thread screen.", picture),
+            self.item(&PICTURE, picture, cx),
             gallery,
-            row("Zoom", "", zoom_control.into_any_element()),
-            row("Effect", "", effects.into_any_element()),
-            row(
-                "Wallpaper folder",
-                "Shuffle picks from it, or from the built in ones without one.",
-                folder_control.into_any_element(),
-            ),
-            row(
-                "Glass",
-                "The window lets the desktop show through, blurred.",
-                glass_control.into_any_element(),
-            ),
+            self.item(&PICTURE_ZOOM, zoom_control, cx),
+            self.item(&EFFECT, effects, cx),
+            self.item(&WALLPAPERS, folder_control, cx),
+            self.item(&GLASS, glass_control, cx),
         ];
         if busy || self.background_error.is_some() {
             let (text, color) = match &self.background_error {

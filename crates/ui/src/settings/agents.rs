@@ -8,6 +8,7 @@ use hyprspace_proto::agents::{AgentCatalog, AgentInfo};
 use hyprspace_proto::{Agent, Command};
 
 use super::controls::{block, row_with, section, text};
+use super::index::{CLAUDE, CODEX};
 use super::{Picker, Root};
 use crate::assets::mark;
 use crate::composer::effort_label;
@@ -100,16 +101,24 @@ impl Root {
             .when(!efforts.is_empty(), |d| {
                 d.child(self.dropdown(Picker::Effort(agent), effort_name(&pick.effort), cx))
             });
-        row_with(
-            Some(lead),
-            agent.name(),
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .child(text(facts.join(" · ")).font_weight(FontWeight::NORMAL))
-                .children(update),
-            controls,
+        let setting = match agent {
+            Agent::Claude => &CLAUDE,
+            Agent::Codex => &CODEX,
+        };
+        self.spot(
+            setting.spot(),
+            row_with(
+                Some(lead),
+                agent.name(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(text(facts.join(" · ")).font_weight(FontWeight::NORMAL))
+                    .children(update),
+                self.with_reset(setting, controls, cx),
+            ),
+            false,
         )
     }
 }

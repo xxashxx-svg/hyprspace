@@ -12,16 +12,22 @@ use gpui::{
 use hyprspace_proto::state::{Appearance, DiffColors, Scheme};
 use hyprspace_theme::{SANS, TERM, THEMES};
 
-use super::controls::{group, row, step};
-use super::{Picker, Root};
+use super::controls::{group, step};
+use super::index::{ANIMATIONS, DIFF, LINE_HEIGHT, TERM_FONT, TERM_SIZE, THEME, UI_FONT};
+use super::{Picker, Root, Tab};
 use crate::assets::icon;
 use crate::zoom::px;
 use crate::{colors, widgets};
 
-const SCHEMES: [(Scheme, &str, &str); 3] = [
+pub(super) const SCHEMES: [(Scheme, &str, &str); 3] = [
     (Scheme::Dark, "Dark", "moon"),
     (Scheme::Light, "Light", "sun"),
     (Scheme::System, "System", "monitor"),
+];
+
+pub(super) const DIFFS: [(DiffColors, &str); 2] = [
+    (DiffColors::RedGreen, "Red and green"),
+    (DiffColors::BlueOrange, "Blue and orange"),
 ];
 
 pub(super) const MIN_SIZE: f32 = 10.;
@@ -106,7 +112,7 @@ pub(crate) fn set_terminal_font(a: &Appearance) {
 }
 
 /// A saved line height kept in range; nothing saved yet is the default.
-fn line_height(saved: f32) -> f32 {
+pub(super) fn line_height(saved: f32) -> f32 {
     if saved <= 0. {
         1.1
     } else {
@@ -246,14 +252,8 @@ impl Root {
                     .child(div().size(px(8.)).rounded_full().bg(colors::diff_del())),
             )
             .child(
-                widgets::segments().children(
-                    [
-                        (DiffColors::RedGreen, "Red and green"),
-                        (DiffColors::BlueOrange, "Blue and orange"),
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, (value, name))| {
+                widgets::segments().children(DIFFS.into_iter().enumerate().map(
+                    |(i, (value, name))| {
                         widgets::segment(("diff", i), None, name, diff == value, false).on_click(
                             cx.listener(move |r, _: &ClickEvent, window, cx| {
                                 r.state.appearance.diff_colors = value;
@@ -262,8 +262,8 @@ impl Root {
                                 cx.notify();
                             }),
                         )
-                    }),
-                ),
+                    },
+                )),
             );
         let animated = current.animations;
         let animation_control = widgets::switch("animations", animated).on_click(cx.listener(
@@ -275,57 +275,58 @@ impl Root {
             },
         ));
 
+        let theme = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .px(px(4.))
+                            .text_size(px(13.))
+                            .text_color(colors::text3())
+                            .child(THEME.title),
+                    )
+                    .child(self.with_reset(&THEME, widgets::segments().children(schemes), cx)),
+            )
+            .child(div().grid().grid_cols(3).gap(px(12.)).children(cards));
+
         div()
             .flex()
             .flex_col()
             .gap(px(28.))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .px(px(4.))
-                                    .text_size(px(13.))
-                                    .text_color(colors::text3())
-                                    .child("Theme"),
-                            )
-                            .child(widgets::segments().children(schemes)),
-                    )
-                    .child(div().grid().grid_cols(3).gap(px(12.)).children(cards)),
-            )
+            .child(self.spot(THEME.spot(), theme.into_any_element(), true))
             .child(self.background_group(cx))
             .child(self.sidebar_art_group(cx))
             .child(group(
                 "Interface",
                 vec![
-                    row(
-                        "Font",
-                        "",
+                    self.item(
+                        &UI_FONT,
                         self.dropdown(Picker::UiFont, ui_font_label(&current.ui_font), cx),
+                        cx,
                     ),
-                    row("Diff colors", "", diff_control),
-                    row("Animations", "", animation_control),
+                    self.item(&DIFF, diff_control, cx),
+                    self.item(&ANIMATIONS, animation_control, cx),
                 ],
             ))
             .child(group(
                 "Terminal",
                 vec![
-                    row(
-                        "Font",
-                        "Nerd Fonts show prompt icons.",
+                    self.item(
+                        &TERM_FONT,
                         self.dropdown(Picker::Font, font_label(&current.terminal_font), cx),
+                        cx,
                     ),
-                    row("Font size", "", size_stepper),
-                    row("Line height", "", line_stepper),
+                    self.item(&TERM_SIZE, size_stepper, cx),
+                    self.item(&LINE_HEIGHT, line_stepper, cx),
                 ],
             ))
+            .child(self.restore_group(Tab::Appearance, cx))
             .into_any_element()
     }
 
