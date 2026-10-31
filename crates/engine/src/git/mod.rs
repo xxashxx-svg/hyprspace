@@ -18,7 +18,7 @@ pub use status::{
     branch_in_repo, branch_info, changes, changes_in_repo, diff, is_repo, ls_files, root,
     summary_in_repo,
 };
-pub use worktree::{branches, create_worktree, finish as finish_worktree};
+pub use worktree::{branches, create_worktree, finish as finish_worktree, name_branch};
 
 pub type Result<T> = std::result::Result<T, String>;
 

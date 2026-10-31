@@ -5,11 +5,11 @@
 
 use std::path::PathBuf;
 
-use gpui::{
-    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
-};
+use gpui::{App, AppContext, TitlebarOptions, WindowOptions, point, px};
 use hyprspace_engine::Engine;
 use hyprspace_ui::Root;
+
+mod place;
 
 /// The folder to open: the first argument that is not a flag, made absolute.
 fn folder(args: impl Iterator<Item = String>, cwd: PathBuf) -> Option<PathBuf> {
@@ -67,9 +67,10 @@ fn main() {
             .detach();
             cx.on_window_closed(|cx, _| cx.quit()).detach();
 
-            let bounds = Bounds::centered(None, size(px(1400.), px(860.)), cx);
+            let (bounds, display_id) = place::last(cx);
             let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_bounds: Some(bounds),
+                display_id,
                 // the UI draws its own title row (ui/src/root/titlebar.rs)
                 titlebar: Some(TitlebarOptions {
                     // scripts/dev.ps1 sets HYPRSPACE_DEV, so the taskbar tells the two copies apart
@@ -84,7 +85,10 @@ fn main() {
                 ..Default::default()
             };
             cx.open_window(options, |window, cx| {
-                cx.new(|cx| Root::new(client, events, open, window, cx))
+                cx.new(|cx| {
+                    place::keep(window, cx);
+                    Root::new(client, events, open, window, cx)
+                })
             })
             .expect("open the window");
             cx.activate(true);

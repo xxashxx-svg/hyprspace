@@ -371,6 +371,14 @@ impl TranscriptView {
         view
     }
 
+    /// Reads the branch again when the one under `path` was renamed outside a run.
+    pub fn branch_moved(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        if self.launch.cwd == path {
+            self.branch = branch::of(&self.launch.cwd);
+            cx.notify();
+        }
+    }
+
     pub fn status(&self) -> Status {
         self.status
     }

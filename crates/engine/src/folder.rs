@@ -144,14 +144,28 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
             vec![FolderEvent::Diff { cwd, path, text }]
         }
         FolderCommand::AddWorktree {
-            request,
-            cwd,
-            name,
-            base,
+            request, cwd, base, ..
         } => {
             let _g = git_lock();
-            let result = git::create_worktree(&cwd, &name, base.as_deref());
+            let result = git::create_worktree(&cwd, base.as_deref());
             vec![FolderEvent::WorktreeAdded { request, result }]
+        }
+        FolderCommand::RenameBranch { worktree, title } => {
+            let _g = git_lock();
+            match git::name_branch(&worktree, &title) {
+                Ok(to) => vec![
+                    FolderEvent::Git {
+                        cwd: worktree.path.clone(),
+                        status: status(&worktree.path),
+                    },
+                    FolderEvent::BranchRenamed {
+                        path: worktree.path,
+                        from: worktree.branch,
+                        to,
+                    },
+                ],
+                Err(_) => Vec::new(),
+            }
         }
         FolderCommand::Branches { cwd } => {
             let branches = git::branches(&cwd);

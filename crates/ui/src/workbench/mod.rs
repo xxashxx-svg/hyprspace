@@ -389,6 +389,9 @@ impl Root {
         {
             self.worktree_done(path, *action, result, cx);
         }
+        if let FolderEvent::BranchRenamed { path, from, to } = &e {
+            self.branch_renamed(path, from, to, cx);
+        }
         if let FolderEvent::Files { cwd, files } = &e {
             crate::suggest::set_files(cwd.clone(), files.clone(), cx);
             for view in self.views.values() {

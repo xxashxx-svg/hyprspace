@@ -2729,6 +2729,8 @@ dependencies = [
  "gpui_platform",
  "hyprspace-engine",
  "hyprspace-ui",
+ "serde",
+ "serde_json",
  "winresource",
 ]
 

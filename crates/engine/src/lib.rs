@@ -6,6 +6,7 @@
 //! called directly for now; each gains a command in proto when the UI first needs it.
 
 mod background;
+mod backstop;
 pub mod delegate;
 pub mod env;
 mod folder;
@@ -34,8 +35,9 @@ mod watch;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -141,25 +143,57 @@ enum Ask {
     Interrupt,
 }
 
+/// What a session's queue needs besides its handle: the run slot and folder it shares with the
+/// session's events, and what Stop's backstop needs to end a stuck session.
+struct Shared {
+    run: Arc<Mutex<Option<String>>>,
+    cwd: Arc<Mutex<PathBuf>>,
+    ended: Arc<AtomicU64>,
+    say: Say,
+    agent: hyprspace_proto::Agent,
+}
+
 /// Hands a session its prompts and interrupts in order. A prompt that starts a run, not one that
 /// steers it, waits for a snapshot of the folder on the blocking pool first, so the run's changes
 /// can be listed and undone.
-fn queue(
-    handle: hyprspace_harness::Handle,
-    run: Arc<Mutex<Option<String>>>,
-    cwd: Arc<Mutex<PathBuf>>,
-) -> UnboundedSender<Ask> {
+fn queue(session: &Session, shared: Shared) -> UnboundedSender<Ask> {
+    let (handle, task) = (session.handle(), session.abort_handle());
+    let Shared {
+        run,
+        cwd,
+        ended,
+        say,
+        agent,
+    } = shared;
     let (tx, mut rx) = mpsc::unbounded::<Ask>();
     tokio::spawn(async move {
+        let mut since = Instant::now();
         while let Some(ask) = rx.next().await {
             let prompt = match ask {
                 Ask::Prompt(p) => p,
                 Ask::Interrupt => {
                     handle.interrupt();
+                    if lock(&run).is_some() {
+                        let stopped = backstop::Stopped {
+                            run: run.clone(),
+                            ended: ended.clone(),
+                            seen: ended.load(Ordering::SeqCst),
+                            since,
+                        };
+                        let watch = backstop::watch(
+                            backstop::WAIT,
+                            stopped,
+                            task.clone(),
+                            say.clone(),
+                            agent,
+                        );
+                        tokio::spawn(watch);
+                    }
                     continue;
                 }
             };
             if lock(&run).is_none() {
+                since = Instant::now();
                 let folder = lock(&cwd).clone();
                 let tree = tokio::task::spawn_blocking(move || git::snapshot(&folder))
                     .await
@@ -261,14 +295,19 @@ async fn serve(
                 });
                 let run = Arc::new(Mutex::new(None::<String>));
                 let cwd = Arc::new(Mutex::new(launch.cwd.clone()));
+                let ended = Arc::new(AtomicU64::new(0));
                 let emit: Emit = {
                     let (say, run, cwd) = (say.clone(), run.clone(), cwd.clone());
+                    let ended = ended.clone();
                     let pool = tokio::runtime::Handle::current();
                     Box::new(move |event| {
                         if let RunEvent::Started { cwd: started, .. } = &event {
                             *lock(&cwd) = started.clone();
                         }
                         let finished = matches!(event, RunEvent::Finished { .. });
+                        if finished {
+                            ended.fetch_add(1, Ordering::SeqCst);
+                        }
                         say(event);
                         if finished
                             && let Some(before) = lock(&run).take().filter(|b| !b.is_empty())
@@ -290,7 +329,14 @@ async fn serve(
                 };
                 match hyprspace_harness::with_mcp(agent, mcp).start(launch, emit) {
                     Ok(session) => {
-                        let queue = queue(session.handle(), run, cwd);
+                        let shared = Shared {
+                            run,
+                            cwd,
+                            ended,
+                            say: say.clone(),
+                            agent,
+                        };
+                        let queue = queue(&session, shared);
                         let live = Live {
                             session,
                             journal,

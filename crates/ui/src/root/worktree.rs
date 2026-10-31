@@ -59,6 +59,33 @@ impl Root {
         }));
     }
 
+    /// Every thread on that worktree, forks included, now names the branch by its new name.
+    pub(crate) fn branch_renamed(
+        &mut self,
+        path: &PathBuf,
+        from: &str,
+        to: &str,
+        cx: &mut Context<Self>,
+    ) {
+        for view in self.views.values() {
+            if let super::View::Structured(v) = view {
+                v.update(cx, |v, cx| v.branch_moved(path, cx));
+            }
+        }
+        for s in &mut self.state.spaces {
+            for t in &mut s.threads {
+                if let Some(w) = t
+                    .worktree
+                    .as_mut()
+                    .filter(|w| &w.path == path && w.branch == from)
+                {
+                    w.branch = to.to_string();
+                }
+            }
+        }
+        self.save();
+    }
+
     pub(crate) fn worktree_done(
         &mut self,
         path: &PathBuf,

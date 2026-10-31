@@ -2,23 +2,54 @@
 // ~/.hyprspace/worktrees/<repo>-<branch>, outside the repo, so they don't pollute its own status.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use hyprspace_proto::git::{Worktree, WorktreeAction};
 
 use super::{Result, create_pr, empty, git};
 
-pub fn create_worktree(cwd: &Path, name: &str, base: Option<&str>) -> Result<Worktree> {
-    let tag = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() & 0xffff)
-        .unwrap_or_default();
+pub fn create_worktree(cwd: &Path, base: Option<&str>) -> Result<Worktree> {
+    let mut token = [0u8; 4];
+    getrandom::fill(&mut token).map_err(|e| e.to_string())?;
+    let token: String = token.iter().map(|b| format!("{b:02x}")).collect();
     create_in(
         &crate::util::home_dir().join(".hyprspace").join("worktrees"),
         cwd,
-        &format!("{name} {tag:04x}"),
+        &token,
         base,
     )
+}
+
+/// Renames a worktree's placeholder branch after `title`, while nothing outside knows it: it has
+/// no upstream yet. A name another branch has gets a number. The folder never moves, since the
+/// CLIs keep their conversations by folder.
+pub fn name_branch(wt: &Worktree, title: &str) -> Result<String> {
+    if !wt.placeholder() {
+        return Err(format!("{} already has a name.", wt.branch));
+    }
+    let upstream = format!("{}@{{upstream}}", wt.branch);
+    if git(&wt.path, &["rev-parse", "--verify", "-q", &upstream]).is_ok() {
+        return Err(format!("{} is pushed, so it keeps its name.", wt.branch));
+    }
+    let named = branch_for(title);
+    if named == "hs/" {
+        return Err("That title makes no branch name.".into());
+    }
+    let taken = |b: &str| {
+        git(
+            &wt.repo,
+            &["rev-parse", "--verify", "-q", &format!("refs/heads/{b}")],
+        )
+        .is_ok()
+    };
+    let mut to = named.clone();
+    let mut n = 2;
+    while taken(&to) {
+        to = format!("{named}-{n}");
+        n += 1;
+    }
+    git(&wt.path, &["branch", "-m", &wt.branch, &to])?;
+    Ok(to)
 }
 
 fn create_in(root_dir: &Path, cwd: &Path, name: &str, base: Option<&str>) -> Result<Worktree> {
@@ -259,6 +290,32 @@ mod tests {
         );
         assert_eq!(create_in(&trees, &repo, "task one", None).unwrap(), wt);
         assert!(create_in(&trees, trees.parent().unwrap(), "x", None).is_err());
+    }
+
+    #[test]
+    fn a_placeholder_branch_takes_the_title_once_and_the_folder_stays() {
+        let (_dir, repo, trees) = setup();
+        let wt = create_in(&trees, &repo, "0a1b2c3d", None).unwrap();
+        assert!(wt.placeholder());
+        assert!(wt.path.ends_with("repo-hs-0a1b2c3d"));
+        create_in(&trees, &repo, "draft autosave", None).unwrap();
+        assert_eq!(
+            name_branch(&wt, "Draft autosave!").unwrap(),
+            "hs/draft-autosave-2"
+        );
+        assert!(branches(&repo).contains("hs/draft-autosave-2"));
+        assert!(wt.path.exists());
+        let named = Worktree {
+            branch: "hs/draft-autosave-2".into(),
+            ..wt
+        };
+        assert!(!named.placeholder());
+        assert!(name_branch(&named, "Something else").is_err());
+
+        let pushed = create_in(&trees, &repo, "1234abcd", None).unwrap();
+        git(&pushed.path, &["branch", "-u", "main"]).unwrap();
+        assert!(name_branch(&pushed, "Anything").is_err());
+        assert!(branches(&repo).contains("hs/1234abcd"));
     }
 
     #[test]

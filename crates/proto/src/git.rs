@@ -15,6 +15,16 @@ pub struct Worktree {
     pub repo: PathBuf,
 }
 
+impl Worktree {
+    /// Still on the branch it was made with, `hs/` and a random token, which takes the thread's
+    /// title once the thread has one.
+    pub fn placeholder(&self) -> bool {
+        self.branch
+            .strip_prefix("hs/")
+            .is_some_and(|t| t.len() == 8 && t.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WorktreeAction {

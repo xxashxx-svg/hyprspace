@@ -49,7 +49,9 @@ how Claude is driven.
   echoed back, releasing it after 5 seconds of quiet if the CLI absorbed the steer. Steers go as
   `priority: "next"` while a tool call is open, because `now` aborts the tool.
 - **Interrupts give up after 5 seconds.** Then the CLI is killed and the session reports `Failed`.
-  Both adapters take the patience as `with_patience`, so tests run at 300 ms.
+  Both adapters take the patience as `with_patience`, so tests run at 300 ms. That timer lives in
+  the adapter's own loop, which can be stuck awaiting the CLI (Codex awaits `turn/start`), so the
+  engine also ends a run still going 10 seconds after Stop (`engine/src/backstop.rs`).
 - **Nothing writes to a CLI's stdin inline.** Lines go through `spawn::writer`, a task of their
   own. Claude writes hundreds of KB as it starts and reads stdin only after, so a session that
   awaited a big prompt (an image) stopped reading stdout and both sides waited on full pipes. The

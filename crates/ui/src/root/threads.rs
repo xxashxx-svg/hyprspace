@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use gpui::{AppContext, Context, Entity, FocusHandle, Focusable, PathPromptOptions, Window};
 use hyprspace_proto::peer::PeerCommand;
 use hyprspace_proto::phone::Ask;
-use hyprspace_proto::{Agent, Command, Prompt, SessionId, Space, Thread, ThreadKind};
+use hyprspace_proto::{
+    Agent, Command, FolderCommand, Prompt, SessionId, Space, Thread, ThreadKind,
+};
 
 use super::{Action, Rename, Root, Screen, Start, View};
 use crate::composer::Target;
@@ -494,6 +496,15 @@ impl Root {
             && t.title != name
         {
             t.title = name.clone();
+            let placeholder = t.worktree.clone().filter(|w| w.placeholder());
+            if let Some(worktree) = placeholder.filter(|_| self.machines.remote(thread).is_none()) {
+                let title = name.clone();
+                self.client
+                    .send(Command::Folder(FolderCommand::RenameBranch {
+                        worktree,
+                        title,
+                    }));
+            }
             self.ask_host(thread, |thread| Ask::Rename {
                 thread,
                 title: name,

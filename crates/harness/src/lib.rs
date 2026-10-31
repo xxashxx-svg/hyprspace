@@ -122,6 +122,11 @@ impl Session {
         let _ = self.tx.send(Input::Configure(launch));
     }
 
+    /// Ends the session's task, which kills the CLI, for a session too stuck to stop itself.
+    pub fn abort_handle(&self) -> tokio::task::AbortHandle {
+        self.task.abort_handle()
+    }
+
     /// True once the CLI is gone and the last event was sent.
     pub fn is_closed(&self) -> bool {
         self.task.is_finished()

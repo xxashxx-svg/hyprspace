@@ -66,8 +66,9 @@ pub enum FolderCommand {
         cwd: PathBuf,
         path: String,
     },
-    /// A worktree off the repo holding `cwd`, on a new branch named after `name`, started from
-    /// `base` or the branch `cwd` is on. Answered with `WorktreeAdded`.
+    /// A worktree off the repo holding `cwd`, started from `base` or the branch `cwd` is on. Its
+    /// folder and placeholder branch get a random token, since `name` is still the prompt.
+    /// Answered with `WorktreeAdded`.
     AddWorktree {
         request: u64,
         cwd: PathBuf,
@@ -78,6 +79,12 @@ pub enum FolderCommand {
     /// The repo's local branches a worktree can start from. Answered with `Branches`.
     Branches {
         cwd: PathBuf,
+    },
+    /// Name a worktree's placeholder branch after its thread's `title`, while the branch has no
+    /// upstream. Answered with `BranchRenamed` when it was renamed.
+    RenameBranch {
+        worktree: Worktree,
+        title: String,
     },
     /// Merge a worktree's branch, open a pull request for it, or remove it. Work not yet
     /// committed is committed first with `message`. Answered with `WorktreeDone`.
@@ -141,6 +148,11 @@ pub enum FolderEvent {
         path: PathBuf,
         action: WorktreeAction,
         result: Result<String, String>,
+    },
+    BranchRenamed {
+        path: PathBuf,
+        from: String,
+        to: String,
     },
     Openers {
         openers: Vec<Opener>,
