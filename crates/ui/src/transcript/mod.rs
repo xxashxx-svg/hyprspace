@@ -107,7 +107,7 @@ pub struct TranscriptView {
     peek: Option<(usize, gpui::Point<gpui::Pixels>)>,
     /// A sent message's image whose marker the pointer is on: the row, and the image's number.
     lit: Option<(usize, usize)>,
-    send_saved: bool,
+    send_saved: Option<bool>,
     list: ListState,
     rows: Vec<rows::Row>,
     remeasure: bool,
@@ -207,7 +207,7 @@ impl TranscriptView {
             input
         });
         let sub = cx.subscribe(&input, |this, _, event: &InputEvent, cx| match event {
-            InputEvent::Submit => this.submit(cx),
+            InputEvent::Submit => this.submit(false, cx),
             // Esc ends autoscroll before it stops the agent
             InputEvent::Cancel if this.autoscroll.take().is_some() => cx.notify(),
             InputEvent::Cancel => this.interrupt(cx),
@@ -224,8 +224,10 @@ impl TranscriptView {
                     this.saving -= asked;
                     this.images.extend(saved);
                     this.keep_draft(cx);
-                    if this.saving == 0 && std::mem::take(&mut this.send_saved) {
-                        this.submit(cx);
+                    if this.saving == 0
+                        && let Some(now) = this.send_saved.take()
+                    {
+                        this.submit(now, cx);
                     }
                     cx.notify();
                 })
@@ -295,7 +297,7 @@ impl TranscriptView {
             saving: 0,
             peek: None,
             lit: None,
-            send_saved: false,
+            send_saved: None,
             list: ListState::new(0, ListAlignment::Top, px(600.)),
             rows: Vec::new(),
             remeasure: false,
@@ -596,7 +598,7 @@ impl TranscriptView {
                 })
                 .collect();
         }
-        self.redirect(prompt, cx);
+        self.redirect(prompt, false, cx);
         Vec::new()
     }
 
@@ -645,9 +647,9 @@ impl TranscriptView {
         self.interrupt(cx);
     }
 
-    fn submit(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn submit(&mut self, now: bool, cx: &mut Context<Self>) {
         if self.saving > 0 {
-            self.send_saved = true;
+            self.send_saved = Some(now);
             return;
         }
         let text = cites::with_cites(&self.cites, self.input.read(cx).text().trim());
@@ -668,7 +670,7 @@ impl TranscriptView {
             images: std::mem::take(&mut self.images),
         };
         self.input.update(cx, |i, cx| i.set_text("", cx));
-        self.redirect(prompt, cx);
+        self.redirect(prompt, now, cx);
     }
 
     /// The command `text` runs. With something attached only `/btw` is one, since it takes the
@@ -698,7 +700,7 @@ impl TranscriptView {
         .detach();
     }
 
-    fn redirect(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
+    fn redirect(&mut self, prompt: Prompt, now: bool, cx: &mut Context<Self>) {
         let open: Vec<String> = approval::open(self)
             .into_iter()
             .filter_map(|i| match i {
@@ -706,7 +708,7 @@ impl TranscriptView {
                 _ => None,
             })
             .collect();
-        if open.is_empty() {
+        if open.is_empty() && !(now && self.model.running()) {
             return self.offer(prompt, cx);
         }
         for request in open {
@@ -1501,7 +1503,7 @@ impl TranscriptView {
         if let Some(commands::Slash::Own(own, _)) = commands::parse(&text, &[])
             && !commands::wants_text(own)
         {
-            self.submit(cx);
+            self.submit(false, cx);
         }
     }
 
@@ -1715,7 +1717,10 @@ impl model_menu::Host for TranscriptView {
     }
 }
 
-actions!(transcript, [FindInThread, PrevPrompt, NextPrompt]);
+actions!(
+    transcript,
+    [FindInThread, PrevPrompt, NextPrompt, SendNow, SendAndNew]
+);
 
 pub fn bind_keys(cx: &mut gpui::App) {
     let c = Some("Thread");
@@ -1723,6 +1728,11 @@ pub fn bind_keys(cx: &mut gpui::App) {
         KeyBinding::new("secondary-f", FindInThread, c),
         KeyBinding::new("alt-up", PrevPrompt, c),
         KeyBinding::new("alt-down", NextPrompt, c),
+    ]);
+    let c = Some("Thread > TextInput");
+    cx.bind_keys([
+        KeyBinding::new("secondary-enter", SendNow, c),
+        KeyBinding::new("secondary-alt-enter", SendAndNew, c),
     ]);
 }
 

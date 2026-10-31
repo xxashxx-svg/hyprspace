@@ -17,8 +17,8 @@ use std::path::PathBuf;
 
 use gpui::{
     App, ClickEvent, Context, Entity, EventEmitter, ExternalPaths, Focusable, FontWeight,
-    IntoElement, PathPromptOptions, Pixels, Point, Render, Subscription, Task, Window, div,
-    prelude::*, relative,
+    IntoElement, KeyBinding, PathPromptOptions, Pixels, Point, Render, Subscription, Task, Window,
+    actions, div, prelude::*, relative,
 };
 use hyprspace_proto::agents::{AgentInfo, AgentSession};
 use hyprspace_proto::state::{ComposerPrefs, Pick};
@@ -31,6 +31,16 @@ use clone::CloneCard;
 use model_menu::{Anchor, Choice, Host as _, ModelMenu, Spec};
 pub use pickers::{effort_label, permission_label};
 
+actions!(composer, [Background]);
+
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new(
+        "secondary-enter",
+        Background,
+        Some("Composer > TextInput"),
+    )]);
+}
+
 /// Where a new thread goes: a space, its name, and its folder (None for an open space).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
@@ -42,14 +52,18 @@ pub struct Target {
 }
 
 pub enum ComposerEvent {
-    /// Start a thread in the target space, in a terminal session when `terminal`.
+    /// Start a thread in `space`, in a terminal session when `terminal`, and leave the composer
+    /// on screen when `background`.
     Start {
+        space: u64,
         launch: Launch,
         prompt: Option<Prompt>,
         title: String,
         terminal: bool,
         worktree: Option<hyprspace_proto::git::Worktree>,
+        background: bool,
     },
+    Park(Draft),
     /// A clone finished. `open_here` starts the thread in the target space; otherwise the
     /// folder becomes its own space, with a thread when there was a task.
     Cloned {
@@ -97,7 +111,7 @@ pub struct Composer {
     prefs: ComposerPrefs,
     images: Vec<PathBuf>,
     saving: usize,
-    send_saved: bool,
+    send_saved: Option<bool>,
     peek: Option<(usize, Point<Pixels>)>,
     /// The permission menu, open where it was clicked.
     menu: Option<Point<Pixels>>,
@@ -114,7 +128,7 @@ pub struct Composer {
     /// The branch of the folder the thread starts in, when it is a repo.
     branch: Option<String>,
     worktree: bool,
-    waiting: Option<worktree::Waiting>,
+    waiting: Vec<worktree::Waiting>,
     base: Option<String>,
     branches: Vec<String>,
     branch_menu: Option<Point<Pixels>>,
@@ -137,7 +151,7 @@ impl Composer {
         let name = cx.new(|cx| TextInput::new("folder name", false, cx));
         let subs = vec![
             cx.subscribe(&input, |this, _, e: &InputEvent, cx| match e {
-                InputEvent::Submit => this.submit(cx),
+                InputEvent::Submit => this.submit(false, cx),
                 InputEvent::Changed => this.text_changed(cx),
                 InputEvent::Images(images) => {
                     let asked = images.len();
@@ -152,8 +166,10 @@ impl Composer {
                         this.saving -= asked;
                         this.images.extend(saved);
                         this.keep_draft(cx);
-                        if this.saving == 0 && std::mem::take(&mut this.send_saved) {
-                            this.submit(cx);
+                        if this.saving == 0
+                            && let Some(background) = this.send_saved.take()
+                        {
+                            this.submit(background, cx);
                         }
                         cx.notify();
                     })
@@ -198,7 +214,7 @@ impl Composer {
             prefs: ComposerPrefs::default(),
             images: Vec::new(),
             saving: 0,
-            send_saved: false,
+            send_saved: None,
             peek: None,
             menu: None,
             models: None,
@@ -221,7 +237,7 @@ impl Composer {
             error: None,
             branch: None,
             worktree: false,
-            waiting: None,
+            waiting: Vec::new(),
             base: None,
             branches: Vec::new(),
             branch_menu: None,
@@ -531,12 +547,12 @@ impl Composer {
         self.input.update(cx, |i, cx| i.set_text("", cx));
     }
 
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        if self.waiting.is_some() {
+    fn submit(&mut self, background: bool, cx: &mut Context<Self>) {
+        if self.waiting.iter().any(|w| !w.background) {
             return;
         }
         if self.saving > 0 {
-            self.send_saved = true;
+            self.send_saved = Some(background);
             return;
         }
         self.menu = None;
@@ -546,10 +562,10 @@ impl Composer {
             self.start_clone(cx);
             return;
         }
-        if self.target.is_none() {
+        let Some(space) = self.target.as_ref().map(|t| t.space) else {
             self.pick_folder(PickFor::Project, cx);
             return;
-        }
+        };
         let Some(cwd) = self.cwd() else {
             self.pick_folder(PickFor::Folder, cx);
             return;
@@ -562,20 +578,25 @@ impl Composer {
         let title = title_of(&text);
         let prompt = self.prompt(text);
         if self.worktree_on() {
-            self.start_in_worktree(launch, prompt, title, cx);
+            self.start_in_worktree(space, launch, prompt, title, background, cx);
             return;
         }
         cx.emit(ComposerEvent::Start {
+            space,
             launch,
             prompt,
             title,
             terminal: self.terminal(),
             worktree: None,
+            background,
         });
         self.reset(cx);
     }
 
     fn resume(&mut self, session: AgentSession, cx: &mut Context<Self>) {
+        let Some(space) = self.target.as_ref().map(|t| t.space) else {
+            return;
+        };
         let Some(mut launch) = self.cwd().and_then(|c| self.launch(c)) else {
             return;
         };
@@ -583,11 +604,13 @@ impl Composer {
         let text = self.input.read(cx).text().trim().to_string();
         let prompt = self.prompt(text);
         cx.emit(ComposerEvent::Start {
+            space,
             launch,
             prompt,
             title: session.title,
             terminal: self.terminal(),
             worktree: None,
+            background: false,
         });
         self.reset(cx);
     }
@@ -806,6 +829,14 @@ impl Render for Composer {
             });
         div()
             .id("composer")
+            .key_context("Composer")
+            .on_action(cx.listener(|c, _: &Background, window, cx| {
+                if c.input.focus_handle(cx).is_focused(window) {
+                    c.submit(true, cx);
+                } else {
+                    cx.propagate();
+                }
+            }))
             .relative()
             .size_full()
             .flex()

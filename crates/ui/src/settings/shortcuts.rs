@@ -101,6 +101,21 @@ pub(super) fn page() -> AnyElement {
             "Prompt box",
             vec![
                 line("Send", "Queues it while a run works.", &["Enter".into()]),
+                line(
+                    "Start a thread in the background",
+                    "In a new thread's box. It runs while you write the next one.",
+                    &[chord(&[MOD, "Enter"])],
+                ),
+                line(
+                    "Steer the run",
+                    "Sends it into the run now instead of queueing it.",
+                    &[chord(&[MOD, "Enter"])],
+                ),
+                line(
+                    "Send and start a new thread",
+                    "",
+                    &[chord(&[MOD, ALT, "Enter"])],
+                ),
                 line("New line", "", &[chord(&["Shift", "Enter"])]),
                 line("Interrupt the run", "", &["Esc".into()]),
                 line("Paste", "Images attach.", &[chord(&[MOD, "V"])]),

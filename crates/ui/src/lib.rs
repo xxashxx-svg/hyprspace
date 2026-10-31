@@ -45,4 +45,5 @@ pub fn init(cx: &mut gpui::App) {
     folders::bind_keys(cx);
     suggest::bind_keys(cx);
     transcript::bind_keys(cx);
+    composer::bind_keys(cx);
 }

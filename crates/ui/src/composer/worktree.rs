@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Point, Window, div, prelude::*};
 use hyprspace_proto::git::Worktree;
-use hyprspace_proto::{Command, FolderCommand, Launch, Prompt};
+use hyprspace_proto::{Command, Draft, FolderCommand, Launch, Prompt};
 use hyprspace_theme::MONO;
 
 use super::{Composer, ComposerEvent};
@@ -12,10 +12,12 @@ use crate::{colors, widgets};
 
 pub(super) struct Waiting {
     request: u64,
+    space: u64,
     launch: Launch,
     prompt: Option<Prompt>,
     title: String,
     terminal: bool,
+    pub(super) background: bool,
 }
 
 impl Composer {
@@ -65,14 +67,13 @@ impl Composer {
 
     pub(super) fn start_in_worktree(
         &mut self,
+        space: u64,
         launch: Launch,
         prompt: Option<Prompt>,
         title: String,
+        background: bool,
         cx: &mut Context<Self>,
     ) {
-        if self.waiting.is_some() {
-            return;
-        }
         let request = self.next_request;
         self.next_request += 1;
         self.client
@@ -82,13 +83,18 @@ impl Composer {
                 name: title.clone(),
                 base: self.base.clone(),
             }));
-        self.waiting = Some(Waiting {
+        self.waiting.push(Waiting {
             request,
+            space,
             launch,
             prompt,
             title,
             terminal: self.terminal(),
+            background,
         });
+        if background {
+            self.reset(cx);
+        }
         cx.notify();
     }
 
@@ -98,22 +104,28 @@ impl Composer {
         result: Result<Worktree, String>,
         cx: &mut Context<Self>,
     ) {
-        let Some(w) = self.waiting.take_if(|w| w.request == request) else {
+        let Some(at) = self.waiting.iter().position(|w| w.request == request) else {
             return;
         };
+        let w = self.waiting.remove(at);
         match result {
             Ok(worktree) => {
                 let mut launch = w.launch;
                 launch.cwd = worktree.path.clone();
                 cx.emit(ComposerEvent::Start {
+                    space: w.space,
                     launch,
                     prompt: w.prompt,
                     title: w.title,
                     terminal: w.terminal,
                     worktree: Some(worktree),
+                    background: w.background,
                 });
-                self.reset(cx);
+                if !w.background {
+                    self.reset(cx);
+                }
             }
+            Err(e) if w.background => self.park(w, e, cx),
             Err(e) => {
                 if let Some(p) = w.prompt {
                     self.images = p.images;
@@ -122,6 +134,32 @@ impl Composer {
             }
         }
         cx.notify();
+    }
+
+    fn park(&mut self, w: Waiting, error: String, cx: &mut Context<Self>) {
+        let prompt = w.prompt.unwrap_or_default();
+        let free = self.input.read(cx).text().trim().is_empty()
+            && self.images.is_empty()
+            && self.target.as_ref().is_some_and(|t| t.space == w.space);
+        if free {
+            self.images = prompt.images;
+            self.input.update(cx, |i, cx| i.set_text(prompt.text, cx));
+            self.error = Some(error);
+            return;
+        }
+        cx.emit(ComposerEvent::Park(Draft {
+            space: w.space,
+            text: prompt.text,
+            images: prompt.images,
+            prefs: self.prefs.clone(),
+            worktree: true,
+            base: self.base.clone(),
+            ..Draft::default()
+        }));
+        self.error = Some(format!(
+            "Couldn't make a worktree for \"{}\", so it's a draft in the sidebar. {error}",
+            w.title
+        ));
     }
 }
 
@@ -258,7 +296,7 @@ pub(super) fn chip(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
             .when(on, |d| d.bg(colors::ink(0.1)))
             .hover(|s| s.bg(colors::ink(0.08)).text_color(colors::text1()))
             .child(icon("folder-tree", 12., tint))
-            .child(if c.waiting.is_some() {
+            .child(if !c.waiting.is_empty() {
                 "Making a worktree"
             } else {
                 "New worktree"

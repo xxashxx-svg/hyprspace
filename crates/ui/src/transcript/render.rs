@@ -205,6 +205,24 @@ pub fn view(
             jump_prompt(v, true);
             cx.notify();
         }))
+        .on_action(cx.listener(|v, _: &super::SendNow, window, cx| {
+            if v.input.focus_handle(cx).is_focused(window) {
+                v.submit(true, cx);
+            } else {
+                cx.propagate();
+            }
+        }))
+        .on_action(cx.listener(|v, _: &super::SendAndNew, window, cx| {
+            let empty = v.input.read(cx).text().trim().is_empty()
+                && v.images.is_empty()
+                && v.cites.is_empty();
+            if !v.input.focus_handle(cx).is_focused(window) {
+                cx.propagate();
+            } else if !empty || v.saving > 0 {
+                v.submit(false, cx);
+                cx.emit(TranscriptEvent::NewThread);
+            }
+        }))
         .size_full()
         .flex()
         .flex_col()
@@ -1848,7 +1866,7 @@ fn composer(
     } else {
         widgets::send("send", "arrow-up", !nothing)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(cx)))
+            .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(false, cx)))
     };
     // the prompt across the whole width, and under it the model, effort and permission on the
     // left with attach and send on the right

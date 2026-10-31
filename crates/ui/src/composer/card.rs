@@ -181,7 +181,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 .child(
                     send.ml(px(4.))
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.submit(cx))),
+                        .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.submit(false, cx))),
                 ),
         )
         .into_any_element()
@@ -206,7 +206,11 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
                 .flex_none()
                 .text_size(px(11.5))
                 .text_color(colors::text3())
-                .child("Enter to send  \u{b7}  Shift+Enter for a new line"),
+                .child(if cfg!(target_os = "macos") {
+                    "Enter to send  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
+                } else {
+                    "Enter to send  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"
+                }),
         )
         .into_any_element()
 }

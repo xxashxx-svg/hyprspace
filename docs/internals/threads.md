@@ -54,6 +54,9 @@ it, so the sidebar doesn't change under their typing.
 - The composer's own space picker moves its draft to the new space. Reaching another space's
   composer from anywhere else (a thread's close button, leaving a settled thread) parks the draft
   instead, so it never changes project behind the user's back.
+- A background start (Ctrl+Enter) clears the box before its worktree exists. If the worktree
+  fails, the prompt goes back in the box when the box is empty, and becomes a draft row when the
+  next prompt is already there. It never overwrites what the user is typing.
 - Structured sessions come from Settings, not the draft, when it loads.
 - Drafts are for this computer's spaces. Another computer's space ids are handed out per
   session, so a draft saved on one could come back on the wrong space. Its composer keeps the

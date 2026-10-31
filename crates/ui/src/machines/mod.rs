@@ -361,6 +361,7 @@ impl Root {
         &mut self,
         space: u64,
         start: Start,
+        show: bool,
         cx: &mut Context<Self>,
     ) -> bool {
         let Some((peer, remote)) = self.machines.space(space) else {
@@ -379,6 +380,9 @@ impl Root {
         } = start;
         let (text, images) = prompt.map(|p| (p.text, p.images)).unwrap_or_default();
         let request = self.machines.request();
+        if !show {
+            self.machines.asked.remove(&request);
+        }
         let ask = Ask::New {
             space: remote.unwrap_or(0),
             folder: remote.is_none().then(|| launch.cwd.display().to_string()),

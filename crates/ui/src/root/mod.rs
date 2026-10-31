@@ -24,7 +24,9 @@ use std::time::{Duration, Instant};
 use futures::StreamExt;
 use gpui::{AppContext, Context, Entity, Pixels, Point, SharedString, Subscription, Task, Window};
 use hyprspace_proto::agents::AgentInfo;
-use hyprspace_proto::{AppState, Client, Command, Event, Events, SessionId, Thread, ThreadKind};
+use hyprspace_proto::{
+    AppState, Client, Command, Draft, Event, Events, SessionId, Thread, ThreadKind,
+};
 
 use crate::composer::{Composer, ComposerEvent};
 use crate::input::{InputEvent, TextInput};
@@ -826,29 +828,41 @@ impl Root {
     ) {
         match event {
             ComposerEvent::Start {
+                space,
                 launch,
                 prompt,
                 title,
                 terminal,
                 worktree,
+                background,
             } => {
-                self.drop_draft();
-                if let Screen::Compose(Some(space)) = self.screen {
-                    let start = Start {
-                        launch: launch.clone(),
-                        prompt: prompt.clone(),
-                        title: title.clone(),
-                        terminal: *terminal,
-                    };
-                    if self.machines.space(space).is_some() {
-                        self.start_remote(space, start, cx);
-                    } else if let Some(id) = self.start_thread(space, start, true, window, cx)
-                        && let Some(t) = self.state.thread_mut(id)
-                    {
-                        t.worktree = worktree.clone();
-                        self.save();
-                    }
+                let (space, show) = (*space, !*background);
+                if show {
+                    self.drop_draft();
                 }
+                let start = Start {
+                    launch: launch.clone(),
+                    prompt: prompt.clone(),
+                    title: title.clone(),
+                    terminal: *terminal,
+                };
+                if self.machines.space(space).is_some() {
+                    self.start_remote(space, start, show, cx);
+                } else if let Some(id) = self.start_thread(space, start, show, window, cx)
+                    && let Some(t) = self.state.thread_mut(id)
+                {
+                    t.worktree = worktree.clone();
+                    self.save();
+                }
+            }
+            ComposerEvent::Park(draft) => {
+                let id = self.state.take_id();
+                self.state.drafts.push(Draft {
+                    id,
+                    created: crate::time::now_ms(),
+                    ..draft.clone()
+                });
+                self.save();
             }
             ComposerEvent::Cloned {
                 path,
