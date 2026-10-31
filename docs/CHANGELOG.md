@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.41 — 2026-10-31
+
+- New threads save as drafts in the sidebar, with the agent, model, effort and access you picked
+- Cite adds the selected text as a chip over the reply box, with an optional note
+- Settings, Resources shows CPU, memory and disk use for HyprSpace and each thread
+- An optional Working section in the sidebar (Settings, General, Experimental) holds threads while their agent works and brings them back when they finish or need you
+- The window opens where you left it
+- Stop always ends a run within about 10 seconds, even when an agent stops responding
+- New worktrees get a short folder name, and the branch takes the thread's title once it has one
+
 ## 0.24.40 — 2026-10-30
 
 - Fixed a thread that could hang on Working, then on Stopping, when the first message after the app started had an image
