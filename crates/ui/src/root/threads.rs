@@ -399,7 +399,7 @@ impl Root {
                 });
                 self._subs.push(sub);
                 if let Some(status) = Some(v.read(cx).status()) {
-                    self.set_status(id, status);
+                    self.set_status(id, status, cx);
                 }
                 View::Structured(v)
             }
@@ -470,7 +470,7 @@ impl Root {
         self.save();
     }
 
-    pub(crate) fn set_status(&mut self, thread: u64, status: Status) {
+    pub(crate) fn set_status(&mut self, thread: u64, status: Status, cx: &mut Context<Self>) {
         if status == Status::Done && self.screen != Screen::Thread(thread) {
             self.unseen.insert(thread);
         } else {
@@ -485,6 +485,7 @@ impl Root {
         if before.is_some_and(|b| b != status) || (before.is_none() && status == Status::Working) {
             self.touched(thread, status);
         }
+        self.shelf_status(thread, before, status, cx);
     }
 
     pub(super) fn retitle(&mut self, thread: u64, name: String) {
@@ -517,7 +518,7 @@ impl Root {
         if self.machines.remote(thread).is_some() {
             match e {
                 TranscriptEvent::Status(s) => {
-                    self.set_status(thread, *s);
+                    self.set_status(thread, *s, cx);
                     self.tick(cx);
                 }
                 TranscriptEvent::Launch(l) => {
@@ -562,7 +563,7 @@ impl Root {
                 cx,
             ),
             TranscriptEvent::Status(s) => {
-                self.set_status(thread, *s);
+                self.set_status(thread, *s, cx);
                 self.delegation_moved(thread, *s, cx);
                 self.tick(cx);
             }

@@ -46,6 +46,8 @@ pub struct AppState {
     pub titles: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub drafts: Vec<Draft>,
+    /// Working threads fold into a Working shelf and come back when they finish or need you.
+    pub working_shelf: bool,
 }
 
 impl Default for AppState {
@@ -68,6 +70,7 @@ impl Default for AppState {
             command_info: BTreeMap::new(),
             titles: true,
             drafts: Vec::new(),
+            working_shelf: false,
         }
     }
 }
@@ -665,6 +668,18 @@ mod tests {
         assert!(!snoozed.settles(40 * DAY, SettleAfter::Day));
         // no known time at all: nothing to count from
         assert!(!Thread::default().settles(40 * DAY, SettleAfter::Day));
+    }
+
+    #[test]
+    fn the_working_shelf_starts_off_and_stays_on_once_switched_on() {
+        let old: AppState = serde_json::from_str(r#"{"titles":true}"#).unwrap();
+        assert!(!old.working_shelf);
+        let on = AppState {
+            working_shelf: true,
+            ..AppState::default()
+        };
+        let back: AppState = serde_json::from_str(&serde_json::to_string(&on).unwrap()).unwrap();
+        assert!(back.working_shelf);
     }
 
     #[test]

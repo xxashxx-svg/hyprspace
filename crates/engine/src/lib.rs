@@ -21,6 +21,7 @@ mod phone;
 pub mod providers;
 pub mod pty;
 mod requests;
+mod resources;
 mod running;
 pub mod sessions;
 mod sidebar_art;
@@ -217,6 +218,7 @@ async fn serve(
     let delegates = delegate::Delegates::default();
     let mut structured: HashMap<SessionId, Live> = HashMap::new();
     let mut asides: HashMap<SessionId, tokio::task::JoinHandle<()>> = HashMap::new();
+    let sampler = Arc::new(Mutex::new(resources::Sampler::new()));
     while let Some(cmd) = rx.next().await {
         let Some(cmd) = peers.route(cmd) else {
             continue;
@@ -637,6 +639,20 @@ async fn serve(
             }
             Command::Usage(cmd) => usage::handle(cmd, tx.clone()),
             Command::Skills(cmd) => skills::handle(cmd, tx.clone()),
+            Command::Resources => {
+                let mut roots = terminals.ptys().pids();
+                roots.extend(
+                    structured
+                        .iter()
+                        .filter(|(_, live)| !live.session.is_closed())
+                        .filter_map(|(id, live)| Some((*id, live.session.pid()?))),
+                );
+                let (sampler, tx) = (sampler.clone(), tx.clone());
+                tokio::task::spawn_blocking(move || {
+                    let reading = lock(&sampler).read(&roots);
+                    let _ = tx.unbounded_send(Event::Resources(reading));
+                });
+            }
             Command::Update(cmd) => update::handle(cmd, tx.clone()),
             Command::Phone(cmd) => phone.command(cmd),
             Command::Peer(cmd) => peers.command(cmd),

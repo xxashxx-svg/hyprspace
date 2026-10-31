@@ -87,6 +87,7 @@ const FILES: &[(&str, &[u8])] = files!(
     "brand/explorer.png",
     // the usage meter, the command palette, Settings' Usage and Skills, and the intro
     "icons/gauge.svg",
+    "icons/activity.svg",
     "icons/zap.svg",
     "icons/square-terminal.svg",
     "icons/text-search.svg",

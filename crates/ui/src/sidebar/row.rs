@@ -504,7 +504,13 @@ impl Root {
     /// A thread in the list, after T3 Code's: its agent's mark and its project's name, with the
     /// age or a running count on the right; the title; then what it is doing, or its branch or
     /// folder, and its model.
-    pub(crate) fn thread_row(&self, t: &Thread, now: u64, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn thread_row(
+        &self,
+        t: &Thread,
+        now: u64,
+        drops: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let id = t.id;
         let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
         let selected = self.screen == Screen::Thread(id);
@@ -802,25 +808,27 @@ impl Root {
                 |d, offset, _, cx| cx.new(|_| d.ghost(offset)),
             )
             // while a row is dragged: which half of this one the pointer is on
-            .on_drag_move(cx.listener(move |r, e: &DragMoveEvent<PaneDrag>, _, cx| {
-                let (p, b) = (e.event.position, e.bounds);
-                let next = if b.contains(&p) {
-                    Some((id, p.y > b.center().y))
-                } else if r.drop_at.is_some_and(|(t, _)| t == id) {
-                    None
-                } else {
-                    return;
-                };
-                if r.drop_at != next {
-                    r.drop_at = next;
-                    cx.notify();
-                }
-            }))
-            .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| {
-                let below = r.drop_at.is_some_and(|(t, below)| t == id && below);
-                r.drop_at = None;
-                r.drop_on_thread(d, id, below, cx)
-            }))
+            .when(drops, |d| {
+                d.on_drag_move(cx.listener(move |r, e: &DragMoveEvent<PaneDrag>, _, cx| {
+                    let (p, b) = (e.event.position, e.bounds);
+                    let next = if b.contains(&p) {
+                        Some((id, p.y > b.center().y))
+                    } else if r.drop_at.is_some_and(|(t, _)| t == id) {
+                        None
+                    } else {
+                        return;
+                    };
+                    if r.drop_at != next {
+                        r.drop_at = next;
+                        cx.notify();
+                    }
+                }))
+                .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| {
+                    let below = r.drop_at.is_some_and(|(t, below)| t == id && below);
+                    r.drop_at = None;
+                    r.drop_on_thread(d, id, below, cx)
+                }))
+            })
             // the line where a dragged row would land
             .children(
                 self.drop_at

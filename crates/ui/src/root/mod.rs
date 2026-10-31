@@ -163,6 +163,9 @@ pub struct Root {
     /// Whether the Settled and Snoozed shelves are open.
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
+    pub(crate) working_open: bool,
+    /// When each thread on the Working shelf stopped working, while it waits to come back.
+    pub(crate) left_work: HashMap<u64, Instant>,
     /// The sidebar row under the pointer and since when, for its hover card.
     pub(crate) hover_row: Option<(u64, Instant)>,
     pub(crate) _hover_timer: Option<Task<()>>,
@@ -234,6 +237,7 @@ pub struct Root {
     pub(crate) phone: crate::phone::PhoneState,
     pub(crate) machines: crate::machines::Machines,
     _phone_pump: Task<()>,
+    _resources_pump: Task<()>,
     pub(crate) _pump: Task<()>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -354,6 +358,16 @@ impl Root {
                 }
             }
         });
+        let resources_pump = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                if this.update(cx, |r, _| r.watch_resources()).is_err() {
+                    break;
+                }
+            }
+        });
         let limits = cx.new(|cx| crate::usage::Limits::new(client.clone(), cx));
         let skills = cx.new(|_| crate::skills::Skills::new(client.clone()));
         let updater = cx.new(|cx| crate::update::Updater::new(client.clone(), cx));
@@ -387,6 +401,8 @@ impl Root {
             drop_at: None,
             settled_open: false,
             snoozed_open: false,
+            working_open: false,
+            left_work: HashMap::new(),
             hover_row: None,
             _hover_timer: None,
             row_bounds: Default::default(),
@@ -429,6 +445,7 @@ impl Root {
             phone: Default::default(),
             machines: Default::default(),
             _phone_pump: phone_pump,
+            _resources_pump: resources_pump,
             _pump: pump,
             _subs: subs,
         }
@@ -595,6 +612,7 @@ impl Root {
             Event::Background(result) => self.background_arrived(result, window, cx),
             Event::SidebarArt(result) => self.sidebar_art_arrived(result, cx),
             Event::Usage(e) => self.limits.update(cx, |l, cx| l.event(e, cx)),
+            Event::Resources(reading) => self.resources_arrived(reading, cx),
             Event::Skills(e) => {
                 if let hyprspace_proto::SkillEvent::List { cwd, items } = &e {
                     crate::suggest::set_skills(cwd.clone(), items.clone(), cx);
@@ -631,7 +649,7 @@ impl Root {
                     } else {
                         self.turns.remove(&thread);
                     }
-                    self.set_status(thread, status);
+                    self.set_status(thread, status, cx);
                     self.tick(cx);
                     cx.notify();
                 }

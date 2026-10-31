@@ -148,6 +148,7 @@ impl Harness for Codex {
 
     fn start(&self, launch: Launch, emit: Emit) -> io::Result<Session> {
         let proc = spawn(&self.program, &["app-server".to_string()], &launch.cwd)?;
+        let pid = proc.child.id();
         let (rpc, incoming) = Rpc::new(proc.stdin, proc.stdout);
         let (tx, rx) = mpsc::unbounded_channel();
         let opened = (launch.model.clone(), launch.permission);
@@ -169,7 +170,11 @@ impl Harness for Codex {
             last_thought: None,
             skills: Vec::new(),
         };
-        Ok(Session::new(tx, tokio::spawn(actor.serve(incoming, rx))))
+        Ok(Session::new(
+            tx,
+            tokio::spawn(actor.serve(incoming, rx)),
+            pid,
+        ))
     }
 }
 

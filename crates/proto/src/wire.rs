@@ -11,6 +11,7 @@ use crate::agents::{Agent, AgentInfo, AgentSession, AgentState, SubAgent};
 use crate::folder::{FolderCommand, FolderEvent};
 use crate::peer::{PeerCommand, PeerEvent};
 use crate::phone::{PhoneCommand, PhoneEvent};
+use crate::resources::Resources;
 use crate::run::{Answer, Aside, Delegation, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Background, Effect, Entry};
@@ -235,6 +236,8 @@ pub enum Command {
     Usage(UsageCommand),
     /// Settings' Skills view (`skills.rs`).
     Skills(SkillCommand),
+    /// A reading for Settings' Resources view, answered with `Event::Resources`.
+    Resources,
     /// The app updating itself (`update.rs`).
     Update(UpdateCommand),
     /// The bridge a paired phone reaches the app through (`phone.rs`).
@@ -363,6 +366,7 @@ pub enum Event {
     SidebarArt(Result<Option<PathBuf>, String>),
     Usage(UsageEvent),
     Skills(SkillEvent),
+    Resources(Resources),
     Update(UpdateEvent),
     Phone(PhoneEvent),
     Peer(PeerEvent),
@@ -515,6 +519,7 @@ mod tests {
             Command::Usage(UsageCommand::Local {
                 provider: "codex".into(),
             }),
+            Command::Resources,
             Command::Skills(SkillCommand::Write {
                 cwd: PathBuf::from("/w"),
                 scope: crate::agents::SkillScope::Project,
@@ -668,6 +673,19 @@ mod tests {
             }),
             Event::Update(UpdateEvent::Step {
                 step: crate::update::Step::Downloading { percent: Some(40) },
+            }),
+            Event::Resources(Resources {
+                sessions: vec![(
+                    SessionId(3),
+                    crate::resources::Load {
+                        cpu: 2.5,
+                        memory: 400 << 20,
+                        processes: 4,
+                        ..Default::default()
+                    },
+                )],
+                machine_cpu: 31.0,
+                ..Default::default()
             }),
         ];
         for event in &events {

@@ -164,6 +164,15 @@ impl Root {
             },
         ));
 
+        let shelf = self.state.working_shelf;
+        let working = widgets::switch("working-shelf", shelf).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| {
+                r.state.working_shelf = !shelf;
+                r.save();
+                cx.notify();
+            },
+        ));
+
         let opener = self.state.open_with;
         let open_control = if self.work.openers.is_empty() {
             text("Looking for apps").into_any_element()
@@ -203,11 +212,18 @@ impl Root {
             .child(self.snoozed_group(cx))
             .child(group(
                 "Experimental",
-                vec![row(
-                    "Structured threads",
-                    "Adds a Structured button to the composer. Still being built.",
-                    switch,
-                )],
+                vec![
+                    row(
+                        "Structured threads",
+                        "Adds a Structured button to the composer. Still being built.",
+                        switch,
+                    ),
+                    row(
+                        "Working section",
+                        "Threads move to a Working section in the sidebar while their agent works, and come back to the top when they finish or need you.",
+                        working,
+                    ),
+                ],
             ))
             .child(group(
                 "Folders",

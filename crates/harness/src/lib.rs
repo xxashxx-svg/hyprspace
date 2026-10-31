@@ -58,6 +58,7 @@ pub fn with_mcp(agent: Agent, mcp: Option<Mcp>) -> Box<dyn Harness> {
 pub struct Session {
     tx: mpsc::UnboundedSender<Input>,
     task: JoinHandle<()>,
+    pid: Option<u32>,
 }
 
 pub(crate) enum Input {
@@ -74,8 +75,17 @@ pub(crate) enum Input {
 }
 
 impl Session {
-    pub(crate) fn new(tx: mpsc::UnboundedSender<Input>, task: JoinHandle<()>) -> Self {
-        Self { tx, task }
+    pub(crate) fn new(
+        tx: mpsc::UnboundedSender<Input>,
+        task: JoinHandle<()>,
+        pid: Option<u32>,
+    ) -> Self {
+        Self { tx, task, pid }
+    }
+
+    /// The CLI's process, or what started it, like `cmd /c` for an npm shim.
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// Starts a run, or steers the live one: the prompt joins it at the CLI's next step.

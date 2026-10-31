@@ -80,3 +80,17 @@ idle agents behind. Settle and snooze replaced it.
 - Opening a settled or snoozed thread doesn't bring it back; sending it a message does. Settling
   and snoozing show a toast with Undo for five seconds.
 - Saved `archived` threads load as settled, and an archived space loads with its threads settled.
+
+## The Working shelf
+
+A beta in Settings, General, after T3 Code's working shelf. A thread whose agent works folds into
+a Working shelf and comes back to the top of the list when it finishes (after a 2 second hold, so
+back-to-back runs don't make it jump) or needs you.
+
+- **Coming back writes `order`, like waking from a snooze.** T3 sorts its whole inbox by return
+  time while the shelf is on; that would undo the order rows were dragged into, so only the
+  returning thread moves.
+- **Only a status change moves a thread**, so Codex in a terminal and plain shells never go.
+  Threads on another computer move on and off by status but keep the host's order.
+- Pinned, snoozed and settled threads stay where they are, and a subagent's thread stays under
+  its parent. The phone doesn't show the shelf yet.

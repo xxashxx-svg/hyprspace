@@ -223,6 +223,7 @@ impl Harness for Claude {
             args.push("--chrome".into());
         }
         let proc = spawn(&self.program, &args, &cwd)?;
+        let pid = proc.child.id();
         let (tx, rx) = mpsc::unbounded_channel();
         let actor = Actor {
             child: proc.child,
@@ -247,7 +248,7 @@ impl Harness for Claude {
             window: None,
         };
         let stdout = BufReader::new(proc.stdout).lines();
-        Ok(Session::new(tx, tokio::spawn(actor.serve(stdout, rx))))
+        Ok(Session::new(tx, tokio::spawn(actor.serve(stdout, rx)), pid))
     }
 }
 

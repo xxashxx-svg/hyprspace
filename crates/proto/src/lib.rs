@@ -12,6 +12,7 @@ pub mod git;
 pub mod pane;
 pub mod peer;
 pub mod phone;
+pub mod resources;
 pub mod run;
 pub mod skills;
 pub mod state;

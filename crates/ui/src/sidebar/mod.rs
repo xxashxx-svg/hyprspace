@@ -17,6 +17,7 @@ mod drag;
 mod icon;
 mod icon_picker;
 mod row;
+mod working;
 pub(crate) use icon::Look;
 pub(crate) use icon_picker::IconPicker;
 pub(crate) use row::tag;
@@ -90,10 +91,17 @@ enum Item {
     Rule,
     /// A thread at work.
     Thread(u64),
+    /// A thread on the Working shelf, drawn like one at work.
+    Working(u64),
     /// A thread on the Snoozed or Settled shelf.
     Shelved(u64),
     /// Room above the list, between shelves, or at the end.
     Gap(u8),
+    /// The threads whose agents are working, with the Working shelf switched on.
+    WorkingShelf {
+        count: usize,
+        open: bool,
+    },
     /// The snoozed threads of every space.
     Snoozed {
         count: usize,
@@ -115,6 +123,7 @@ impl Item {
     /// the rows that come or go are spliced.
     fn same(&self, other: &Item) -> bool {
         match (self, other) {
+            (Item::WorkingShelf { .. }, Item::WorkingShelf { .. }) => true,
             (Item::Snoozed { .. }, Item::Snoozed { .. }) => true,
             (Item::Settled { .. }, Item::Settled { .. }) => true,
             (Item::Nothing { .. }, Item::Nothing { .. }) => true,
@@ -208,7 +217,7 @@ fn arrived(old: &[Item], new: &[Item]) -> Vec<u64> {
     new.iter()
         .filter(|i| !old.contains(i))
         .filter_map(|i| match i {
-            Item::Thread(id) | Item::Shelved(id) => Some(*id),
+            Item::Thread(id) | Item::Working(id) | Item::Shelved(id) => Some(*id),
             _ => None,
         })
         .collect()
@@ -435,10 +444,9 @@ impl gpui::Render for SidebarView {
         // runs before the remeasure below, which forgets every row's height: a row clicked in
         // plain view has to still read as shown, or each click would scroll the list
         if let Some(id) = root.update(cx, |r, _| r.reveal.take())
-            && let Some(ix) = self
-                .items
-                .iter()
-                .position(|i| matches!(i, Item::Thread(t) | Item::Shelved(t) if *t == id))
+            && let Some(ix) = self.items.iter().position(
+                |i| matches!(i, Item::Thread(t) | Item::Working(t) | Item::Shelved(t) if *t == id),
+            )
         {
             // by place in the list, not by height: rows far from view were never measured. A row
             // above the view, or not wholly in it, comes to the top with the one before it showing
@@ -479,7 +487,9 @@ impl gpui::Render for SidebarView {
             let item = items.get(ix).cloned();
             let slide = item.as_ref().and_then(|i| slides.borrow().get(i).copied());
             let arrival = match item {
-                Some(Item::Thread(id) | Item::Shelved(id)) => arrivals.borrow().get(&id).cloned(),
+                Some(Item::Thread(id) | Item::Working(id) | Item::Shelved(id)) => {
+                    arrivals.borrow().get(&id).cloned()
+                }
                 _ => None,
             };
             let row = weak
@@ -541,8 +551,9 @@ fn slot() -> gpui::Div {
 
 impl Root {
     /// The sidebar's rows, top to bottom: every thread at work in its place (new ones on top,
-    /// moved ones where they were dropped, and none moved by activity); then the Snoozed and
-    /// Settled shelves, most recently active first. A search keeps the threads whose title or project
+    /// moved ones where they were dropped, and none moved by activity); then the Working shelf,
+    /// when it is on, newest run first; then the Snoozed and Settled shelves, most recently
+    /// active first. A search keeps the threads whose title or project
     /// matches, and opens the shelves that hold one.
     fn sidebar_items(&self, cx: &mut Context<Self>) -> Vec<Item> {
         let q = self.search.read(cx).text().trim().to_lowercase();
@@ -588,23 +599,50 @@ impl Root {
             Some(at) => (0, at),
             None => (1, 0),
         });
-        if active.is_empty() {
+        let shown: HashSet<u64> = active.iter().map(|t| t.id).collect();
+        let nested = |t: &Thread| t.parent.is_some_and(|p| shown.contains(&p));
+        let (mut working, inbox): (Vec<&Thread>, Vec<&Thread>) = active
+            .iter()
+            .filter(|t| !nested(t))
+            .partition(|t| self.on_working_shelf(t));
+        if inbox.is_empty() && working.is_empty() {
             items.push(Item::Nothing {
                 searching: !q.is_empty(),
             });
         }
-        let shown: HashSet<u64> = active.iter().map(|t| t.id).collect();
-        let nested = |t: &Thread| t.parent.is_some_and(|p| shown.contains(&p));
-        for t in active.iter().filter(|t| !nested(t)) {
-            items.push(Item::Thread(t.id));
-            items.extend(
-                active
-                    .iter()
-                    .filter(|c| c.parent == Some(t.id))
-                    .map(|c| Item::Thread(c.id)),
-            );
+        // a subagent's thread stays under its parent, on the shelf or off it
+        let family = |id: u64, item: fn(u64) -> Item| -> Vec<Item> {
+            std::iter::once(item(id))
+                .chain(
+                    active
+                        .iter()
+                        .filter(|c| c.parent == Some(id))
+                        .map(|c| item(c.id)),
+                )
+                .collect()
+        };
+        for t in inbox {
+            items.extend(family(t.id, Item::Thread));
         }
         let searching = !q.is_empty();
+        if !working.is_empty() {
+            working.sort_by_key(|t| std::cmp::Reverse(t.last_touch()));
+            let open = self.working_open || searching;
+            items.push(Item::WorkingShelf {
+                count: working.len(),
+                open,
+            });
+            // shut, it still shows the thread on screen, so its place isn't lost
+            for t in working {
+                let family = family(t.id, Item::Working);
+                let on_screen = family
+                    .iter()
+                    .any(|i| matches!(i, Item::Working(id) if self.screen == Screen::Thread(*id)));
+                if open || on_screen {
+                    items.extend(family);
+                }
+            }
+        }
         let snoozed = threads(|t| t.snooze.is_some(), recent);
         if !snoozed.is_empty() {
             let open = self.snoozed_open || searching;
@@ -633,7 +671,7 @@ impl Root {
 
     fn sidebar_item(&self, item: &Item, now: u64, cx: &mut Context<Self>) -> AnyElement {
         match *item {
-            Item::Thread(id) => match self.state.thread(id) {
+            Item::Thread(id) | Item::Working(id) => match self.state.thread(id) {
                 Some((_, t)) => slot()
                     .when(
                         t.parent
@@ -641,7 +679,7 @@ impl Root {
                             .is_some_and(|(_, p)| p.active()),
                         |d| d.pl(px(EDGE + 16.)),
                     )
-                    .child(self.thread_row(t, now, cx))
+                    .child(self.thread_row(t, now, matches!(item, Item::Thread(_)), cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
@@ -661,6 +699,19 @@ impl Root {
                 .child(div().h(px(1.)).bg(colors::ink(0.08)))
                 .into_any_element(),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
+            Item::WorkingShelf { count, open } => slot()
+                .pt(px(10.))
+                .child(self.shelf_header(
+                    "working-shelf",
+                    "Working",
+                    count,
+                    open,
+                    cx.listener(|r, _: &ClickEvent, _, cx| {
+                        r.working_open = !r.working_open;
+                        cx.notify();
+                    }),
+                ))
+                .into_any_element(),
             Item::Snoozed { count, open } => slot()
                 .pt(px(10.))
                 .child(self.shelf_header(

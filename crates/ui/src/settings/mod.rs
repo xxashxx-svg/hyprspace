@@ -14,6 +14,7 @@ mod mac;
 mod machines;
 mod phone;
 mod picker;
+mod resources;
 mod shortcuts;
 mod sidebar_art;
 
@@ -42,6 +43,7 @@ pub(crate) enum Tab {
     Appearance,
     Agents,
     Usage,
+    Resources,
     Phone,
     Computers,
     Skills,
@@ -71,6 +73,7 @@ pub struct Settings {
     fields: Rc<RefCell<HashMap<Picker, Bounds<Pixels>>>>,
     /// The installed monospace families, read once when the Font menu first opens.
     fonts: RefCell<Option<Vec<String>>>,
+    watch: resources::Watch,
 }
 
 impl Settings {
@@ -94,6 +97,7 @@ impl Settings {
             menu: None,
             fields: Rc::default(),
             fonts: RefCell::default(),
+            watch: Default::default(),
         }
     }
 }
@@ -130,6 +134,12 @@ pub(crate) const TABS: &[Entry] = &[
         label: "Usage",
         desc: "What each agent has used",
         icon: "gauge",
+    },
+    Entry {
+        tab: Tab::Resources,
+        label: "Resources",
+        desc: "CPU and memory each thread uses",
+        icon: "activity",
     },
     Entry {
         tab: Tab::Phone,
@@ -175,6 +185,7 @@ impl Root {
             Tab::Appearance => self.appearance(cx),
             Tab::Agents => self.agents_page(cx),
             Tab::Usage => self.usage_page(cx),
+            Tab::Resources => self.resources_page(cx),
             Tab::Phone => self.phone_page(cx),
             Tab::Computers => self.machines_page(cx),
             Tab::Skills => self.skills_page(window, cx),
