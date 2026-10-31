@@ -23,6 +23,7 @@ pub enum Cmd {
     NoProject,
     OpenFolder,
     Thread(u64),
+    NextWaiting,
     ToggleDock,
     ToggleSidebar,
     ToggleTerminal,
@@ -71,6 +72,15 @@ impl Root {
             )
             .sub("Adds it to the sidebar"),
         ];
+        out.push(
+            Item::new(
+                "Threads",
+                "Next thread waiting on you",
+                Glyph::Icon("hand"),
+                Cmd::NextWaiting,
+            )
+            .hint("Ctrl+Shift+J"),
+        );
         // every thread by its title, under its folder. Archived ones are parked on purpose.
         let current = match self.screen {
             Screen::Thread(id) => Some(id),
@@ -127,7 +137,7 @@ impl Root {
                     Glyph::Icon("square-terminal"),
                     Cmd::ToggleTerminal,
                 )
-                .hint("Ctrl+`"),
+                .hint("Control+`"),
             );
         }
         out.push(Item::new(
@@ -370,6 +380,7 @@ impl Root {
             Cmd::NoProject => self.no_project(window, cx),
             Cmd::OpenFolder => self.pick_thread_folder(window, cx),
             Cmd::Thread(id) => self.open_thread(id, window, cx),
+            Cmd::NextWaiting => self.next_waiting(&crate::sidebar::NextWaiting, window, cx),
             Cmd::ToggleDock => self.toggle_dock(&crate::workbench::ToggleDock, window, cx),
             Cmd::ToggleSidebar => self.toggle_sidebar(&crate::workbench::ToggleSidebar, window, cx),
             Cmd::ToggleTerminal => {

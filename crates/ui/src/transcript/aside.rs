@@ -108,7 +108,7 @@ pub(super) fn card(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Opti
                 .then(|| spinner::ring("aside-live", colors::text3())),
         )
         .child(
-            widgets::icon_button("aside-drop", "x", 24.)
+            widgets::icon_button("aside-drop", "x", widgets::SMALL)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .tooltip(widgets::tip("Dismiss"))
                 .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.drop_aside(cx))),

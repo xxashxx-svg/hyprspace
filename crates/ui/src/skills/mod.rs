@@ -221,18 +221,12 @@ fn label(text: &str) -> Div {
 }
 
 fn small_button(id: impl Into<gpui::ElementId>, glyph: &str, danger: bool) -> gpui::Stateful<Div> {
-    div()
-        .id(id)
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(28.))
-        .rounded(px(6.))
-        .cursor_pointer()
-        .when(!danger, |d| d.hover(|s| s.bg(colors::surface3())))
-        .when(danger, |d| d.hover(|s| s.bg(colors::error().opacity(0.16))))
-        .child(icon(glyph, 14., colors::text3()))
+    widgets::icon_frame(id, widgets::LARGE)
+        .when(danger, |d| d.hover(|s| s.bg(colors::error().opacity(0.14))))
+        .child(
+            icon(glyph, 14., colors::text3())
+                .group_hover("icon-button", |s| s.text_color(colors::text1())),
+        )
 }
 
 impl Skills {
@@ -421,7 +415,7 @@ impl Skills {
             let on = focus.is_focused(window);
             div()
                 .id(id)
-                .rounded(px(7.))
+                .rounded(px(6.))
                 .border_1()
                 .border_color(if on {
                     colors::accent()
@@ -530,7 +524,7 @@ impl Skills {
                     .child(
                         div()
                             .px(px(16.))
-                            .rounded(px(10.))
+                            .rounded(px(12.))
                             .border_1()
                             .border_color(colors::border1())
                             .bg(colors::surface2())

@@ -317,7 +317,7 @@ fn table(
         .id(SharedString::from(format!("{key}-table")))
         .overflow_x_scroll()
         .restrict_scroll_to_axis()
-        .rounded(px(10.))
+        .rounded(px(12.))
         .bg(colors::ink(0.035))
         .child(
             div()

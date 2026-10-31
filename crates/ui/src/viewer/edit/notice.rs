@@ -137,7 +137,7 @@ impl Editor {
                             .items_center()
                             .justify_center()
                             .size(px(36.))
-                            .rounded(px(9.))
+                            .rounded(px(8.))
                             .bg(colors::ink(0.06))
                             .child(icon(glyph, 18., tint)),
                     )

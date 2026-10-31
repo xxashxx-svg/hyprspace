@@ -68,7 +68,7 @@ impl Root {
                     InputEvent::Submit => {
                         let hits = index::search(input.read(cx).text());
                         if let Some(hit) = hits.get(r.settings.sel) {
-                            r.jump(*hit, cx);
+                            r.jump_to(*hit, cx);
                         }
                     }
                     InputEvent::Cancel => r.settings_escape(window, cx),
@@ -120,7 +120,7 @@ impl Root {
         cx.notify();
     }
 
-    fn jump(&mut self, hit: Hit, cx: &mut Context<Self>) {
+    fn jump_to(&mut self, hit: Hit, cx: &mut Context<Self>) {
         self.settings.set_tab(hit.spot.tab);
         if hit.spot.section.is_empty() {
             self.settings
@@ -377,7 +377,7 @@ impl Root {
                 .children(keys)
                 .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                     r.settings.sel = i;
-                    r.jump(hit, cx);
+                    r.jump_to(hit, cx);
                     // Settings took focus on the click; the arrows should still walk the hits
                     if let Some(input) = &r.settings.search {
                         window.focus(&input.focus_handle(cx), cx);

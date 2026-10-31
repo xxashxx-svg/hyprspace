@@ -217,6 +217,16 @@ fn agent_mark(agent: Option<Agent>, working: bool) -> AnyElement {
         .into_any_element()
 }
 
+fn jump_cap(n: usize, group: SharedString) -> AnyElement {
+    widgets::keycap(n.to_string())
+        .h(px(16.))
+        .flex()
+        .items_center()
+        .font_family(MONO)
+        .group_hover(group, |s| s.opacity(0.))
+        .into_any_element()
+}
+
 impl Root {
     /// The box over a row's title while that thread is renamed, in the title's own size and
     /// weight so nothing jumps. It is drawn over the title's line, its text where the title's
@@ -259,18 +269,29 @@ impl Root {
     ) -> gpui::Stateful<gpui::Div> {
         div()
             .id((key, id))
+            .group("icon-button")
             .flex()
             .items_center()
             .justify_center()
             .gap(px(4.))
-            .h(px(22.))
-            .min_w(px(22.))
+            .h(px(widgets::SMALL))
+            .min_w(px(widgets::SMALL))
             .rounded(px(6.))
             .cursor_pointer()
             .text_size(px(11.5))
             .text_color(colors::text2())
-            .hover(|s| s.bg(colors::ink(0.1)).text_color(colors::text1()))
-            .child(icon(glyph, 13., colors::text2()))
+            .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
+            .tooltip(widgets::tip(match key {
+                "wake" => "Wake",
+                "unsettle" => "Bring back",
+                "pin" => "Pin or unpin",
+                "snooze" => "Snooze",
+                _ => "Settle",
+            }))
+            .child(
+                icon(glyph, 12., colors::text2())
+                    .group_hover("icon-button", |s| s.text_color(colors::text1())),
+            )
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |r, e: &ClickEvent, window, cx| {
                 cx.stop_propagation();
@@ -555,6 +576,7 @@ impl Root {
         t: &Thread,
         now: u64,
         drops: bool,
+        key: Option<usize>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = t.id;
@@ -799,7 +821,8 @@ impl Root {
                     .when(t.pinned.is_some() && t.active(), |d| {
                         d.child(icon("pin", 11., colors::text3()))
                     })
-                    .child(right),
+                    .child(right)
+                    .children(key.map(|n| jump_cap(n, group.clone()))),
             )
             .child(title)
             .child(
@@ -823,7 +846,7 @@ impl Root {
                     .flex()
                     .gap(px(2.))
                     .p(px(1.))
-                    .rounded(px(7.))
+                    .rounded(px(6.))
                     .bg(colors::surface3())
                     .opacity(0.)
                     .group_hover(group, |s| s.opacity(1.))
@@ -904,7 +927,13 @@ impl Root {
 
     /// A thread on the Snoozed or Settled shelf: one quiet line with its project's tag, its title,
     /// and when it wakes or how old it is, which gives way to the button that brings it back.
-    pub(crate) fn shelved_row(&self, t: &Thread, now: u64, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn shelved_row(
+        &self,
+        t: &Thread,
+        now: u64,
+        key: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let id = t.id;
         let selected = self.screen == Screen::Thread(id);
         let group: SharedString = format!("shelved-{id}").into();
@@ -926,7 +955,7 @@ impl Root {
             .gap(px(8.))
             .h(px(30.))
             .px(px(8.))
-            .rounded(px(7.))
+            .rounded(px(6.))
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
@@ -949,6 +978,7 @@ impl Root {
                     .group_hover(group.clone(), |s| s.opacity(0.))
                     .child(w)
             }))
+            .children(key.map(|n| jump_cap(n, group.clone())))
             .child(
                 div()
                     .absolute()

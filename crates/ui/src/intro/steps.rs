@@ -55,9 +55,11 @@ const SCHEMES: [(Scheme, &str); 3] = [
 ];
 
 /// Shortcuts that exist in this app, written the Windows way.
-const SHORTCUTS: [(&str, &str); 6] = [
+const SHORTCUTS: [(&str, &str); 8] = [
     ("Ctrl+K", "Command palette"),
     ("Ctrl+Shift+P", "Command palette, too"),
+    ("Ctrl+1-9", "Open a thread by its place"),
+    ("Ctrl+Shift+J", "Next thread waiting on you"),
     ("Ctrl+Shift+G", "Files and git"),
     ("Ctrl+F", "Find in threads, terminals and Settings"),
     ("Ctrl+click", "Open a path from a terminal"),
@@ -170,22 +172,9 @@ fn keys(k: &str) -> AnyElement {
         k.to_string()
     };
     let caps = k.split(['+', ' ']).map(|c| {
-        div()
-            .flex()
-            .items_center()
-            .justify_center()
+        crate::widgets::keycap(c.to_string())
             .min_w(px(20.))
             .h(px(20.))
-            .px(px(5.))
-            .rounded(px(5.))
-            .bg(colors::ink(0.06))
-            .border_1()
-            .border_b_2()
-            .border_color(colors::ink(0.08))
-            .text_size(px(10.5))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(colors::text2())
-            .child(c.to_string())
     });
     div()
         .flex()
@@ -279,7 +268,7 @@ impl Root {
                 .gap(px(12.))
                 .px(px(14.))
                 .py(px(11.))
-                .rounded(px(10.))
+                .rounded(px(12.))
                 .border_1()
                 .border_color(colors::border1())
                 .bg(colors::surface1())
@@ -484,7 +473,7 @@ impl Root {
                 .flex_col()
                 .gap(px(4.))
                 .p(px(12.))
-                .rounded(px(10.))
+                .rounded(px(12.))
                 .border_1()
                 .cursor_pointer()
                 .map(|d| match on {
@@ -611,7 +600,7 @@ impl Root {
                     .items_center()
                     .justify_center()
                     .size(px(40.))
-                    .rounded(px(10.))
+                    .rounded(px(12.))
                     .bg(colors::accent().opacity(0.14))
                     .child(icon("folder-open", 20., colors::accent())),
             )

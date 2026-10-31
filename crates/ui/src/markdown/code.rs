@@ -188,11 +188,22 @@ impl RenderOnce for CodeBlock {
         let lang = self.lang;
         let named = !lang.trim().is_empty();
         let copy = crate::widgets::CopyButton::new(format!("{key}-copy"), self.text.clone());
+        let long = crate::clip::long(&key, &self.text).map(|(k, more)| {
+            let poke =
+                window.use_keyed_state(SharedString::from(format!("clip-{k}")), cx, |_, _| ());
+            poke.read(cx);
+            let flip = k.clone();
+            let more = crate::clip::more(&k, more, move |_, _, cx| {
+                crate::clip::flip(&flip);
+                poke.update(cx, |_, cx| cx.notify());
+            });
+            (k, more)
+        });
         div()
             .relative()
             .flex()
             .flex_col()
-            .rounded(px(10.))
+            .rounded(px(12.))
             .bg(colors::ink(0.035))
             .map(|d| {
                 if named {
@@ -213,8 +224,8 @@ impl RenderOnce for CodeBlock {
                     d.child(div().absolute().top(px(6.)).right(px(6.)).child(copy))
                 }
             })
-            .child(
-                div()
+            .child({
+                let code = div()
                     .pl(px(14.))
                     .pr(px(if named { 14. } else { 40. }))
                     .pt(px(if named { 2. } else { 10. }))
@@ -224,13 +235,39 @@ impl RenderOnce for CodeBlock {
                     .line_height(px(19.))
                     .text_color(colors::hsla(colors::theme().syntax.plain))
                     .child({
-                        let text = SharedString::from(self.text);
-                        let highlights = super::fade::merge(text.len(), highlights, &self.fade);
+                        let n = match &long {
+                            Some((k, _)) if !crate::clip::open(k) => {
+                                crate::clip::head(&self.text).len()
+                            }
+                            _ => self.text.len(),
+                        };
+                        let cut = |r: &Range<usize>| (r.start < n).then(|| r.start..r.end.min(n));
+                        let highlights = highlights
+                            .into_iter()
+                            .filter_map(|(r, s)| Some((cut(&r)?, s)))
+                            .collect();
+                        let fade: Vec<_> = self
+                            .fade
+                            .iter()
+                            .filter_map(|(r, f)| Some((cut(r)?, *f)))
+                            .collect();
+                        let mut text = self.text;
+                        text.truncate(n);
+                        let text = SharedString::from(text);
+                        let highlights = super::fade::merge(text.len(), highlights, &fade);
                         let styled = StyledText::new(text.clone()).with_highlights(highlights);
                         let layout = styled.layout().clone();
                         super::select::wrap(&key, text, layout, styled.into_any_element())
-                    }),
-            )
+                    });
+                match &long {
+                    Some((k, _)) => {
+                        let top = if named { 2. } else { 10. };
+                        crate::clip::cut(k, top + crate::clip::lines(19.), code)
+                    }
+                    None => code,
+                }
+            })
+            .children(long.map(|(_, more)| more.pl(px(14.)).pb(px(10.))))
     }
 }
 

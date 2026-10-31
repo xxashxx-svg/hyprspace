@@ -25,6 +25,22 @@ pub fn named(tool: &Tool) -> Option<(&str, &str)> {
     }
 }
 
+pub fn pending(v: &TranscriptView) -> Option<(&str, &str)> {
+    v.model.items.iter().find_map(|i| match i {
+        Item::Approval {
+            request,
+            tool,
+            answer: None,
+            expired: false,
+            ..
+        } if !v.held.contains(request) => match named(tool) {
+            Some((QUESTION, input)) => Some((request.as_str(), input)),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
 pub fn special(item: &Item) -> bool {
     matches!(item, Item::Tool { tool, .. } if named(tool).is_some())
 }
@@ -237,6 +253,28 @@ impl TranscriptView {
         window.focus(&input.focus_handle(cx), cx);
     }
 
+    pub(super) fn pick_key(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((request, input)) = pending(self).map(|(r, i)| (r.to_string(), i.to_string()))
+        else {
+            return;
+        };
+        let qs = questions(&input);
+        let step = self
+            .steps
+            .get(&request)
+            .copied()
+            .unwrap_or(0)
+            .min(qs.len().saturating_sub(1));
+        let Some(q) = qs.get(step) else {
+            return;
+        };
+        if ix < q.options.len() {
+            self.pick_option(&request, step, ix, q.multi, cx);
+        } else if ix == q.options.len() {
+            self.pick_other(&request, step, ix, q.multi, window, cx);
+        }
+    }
+
     /// Enter in an Other field: the next question, or the answers once the last one has one.
     fn submit_other(&mut self, cx: &mut Context<Self>) {
         let Some(request) = self.other.as_ref().map(|o| o.request.clone()) else {
@@ -274,7 +312,7 @@ fn frame(pending: bool) -> gpui::Div {
         .gap(px(12.))
         .px(px(16.))
         .py(px(14.))
-        .rounded(px(14.))
+        .rounded(px(12.))
         .border_1()
         .border_color(if pending {
             colors::border2()
@@ -340,6 +378,9 @@ fn asking(
         .unwrap_or(0)
         .min(qs.len().saturating_sub(1));
     let picked = |qi: usize| picks.get(qi).is_some_and(|p| !p.is_empty());
+    let keyed = pending(v).is_some_and(|(r, _)| r == request);
+    let cap =
+        |ix: usize| (keyed && ix < 9).then(|| super::approval::alt_cap(&(ix + 1).to_string()));
     let title = match qs.len() {
         0 | 1 => "Claude has a question".to_string(),
         n => format!("Claude has {n} questions"),
@@ -362,7 +403,7 @@ fn asking(
                     .gap(px(5.))
                     .h(px(24.))
                     .px(px(9.))
-                    .rounded(px(7.))
+                    .rounded(px(6.))
                     .text_size(px(12.))
                     .font_weight(FontWeight::MEDIUM)
                     .cursor_pointer()
@@ -446,6 +487,7 @@ fn asking(
                             )
                         }),
                 )
+                .children(cap(oi))
                 .child(
                     div()
                         .flex_none()
@@ -526,6 +568,7 @@ fn asking(
                             .into_any_element(),
                     }),
             )
+            .children(cap(other_ix))
             .child(
                 div()
                     .flex_none()
@@ -665,7 +708,7 @@ pub fn plan_card(
             div()
                 .px(px(14.))
                 .py(px(10.))
-                .rounded(px(10.))
+                .rounded(px(12.))
                 .bg(colors::ink(0.035))
                 .text_size(px(13.5))
                 .line_height(relative(1.6))
@@ -827,6 +870,7 @@ mod tests {
             text: "hi".into(),
             images: Vec::new(),
             steer: false,
+            at: None,
         };
         let card = || Item::Approval {
             request: "r".into(),

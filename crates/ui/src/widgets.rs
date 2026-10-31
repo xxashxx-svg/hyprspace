@@ -3,10 +3,12 @@
 // tokens only, so every view keeps the same neutral, low-contrast look on every theme.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::{
-    Anchor, AnyElement, App, Bounds, Div, ElementId, FontWeight, IntoElement, MouseButton, Pixels,
-    Point, SharedString, Stateful, Window, anchored, deferred, div, point, prelude::*,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, FontWeight,
+    IntoElement, MouseButton, Pixels, Point, SharedString, Stateful, Window, anchored, deferred,
+    div, point, prelude::*,
 };
 
 use crate::assets::icon;
@@ -124,10 +126,21 @@ pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
         .child(div().size(px(10.)).rounded(px(2.)).bg(colors::text1()))
 }
 
+pub const SMALL: f32 = 22.;
+pub const LARGE: f32 = 28.;
+
 /// A square icon button with no frame until hovered.
 pub fn icon_button(id: impl Into<ElementId>, name: &str, size: f32) -> Stateful<Div> {
+    icon_frame(id, size).child(
+        icon(name, (size * 0.5).round(), colors::text3())
+            .group_hover("icon-button", |s| s.text_color(colors::text1())),
+    )
+}
+
+pub fn icon_frame(id: impl Into<ElementId>, size: f32) -> Stateful<Div> {
     div()
         .id(id)
+        .group("icon-button")
         .flex()
         .flex_none()
         .items_center()
@@ -136,32 +149,7 @@ pub fn icon_button(id: impl Into<ElementId>, name: &str, size: f32) -> Stateful<
         .rounded(px(6.))
         .text_color(colors::text3())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::surface3()).text_color(colors::text1()))
-        .child(icon(name, (size * 0.55).round(), colors::text3()))
-}
-
-/// A composer chip: a small framed pill that opens a picker. The caller adds its contents.
-pub fn chip(id: impl Into<ElementId>) -> Stateful<Div> {
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .h(px(26.))
-        .px(px(8.))
-        .max_w(px(260.))
-        .rounded(px(6.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::surface1())
-        .text_size(px(12.))
-        .text_color(colors::text2())
-        .cursor_pointer()
-        .hover(|s| {
-            s.bg(colors::surface3())
-                .border_color(colors::border2())
-                .text_color(colors::text1())
-        })
+        .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
 }
 
 /// The chevron at the end of a chip.
@@ -282,7 +270,7 @@ fn menu_frame() -> Stateful<Div> {
         .flex()
         .flex_col()
         .gap(px(1.))
-        .rounded(px(12.))
+        .rounded(px(8.))
         .border_1()
         .border_color(colors::border2())
         .bg(colors::surface2())
@@ -361,7 +349,7 @@ pub fn menu_item(
         .gap_2()
         .px(px(10.))
         .py(px(6.))
-        .rounded(px(8.))
+        .rounded(px(6.))
         .cursor_pointer()
         .hover(|s| s.bg(colors::ink(0.06)))
         .child(
@@ -394,6 +382,25 @@ pub fn menu_rule() -> Div {
     div().h(px(1.)).mx(px(2.)).my(px(4.)).bg(colors::border1())
 }
 
+pub fn toast(id: impl Into<ElementId>) -> Stateful<Div> {
+    div()
+        .id(id)
+        .occlude()
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .max_w(px(440.))
+        .h(px(38.))
+        .pl(px(14.))
+        .pr(px(6.))
+        .rounded(px(12.))
+        .bg(colors::surface3())
+        .border_1()
+        .border_color(colors::border1())
+        .shadow(colors::shadow())
+        .text_size(px(13.))
+}
+
 pub fn status_dot(status: Status) -> Div {
     let d = div().flex_none().size(px(7.)).rounded_full();
     match status {
@@ -417,21 +424,33 @@ pub fn segments() -> Div {
 
 /// An on/off switch. The caller handles the click.
 pub fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
+    switch_turned(id, on, None)
+}
+
+pub fn switch_turned(id: impl Into<ElementId>, on: bool, turn: Option<usize>) -> Stateful<Div> {
+    let side = move |t: f32| if on { t } else { 1. - t };
+    let part = move |el: Div, name: &'static str, f: fn(Div, f32) -> Div| -> AnyElement {
+        match turn {
+            Some(n) => el
+                .with_animation(
+                    (name, n),
+                    Animation::new(Duration::from_millis(240)).with_easing(crate::slide::ease_out),
+                    move |d, t| f(d, side(t)),
+                )
+                .into_any_element(),
+            None => f(el, side(1.)).into_any_element(),
+        }
+    };
+    let knob = || div().absolute().top(px(2.)).size(px(14.)).rounded_full();
     div()
         .id(id)
-        .flex()
+        .relative()
         .flex_none()
-        .items_center()
         .w(px(32.))
         .h(px(18.))
-        .p(px(2.))
         .rounded_full()
         .cursor_pointer()
-        .bg(if on {
-            colors::text1()
-        } else {
-            colors::ink(0.14)
-        })
+        .bg(colors::ink(0.14))
         .hover(move |s| {
             if on {
                 s.opacity(0.9)
@@ -439,11 +458,20 @@ pub fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
                 s.bg(colors::ink(0.2))
             }
         })
-        .when(on, |d| d.justify_end())
-        .child(div().size(px(14.)).rounded_full().bg(if on {
-            colors::bg()
-        } else {
-            colors::text2()
+        .child(part(
+            div()
+                .absolute()
+                .inset_0()
+                .rounded_full()
+                .bg(colors::text1()),
+            "switch-fill",
+            |d, s| d.opacity(s),
+        ))
+        .child(part(knob().bg(colors::text2()), "switch-off", |d, s| {
+            d.left(px(2. + 14. * s)).opacity(1. - s)
+        }))
+        .child(part(knob().bg(colors::bg()), "switch-on", |d, s| {
+            d.left(px(2. + 14. * s)).opacity(s)
         }))
 }
 
@@ -514,13 +542,21 @@ pub fn select(id: impl Into<ElementId>, label: impl Into<SharedString>) -> State
 /// A key's name in a small frame, like the Esc beside Settings' way back.
 pub fn keycap(label: impl Into<SharedString>) -> Div {
     div()
+        .flex()
         .flex_none()
+        .items_center()
+        .justify_center()
+        .min_w(px(18.))
+        .h(px(18.))
         .px(px(5.))
         .rounded(px(4.))
+        .bg(colors::ink(0.06))
         .border_1()
-        .border_color(colors::border1())
-        .text_size(px(10.))
-        .text_color(colors::text3())
+        .border_b_2()
+        .border_color(colors::ink(0.08))
+        .text_size(px(10.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors::text2())
         .child(label.into())
 }
 

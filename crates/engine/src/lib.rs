@@ -365,6 +365,7 @@ async fn serve(
                         if let Some(prompt) = prompt {
                             live.record(Entry::Prompt {
                                 prompt: prompt.clone(),
+                                at: Some(util::now_ms()),
                             });
                             live.send(prompt);
                         }
@@ -383,6 +384,7 @@ async fn serve(
                 Some(live) => {
                     live.record(Entry::Prompt {
                         prompt: prompt.clone(),
+                        at: Some(util::now_ms()),
                     });
                     live.send(prompt);
                 }
@@ -848,6 +850,7 @@ mod tests {
             let j = journal::Journal::open(&journal::path(&dir.path().join("journals"), "t-1"));
             j.record(Entry::Prompt {
                 prompt: Prompt::text("hi"),
+                at: None,
             });
             drop(j);
             client.send(Command::LoadJournal {

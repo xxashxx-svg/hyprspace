@@ -13,12 +13,13 @@ use gpui::{
     ScrollWheelEvent, SharedString, StyledText, Transformation, Window, div, list, percentage,
     prelude::*, relative,
 };
-use hyprspace_proto::{RunStatus, TaskKind, Tool};
+use hyprspace_proto::{Answer, RunStatus, TaskKind, Tool};
 
 use super::model::{self, Item};
 use super::rows::{self, Row};
 use super::{TranscriptEvent, TranscriptView, doing, tool};
-use crate::assets::{icon, mark};
+use crate::assets::icon;
+use crate::composer::bar;
 use crate::composer::model_menu::{self, Host as _, ModelMenu};
 use crate::pace::Looping;
 use crate::slide::{self, Glide, ease_out};
@@ -153,7 +154,11 @@ pub fn view(
         &surface,
         hunt.as_ref().map(|(q, current)| (q.as_str(), *current)),
     );
-    let jump = v.follow.away(&v.list).then(|| jump(cx));
+    let away = v.follow.away(&v.list);
+    if !away {
+        v.caught = v.model.items.len();
+    }
+    let jump = away.then(|| jump(below(v), cx));
     let ticks = ticks(v, &prompts, window, cx);
     // the first layout of fresh rows draws from the top before the list settles at the bottom
     let last = last_shown(v);
@@ -195,8 +200,14 @@ pub fn view(
     let marker = super::autoscroll::marker(v, window);
     div()
         .id("transcript")
-        .key_context("Thread")
+        .key_context(super::approval::context(v).as_str())
         .on_action(cx.listener(|v, _: &super::FindInThread, window, cx| v.open_find(window, cx)))
+        .on_action(cx.listener(|v, _: &super::Allow, _, cx| v.answer_shown(Answer::Allow, cx)))
+        .on_action(
+            cx.listener(|v, _: &super::AllowAlways, _, cx| v.answer_shown(Answer::AllowAlways, cx)),
+        )
+        .on_action(cx.listener(|v, _: &super::Deny, _, cx| v.answer_shown(Answer::Deny, cx)))
+        .on_action(cx.listener(|v, p: &super::Pick, window, cx| v.pick_key(p.0, window, cx)))
         .on_action(cx.listener(|v, _: &super::PrevPrompt, _, cx| {
             jump_prompt(v, false);
             cx.notify();
@@ -683,7 +694,27 @@ fn working(v: &TranscriptView) -> AnyElement {
         .into_any_element()
 }
 
-fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
+fn below(v: &TranscriptView) -> String {
+    let reply = v
+        .model
+        .items
+        .get(v.caught..)
+        .is_some_and(|new| new.iter().any(|i| matches!(i, Item::Text { .. })));
+    let parts: Vec<String> = [
+        reply.then(|| "New reply".to_string()),
+        (!v.queue.is_empty()).then(|| format!("{} queued", v.queue.len())),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if parts.is_empty() {
+        "Scroll to bottom".into()
+    } else {
+        parts.join(" \u{b7} ")
+    }
+}
+
+fn jump(label: String, cx: &mut Context<TranscriptView>) -> AnyElement {
     let pill = div()
         .absolute()
         .bottom(px(12.))
@@ -708,7 +739,7 @@ fn jump(cx: &mut Context<TranscriptView>) -> AnyElement {
                 .cursor_pointer()
                 .hover(|s| s.bg(colors::surface3()))
                 .child(icon("arrow-down", 12., colors::text2()))
-                .child("Scroll to bottom")
+                .child(label)
                 .on_click(cx.listener(|v, _: &ClickEvent, _, cx| {
                     v.follow.down(&v.list);
                     cx.notify();
@@ -1125,6 +1156,25 @@ fn hover_copy(ix: usize, text: &str) -> gpui::Div {
         ))
 }
 
+fn sent_at(ix: usize, at: u64) -> Div {
+    let label = crate::time::sent_label(crate::time::local(at), crate::time::local_now());
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .right(relative(1.))
+        .pr(px(8.))
+        .flex()
+        .items_center()
+        .whitespace_nowrap()
+        .text_size(px(11.))
+        .line_height(relative(1.))
+        .text_color(colors::text3())
+        .opacity(0.)
+        .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
+        .child(label)
+}
+
 fn item(
     v: &TranscriptView,
     ix: usize,
@@ -1136,6 +1186,7 @@ fn item(
             text,
             images,
             steer,
+            at,
         } => div()
             .flex()
             .flex_col()
@@ -1158,11 +1209,13 @@ fn item(
                             v.light(ix, None, cx);
                         }
                     }))
+                    .relative()
                     .max_w(relative(0.8))
                     .px(px(16.))
                     .py(px(10.))
                     .rounded(px(18.))
                     .bg(colors::ink(0.06))
+                    .children(at.map(|at| sent_at(ix, at)))
                     .text_size(px(14.))
                     .line_height(relative(1.6))
                     .text_color(colors::text1())
@@ -1268,14 +1321,14 @@ fn item(
                     })
                     .when(!*steer && v.can_rewind(), |d| {
                         d.child(
-                            widgets::icon_button(("fork", ix), "git-branch", 24.)
+                            widgets::icon_button(("fork", ix), "git-branch", widgets::SMALL)
                                 .tooltip(widgets::tip("Fork from here into a new thread"))
                                 .on_click(
                                     cx.listener(move |v, _: &ClickEvent, _, cx| v.fork(ix, cx)),
                                 ),
                         )
                         .child(
-                            widgets::icon_button(("rewind", ix), "pencil", 24.)
+                            widgets::icon_button(("rewind", ix), "pencil", widgets::SMALL)
                                 .tooltip(widgets::tip("Edit from here"))
                                 .on_click(
                                     cx.listener(move |v, _: &ClickEvent, _, cx| v.rewind(ix, cx)),
@@ -1383,13 +1436,12 @@ fn item(
                 .into_any_element()
         }
         Item::Finished { status, ms, error } => {
-            let secs = *ms as f32 / 1000.0;
             let line = match status {
                 RunStatus::Done => format!("Worked for {}", took(ms / 1000)),
-                RunStatus::Interrupted => format!("Stopped after {secs:.1}s"),
+                RunStatus::Interrupted => format!("Stopped after {}", took(ms / 1000)),
                 RunStatus::Failed => match error {
                     Some(e) => format!("Failed: {e}"),
-                    None => format!("Failed after {secs:.1}s"),
+                    None => format!("Failed after {}", took(ms / 1000)),
                 },
             };
             div()
@@ -1771,6 +1823,12 @@ pub(super) fn tool_card(
         .gap(px(6.))
         .child(head)
         .when(open || folding(cx, body_id.clone()), |d| {
+            let diffs = match t {
+                Tool::Edit { changes } => Some(crate::viewer::edits(changes, cx)),
+                _ => None,
+            };
+            let input = tool::input(t).map(|i| tool::selectable(&asked, &i, cx));
+            let output = (!shown.trim().is_empty()).then(|| tool::selectable(&said, shown, cx));
             d.child(unfold(
                 cx,
                 body_id,
@@ -1780,24 +1838,16 @@ pub(super) fn tool_card(
                     .flex()
                     .flex_col()
                     .gap(px(6.))
-                    .children(tool::input(t).map(|i| tool::selectable(&asked, &i)))
-                    .when_some(
-                        match t {
-                            Tool::Edit { changes } => Some(tool::diffs(changes)),
-                            _ => None,
-                        },
-                        |d, diffs| d.child(diffs),
-                    )
-                    .when(!shown.trim().is_empty(), |d| {
-                        d.child(tool::selectable(&said, shown))
-                    }),
+                    .children(input)
+                    .children(diffs)
+                    .children(output),
             ))
         })
         .into_any_element()
 }
 
-/// The reply box: one pill with attach on its left, the prompt, and the model and send on its
-/// right. Under it, the folder and its branch.
+/// The reply box: the prompt, and under it the same row as the composer's (bar.rs) with send or
+/// stop on its right. Under the box, the folder and its branch.
 fn composer(
     v: &TranscriptView,
     window: &mut Window,
@@ -1805,40 +1855,17 @@ fn composer(
 ) -> AnyElement {
     let running = v.model.running();
     let agent = v.launch.agent;
-    let (brand, _) = colors::brand(agent);
     let focused = v.input.focus_handle(cx).is_focused(window);
-    // a quiet chip that lifts on hover
-    let chip = |id: &'static str| {
-        div()
-            .id(id)
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .h(px(26.))
-            .px(px(8.))
-            .min_w_0()
-            .rounded(px(8.))
-            .text_size(px(12.5))
-            .cursor_pointer()
-            .hover(|s| s.bg(colors::ink(0.06)))
-    };
     let model_chip = model_menu::anchored_chip(
         &v.anchor,
-        chip("thread-model")
-            .child(mark(agent, 13., brand))
-            .child(
-                div()
-                    .truncate()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors::text1())
-                    .child(v.model_label()),
-            )
-            .on_click(cx.listener(|v, _: &ClickEvent, window, cx| {
+        bar::model("thread-model", agent, v.model_label()).on_click(cx.listener(
+            |v, _: &ClickEvent, window, cx| {
                 if let Some(spec) = v.model_spec() {
                     v.menu = Some(ModelMenu::open(&spec, window, cx));
                     cx.notify();
                 }
-            })),
+            },
+        )),
     );
     let effort_chip = v
         .model_spec()
@@ -1846,15 +1873,14 @@ fn composer(
         .map(|spec| {
             model_menu::anchored_chip(
                 &v.effort_anchor,
-                chip("thread-effort")
-                    .text_color(colors::text3())
-                    .child(model_menu::effort_chip_label(&spec))
-                    .on_click(cx.listener(|v, _: &ClickEvent, window, cx| {
+                bar::effort("thread-effort", &spec).on_click(cx.listener(
+                    |v, _: &ClickEvent, window, cx| {
                         if let Some(spec) = v.model_spec() {
                             v.menu = Some(ModelMenu::open_effort(&spec, window, cx));
                             cx.notify();
                         }
-                    })),
+                    },
+                )),
             )
         });
     // a live run with nothing typed can only be stopped; typed text steers it
@@ -1867,8 +1893,6 @@ fn composer(
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(false, cx)))
     };
-    // the prompt across the whole width, and under it the model, effort and permission on the
-    // left with attach and send on the right
     let pill = widgets::composer_box(focused)
         .when(attach::held(), |d| {
             d.border_color(colors::accent())
@@ -1893,46 +1917,15 @@ fn composer(
                 }),
             )))
         })
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(10.))
-                .px(px(10.))
-                .pt(px(16.))
-                .pb(px(10.))
-                .child(
-                    div()
-                        .px(px(8.))
-                        .min_h(px(24.))
-                        .text_size(px(14.5))
-                        .line_height(px(23.))
-                        .child(v.input.clone()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .min_w_0()
-                                .items_center()
-                                .gap(px(4.))
-                                .child(model_chip)
-                                .children(effort_chip)
-                                .child(permission_chip(v, cx)),
-                        )
-                        .child(
-                            widgets::icon_button("thread-attach", "paperclip", 28.).on_click(
-                                cx.listener(|v, _: &ClickEvent, _, cx| v.pick_images(cx)),
-                            ),
-                        )
-                        .child(action),
-                ),
-        )
+        .child(bar::field(&v.input))
+        .child(bar::bar(
+            bar::attach("thread-attach")
+                .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.pick_images(cx))),
+            model_chip,
+            effort_chip,
+            permission_chip(v, cx),
+            [action.into_any_element()],
+        ))
         .when(v.ultra && agent == hyprspace_proto::Agent::Claude, |d| {
             d.relative().child(super::ring::ring(
                 widgets::BOX_RADIUS,
@@ -2135,7 +2128,7 @@ fn tray(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyEleme
                 })),
             )
             .child(
-                widgets::icon_button("limit-cancel", "x", 24.)
+                widgets::icon_button("limit-cancel", "x", widgets::SMALL)
                     .tooltip(widgets::tip("Don't continue"))
                     .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.cancel_resume(cx))),
             )
@@ -2225,7 +2218,7 @@ fn tray(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyEleme
             .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.steer(ix, cx))),
         )
         .child(
-            widgets::icon_button(("queue-drop", ix), "x", 24.)
+            widgets::icon_button(("queue-drop", ix), "x", widgets::SMALL)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .tooltip(widgets::tip("Remove from the queue"))
                 .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.unqueue(ix, cx))),
@@ -2315,33 +2308,12 @@ fn context((used, window): (u64, u64)) -> AnyElement {
 }
 
 fn permission_chip(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> AnyElement {
-    use hyprspace_proto::Permission;
-    let p = v.launch.permission;
-    let glyph = match p {
-        Permission::Plan => "list-checks",
-        Permission::Ask => "hand",
-        Permission::Auto => "file-pen-line",
-        Permission::Bypass => "lock-open",
-    };
-    div()
-        .id("thread-permission")
-        .flex()
-        .items_center()
-        .gap(px(5.))
-        .h(px(26.))
-        .px(px(8.))
-        .rounded(px(8.))
-        .text_size(px(12.5))
-        .text_color(colors::text3())
-        .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.06)))
+    bar::permission("thread-permission", v.launch.permission)
         .on_click(cx.listener(|v, e: &ClickEvent, _, cx| {
             let at = e.position();
             v.perm_menu = Some(gpui::point(at.x - px(40.), at.y));
             cx.notify();
         }))
-        .child(icon(glyph, 12., colors::text3()))
-        .child(crate::composer::pickers::permission_label(p))
         .into_any_element()
 }
 

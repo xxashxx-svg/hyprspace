@@ -56,6 +56,7 @@ pub struct AppState {
     pub agent_checks: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub scheduled: Vec<crate::schedule::Scheduled>,
+    pub notify: NotifyPrefs,
 }
 
 impl Default for AppState {
@@ -83,6 +84,27 @@ impl Default for AppState {
             snapshots: false,
             agent_checks: true,
             scheduled: Vec::new(),
+            notify: NotifyPrefs::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NotifyPrefs {
+    pub on: bool,
+    pub waiting: bool,
+    pub failed: bool,
+    pub finished: bool,
+}
+
+impl Default for NotifyPrefs {
+    fn default() -> Self {
+        Self {
+            on: false,
+            waiting: true,
+            failed: true,
+            finished: false,
         }
     }
 }
@@ -665,6 +687,9 @@ impl ComposerPrefs {
 pub enum Entry {
     Prompt {
         prompt: Prompt,
+        /// When it was sent, in unix ms. Journals from before it was kept have none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<u64>,
     },
     Answer {
         request: String,
@@ -680,6 +705,14 @@ pub enum Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompts_from_old_journals_load_without_a_time() {
+        let line = r#"{"type":"prompt","prompt":{"text":"hi","images":[]}}"#;
+        let e: Entry = serde_json::from_str(line).unwrap();
+        assert!(matches!(e, Entry::Prompt { at: None, .. }));
+        assert_eq!(serde_json::to_string(&e).unwrap(), line);
+    }
 
     #[test]
     fn archived_threads_load_settled_and_snoozes_round_trip() {
@@ -770,6 +803,15 @@ mod tests {
         };
         let back: AppState = serde_json::from_str(&serde_json::to_string(&on).unwrap()).unwrap();
         assert!(back.working_shelf);
+    }
+
+    #[test]
+    fn notifications_start_off_and_then_cover_waiting_and_failed() {
+        let old: AppState = serde_json::from_str(r#"{"titles":true}"#).unwrap();
+        assert!(!old.notify.on);
+        assert!(old.notify.waiting && old.notify.failed && !old.notify.finished);
+        let some: AppState = serde_json::from_str(r#"{"notify":{"finished":true}}"#).unwrap();
+        assert!(some.notify.waiting && some.notify.finished);
     }
 
     #[test]

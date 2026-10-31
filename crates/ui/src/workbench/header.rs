@@ -11,9 +11,9 @@ use gpui::{
 use hyprspace_proto::{Agent, Pane, ThreadKind};
 
 use crate::assets::{icon, mark};
-use crate::colors;
 use crate::root::Root;
 use crate::zoom::px;
+use crate::{colors, widgets};
 
 /// The last two parts of a folder, which is what tells them apart in practice.
 pub fn short(path: &Path) -> String {
@@ -96,23 +96,12 @@ pub(super) fn head_button(
     name: &str,
     danger: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(22.))
-        .rounded(px(6.))
-        .cursor_pointer()
-        .hover(move |s| {
-            if danger {
-                s.bg(colors::error().opacity(0.22))
-            } else {
-                s.bg(colors::surface3())
-            }
-        })
-        .child(icon(name, 13., colors::text3()))
+    widgets::icon_frame(id, widgets::SMALL)
+        .when(danger, |d| d.hover(|s| s.bg(colors::error().opacity(0.14))))
+        .child(
+            icon(name, 12., colors::text3())
+                .group_hover("icon-button", |s| s.text_color(colors::text1())),
+        )
 }
 
 impl Root {
@@ -187,7 +176,7 @@ impl Root {
                                 .truncate()
                                 .px(px(6.))
                                 .py(px(1.))
-                                .rounded(px(5.))
+                                .rounded(px(6.))
                                 .bg(colors::ink(0.05))
                                 .text_size(px(11.))
                                 .text_color(colors::text3())

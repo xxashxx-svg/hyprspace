@@ -7,8 +7,8 @@ mod commands;
 
 use gpui::{
     AnyElement, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    FontWeight, IntoElement, KeyBinding, MouseButton, Render, ScrollHandle, SharedString,
-    Subscription, Window, actions, div, prelude::*, relative,
+    FontWeight, IntoElement, KeyBinding, MouseButton, Render, ScrollHandle, Subscription, Window,
+    actions, div, prelude::*, relative,
 };
 use hyprspace_proto::Agent;
 use hyprspace_theme::MONO;
@@ -223,15 +223,19 @@ impl Focusable for Palette {
 }
 
 /// A shortcut as keycaps: Ctrl, Shift, G on Windows; the glyphs on macOS.
+// Ctrl means `secondary` (Cmd on macOS); a binding on the real Control key is written Control
 fn keycaps(hint: &str, small: bool) -> AnyElement {
     let caps = hint.split('+').map(|k| {
         let k = if cfg!(target_os = "macos") {
             match k {
                 "Ctrl" => "⌘",
+                "Control" => "⌃",
                 "Shift" => "⇧",
                 "Alt" => "⌥",
                 k => k,
             }
+        } else if k == "Control" {
+            "Ctrl"
         } else {
             k
         };
@@ -247,28 +251,14 @@ fn keycaps(hint: &str, small: bool) -> AnyElement {
 
 fn keycap(label: &str, small: bool) -> AnyElement {
     let side = if small { 18. } else { 20. };
-    div()
-        .flex()
-        .items_center()
-        .justify_center()
+    crate::widgets::keycap(label.to_string())
         .min_w(px(side))
         .h(px(side))
-        .px(px(5.))
-        .rounded(px(5.))
-        .bg(colors::ink(0.06))
-        .border_1()
-        .border_b_2()
-        .border_color(colors::ink(0.08))
-        .text_size(px(if small { 10. } else { 10.5 }))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(colors::text2())
-        .child(SharedString::from(label.to_string()))
         .into_any_element()
 }
 
 impl Render for Palette {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let accent = colors::accent();
         let q = self.query(cx);
         let mut list = div()
             .id("palette-list")
@@ -313,11 +303,7 @@ impl Render for Palette {
                 );
             }
             let on = i == self.sel;
-            let glyph_color = if on {
-                accent.blend(colors::text1().opacity(0.4))
-            } else {
-                colors::text2()
-            };
+            let glyph_color = if on { colors::text1() } else { colors::text2() };
             let glyph: AnyElement = match item.glyph {
                 Glyph::Icon(name) => icon(name, 15., glyph_color).into_any_element(),
                 Glyph::Mark(agent) => mark(agent, 14., colors::brand(agent).0).into_any_element(),
@@ -333,9 +319,9 @@ impl Render for Palette {
                     .py(px(5.))
                     .pl(px(6.))
                     .pr(px(10.))
-                    .rounded(px(9.))
+                    .rounded(px(8.))
                     .cursor_pointer()
-                    .when(on, |d| d.bg(accent.opacity(0.14)))
+                    .when(on, |d| d.bg(colors::surface3()))
                     .on_mouse_move(cx.listener(move |p, _, _, cx| {
                         if p.sel != i {
                             p.sel = i;
@@ -350,9 +336,9 @@ impl Render for Palette {
                             .items_center()
                             .justify_center()
                             .size(px(28.))
-                            .rounded(px(7.))
+                            .rounded(px(6.))
                             .bg(if on {
-                                accent.opacity(0.22)
+                                colors::ink(0.08)
                             } else {
                                 colors::ink(0.05)
                             })
@@ -405,7 +391,7 @@ impl Render for Palette {
             .max_w(relative(0.92))
             .flex()
             .flex_col()
-            .rounded(px(14.))
+            .rounded(px(12.))
             .border_1()
             .border_color(colors::border2())
             .bg(colors::surface2())
@@ -421,7 +407,7 @@ impl Render for Palette {
                     .pr(px(14.))
                     .border_b_1()
                     .border_color(colors::border1())
-                    .child(icon("search", 16., accent))
+                    .child(icon("search", 16., colors::text3()))
                     .child(
                         div()
                             .flex_1()

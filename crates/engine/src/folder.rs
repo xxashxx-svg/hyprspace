@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use futures::channel::mpsc::UnboundedSender;
 use hyprspace_proto::Event;
-use hyprspace_proto::folder::{DirEntry, FolderCommand, FolderEvent, GitStatus, SaveError};
+use hyprspace_proto::folder::{
+    DiffScope, DirEntry, FolderCommand, FolderEvent, GitStatus, SaveError,
+};
 use hyprspace_proto::git::FileOp;
 
 use crate::{git, open};
@@ -164,6 +166,20 @@ fn run(cmd: FolderCommand, lock: &Mutex<()>) -> Vec<FolderEvent> {
         FolderCommand::Diff { cwd, path } => {
             let text = diff(&cwd, &path);
             vec![FolderEvent::Diff { cwd, path, text }]
+        }
+        FolderCommand::Changes { cwd, path, scope } => {
+            let text = git::scoped_diff(&cwd, &path, &scope);
+            let base = match scope {
+                DiffScope::Uncommitted => None,
+                _ => git::base(&cwd).map(|(name, _)| name),
+            };
+            vec![FolderEvent::Changes {
+                cwd,
+                path,
+                scope,
+                text,
+                base,
+            }]
         }
         FolderCommand::AddWorktree {
             request,

@@ -36,6 +36,7 @@ fn a_computer_pairs_drives_a_terminal_reads_a_journal_and_a_folder() {
         ));
         journal.record(Entry::Prompt {
             prompt: Prompt::text("explain the redirect"),
+            at: None,
         });
     }
     let (host, hc, mut he) = Engine::start_in(host_dir.path().into()).unwrap();
@@ -174,7 +175,7 @@ fn a_computer_pairs_drives_a_terminal_reads_a_journal_and_a_folder() {
         _ => None,
     });
     assert!(
-        matches!(&entries[..], [Entry::Prompt { prompt }] if prompt.text == "explain the redirect")
+        matches!(&entries[..], [Entry::Prompt { prompt, .. }] if prompt.text == "explain the redirect")
     );
 
     // a folder on the host

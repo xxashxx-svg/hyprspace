@@ -145,7 +145,7 @@ fn callout(who: &str, text: &str) -> AnyElement {
         .gap(px(10.))
         .px(px(14.))
         .py(px(11.))
-        .rounded(px(10.))
+        .rounded(px(12.))
         .border_1()
         .border_color(c.opacity(0.35))
         .bg(c.opacity(0.11))

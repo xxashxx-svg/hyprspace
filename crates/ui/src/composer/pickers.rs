@@ -20,6 +20,15 @@ pub fn permission_label(p: Permission) -> &'static str {
     }
 }
 
+pub fn permission_icon(p: Permission) -> &'static str {
+    match p {
+        Permission::Plan => "list-checks",
+        Permission::Ask => "hand",
+        Permission::Auto => "file-pen-line",
+        Permission::Bypass => "lock-open",
+    }
+}
+
 pub fn permission_note(p: Permission) -> &'static str {
     match p {
         Permission::Plan => "Reads and plans. Changes nothing.",
@@ -78,12 +87,6 @@ pub fn permission_row(
     mode: Permission,
     on: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    let glyph = match mode {
-        Permission::Plan => "list-checks",
-        Permission::Ask => "hand",
-        Permission::Auto => "file-pen-line",
-        Permission::Bypass => "lock-open",
-    };
     div()
         .id(id)
         .flex()
@@ -94,7 +97,11 @@ pub fn permission_row(
         .cursor_pointer()
         .when(on, |d| d.bg(colors::ink(0.07)))
         .hover(|s| s.bg(colors::ink(0.05)))
-        .child(div().pt(px(2.)).child(icon(glyph, 14., colors::text2())))
+        .child(
+            div()
+                .pt(px(2.))
+                .child(icon(permission_icon(mode), 14., colors::text2())),
+        )
         .child(
             div()
                 .flex()

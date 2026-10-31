@@ -28,6 +28,26 @@ A file or one file's diff opens in a card over the window (`ui/src/workbench/car
 its own colors without new tokens. Esc or a click outside closes it and gives the keyboard back.
 Reads are capped at 2 MB; past that, or for media, the file goes to the user's editor.
 
+## Diffs
+
+- **One renderer.** `ui/src/viewer/diff.rs` draws every diff: the card, an edit in the
+  transcript, and the approval dock, which use smaller rows that wrap and an 8% wash instead of
+  10%. Syntax colors come from a background pass that highlights each file's new side and old side
+  as one piece, so a line is colored in context. The rows show plain until it lands. The
+  transcript keeps parsed and colored edits in a cache keyed by their text, so a scrolled-back
+  card doesn't parse or highlight again.
+- **A run's changes come from its snapshots.** A run's changes card (`RunEvent::Changes`) holds
+  the git trees taken as the run started and ended, the same ones Undo uses. View changes diffs
+  those two trees (`FolderCommand::Changes`), so the card's counts and the diff always agree, and
+  the diff never polls. The trees belong to no ref, so `git gc` can drop them after about two
+  weeks; the viewer then says the snapshots are gone.
+- **Wider scopes.** Uncommitted diffs HEAD against a fresh snapshot, so new files show and the
+  repo's index is untouched. Branch diffs the merge base with the default branch (`origin/HEAD`'s
+  name, else `main` or `master`, local first) against a fresh snapshot. On the default branch, or
+  with none to find, Branch is greyed out. Both poll like the dock's diff.
+- **Threads on other computers** get no changes card, because `Changes` stays out of the journal a
+  phone or computer watches, so View changes is this computer only.
+
 ## The editor
 
 A text file in the card is editable (`ui/src/viewer/edit/`). It's our own, small on purpose: Zed's

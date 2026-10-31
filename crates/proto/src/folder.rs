@@ -66,6 +66,13 @@ pub enum FolderCommand {
         cwd: PathBuf,
         path: String,
     },
+    /// A diff of the repo holding `cwd` in `scope`: one file, or every file when `path` is empty.
+    /// `path` is relative to the repo. Answered with `Changes`.
+    Changes {
+        cwd: PathBuf,
+        path: String,
+        scope: DiffScope,
+    },
     /// A worktree off the repo holding `cwd`, started from `base` or the branch `cwd` is on. Its
     /// folder and placeholder branch get a random token, since `name` is still the prompt.
     /// Answered with `WorktreeAdded`.
@@ -156,6 +163,15 @@ pub enum FolderEvent {
         path: String,
         text: Result<String, String>,
     },
+    /// `base` names the branch `Branch` compares with, and comes with `Run` and `Branch`
+    /// answers. None on that branch, or in a repo with no default branch to find.
+    Changes {
+        cwd: PathBuf,
+        path: String,
+        scope: DiffScope,
+        text: Result<String, String>,
+        base: Option<String>,
+    },
     Branches {
         cwd: PathBuf,
         branches: Vec<String>,
@@ -192,6 +208,18 @@ pub enum FolderEvent {
     OpenFailed {
         message: String,
     },
+}
+
+/// How much a diff covers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "scope", rename_all = "camelCase")]
+pub enum DiffScope {
+    /// One run's changes, between the snapshots its `RunEvent::Changes` carried.
+    Run { before: String, after: String },
+    /// The working tree against the last commit, new files included.
+    Uncommitted,
+    /// The working tree against where the branch left the default branch.
+    Branch,
 }
 
 /// Why a save didn't happen.

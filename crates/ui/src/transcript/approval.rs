@@ -6,8 +6,8 @@ use hyprspace_proto::{Answer, Tool};
 
 use super::{Item, TranscriptView, tool};
 use crate::assets::icon;
-use crate::colors;
 use crate::zoom::px;
+use crate::{colors, widgets};
 
 pub fn card(
     v: &TranscriptView,
@@ -46,29 +46,33 @@ pub fn dock(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyE
     };
     let count = (open.len() > 1).then(|| format!("1/{}", open.len()));
     let detail = match t {
-        Tool::Edit { changes } => Some(tool::diffs(changes)),
+        Tool::Edit { changes } => Some(crate::viewer::edits(changes, cx)),
         _ => tool::input(t).map(|i| tool::mono(&i)),
     };
-    let button = |id: &'static str, label: &'static str, a: Answer, main: bool| {
+    let button = |id: &'static str, label: &'static str, key: &str, a: Answer, main: bool| {
         let request = request.to_string();
-        let b = div()
-            .id((id, v.id.0))
-            .flex()
-            .items_center()
-            .h(px(26.))
-            .px(px(10.))
-            .rounded(px(6.))
-            .text_size(px(12.))
-            .font_weight(FontWeight::MEDIUM)
-            .cursor_pointer()
-            .child(label);
         let b = if main {
-            b.bg(colors::text1())
-                .text_color(colors::bg())
-                .hover(|s| s.bg(colors::text1().opacity(0.85)))
+            widgets::primary((id, v.id.0), label).child(
+                alt_cap(key)
+                    .border_color(colors::on_accent().opacity(0.3))
+                    .text_color(colors::on_accent()),
+            )
         } else {
-            b.text_color(colors::text2())
+            div()
+                .id((id, v.id.0))
+                .flex()
+                .items_center()
+                .gap_1()
+                .h(px(26.))
+                .px(px(10.))
+                .rounded(px(6.))
+                .text_size(px(12.))
+                .font_weight(FontWeight::MEDIUM)
+                .cursor_pointer()
+                .text_color(colors::text2())
                 .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
+                .child(label)
+                .child(alt_cap(key))
         };
         b.on_click(cx.listener(move |v, _: &ClickEvent, _, cx| v.answer(request.clone(), a, cx)))
     };
@@ -122,14 +126,45 @@ pub fn dock(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyE
                 .flex()
                 .justify_end()
                 .gap_2()
-                .child(button("deny", "Deny", Answer::Deny, false))
+                .child(button("deny", "Deny", "N", Answer::Deny, false))
                 .when(*always, |d| {
-                    d.child(button("always", "Always allow", Answer::AllowAlways, false))
+                    d.child(button(
+                        "always",
+                        "Always allow",
+                        "A",
+                        Answer::AllowAlways,
+                        false,
+                    ))
                 })
-                .child(button("allow", "Allow", Answer::Allow, true)),
+                .child(button("allow", "Allow", "Y", Answer::Allow, true)),
         )
         .into_any_element()
         .into()
+}
+
+pub fn alt_cap(key: &str) -> gpui::Div {
+    let alt = if cfg!(target_os = "macos") {
+        "⌥"
+    } else {
+        "Alt "
+    };
+    widgets::keycap(format!("{alt}{key}"))
+}
+
+// Option+letter types a character on macOS, so these keys are bound only while one waits
+pub fn context(v: &TranscriptView) -> String {
+    let mut c = String::from("Thread");
+    if let Some(Item::Approval { always, .. }) = open(v).first() {
+        c.push_str(if *always {
+            " Approval Always"
+        } else {
+            " Approval"
+        });
+    }
+    if super::ask::pending(v).is_some() {
+        c.push_str(" Question");
+    }
+    c
 }
 
 pub fn open(v: &TranscriptView) -> Vec<&Item> {
@@ -171,7 +206,7 @@ fn line(t: &Tool, mark: &'static str, tint: gpui::Hsla, state: &'static str) -> 
         .gap(px(8.))
         .px(px(12.))
         .py(px(8.))
-        .rounded(px(10.))
+        .rounded(px(12.))
         .bg(colors::ink(0.035))
         .child(icon(mark, 13., tint))
         .child(

@@ -65,7 +65,7 @@ fn skeleton(id: &str, label: &str) -> AnyElement {
     } else {
         "Reading local files"
     };
-    let bar = |h: f32| div().h(px(h)).rounded(px(9.)).bg(colors::ink(0.06));
+    let bar = |h: f32| div().h(px(h)).rounded(px(8.)).bg(colors::ink(0.06));
     card(id, label, None, Some(reading.into()))
         .child(
             div()

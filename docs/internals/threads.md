@@ -176,3 +176,27 @@ back-to-back runs don't make it jump) or needs you.
   off but keep the host's order.
 - Pinned, snoozed and settled threads stay where they are, and a subagent's thread stays under
   its parent. The phone doesn't show the shelf yet.
+
+## Notifications
+
+Notifications are off until switched on in Settings, General, Experimental; Ash doesn't want
+them by default. Off means no OS notification, toast, flash or taskbar count. Once on, a thread
+that starts waiting on you, fails or finishes notifies, by a switch per kind (finished starts off). With the window in the background that is an OS notification, a
+taskbar flash or a dock bounce; in front, a toast at the top with Open. The thread on screen in
+a focused window never notifies, and nothing leaves the computer.
+
+- **Only a run moving on notifies**: out of Working, or out of Waiting into failed or done. A view
+  reports its journal's last status as it loads, and a host's first board after a reconnect does
+  the same, both from no status or Idle, so neither notifies.
+- **GPUI posts the notification** (WinRT toasts under the AUMID `com.hyprspace.app`,
+  UNUserNotificationCenter on macOS) and hands a click back on the main thread. Unpackaged, GPUI
+  registers that AUMID under the user's `Software\Classes`, so dev builds show toasts too.
+  `crates/notify` has only what GPUI lacks: the count and a flash that lasts until the window
+  comes forward.
+- **The count is threads that need you**: unread (`Root.unseen`) plus waiting, each once. It is a
+  taskbar overlay icon on Windows and the dock tile's label on macOS, and shows while focused too.
+- **Threads on another computer notify here**, from the host's board or their open transcript,
+  since you drive them from this one. The host notifies on its own screen; nothing about a
+  notification crosses between them.
+- **No Allow on the notification.** Approving without seeing the thread is too easy to do by
+  accident.

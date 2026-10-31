@@ -48,6 +48,12 @@ pub fn decode_jwt(token: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
 /// Modified time in unix ms, 0 when unknown.
 pub fn mtime_ms(p: &Path) -> u64 {
     std::fs::metadata(p)

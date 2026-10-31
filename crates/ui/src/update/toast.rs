@@ -447,7 +447,7 @@ fn frame() -> Div {
         .py(px(8.))
         .pl(px(12.))
         .pr(px(10.))
-        .rounded(px(10.))
+        .rounded(px(12.))
         .border_1()
         .border_color(colors::border2())
         .bg(colors::surface2())

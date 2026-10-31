@@ -16,6 +16,7 @@ pub enum Item {
         images: Vec<PathBuf>,
         /// Sent while a run was live, so it joined that run.
         steer: bool,
+        at: Option<u64>,
     },
     Text {
         source: String,
@@ -273,12 +274,18 @@ impl Transcript {
         }
     }
 
-    /// A prompt the user sent. Mid-run it steers; otherwise it starts a run.
+    /// A prompt the user sent just now.
     pub fn prompt(&mut self, prompt: &Prompt) {
+        self.prompt_at(prompt, Some(crate::time::now_ms()));
+    }
+
+    /// A prompt the user sent. Mid-run it steers; otherwise it starts a run.
+    pub fn prompt_at(&mut self, prompt: &Prompt, at: Option<u64>) {
         self.items.push(Item::User {
             text: prompt.text.clone(),
             images: prompt.images.clone(),
             steer: self.run.is_some(),
+            at,
         });
         if self.run.is_none() {
             self.failed = false;
@@ -610,11 +617,14 @@ impl Transcript {
         match self.items.last() {
             // Claude starts once the first prompt reaches it
             Some(Item::User { steer: true, .. }) => {
-                let Some(Item::User { text, images, .. }) = self.items.pop() else {
+                let Some(Item::User {
+                    text, images, at, ..
+                }) = self.items.pop()
+                else {
                     return;
                 };
                 self.settle();
-                self.prompt(&Prompt { text, images });
+                self.prompt_at(&Prompt { text, images }, at);
             }
             Some(Item::User { .. }) => {}
             _ if run.said => {

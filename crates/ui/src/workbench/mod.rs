@@ -347,6 +347,7 @@ impl Root {
             FolderEvent::File { .. }
                 | FolderEvent::Saved { .. }
                 | FolderEvent::Diff { .. }
+                | FolderEvent::Changes { .. }
                 | FolderEvent::Git { .. }
         ) && let Some(v) = &self.work.viewer
             && v.read(cx).machine() == peer
@@ -437,6 +438,7 @@ impl Root {
             FolderEvent::File { .. }
             | FolderEvent::Saved { .. }
             | FolderEvent::Diff { .. }
+            | FolderEvent::Changes { .. }
             | FolderEvent::Git { .. } => {
                 if let Some(v) = &self.work.viewer
                     && v.read(cx).machine().is_none()

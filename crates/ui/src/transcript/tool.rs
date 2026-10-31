@@ -2,13 +2,14 @@
 // output and, for file edits, the diff. A run of calls in a row folds into one line that counts
 // them, after zeron's "Ran 4 commands · read 1 file". Approval prompts reuse the same summary.
 
-use gpui::{AnyElement, Div, FontWeight, IntoElement, SharedString, StyledText, div, prelude::*};
+use gpui::{AnyElement, Context, Div, IntoElement, SharedString, StyledText, div, prelude::*};
 use hyprspace_proto::Tool;
 use hyprspace_proto::run::{ChangeKind, FileChange};
 use hyprspace_theme::MONO;
 
-use crate::colors;
+use super::TranscriptView;
 use crate::zoom::px;
+use crate::{clip, colors};
 
 /// One line saying what a tool does or did.
 pub fn label(tool: &Tool) -> String {
@@ -182,95 +183,53 @@ pub fn mono(text: &str) -> AnyElement {
 }
 
 /// `mono` in a transcript, where it can be selected. `key` as `select::wrap` wants it.
-pub fn selectable(key: &str, text: &str) -> AnyElement {
-    let text: SharedString = text.trim_end().to_string().into();
-    let styled = StyledText::new(text.clone());
+pub fn selectable(key: &str, text: &str, cx: &mut Context<TranscriptView>) -> AnyElement {
+    let long = clip::long(key, text);
+    let shown = match &long {
+        Some((k, _)) if !clip::open(k) => clip::head(text),
+        _ => text,
+    };
+    let body: SharedString = shown.trim_end().to_string().into();
+    let styled = StyledText::new(body.clone());
     let layout = styled.layout().clone();
-    block()
-        .child(crate::markdown::select::wrap(
-            key,
-            text,
-            layout,
-            styled.into_any_element(),
+    let body = block().child(crate::markdown::select::wrap(
+        key,
+        body,
+        layout,
+        styled.into_any_element(),
+    ));
+    let Some((key, more)) = long else {
+        return body.into_any_element();
+    };
+    let flip = key.clone();
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(clip::cut(&key, 8. + clip::lines(LINE), body))
+        .child(clip::more(
+            &key,
+            more,
+            cx.listener(move |_, _, _, cx| {
+                clip::flip(&flip);
+                cx.notify();
+            }),
         ))
         .into_any_element()
 }
+
+const LINE: f32 = 17.;
 
 fn block() -> Div {
     div()
         .px(px(12.))
         .py(px(8.))
-        .rounded(px(10.))
+        .rounded(px(12.))
         .bg(colors::ink(0.035))
         .font_family(MONO)
         .text_size(px(11.5))
-        .line_height(px(17.))
+        .line_height(px(LINE))
         .text_color(colors::text2())
-}
-
-/// The diffs of a file edit, one card per file.
-pub fn diffs(changes: &[FileChange]) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .children(changes.iter().map(|c| {
-            let lines = c
-                .diff
-                .lines()
-                .filter(|l| !l.starts_with("+++") && !l.starts_with("---"));
-            div()
-                .flex()
-                .flex_col()
-                .rounded(px(10.))
-                .bg(colors::ink(0.035))
-                .overflow_hidden()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .px(px(12.))
-                        .py(px(7.))
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(colors::text2())
-                        .child(crate::assets::icon("file-diff", 12., colors::text3()))
-                        .child(div().min_w_0().truncate().child(c.path.clone())),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .pb(px(6.))
-                        .font_family(MONO)
-                        .text_xs()
-                        .children(lines.map(diff_line)),
-                )
-        }))
-        .into_any_element()
-}
-
-fn diff_line(line: &str) -> AnyElement {
-    let (bg, fg) = match line.as_bytes().first() {
-        Some(b'+') => (Some(colors::diff_add().opacity(0.14)), colors::text1()),
-        Some(b'-') => (Some(colors::diff_del().opacity(0.14)), colors::text1()),
-        Some(b'@') => (None, colors::text3()),
-        _ => (None, colors::text2()),
-    };
-    // an empty line still needs its height
-    let text: SharedString = if line.is_empty() {
-        " ".into()
-    } else {
-        line.to_string().into()
-    };
-    div()
-        .px(px(12.))
-        .min_h(px(17.))
-        .text_color(fg)
-        .when_some(bg, |d, bg| d.bg(bg))
-        .child(text)
-        .into_any_element()
 }
 
 #[cfg(test)]

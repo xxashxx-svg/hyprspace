@@ -4,8 +4,9 @@
 use crate::assets::icon;
 use crate::zoom::px;
 use gpui::{
-    AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, Render, StyleRefinement, Window,
-    anchored, deferred, div, point, prelude::*, relative,
+    AnyElement, ClickEvent, Context, DragMoveEvent, IntoElement, ModifiersChangedEvent,
+    MouseDownEvent, Render, StyleRefinement, Window, anchored, deferred, div, point, prelude::*,
+    relative,
 };
 
 use super::{Action, MenuEntry, MenuItems, Root, Screen, SidebarDrag};
@@ -32,12 +33,31 @@ impl Root {
                     waiting.push(*id);
                 }
             }
+            if let MenuEntry::Item {
+                label,
+                hint,
+                action: Action::RemoveThread(id),
+            } = e
+                && self.delete_armed
+            {
+                let worktree = self
+                    .state
+                    .thread(*id)
+                    .is_some_and(|(_, t)| t.worktree.is_some());
+                *label = if worktree {
+                    "Delete thread and worktree?"
+                } else {
+                    "Delete thread?"
+                }
+                .into();
+                *hint = Some("Click again".into());
+            }
         }
         let sub = self.menu_sub.and_then(|i| match entries.get(i) {
             Some(MenuEntry::Sub { entries, .. }) => Some((i, entries.clone())),
             _ => None,
         });
-        let mut panel = menu_panel(&entries, "menu", &waiting, cx);
+        let mut panel = menu_panel(&entries, "menu", &waiting, self.delete_armed, cx);
         if let Some((i, entries)) = sub {
             // the choices line up with the row that opened them, just past the menu's edge
             // its first row level with row `i`: past the rows above, less its own edge and padding
@@ -53,12 +73,13 @@ impl Root {
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .top(px(top))
                     .pl(px(2.))
-                    .child(menu_panel(&entries, "submenu", &waiting, cx)),
+                    .child(menu_panel(&entries, "submenu", &waiting, false, cx)),
             );
         }
         let close = cx.listener(|r, _: &(), _, cx| {
             r.menu = None;
             r.menu_sub = None;
+            r.delete_armed = false;
             cx.notify();
         });
         Some(widgets::layer(
@@ -119,6 +140,7 @@ fn menu_panel(
     entries: &[MenuEntry],
     key: &'static str,
     waiting: &[u64],
+    armed: bool,
     cx: &mut Context<Root>,
 ) -> gpui::Div {
     let top = key == "menu";
@@ -126,8 +148,8 @@ fn menu_panel(
         MenuEntry::Divider => div()
             .h(px(1.))
             .my(px((MENU_RULE - 1.) / 2.))
-            .mx(px(8.))
-            .bg(colors::ink(0.08))
+            .mx(px(2.))
+            .bg(colors::border1())
             .into_any_element(),
         MenuEntry::Item {
             label,
@@ -152,12 +174,18 @@ fn menu_panel(
                     )
                     .into_any_element();
             }
+            let armed = danger && armed;
             menu_line((key, i), label.clone(), glyph(action, label), danger)
+                .when(armed, |d| d.bg(colors::error().opacity(0.14)))
                 .children(hint.clone().map(|h| {
                     div()
                         .flex_none()
                         .text_size(px(12.))
-                        .text_color(colors::text3())
+                        .text_color(if armed {
+                            colors::error()
+                        } else {
+                            colors::text3()
+                        })
                         .child(h)
                 }))
                 // a plain row in the top menu shuts any choices open beside another
@@ -171,6 +199,12 @@ fn menu_panel(
                 })
                 .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
                     r.menu_sub = None;
+                    if danger && !r.delete_armed {
+                        r.delete_armed = true;
+                        cx.notify();
+                        return;
+                    }
+                    r.delete_armed = false;
                     r.act(action, window, cx)
                 }))
                 .into_any_element()
@@ -201,7 +235,7 @@ fn menu_panel(
         .p(px(MENU_PAD))
         .flex()
         .flex_col()
-        .rounded(px(10.))
+        .rounded(px(8.))
         .border_1()
         .border_color(colors::border2())
         .bg(colors::surface2())
@@ -230,7 +264,7 @@ fn menu_line(
         .gap(px(10.))
         .h(px(MENU_ROW))
         .px(px(10.))
-        .rounded(px(7.))
+        .rounded(px(6.))
         .cursor_pointer()
         .when(danger, |d| d.text_color(colors::error()))
         .children(mark.map(|m| icon(m, 14., ink)))
@@ -238,7 +272,7 @@ fn menu_line(
             if danger {
                 s.bg(colors::error().opacity(0.14))
             } else {
-                s.bg(colors::ink(0.08))
+                s.bg(colors::ink(0.06))
             }
         })
         .child(div().flex_1().min_w_0().truncate().child(label))
@@ -247,6 +281,7 @@ fn menu_line(
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.list_threads(cx);
+        self.sync_badge();
         if !cx.has_active_drag() {
             crate::attach::hold(false);
         }
@@ -286,6 +321,7 @@ impl Render for Root {
         let snooze = self.snooze_popup(window, cx);
         let icon_picker = self.icon_popup(window, cx);
         let toast = self.undo_toast(cx);
+        let notice = self.notice_toast(toast.is_some(), cx);
         let close = self.close_dialog(cx);
         let palette = self.palette_overlay(window, cx);
         let folders = self.folder_overlay(window, cx);
@@ -344,6 +380,16 @@ impl Render for Root {
             .on_action(cx.listener(Self::zoom_in))
             .on_action(cx.listener(Self::zoom_out))
             .on_action(cx.listener(Self::zoom_reset))
+            .on_action(cx.listener(Self::jump))
+            .on_action(cx.listener(Self::next_waiting))
+            .on_modifiers_changed(cx.listener(|r, e: &ModifiersChangedEvent, window, cx| {
+                r.hold_keys(&e.modifiers, window, cx)
+            }))
+            .capture_any_mouse_down(
+                cx.listener(|r, e: &MouseDownEvent, _, cx| {
+                    r.spoil_hold(e.modifiers.secondary(), cx)
+                }),
+            )
             .size_full()
             .flex()
             .flex_col()
@@ -383,6 +429,7 @@ impl Render for Root {
             .children(snooze)
             .children(icon_picker)
             .children(toast)
+            .children(notice)
             .children(close)
             .children(palette)
             .children(folders)

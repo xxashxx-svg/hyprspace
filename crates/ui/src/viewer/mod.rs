@@ -1,13 +1,16 @@
 // The viewer: a text file to read and edit (`edit`), with its syntax colored and its line
-// numbers, at the line a terminal pointed at; an image fitted to the card; or one file's working
-// tree diff. It shows in a card over the window (`crate::workbench`); showing another file
-// replaces what it shows. The user's own editor stays one click away in the card's header.
+// numbers, at the line a terminal pointed at; an image fitted to the card; or a diff, of one
+// file's working tree or of a run (`scope`). It shows in a card over the window
+// (`crate::workbench`); showing another file replaces what it shows. The user's own editor stays
+// one click away in the card's header.
 
 mod code;
 mod diff;
 mod edit;
+mod edits;
 pub(crate) mod lightbox;
 mod pan;
+mod scope;
 pub(crate) mod video;
 
 use std::path::{Path, PathBuf};
@@ -18,12 +21,14 @@ use gpui::{
     MouseButton, ObjectFit, Render, SharedString, StyledImage, Subscription, Task,
     UniformListScrollHandle, Window, div, img, prelude::*,
 };
+use hyprspace_proto::folder::DiffScope;
 use hyprspace_proto::{Client, Command, FolderCommand, FolderEvent, Pane};
 
 use crate::colors;
 use crate::zoom::px;
 use diff::Diff;
 use edit::{Editor, EditorEvent};
+pub(crate) use edits::edits;
 
 pub enum ViewerEvent {
     /// A file's unsaved state flipped: the card's title shows it.
@@ -60,7 +65,10 @@ pub struct Viewer {
     scroll: UniformListScrollHandle,
     /// The diff's repo root, from the git status the engine sends with it.
     root: Option<PathBuf>,
+    scope: DiffScope,
+    base: Option<String>,
     _work: Option<Task<()>>,
+    _colors: Option<Task<()>>,
     /// The editor's events, passed on.
     _edit: Option<Subscription>,
 }
@@ -83,7 +91,10 @@ impl Viewer {
             body: Body::Loading,
             scroll: UniformListScrollHandle::new(),
             root: None,
+            scope: DiffScope::Uncommitted,
+            base: None,
             _work: None,
+            _colors: None,
             _edit: None,
         }
     }
@@ -124,6 +135,7 @@ impl Viewer {
         self.body = Body::Loading;
         self._edit = None;
         self._work = None;
+        self._colors = None;
     }
 
     /// Lines added and removed, for a diff on screen.
@@ -173,13 +185,22 @@ impl Viewer {
             Pane::File { path, .. } => self
                 .client
                 .send(Command::Folder(FolderCommand::ReadFile { path })),
-            Pane::Diff { cwd, path } => {
+            Pane::Diff { cwd, .. } => {
                 self.root = None;
-                self.client.send(Command::Folder(FolderCommand::GitStatus {
-                    cwd: cwd.clone(),
-                }));
                 self.client
-                    .send(Command::Folder(FolderCommand::Diff { cwd, path }));
+                    .send(Command::Folder(FolderCommand::GitStatus { cwd }));
+                self.request();
+                self.poll_diff(cx);
+            }
+            Pane::Changes {
+                cwd, before, after, ..
+            } => {
+                self.root = None;
+                self.base = None;
+                self.scope = DiffScope::Run { before, after };
+                self.client
+                    .send(Command::Folder(FolderCommand::GitStatus { cwd }));
+                self.request();
                 self.poll_diff(cx);
             }
             Pane::Thread { .. } => {}
@@ -194,11 +215,11 @@ impl Viewer {
             loop {
                 cx.background_executor().timer(Duration::from_secs(5)).await;
                 let alive = this.update(cx, |v, _| {
-                    if let Some(Pane::Diff { cwd, path }) = &v.pane {
-                        v.client.send(Command::Folder(FolderCommand::Diff {
-                            cwd: cwd.clone(),
-                            path: path.clone(),
-                        }));
+                    // a run's snapshots never change
+                    if matches!(v.pane, Some(Pane::Diff { .. }))
+                        || !matches!(v.scope, DiffScope::Run { .. })
+                    {
+                        v.request();
                     }
                 });
                 if alive.is_err() {
@@ -252,22 +273,29 @@ impl Viewer {
             (FolderEvent::Diff { cwd, path, text }, Some(Pane::Diff { cwd: c, path: p }))
                 if *cwd == c && *path == p =>
             {
-                self.body = match text {
-                    Ok(t) if t.trim().is_empty() => Body::Failed("No changes to show.".into()),
-                    Ok(t) => {
-                        // keep the scroll when a poll brings the same diff back
-                        if let Body::Diff(d) = &self.body
-                            && d.is(t)
-                        {
-                            return;
-                        }
-                        Body::Diff(Diff::new(t))
-                    }
-                    Err(e) => Body::Failed(e.clone().into()),
-                };
-                cx.notify();
+                self.diff(text, &p, cx);
             }
-            (FolderEvent::Git { cwd, status }, Some(Pane::Diff { cwd: c, .. })) if *cwd == c => {
+            (
+                FolderEvent::Changes {
+                    cwd,
+                    path,
+                    scope,
+                    text,
+                    base,
+                },
+                Some(Pane::Changes {
+                    cwd: c, path: p, ..
+                }),
+            ) if *cwd == c && *path == p && *scope == self.scope => {
+                if *scope != DiffScope::Uncommitted {
+                    self.base = base.clone();
+                }
+                self.diff(text, &p, cx);
+            }
+            (
+                FolderEvent::Git { cwd, status },
+                Some(Pane::Diff { cwd: c, .. } | Pane::Changes { cwd: c, .. }),
+            ) if *cwd == c => {
                 self.root = status.root.clone();
                 cx.notify();
             }
@@ -279,7 +307,16 @@ impl Viewer {
 impl Render for Viewer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match &self.body {
-            Body::Loading => div().into_any_element(),
+            Body::Loading => div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .p(px(14.))
+                .text_size(px(12.))
+                .text_color(colors::text3())
+                .child(crate::spinner::ring("viewer-loading", colors::text3()))
+                .child("Loading")
+                .into_any_element(),
             Body::Failed(msg) => div()
                 .p(px(14.))
                 .text_size(px(12.))
@@ -312,6 +349,16 @@ impl Render for Viewer {
         };
         // the editor holds the keyboard itself, with the same handle
         let editing = matches!(self.body, Body::Edit(..));
+        let body = match self.scopes(cx) {
+            Some(bar) => div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(bar)
+                .child(div().flex_1().min_h_0().child(body))
+                .into_any_element(),
+            None => body,
+        };
         div()
             .id("viewer")
             .when(!editing, |d| d.track_focus(&self.focus))

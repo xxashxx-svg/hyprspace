@@ -95,7 +95,7 @@ impl Find {
                 .h(px(24.))
                 .min_w(px(26.))
                 .px(px(7.))
-                .rounded(px(5.))
+                .rounded(px(6.))
                 .border_1()
                 .border_color(colors::border2())
                 .bg(colors::surface1())
@@ -138,7 +138,7 @@ impl Find {
                     .flex()
                     .items_center()
                     .px(px(8.))
-                    .rounded(px(5.))
+                    .rounded(px(6.))
                     .border_1()
                     .border_color(colors::accent())
                     .bg(colors::surface1())
@@ -173,7 +173,7 @@ impl Find {
             )
             .child(div().flex_1())
             .child(
-                widgets::icon_button("term-find-close", "x", 24.)
+                widgets::icon_button("term-find-close", "x", widgets::SMALL)
                     .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.close_find(cx))),
             )
             .into_any_element()

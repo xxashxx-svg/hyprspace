@@ -71,6 +71,7 @@ fn entries(text: &str) -> Vec<Entry> {
                     finish(&mut out, &mut open);
                     out.push(Entry::Prompt {
                         prompt: Prompt::text(t),
+                        at: None,
                     });
                     open = true;
                     last_text = false;
@@ -165,7 +166,7 @@ mod tests {
         let prompts: Vec<&str> = e
             .iter()
             .filter_map(|e| match e {
-                Entry::Prompt { prompt } => Some(prompt.text.as_str()),
+                Entry::Prompt { prompt, .. } => Some(prompt.text.as_str()),
                 _ => None,
             })
             .collect();

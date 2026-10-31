@@ -14,7 +14,7 @@ use hyprspace_theme::MONO;
 
 use super::files::Deco;
 use super::kinds::file_icon;
-use super::{Dock, DockEvent, empty};
+use super::{Dock, DockEvent, empty, loading};
 use crate::assets::icon;
 use crate::colors;
 use crate::input::{InputEvent, TextInput};
@@ -77,17 +77,17 @@ fn checkbox(state: Tick, enabled: bool) -> gpui::Div {
         .rounded(px(4.))
         .border_1()
         .border_color(if on {
-            colors::accent()
+            colors::text1()
         } else {
             colors::text3().opacity(0.55)
         })
-        .when(on, |d| d.bg(colors::accent()))
+        .when(on, |d| d.bg(colors::text1()))
         .when(!enabled, |d| d.opacity(0.5))
         .when(state == Tick::All, |d| {
-            d.child(icon("check", 11., colors::on_accent()))
+            d.child(icon("check", 11., colors::bg()))
         })
         .when(state == Tick::Some, |d| {
-            d.child(div().w(px(7.)).h(px(1.5)).bg(colors::on_accent()))
+            d.child(div().w(px(7.)).h(px(1.5)).bg(colors::bg()))
         })
 }
 
@@ -408,7 +408,7 @@ impl Dock {
 
     pub(super) fn git_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(s) = self.git.status.clone() else {
-            return empty("Reading the working tree");
+            return loading("Reading the working tree");
         };
         if s.root.is_none() {
             return empty("This folder is not a git repository.");

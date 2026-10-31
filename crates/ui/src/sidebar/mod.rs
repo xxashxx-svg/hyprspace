@@ -16,10 +16,12 @@ mod draft;
 mod drag;
 mod icon;
 mod icon_picker;
+mod jump;
 mod row;
 mod working;
 pub(crate) use icon::Look;
 pub(crate) use icon_picker::IconPicker;
+pub(crate) use jump::{Hold, NextWaiting, bind_keys};
 pub(crate) use row::tag;
 
 use std::cell::{Cell, RefCell};
@@ -45,7 +47,7 @@ use crate::root::{MenuItems, Root, Screen, SidebarDrag};
 use crate::slide::{animations, ease_out};
 use crate::time::now_ms;
 use crate::update::Phase;
-use crate::widgets::tip_text;
+use crate::widgets::{self, tip_text};
 use crate::workbench::PaneDrag;
 use crate::zoom::px;
 
@@ -210,6 +212,13 @@ impl Slide {
             moved.into_any_element()
         }
     }
+}
+
+fn thread_ids(items: &[Item]) -> impl Iterator<Item = u64> + '_ {
+    items.iter().filter_map(|i| match i {
+        Item::Thread(id) | Item::Working(id) | Item::Shelved(id) => Some(*id),
+        _ => None,
+    })
 }
 
 /// The threads in `new` that `old` didn't list.
@@ -400,7 +409,8 @@ impl gpui::Render for SidebarView {
         let Some(root) = self.root.upgrade() else {
             return div().into_any_element();
         };
-        let (items, loaded) = root.update(cx, |r, cx| (r.sidebar_items(cx), r.loaded));
+        let (items, loaded, held) =
+            root.update(cx, |r, cx| (r.sidebar_items(cx), r.loaded, r.hold.shown));
         self.arrivals
             .borrow_mut()
             .retain(|_, a| a.since.elapsed() < ARRIVE);
@@ -480,6 +490,11 @@ impl gpui::Render for SidebarView {
             }
         }
         let wheel = self.wheel(cx);
+        let keys: Rc<HashMap<u64, usize>> = Rc::new(if held {
+            thread_ids(&self.items).zip(1..=9).collect()
+        } else {
+            HashMap::new()
+        });
         let (items, weak, now) = (self.items.clone(), self.root.clone(), now_ms());
         let arrivals = self.arrivals.clone();
         let slides = self.slides.clone();
@@ -492,9 +507,15 @@ impl gpui::Render for SidebarView {
                 }
                 _ => None,
             };
+            let key = match item {
+                Some(Item::Thread(id) | Item::Working(id) | Item::Shelved(id)) => {
+                    keys.get(&id).copied()
+                }
+                _ => None,
+            };
             let row = weak
                 .update(cx, |r, cx| match item {
-                    Some(item) => r.sidebar_item(&item, now, cx),
+                    Some(item) => r.sidebar_item(&item, now, key, cx),
                     None => div().into_any_element(),
                 })
                 .unwrap_or_else(|_| div().into_any_element());
@@ -534,7 +555,7 @@ impl gpui::Render for SidebarView {
 
 /// The wash a sidebar row lifts to on hover.
 pub(crate) fn row_hover() -> gpui::Hsla {
-    colors::surface3().opacity(0.55)
+    colors::surface3()
 }
 
 /// A shelf's arrow, as T3 Code's: up while it is open, down while it is shut.
@@ -669,7 +690,17 @@ impl Root {
         items
     }
 
-    fn sidebar_item(&self, item: &Item, now: u64, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn jump_list(&self, cx: &mut Context<Self>) -> Vec<u64> {
+        thread_ids(&self.sidebar_items(cx)).collect()
+    }
+
+    fn sidebar_item(
+        &self,
+        item: &Item,
+        now: u64,
+        key: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         match *item {
             Item::Thread(id) | Item::Working(id) => match self.state.thread(id) {
                 Some((_, t)) => slot()
@@ -679,13 +710,13 @@ impl Root {
                             .is_some_and(|(_, p)| p.active()),
                         |d| d.pl(px(EDGE + 16.)),
                     )
-                    .child(self.thread_row(t, now, matches!(item, Item::Thread(_)), cx))
+                    .child(self.thread_row(t, now, matches!(item, Item::Thread(_)), key, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
             Item::Shelved(id) => match self.state.thread(id) {
                 Some((_, t)) => slot()
-                    .child(self.shelved_row(t, now, cx))
+                    .child(self.shelved_row(t, now, key, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },
@@ -730,7 +761,7 @@ impl Root {
                 .child(
                     div()
                         .id("settled-shelf")
-                        .rounded(px(7.))
+                        .rounded(px(6.))
                         .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
                         .on_drop(cx.listener(|r, d: &PaneDrag, window, cx| {
                             r.drop_on_settled(d, window, cx)
@@ -807,45 +838,21 @@ impl Root {
     /// typed, and a square New thread button that asks for a folder.
     fn nav_row(&self, q: &str, cx: &mut Context<Self>) -> AnyElement {
         let end = if q.is_empty() {
-            div()
-                .id("search-key")
-                .flex_none()
-                .h(px(20.))
-                .px(px(5.))
-                .flex()
-                .items_center()
-                .rounded(px(5.))
-                .border_1()
-                .border_color(colors::border1())
-                .text_size(px(10.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(colors::text3())
-                .cursor_pointer()
-                .hover(|s| {
-                    s.text_color(colors::text1())
-                        .border_color(colors::border2())
-                })
-                .child(if cfg!(target_os = "macos") {
-                    "Cmd K"
-                } else {
-                    "Ctrl K"
-                })
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
-                    r.toggle_palette(&TogglePalette, window, cx)
-                }))
+            widgets::keycap(if cfg!(target_os = "macos") {
+                "Cmd K"
+            } else {
+                "Ctrl K"
+            })
+            .id("search-key")
+            .cursor_pointer()
+            .hover(|s| s.text_color(colors::text1()))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
+                r.toggle_palette(&TogglePalette, window, cx)
+            }))
         } else {
-            div()
-                .id("search-clear")
-                .flex_none()
-                .size(px(20.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.))
-                .cursor_pointer()
-                .hover(|s| s.bg(colors::ink(0.08)))
-                .child(icon("x", 12., colors::text3()))
+            widgets::icon_button("search-clear", "x", widgets::SMALL)
+                .tooltip(widgets::tip("Clear"))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(|r, _: &ClickEvent, _, cx| {
                     r.search.update(cx, |i, cx| i.set_text("", cx));
@@ -856,7 +863,7 @@ impl Root {
         let glass = if q.is_empty() {
             colors::text3()
         } else {
-            colors::accent()
+            colors::text2()
         };
         div()
             .flex_none()
@@ -928,6 +935,7 @@ impl Root {
         cx.listener(move |r, e: &MouseDownEvent, _, cx| {
             r.menu = Some((e.position, items.clone()));
             r.menu_sub = None;
+            r.delete_armed = false;
             cx.stop_propagation();
             cx.notify();
         })
@@ -949,7 +957,7 @@ impl Root {
             .gap(px(8.))
             .h(px(26.))
             .px(px(8.))
-            .rounded(px(7.))
+            .rounded(px(6.))
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(colors::text3())

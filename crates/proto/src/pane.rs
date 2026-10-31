@@ -23,6 +23,15 @@ pub enum Pane {
         cwd: PathBuf,
         path: String,
     },
+    /// What one run changed, between the snapshots its `RunEvent::Changes` carried: one file, or
+    /// every file when `path` is empty. The viewer can widen it to the uncommitted changes or
+    /// the branch.
+    Changes {
+        cwd: PathBuf,
+        before: String,
+        after: String,
+        path: String,
+    },
 }
 
 impl Pane {

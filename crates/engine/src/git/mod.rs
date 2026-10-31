@@ -6,6 +6,7 @@ mod checkpoint;
 mod commit;
 mod prepare;
 mod prs;
+mod scoped;
 mod setup;
 mod status;
 mod watch;
@@ -18,6 +19,7 @@ pub use checkpoint::{changes as run_changes, snapshot, undo as undo_run};
 pub use commit::{commit, create_pr, file_op, pr_defaults, push};
 pub use prepare::prepare;
 pub use prs::pull_requests;
+pub use scoped::{base, scoped_diff};
 pub use setup::{clone, create_project_dir, init, init_repo, new_project};
 pub use status::{
     branch_in_repo, branch_info, changes, changes_in_repo, diff, is_repo, ls_files, root,

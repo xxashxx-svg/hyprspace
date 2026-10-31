@@ -154,6 +154,7 @@ pub struct Root {
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     /// The menu's line whose choices are open beside it.
     pub(crate) menu_sub: Option<usize>,
+    pub(crate) delete_armed: bool,
     /// A thread whose row the sidebar should scroll into view: one just opened or made, which
     /// may sit above a list scrolled down.
     pub(crate) reveal: Option<u64>,
@@ -174,6 +175,7 @@ pub struct Root {
     pub(crate) shelf: HashMap<u64, Option<Instant>>,
     /// The sidebar row under the pointer and since when, for its hover card.
     pub(crate) hover_row: Option<(u64, Instant)>,
+    pub(crate) hold: crate::sidebar::Hold,
     pub(crate) _hover_timer: Option<Task<()>>,
     /// Where each thread's row was last drawn, for the card that shows beside it.
     pub(crate) row_bounds:
@@ -197,6 +199,7 @@ pub struct Root {
     /// The last settle or snooze, which the toast can undo for a few seconds.
     pub(crate) undo: Option<settle::Undo>,
     _undo_timer: Option<Task<()>>,
+    pub(crate) notices: crate::notify::Notices,
     /// Where Settings' Back button returns to.
     pub(crate) back: Screen,
     pub(crate) settings: crate::settings::Settings,
@@ -329,6 +332,7 @@ impl Root {
                 }
             }
         });
+        subs.push(Self::notify_hooks(window, cx));
         let work = crate::workbench::Work::new(client.clone(), window, cx);
         let search = cx.new(|cx| TextInput::new("Search", false, cx));
         let root = cx.entity();
@@ -338,6 +342,16 @@ impl Root {
                 input.update(cx, |i, cx| i.set_text("", cx));
             }
             cx.notify();
+        }));
+        let weak = cx.entity().downgrade();
+        subs.push(cx.intercept_keystrokes(move |e, _, cx| {
+            let held = e.keystroke.modifiers.secondary();
+            let _ = weak.update(cx, |r, cx| r.spoil_hold(held, cx));
+        }));
+        // dictation tools can leave the modifier down after they paste and hand focus back
+        subs.push(cx.observe_window_activation(window, |r, window, cx| {
+            let held = !window.is_window_active() || window.modifiers().secondary();
+            r.spoil_hold(held, cx);
         }));
         // the sidebar's branches and change counts, kept fresh while the app runs
         subs.push(cx.observe_window_activation(window, |r, window, _| {
@@ -417,6 +431,7 @@ impl Root {
             rename: None,
             menu: None,
             menu_sub: None,
+            delete_armed: false,
             reveal: None,
             peek: None,
             lightbox: None,
@@ -426,6 +441,7 @@ impl Root {
             working_open: false,
             shelf: HashMap::new(),
             hover_row: None,
+            hold: Default::default(),
             _hover_timer: None,
             row_bounds: Default::default(),
             snooze_menu: None,
@@ -439,6 +455,7 @@ impl Root {
             frames: Default::default(),
             undo: None,
             _undo_timer: None,
+            notices: crate::notify::Notices::new(window),
             back: Screen::Compose(None),
             settings: crate::settings::Settings::new(cx),
             open_arg: open,

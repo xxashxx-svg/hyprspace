@@ -139,7 +139,7 @@ impl Root {
                     })),
             )
             .child(
-                widgets::icon_button("sidebar-toggle", "panel-left", 28.)
+                widgets::icon_button("sidebar-toggle", "panel-left", widgets::LARGE)
                     .occlude()
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
                         r.toggle_sidebar(&ToggleSidebar, window, cx)

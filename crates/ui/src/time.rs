@@ -104,6 +104,17 @@ pub fn wake_label(at: NaiveDateTime, now: NaiveDateTime) -> String {
     }
 }
 
+/// When a message was sent, from `now`: "2:05 PM" today, "Yesterday 11:14 PM", "Oct 12" before
+/// that, and the year too when it isn't this one.
+pub fn sent_label(at: NaiveDateTime, now: NaiveDateTime) -> String {
+    match (now.date() - at.date()).num_days() {
+        ..=0 => clock(at),
+        1 => format!("Yesterday {}", clock(at)),
+        _ if at.year() == now.year() => at.format("%b %-d").to_string(),
+        _ => at.format("%b %-d, %Y").to_string(),
+    }
+}
+
 /// The menu's short form beside a choice: the clock for today and tomorrow, the day too further
 /// out.
 /// How long until `at`, from `now`, both unix ms: "in 45m", "in 3h", "in 2d 4h".
@@ -206,6 +217,18 @@ mod tests {
         assert_eq!(wake_label(at(2026, 10, 5, 9, 0), now), "Mon 9:00 AM");
         assert_eq!(wake_label(at(2026, 10, 12, 0, 15), now), "Oct 12, 12:15 AM");
         assert_eq!(wake_short(at(2026, 10, 5, 9, 0), now), "Mon 9:00 AM");
+    }
+
+    #[test]
+    fn sent_times_shorten_with_age() {
+        let now = at(2026, 10, 3, 14, 30);
+        assert_eq!(sent_label(at(2026, 10, 3, 14, 5), now), "2:05 PM");
+        assert_eq!(
+            sent_label(at(2026, 10, 2, 23, 14), now),
+            "Yesterday 11:14 PM"
+        );
+        assert_eq!(sent_label(at(2026, 9, 28, 9, 0), now), "Sep 28");
+        assert_eq!(sent_label(at(2025, 12, 31, 9, 0), now), "Dec 31, 2025");
     }
 
     #[test]

@@ -141,6 +141,14 @@ pub(crate) static STRUCTURED: Setting = setting(
     "transcript experimental",
     &[Field::Structured],
 );
+pub(crate) static NOTIFICATIONS: Setting = setting(
+    General,
+    "Experimental",
+    "Notifications",
+    "Tells you when a thread waits on you, fails or finishes, with a system notification, a toast and a count on the taskbar.",
+    "notify alert toast badge taskbar dock sound",
+    &[],
+);
 pub(crate) static WORKING: Setting = setting(
     General,
     "Experimental",
@@ -413,6 +421,7 @@ static SETTINGS: &[&Setting] = &[
     &AGENT_CHECKS,
     &SNOOZED,
     &STRUCTURED,
+    &NOTIFICATIONS,
     &WORKING,
     &OPENER,
     &CLEANUP,

@@ -224,6 +224,7 @@ impl Root {
             .insert(peer.to_string(), board.agents.clone());
         let now = now_ms();
         let mut kept = HashSet::new();
+        let mut moved = Vec::new();
         for bs in &board.spaces {
             let sid = self.machines.local(peer, false, bs.id);
             let cwd = PathBuf::from(&bs.path);
@@ -268,7 +269,8 @@ impl Root {
                 });
                 // a structured view reads its status off its own transcript
                 if !self.views.contains_key(&tid) || bt.kind == BoardKind::Terminal {
-                    self.status.insert(tid, status(bt.status));
+                    let s = status(bt.status);
+                    moved.push((tid, self.status.insert(tid, s), s));
                 }
                 if bt.unseen && self.screen != Screen::Thread(tid) {
                     self.unseen.insert(tid);
@@ -291,6 +293,9 @@ impl Root {
                     .insert(tid, (bt.place.clone(), bt.branch));
             }
             self.state.spaces.push(space);
+        }
+        for (thread, before, s) in moved {
+            self.alert(thread, before, s, cx);
         }
         let pending: Vec<_> = self
             .machines

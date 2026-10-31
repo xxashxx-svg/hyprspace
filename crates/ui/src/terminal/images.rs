@@ -161,7 +161,7 @@ impl Peek {
                         .flex()
                         .flex_col()
                         .gap(px(6.))
-                        .rounded(px(10.))
+                        .rounded(px(12.))
                         .border_1()
                         .border_color(colors::border2())
                         .bg(colors::surface2())

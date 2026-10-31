@@ -646,6 +646,7 @@ mod tests {
                 entries: vec![
                     Entry::Prompt {
                         prompt: Prompt::text("hi"),
+                        at: None,
                     },
                     Entry::Answer {
                         request: "r1".into(),

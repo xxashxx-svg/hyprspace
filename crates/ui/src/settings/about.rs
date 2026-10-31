@@ -156,7 +156,7 @@ impl Root {
             .items_center()
             .justify_center()
             .size(px(36.))
-            .rounded(px(9.))
+            .rounded(px(8.))
             .bg(colors::ink(0.05))
             .child(logo(22.))
             .into_any_element();

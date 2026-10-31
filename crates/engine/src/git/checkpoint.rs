@@ -7,7 +7,7 @@ use super::{Result, git, git_cmd};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-fn top(cwd: &Path) -> Option<PathBuf> {
+pub(super) fn top(cwd: &Path) -> Option<PathBuf> {
     let root = git(cwd, &["rev-parse", "--show-toplevel"]).ok()?;
     Some(PathBuf::from(root.trim()))
 }

@@ -3,6 +3,7 @@
 // the folder to resume, or the clone card when the text starts with a repository link. The
 // product flow follows the Tauri app's ComposerPane; the root turns its events into threads.
 
+pub(crate) mod bar;
 mod card;
 mod clone;
 mod effort;
@@ -167,13 +168,8 @@ impl EventEmitter<ComposerEvent> for Composer {}
 
 impl Composer {
     pub fn new(client: Client, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| {
-            TextInput::new(
-                "Ask for anything, paste an image, or paste a repository link to clone it",
-                true,
-                cx,
-            )
-        });
+        let input =
+            cx.new(|cx| TextInput::new("Describe the task. @ for files, / for commands", true, cx));
         let name = cx.new(|cx| TextInput::new("folder name", false, cx));
         let setup = cx.new(|cx| TextInput::new("npm install", false, cx));
         let schedule_at = cx.new(|cx| {
@@ -974,11 +970,11 @@ impl Render for Composer {
             .justify_center()
             .mb(px(20.))
             .text_size(px(24.))
-            .font_weight(FontWeight::MEDIUM)
+            .font_weight(FontWeight::SEMIBOLD)
             .text_color(colors::text1())
             .map(|d| match &repo {
                 Some(r) => d.child("Clone ").child(bold(r.label.clone())),
-                None => d.child("What should we work on?"),
+                None => d.child(card::ask(self, cx)),
             });
         let rows = self.clone_rows();
         let target = self.target.as_ref().map(|t| t.name.clone());

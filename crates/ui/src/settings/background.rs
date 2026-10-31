@@ -152,7 +152,7 @@ impl Root {
             div()
                 .id(("built-in", i))
                 .h(px(58.))
-                .rounded(px(7.))
+                .rounded(px(6.))
                 .overflow_hidden()
                 .border_2()
                 .border_color(if on {
@@ -165,7 +165,7 @@ impl Root {
                 .child(
                     img(SharedString::from(crate::wallpaper::thumb_path(w.slug)))
                         .size_full()
-                        .rounded(px(5.))
+                        .rounded(px(6.))
                         .object_fit(ObjectFit::Cover),
                 )
                 .tooltip(widgets::tip(w.title))

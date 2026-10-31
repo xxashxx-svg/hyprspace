@@ -18,6 +18,7 @@ mod handoff;
 mod links;
 mod model;
 mod motion;
+mod notice;
 mod render;
 mod ring;
 mod rows;
@@ -178,6 +179,7 @@ pub struct TranscriptView {
     pub(super) perm_menu: Option<gpui::Point<gpui::Pixels>>,
     pub(super) servers: Vec<hyprspace_proto::resources::Server>,
     follow: motion::Follow,
+    caught: usize,
     reveal: Option<motion::Reveal>,
     partial: Option<(usize, Vec<crate::markdown::Block>)>,
     /// The reply and its length that `partial` is the parse of.
@@ -374,6 +376,7 @@ impl TranscriptView {
             perm_menu: None,
             servers: Vec::new(),
             follow: Default::default(),
+            caught: 0,
             reveal: None,
             partial: None,
             partial_at: None,
@@ -963,6 +966,18 @@ impl TranscriptView {
         self.changed(cx);
     }
 
+    pub(super) fn answer_shown(&mut self, answer: Answer, cx: &mut Context<Self>) {
+        let shown = approval::open(self).first().and_then(|i| match i {
+            Item::Approval {
+                request, always, ..
+            } if answer != Answer::AllowAlways || *always => Some(request.clone()),
+            _ => None,
+        });
+        if let Some(request) = shown {
+            self.answer(request, answer, cx);
+        }
+    }
+
     pub(super) fn pick_option(
         &mut self,
         request: &str,
@@ -1134,6 +1149,7 @@ impl TranscriptView {
                 text,
                 images,
                 steer: false,
+                ..
             } if !text.trim().is_empty() || !images.is_empty() => Some(Prompt {
                 text: text.clone(),
                 images: images.clone(),
@@ -1159,6 +1175,7 @@ impl TranscriptView {
             text,
             images,
             steer: false,
+            ..
         }) = self.model.items.get(ix)
         else {
             return None;
@@ -1444,7 +1461,7 @@ impl TranscriptView {
         }
         for entry in entries {
             match entry {
-                Entry::Prompt { prompt } => self.model.prompt(&prompt),
+                Entry::Prompt { prompt, at } => self.model.prompt_at(&prompt, at),
                 Entry::Answer {
                     request,
                     answer,
@@ -1511,11 +1528,11 @@ impl TranscriptView {
         }
         for entry in entries {
             match entry {
-                Entry::Prompt { prompt } => {
+                Entry::Prompt { prompt, at } => {
                     if self.echoed.front() == Some(&prompt.text) {
                         self.echoed.pop_front();
                     } else {
-                        self.model.prompt(&prompt);
+                        self.model.prompt_at(&prompt, at);
                         self.changed(cx);
                     }
                 }
@@ -1625,11 +1642,14 @@ impl TranscriptView {
             self.refind(false, cx);
         }
         let hint = if !approval::open(self).is_empty() {
-            APPROVAL_HINT
+            format!(
+                "Type to deny and tell {} what to do instead",
+                self.launch.agent.name()
+            )
         } else if self.model.running() {
-            RUNNING_HINT
+            RUNNING_HINT.into()
         } else {
-            IDLE_HINT
+            IDLE_HINT.into()
         };
         let (prompts, images): (Vec<String>, Vec<Vec<PathBuf>>) = self
             .model
@@ -1785,8 +1805,21 @@ impl model_menu::Host for TranscriptView {
 
 actions!(
     transcript,
-    [FindInThread, PrevPrompt, NextPrompt, SendNow, SendAndNew]
+    [
+        FindInThread,
+        PrevPrompt,
+        NextPrompt,
+        Allow,
+        AllowAlways,
+        Deny,
+        SendNow,
+        SendAndNew
+    ]
 );
+
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = transcript, no_json)]
+pub struct Pick(pub usize);
 
 pub fn bind_keys(cx: &mut gpui::App) {
     let c = Some("Thread");
@@ -1794,15 +1827,21 @@ pub fn bind_keys(cx: &mut gpui::App) {
         KeyBinding::new("secondary-f", FindInThread, c),
         KeyBinding::new("alt-up", PrevPrompt, c),
         KeyBinding::new("alt-down", NextPrompt, c),
+        KeyBinding::new("alt-y", Allow, Some("Approval")),
+        KeyBinding::new("alt-a", AllowAlways, Some("Always")),
+        KeyBinding::new("alt-n", Deny, Some("Approval")),
     ]);
     let c = Some("Thread > TextInput");
     cx.bind_keys([
         KeyBinding::new("secondary-enter", SendNow, c),
         KeyBinding::new("secondary-alt-enter", SendAndNew, c),
     ]);
+    cx.bind_keys(
+        (1..=9).map(|n| KeyBinding::new(&format!("alt-{n}"), Pick(n - 1), Some("Question"))),
+    );
 }
 
-const IDLE_HINT: &str = "Ask anything, @ for files, / for commands";
+const IDLE_HINT: &str = "Reply. @ for files, / for commands";
 const CONTINUE: &str = "The usage limit has reset. Continue where you left off.";
 const RESUME: &str = "The app closed before your last run finished. Continue where you left off.";
 
@@ -1828,7 +1867,6 @@ fn after_update(work: &[String]) -> String {
 }
 const RUNNING_HINT: &str = "Queue a message for when it finishes";
 const TYPING: Duration = Duration::from_millis(1500);
-const APPROVAL_HINT: &str = "Send a message to deny and redirect the agent";
 
 impl Focusable for TranscriptView {
     fn focus_handle(&self, cx: &gpui::App) -> gpui::FocusHandle {

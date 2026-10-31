@@ -88,7 +88,8 @@ paints the grid on a canvas (block and line characters drawn as rectangles), and
 GPUI's input handler, so IME, dead keys and AltGr work. Keys with a meaning are encoded in
 `keys.rs`. Links and `path:line:col` open on Ctrl+click; pasted bitmaps are saved as PNGs and
 pasted as paths. The palette's Ctrl+K is bound everywhere, terminals included, so a shell never
-sees its kill-line Ctrl+K.
+sees its kill-line Ctrl+K. So are the sidebar's Ctrl+1 to 9 and Ctrl+Shift+J. The next-waiting key
+isn't plain Ctrl+J because shells and Claude's input box read Ctrl+J as a newline.
 
 ## Image previews
 

@@ -21,22 +21,16 @@ use crate::zoom::px;
 
 /// A bar button: a square that lifts on hover, or stays lifted while its menu is open.
 fn bar_button(id: &'static str, name: &str, on: bool) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(28.))
-        .rounded(px(6.))
-        .cursor_pointer()
-        .when(on, |d| d.bg(colors::surface2()))
-        .hover(|s| s.bg(colors::surface2()))
-        .child(icon(
-            name,
-            14.,
-            if on { colors::text1() } else { colors::text2() },
-        ))
+    widgets::icon_frame(id, widgets::LARGE)
+        .when(on, |d| d.bg(colors::surface3()))
+        .child(
+            icon(
+                name,
+                14.,
+                if on { colors::text1() } else { colors::text2() },
+            )
+            .group_hover("icon-button", |s| s.text_color(colors::text1())),
+        )
 }
 
 /// A folder as the bar names it: its last two parts, except for No project, whose own folder says
@@ -190,21 +184,23 @@ impl Root {
             }))
             .child(
                 controls
-                    .child(bar_button("bar-new", "plus", false).on_click(cx.listener(
-                        move |r, _: &ClickEvent, window, cx| {
-                            r.act(Action::NewThread(space), window, cx)
-                        },
-                    )))
+                    .child(
+                        bar_button("bar-new", "plus", false)
+                            .tooltip(widgets::tip("New thread"))
+                            .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
+                                r.act(Action::NewThread(space), window, cx)
+                            })),
+                    )
                     .children(open_button)
                     .child(div().w(px(1.)).h(px(16.)).mx(px(8.)).bg(colors::border2()))
                     .child(self.limits.clone())
                     .children(drawer)
                     .child(
-                        bar_button("bar-dock", "panel-right", self.state.dock.open).on_click(
-                            cx.listener(|r, _: &ClickEvent, window, cx| {
+                        bar_button("bar-dock", "panel-right", self.state.dock.open)
+                            .tooltip(widgets::tip("Files and git"))
+                            .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
                                 r.toggle_dock(&ToggleDock, window, cx)
-                            }),
-                        ),
+                            })),
                     ),
             )
             .into_any_element()
@@ -289,10 +285,10 @@ impl Root {
             .flex()
             .flex_col()
             .gap(px(1.))
-            .rounded(px(10.))
+            .rounded(px(8.))
             .border_1()
-            .border_color(colors::ink(0.13))
-            .bg(colors::surface3())
+            .border_color(colors::border2())
+            .bg(colors::surface2())
             .shadow(colors::shadow())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .children(editors)

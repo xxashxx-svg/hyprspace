@@ -8,8 +8,8 @@ use hyprspace_proto::{Agent, Permission, SettleAfter, Snooze};
 
 use super::controls::{group, row, row_with, text};
 use super::index::{
-    AGENT, AGENT_CHECKS, CLEANUP, OPENER, PERMISSION, SETTLE, SNAPSHOTS, SNOOZED, STRUCTURED,
-    TITLES, WORKING,
+    AGENT, AGENT_CHECKS, CLEANUP, NOTIFICATIONS, OPENER, PERMISSION, SETTLE, SNAPSHOTS, SNOOZED,
+    STRUCTURED, TITLES, WORKING,
 };
 use super::{Picker, Root, Tab};
 use crate::time::{left, now_ms};
@@ -200,6 +200,14 @@ impl Root {
         ));
 
         let shelf = self.state.working_shelf;
+        let notify = self.state.notify.on;
+        let notifications = widgets::switch("notify-on", notify).on_click(cx.listener(
+            move |r, _: &ClickEvent, _, cx| {
+                r.state.notify.on = !notify;
+                r.save();
+                cx.notify();
+            },
+        ));
         let working = widgets::switch("working-shelf", shelf).on_click(cx.listener(
             move |r, _: &ClickEvent, _, cx| {
                 r.state.working_shelf = !shelf;
@@ -256,6 +264,7 @@ impl Root {
                 "Updates",
                 vec![self.item(&AGENT_CHECKS, agent_checks, cx)],
             ))
+            .when(notify, |d| d.child(self.notify_group(cx)))
             .child(self.spot(
                 SNOOZED.spot(),
                 self.snoozed_group(cx).into_any_element(),
@@ -265,6 +274,7 @@ impl Root {
                 "Experimental",
                 vec![
                     self.item(&STRUCTURED, switch, cx),
+                    self.item(&NOTIFICATIONS, notifications, cx),
                     self.item(&WORKING, working, cx),
                 ],
             ))

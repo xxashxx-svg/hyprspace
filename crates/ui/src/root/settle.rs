@@ -528,22 +528,7 @@ impl Root {
             None if u.draft.is_some() => ("trash-2", u.what.to_string()),
             None => ("archive", u.what.to_string()),
         };
-        let toast = div()
-            .id("undo-toast")
-            .occlude()
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .max_w(px(440.))
-            .h(px(38.))
-            .pl(px(14.))
-            .pr(px(6.))
-            .rounded(px(10.))
-            .bg(colors::surface3())
-            .border_1()
-            .border_color(colors::border1())
-            .shadow(colors::shadow())
-            .text_size(px(13.))
+        let toast = widgets::toast("undo-toast")
             .child(icon(glyph, 14., colors::text2()))
             .child(
                 div()
@@ -584,7 +569,7 @@ impl Root {
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.undo(window, cx))),
             )
             .child(
-                widgets::icon_button("undo-close", "x", 26.).on_click(cx.listener(
+                widgets::icon_button("undo-close", "x", widgets::SMALL).on_click(cx.listener(
                     |r, _: &ClickEvent, _, cx| {
                         r.undo = None;
                         cx.notify();

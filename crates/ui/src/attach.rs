@@ -400,7 +400,7 @@ pub fn peek(images: &[PathBuf], at: Option<(usize, Point<Pixels>)>) -> Option<An
     };
     let card = div()
         .p(px(4.))
-        .rounded(px(9.))
+        .rounded(px(8.))
         .border_1()
         .border_color(colors::border2())
         .bg(colors::surface2())

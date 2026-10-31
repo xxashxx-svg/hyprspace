@@ -201,16 +201,8 @@ impl Dock {
             .child(tab("dock-git", "git-branch", "Git", DockTab::Git))
             .child(div().flex_1())
             .child(
-                div()
-                    .id("dock-x")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(px(26.))
-                    .rounded(px(6.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(colors::surface2()))
-                    .child(icon("x", 14., colors::text3()))
+                crate::widgets::icon_button("dock-x", "x", crate::widgets::LARGE)
+                    .tooltip(crate::widgets::tip("Hide"))
                     .on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(DockEvent::Hide))),
             )
             .into_any_element()
@@ -218,6 +210,21 @@ impl Dock {
 }
 
 /// The dim note a tab shows when it has nothing to list.
+fn loading(text: &'static str) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .px(px(14.))
+        .py(px(16.))
+        .text_size(px(12.))
+        .line_height(px(19.))
+        .text_color(colors::text3())
+        .child(crate::spinner::ring("dock-loading", colors::text3()))
+        .child(text)
+        .into_any_element()
+}
+
 fn empty(text: &'static str) -> AnyElement {
     div()
         .px(px(14.))

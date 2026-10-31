@@ -32,7 +32,7 @@ impl Root {
     ) -> Option<(PathBuf, Option<u32>, Option<u32>)> {
         match pane {
             Pane::File { path, line, col } => Some((path.clone(), *line, *col)),
-            Pane::Diff { cwd, path } => {
+            Pane::Diff { cwd, path } | Pane::Changes { cwd, path, .. } if !path.is_empty() => {
                 let root = self
                     .work
                     .viewer
@@ -41,7 +41,7 @@ impl Root {
                     .unwrap_or_else(|| cwd.clone());
                 Some((root.join(path), None, None))
             }
-            Pane::Thread { .. } => None,
+            Pane::Diff { .. } | Pane::Changes { .. } | Pane::Thread { .. } => None,
         }
     }
 
@@ -71,9 +71,13 @@ impl Root {
         let viewing = self.work.viewing.as_ref()?;
         let viewer = self.work.viewer.clone()?;
         let (space, pane) = (viewing.space, viewing.pane.clone());
-        let (path, line, col) = self.viewed_file(&pane, cx)?;
-        let (name, dir) = self.file_title(space, &path);
-        let diff = matches!(pane, Pane::Diff { .. });
+        let file = self.viewed_file(&pane, cx);
+        let (name, dir) = match (&file, &pane) {
+            (Some((path, ..)), _) => self.file_title(space, path),
+            (None, Pane::Changes { cwd, .. }) => ("Changes".to_string(), short(cwd)),
+            (None, _) => return None,
+        };
+        let diff = matches!(pane, Pane::Diff { .. } | Pane::Changes { .. });
         let counts = diff.then(|| viewer.read(cx).counts()).flatten();
         let unsaved = viewer.read(cx).dirty(cx);
         let size = window.viewport_size();
@@ -110,30 +114,32 @@ impl Root {
                     .into_any_element(),
             );
         }
-        if diff {
-            let open = path.clone();
+        if let Some((path, line, col)) = file {
+            if diff {
+                let open = path.clone();
+                actions.push(
+                    head_button(("card-view-file", 0), "file-code", false)
+                        .tooltip(tip("View the whole file"))
+                        .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
+                            r.open_path(open.clone(), None, None, window, cx)
+                        }))
+                        .into_any_element(),
+                );
+            }
+            let client = self.client.clone();
             actions.push(
-                head_button(("card-view-file", 0), "file-code", false)
-                    .tooltip(tip("View the whole file"))
-                    .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                        r.open_path(open.clone(), None, None, window, cx)
-                    }))
+                head_button(("card-editor", 0), "external-link", false)
+                    .tooltip(tip("Open in your editor"))
+                    .on_click(move |_, _, _| {
+                        client.send(Command::OpenFile {
+                            path: path.clone(),
+                            line,
+                            col,
+                        })
+                    })
                     .into_any_element(),
             );
         }
-        let client = self.client.clone();
-        actions.push(
-            head_button(("card-editor", 0), "external-link", false)
-                .tooltip(tip("Open in your editor"))
-                .on_click(move |_, _, _| {
-                    client.send(Command::OpenFile {
-                        path: path.clone(),
-                        line,
-                        col,
-                    })
-                })
-                .into_any_element(),
-        );
         actions.push(
             head_button(("card-close", 0), "x", true)
                 .tooltip(tip("Close"))

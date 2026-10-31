@@ -3,6 +3,7 @@
 
 mod assets;
 mod attach;
+mod clip;
 mod colors;
 mod composer;
 mod dock;
@@ -12,6 +13,7 @@ mod intro;
 mod machines;
 mod markdown;
 mod models;
+mod notify;
 mod pace;
 mod palette;
 mod phone;
@@ -47,4 +49,5 @@ pub fn init(cx: &mut gpui::App) {
     suggest::bind_keys(cx);
     transcript::bind_keys(cx);
     composer::bind_keys(cx);
+    sidebar::bind_keys(cx);
 }

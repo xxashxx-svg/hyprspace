@@ -16,7 +16,7 @@ use hyprspace_proto::{Client, Command, FolderCommand, Pane};
 use hyprspace_theme::MONO;
 
 use super::kinds::file_icon;
-use super::{Dock, DockEvent, empty};
+use super::{Dock, DockEvent, empty, loading};
 use crate::assets::icon;
 use crate::colors;
 use crate::widgets::{self, tip};
@@ -321,7 +321,7 @@ impl Dock {
             .unwrap_or_else(|| root.display().to_string());
         let rows = self.tree.rows();
         let body = match self.tree.kids.get(&root) {
-            None => empty("Loading"),
+            None => loading("Loading"),
             Some(Err(e)) => div()
                 .px(px(14.))
                 .py(px(12.))
@@ -371,7 +371,7 @@ impl Dock {
                             .child(name),
                     )
                     .child(
-                        widgets::icon_button("files-collapse", "chevrons-down-up", 24.)
+                        widgets::icon_button("files-collapse", "chevrons-down-up", widgets::SMALL)
                             .tooltip(tip("Collapse folders"))
                             .on_click(cx.listener(|d, _: &ClickEvent, _, cx| {
                                 d.tree.collapse();
@@ -379,7 +379,7 @@ impl Dock {
                             })),
                     )
                     .child(
-                        widgets::icon_button("files-refresh", "refresh-cw", 24.)
+                        widgets::icon_button("files-refresh", "refresh-cw", widgets::SMALL)
                             .tooltip(tip("Refresh"))
                             .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.refresh(cx))),
                     ),

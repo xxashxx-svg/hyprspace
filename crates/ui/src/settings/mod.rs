@@ -15,6 +15,7 @@ mod index;
 #[cfg(target_os = "macos")]
 mod mac;
 mod machines;
+mod notifications;
 mod phone;
 mod picker;
 mod resources;
@@ -302,7 +303,7 @@ impl Root {
                 .gap(px(10.))
                 .h(px(32.))
                 .px(px(10.))
-                .rounded(px(7.))
+                .rounded(px(6.))
                 .text_size(px(13.))
                 .cursor_pointer()
                 .when(on, |d| {
@@ -335,7 +336,7 @@ impl Root {
             .gap(px(8.))
             .h(px(32.))
             .px(px(10.))
-            .rounded(px(7.))
+            .rounded(px(6.))
             .text_size(px(13.))
             .text_color(colors::text2())
             .cursor_pointer()

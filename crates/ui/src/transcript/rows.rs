@@ -273,6 +273,7 @@ mod tests {
             text: "go".into(),
             images: Vec::new(),
             steer: false,
+            at: None,
         }
     }
 
@@ -477,6 +478,7 @@ mod tests {
             text: "also".into(),
             images: Vec::new(),
             steer: true,
+            at: None,
         }
     }
 

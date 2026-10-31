@@ -71,11 +71,8 @@ fn row(
         Some((dir, name)) => (format!("{dir}/"), name.to_string()),
         None => (String::new(), f.path.clone()),
     };
-    let pane = Pane::Diff {
-        cwd: v.launch.cwd.clone(),
-        path: f.path.clone(),
-    };
-    let local = !v.remote;
+    let pane = run_pane(v, ix, &f.path);
+    let local = pane.is_some();
     div()
         .id(SharedString::from(format!("changed-{ix}-{i}")))
         .flex()
@@ -102,12 +99,24 @@ fn row(
                 ),
         )
         .child(counts(f.added, f.removed))
-        .when(local, |d| {
+        .when_some(pane, |d, pane| {
             d.on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
                 cx.emit(TranscriptEvent::Open(pane.clone()))
             }))
         })
         .into_any_element()
+}
+
+fn run_pane(v: &TranscriptView, ix: usize, path: &str) -> Option<Pane> {
+    let Some(Item::Changes { before, after, .. }) = v.model.items.get(ix) else {
+        return None;
+    };
+    (!v.remote).then(|| Pane::Changes {
+        cwd: v.launch.cwd.clone(),
+        before: before.clone(),
+        after: after.clone(),
+        path: path.to_string(),
+    })
 }
 
 pub(super) fn card(
@@ -141,7 +150,7 @@ pub(super) fn card(
                 .gap(px(6.))
                 .h(px(28.))
                 .px(px(10.))
-                .rounded(px(7.))
+                .rounded(px(6.))
                 .text_size(px(12.5))
                 .text_color(colors::text1())
                 .child(if *undo == Undo::Busy {
@@ -200,11 +209,11 @@ pub(super) fn card(
                 )
                 .child(counts(added, removed)),
         )
-        .when(!v.remote, |d| {
+        .when_some(run_pane(v, ix, ""), |d, pane| {
             d.child(undo_button).child(
-                widgets::button(("view-changes", ix), "View changes").on_click(
-                    cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(TranscriptEvent::ViewChanges)),
-                ),
+                widgets::button(("view-changes", ix), "View changes").on_click(cx.listener(
+                    move |_, _: &ClickEvent, _, cx| cx.emit(TranscriptEvent::Open(pane.clone())),
+                )),
             )
         });
     let shown = if all {

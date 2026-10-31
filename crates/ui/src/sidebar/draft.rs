@@ -68,7 +68,7 @@ impl Root {
                     .right(px(6.))
                     .flex()
                     .p(px(1.))
-                    .rounded(px(7.))
+                    .rounded(px(6.))
                     .bg(colors::surface3())
                     .opacity(0.)
                     .group_hover(group, |s| s.opacity(1.))

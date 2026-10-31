@@ -186,7 +186,7 @@ pub fn markdown(title: &str, entries: &[Entry]) -> String {
     let mut said = false;
     for entry in entries {
         match entry {
-            Entry::Prompt { prompt } => {
+            Entry::Prompt { prompt, .. } => {
                 let asked = prompt.text.trim();
                 out.push_str(&format!("\n## You\n\n{asked}\n\n## Agent\n\n"));
                 said = false;
@@ -265,7 +265,7 @@ pub fn search(file: &Path, query: &str) -> Option<String> {
             continue;
         }
         match serde_json::from_str::<Entry>(&line) {
-            Ok(Entry::Prompt { prompt }) => {
+            Ok(Entry::Prompt { prompt, .. }) => {
                 look(&std::mem::take(&mut reply));
                 look(&prompt.text);
             }
@@ -341,6 +341,7 @@ mod tests {
         for p in ["one", "two", "three"] {
             j.record(Entry::Prompt {
                 prompt: Prompt::text(p),
+                at: None,
             });
             j.record(run(text(p)));
         }
@@ -350,7 +351,8 @@ mod tests {
             load(&file),
             vec![
                 Entry::Prompt {
-                    prompt: Prompt::text("one")
+                    prompt: Prompt::text("one"),
+                    at: None,
                 },
                 run(text("one")),
             ]
@@ -367,6 +369,7 @@ mod tests {
         for p in ["one", "two"] {
             j.record(Entry::Prompt {
                 prompt: Prompt::text(p),
+                at: None,
             });
             j.record(run(text(p)));
         }
@@ -383,6 +386,7 @@ mod tests {
         let j = Journal::open(&file);
         j.record(Entry::Prompt {
             prompt: Prompt::text("fix the Login page"),
+            at: None,
         });
         j.record(run(RunEvent::ToolDone {
             id: "t".into(),
@@ -408,6 +412,7 @@ mod tests {
         let j = Journal::open(&file);
         j.record(Entry::Prompt {
             prompt: Prompt::text("hi"),
+            at: None,
         });
         j.record(run(RunEvent::Thinking { text: "hm".into() }));
         j.record(run(text("Hel")));
@@ -424,7 +429,8 @@ mod tests {
             got,
             vec![
                 Entry::Prompt {
-                    prompt: Prompt::text("hi")
+                    prompt: Prompt::text("hi"),
+                    at: None,
                 },
                 run(RunEvent::Thinking { text: "hm".into() }),
                 run(text("Hello")),
@@ -444,6 +450,7 @@ mod tests {
         let j = Journal::open(&path(dir.path(), "thread-2"));
         j.record(Entry::Prompt {
             prompt: Prompt::text("hi"),
+            at: None,
         });
         j.record(run(text("Hel")));
         let heard = std::sync::Arc::new(Mutex::new(Vec::new()));
@@ -471,6 +478,7 @@ mod tests {
         let entries = [
             Entry::Prompt {
                 prompt: Prompt::text("fix it "),
+                at: None,
             },
             run(text("Fixed")),
             run(text(".")),
@@ -482,6 +490,7 @@ mod tests {
             }),
             Entry::Prompt {
                 prompt: Prompt::text("thanks"),
+                at: None,
             },
             run(RunEvent::Finished {
                 status: hyprspace_proto::RunStatus::Done,
@@ -503,6 +512,7 @@ mod tests {
         let j = Journal::open(&file);
         let prompt = |t: &str| Entry::Prompt {
             prompt: Prompt::text(t),
+            at: None,
         };
         for (p, n) in [("a", 500), ("b", 50), ("c", 50)] {
             j.record(prompt(p));
@@ -516,7 +526,7 @@ mod tests {
             let firsts: Vec<_> = e
                 .iter()
                 .filter_map(|e| match e {
-                    Entry::Prompt { prompt } => Some(prompt.text.clone()),
+                    Entry::Prompt { prompt, .. } => Some(prompt.text.clone()),
                     _ => None,
                 })
                 .collect();

@@ -1,8 +1,7 @@
-// The composer's box, the line under it, and the resume list. The box is framed like the
-// thread's reply pill and its line firms up a little while you type: the prompt, then attach,
-// permission and terminal on the left of its bottom row and the model, effort and the round
-// send button on the right, the way zeron lays it out. Its pickers sit flat in the box until
-// hovered. Under it, after T3 Code's: the folder and branch the thread starts on, and the keys.
+// The composer's box, the question over it, the line under it, and the resume list. The box is
+// the reply box's twin (bar.rs), with Structured beside the round send button. Over it, the
+// question names the space, which is the button to change it. Under it: the computer and
+// branch the thread starts on, and the keys.
 
 use std::path::PathBuf;
 
@@ -10,12 +9,11 @@ use gpui::{
     AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton, Window, div,
     prelude::*,
 };
-use hyprspace_proto::Permission;
 use hyprspace_proto::state::Pick;
 use hyprspace_theme::MONO;
 
 use super::model_menu::Host as _;
-use super::{Composer, ComposerEvent, PickFor, model_menu, pickers};
+use super::{Composer, ComposerEvent, PickFor, bar, model_menu};
 use crate::assets::{icon, mark};
 use crate::zoom::px;
 use crate::{attach, colors, time, widgets};
@@ -30,23 +28,6 @@ pub fn model_label(c: &Composer, pick: &Pick) -> String {
     crate::models::name(catalog, &pick.model)
 }
 
-/// A picker in the box: flat until hovered, so the prompt leads.
-fn flat(id: &'static str) -> gpui::Stateful<gpui::Div> {
-    widgets::chip(id)
-        .border_color(colors::ink(0.))
-        .bg(colors::ink(0.))
-}
-
-/// The permission's icon: how far the agent goes on its own.
-fn permission_icon(p: Permission) -> (&'static str, gpui::Hsla) {
-    match p {
-        Permission::Plan => ("list-checks", colors::text3()),
-        Permission::Ask => ("hand", colors::text3()),
-        Permission::Auto => ("zap", colors::text3()),
-        Permission::Bypass => ("lock-open", colors::text3()),
-    }
-}
-
 pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> AnyElement {
     let pick = c.pick();
     let focused = c.input.focus_handle(cx).is_focused(window);
@@ -54,9 +35,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     let model_chip: AnyElement = match &pick {
         Some(p) => model_menu::anchored_chip(
             &c.anchor,
-            flat("composer-model")
-                .child(mark(p.agent, 13., colors::brand(p.agent).0))
-                .child(div().truncate().child(model_label(c, p)))
+            bar::model("composer-model", p.agent, model_label(c, p))
                 .when(c.also_count() > 0, |d| {
                     d.child(
                         div()
@@ -69,14 +48,18 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                             .child(format!("+{}", c.also_count())),
                     )
                 })
-                .child(widgets::caret())
                 .on_click(cx.listener(|c, _: &ClickEvent, window, cx| c.open_models(window, cx))),
         )
         .into_any_element(),
         None if c.all_agents().is_empty() => div()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .px(px(8.))
             .text_size(px(12.))
             .text_color(colors::text3())
-            .child("Checking agents...")
+            .child(crate::spinner::ring("checking-agents", colors::text3()))
+            .child("Checking agents")
             .into_any_element(),
         None => div()
             .text_size(px(12.))
@@ -90,34 +73,32 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .map(|spec| {
             model_menu::anchored_chip(
                 &c.effort_anchor,
-                flat("composer-effort")
-                    .child(model_menu::effort_chip_label(&spec))
-                    .child(widgets::caret())
-                    .on_click(
-                        cx.listener(|c, _: &ClickEvent, window, cx| c.open_effort(window, cx)),
-                    ),
+                bar::effort("composer-effort", &spec).on_click(
+                    cx.listener(|c, _: &ClickEvent, window, cx| c.open_effort(window, cx)),
+                ),
             )
         });
-    let (glyph, tint) = permission_icon(c.prefs.permission);
-    let permission_chip = flat("composer-permission")
-        .child(icon(glyph, 13., tint))
-        .child(pickers::permission_label(c.prefs.permission))
-        .child(widgets::caret())
+    let permission_chip = bar::permission("composer-permission", c.prefs.permission)
         .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_permission(e, cx)));
     let on = !c.terminal();
     let terminal_chip = (pick.is_some() && c.prefs.structured).then(|| {
-        flat("composer-structured")
-            .child(icon(
-                "sparkles",
-                13.,
-                if on { colors::text1() } else { colors::text3() },
+        bar::chip("composer-structured")
+            .gap(px(8.))
+            .child(widgets::switch_turned(
+                "composer-structured-switch",
+                on,
+                crate::slide::flipped("composer-structured", std::time::Duration::from_millis(260)),
             ))
             .child("Structured")
-            .when(on, |d| d.bg(colors::ink(0.1)).text_color(colors::text1()))
+            .when(on, |d| d.text_color(colors::text1()))
             .tooltip(widgets::tip(
                 "Run this thread as a transcript instead of a terminal",
             ))
-            .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_structured(cx)))
+            .on_click(cx.listener(|c, _: &ClickEvent, _, cx| {
+                crate::slide::flip("composer-structured".into());
+                c.toggle_structured(cx)
+            }))
+            .into_any_element()
     });
     // the send button firms up once there is something to send; empty, it starts the agent
     // with no task, as a terminal would
@@ -138,6 +119,16 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     } else {
         widgets::send("composer-start", "arrow-up", true).tooltip(widgets::tip("Start"))
     };
+    let send = send
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.submit(false, cx)))
+        .into_any_element();
+    let schedule = c.can_schedule().then(|| {
+        widgets::icon_button("composer-schedule", "clock", widgets::LARGE)
+            .tooltip(widgets::tip("Run on a schedule instead"))
+            .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_schedule(e, cx)))
+            .into_any_element()
+    });
     widgets::composer_box(focused)
         .when(crate::wallpaper::showing(), |d| {
             d.bg(colors::surface2().opacity(0.94))
@@ -163,53 +154,19 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 }),
             )))
         })
-        .child(
-            div()
-                .min_h(px(76.))
-                .px(px(18.))
-                .pt(px(16.))
-                .pb(px(8.))
-                .text_size(px(14.5))
-                .line_height(px(23.))
-                .child(c.input.clone()),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(2.))
-                .px(px(8.))
-                .pb(px(8.))
-                .child(
-                    widgets::icon_button("composer-attach", "paperclip", 28.)
-                        .tooltip(widgets::tip("Attach images"))
-                        .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.pick_images(cx))),
-                )
-                .child(permission_chip)
-                .children(terminal_chip)
-                .child(div().flex_1())
-                .child(model_chip)
-                .children(effort_chip)
-                .when(c.can_schedule(), |d| {
-                    d.child(
-                        widgets::icon_button("composer-schedule", "clock", 28.)
-                            .tooltip(widgets::tip("Run on a schedule instead"))
-                            .on_click(
-                                cx.listener(|c, e: &ClickEvent, _, cx| c.open_schedule(e, cx)),
-                            ),
-                    )
-                })
-                .child(
-                    send.ml(px(4.))
-                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.submit(false, cx))),
-                ),
-        )
+        .child(bar::field(&c.input).min_h(px(76.)))
+        .child(bar::bar(
+            bar::attach("composer-attach")
+                .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.pick_images(cx))),
+            model_chip,
+            effort_chip,
+            permission_chip,
+            terminal_chip.into_iter().chain(schedule).chain([send]),
+        ))
         .into_any_element()
 }
 
-/// The line under the box: where the thread starts (the folder, a button when it can change,
-/// and its branch) on the left, and the keys on the right.
+/// The line under the box: the computer and branch the thread starts on, and the keys.
 pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
     div()
         .flex()
@@ -218,7 +175,6 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .mt(px(8.))
         .px(px(6.))
         .children(super::machine::chip(c, cx))
-        .child(folder_picker(c, cx))
         .children(super::worktree::branch_chip(c, cx))
         .children(super::worktree::chip(c, cx))
         .child(div().flex_1())
@@ -226,53 +182,90 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
             d.child(
                 div()
                     .flex_none()
-                    .text_size(px(11.5))
+                    .text_size(px(12.))
                     .text_color(colors::text3())
                     .child(if cfg!(target_os = "macos") {
-                        "Enter to send  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
+                        "Enter starts it  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
                     } else {
-                        "Enter to send  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"
+                        "Enter starts it  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"
                     }),
             )
         })
         .into_any_element()
 }
 
-/// Where the thread will run, as a quiet button under the box, like zeron's folder picker. A
-/// project shows its folder; an open space asks for one.
-pub fn folder_picker(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
-    let (label, pick) = match c.target.as_ref() {
-        None => ("Choose a folder".to_string(), None),
-        Some(t) if t.cwd.is_none() => (
-            c.folder
-                .as_ref()
-                .and_then(|f| f.file_name())
-                .map_or("Choose a folder".to_string(), |n| {
-                    n.to_string_lossy().to_string()
-                }),
-            Some(PickFor::Folder),
-        ),
-        Some(t) => (t.name.clone(), None),
+/// The question over the box. The space in it is the button that changes it: a project opens
+/// the list of projects, an open space asks for a folder.
+pub fn ask(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
+    let scratch = c.target.as_ref().is_some_and(|t| {
+        t.machine.is_none()
+            && t.cwd
+                .as_deref()
+                .is_some_and(|cwd| crate::root::same_folder(cwd, &crate::root::scratch_root()))
+    });
+    let (named, label, pick) = match c.target.as_ref() {
+        None => (false, "Pick a folder".to_string(), None),
+        Some(t) if t.cwd.is_none() => match c.folder.as_ref().and_then(|f| f.file_name()) {
+            Some(n) => (true, n.to_string_lossy().to_string(), Some(PickFor::Folder)),
+            None => (false, "Pick a folder".to_string(), Some(PickFor::Folder)),
+        },
+        Some(t) => (!scratch, t.name.clone(), None),
     };
-    div()
+    let button = div()
         .id("composer-folder")
         .flex()
+        .min_w_0()
         .items_center()
-        .gap(px(6.))
-        .h(px(24.))
-        .px(px(6.))
-        .rounded(px(6.))
-        .text_size(px(12.))
-        .text_color(colors::text2())
-        .child(icon("folder", 13., colors::text3()))
-        .child(div().max_w(px(260.)).truncate().child(label))
+        .gap(px(4.))
+        .pl(px(6.))
+        .pr(px(2.))
+        .rounded(px(8.))
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
-        .child(icon("chevron-down", 12., colors::text3()))
+        .hover(|s| s.bg(colors::ink(0.06)))
+        .when(!named, |d| {
+            d.mt(px(6.))
+                .py(px(2.))
+                .text_size(px(13.))
+                .font_weight(FontWeight::NORMAL)
+                .text_color(colors::text2())
+        })
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .when(named, |d| {
+                    d.underline().text_decoration_color(colors::border2())
+                })
+                .child(label),
+        )
+        .child(icon(
+            "chevron-down",
+            if named { 16. } else { 13. },
+            colors::text3(),
+        ))
         .on_click(cx.listener(move |c, e: &ClickEvent, _, cx| match pick {
             Some(pick) => c.pick_folder(pick, cx),
             None => c.open_places(e, cx),
-        }))
+        }));
+    let lead = |text: &'static str| div().flex_none().child(text);
+    if !named {
+        return div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .child(lead("What should we build?"))
+            .child(button)
+            .into_any_element();
+    }
+    div()
+        .flex()
+        .w_full()
+        .min_w_0()
+        .items_center()
+        .justify_center()
+        .child(lead("What should we build in"))
+        .child(button)
+        .child(lead("?"))
         .into_any_element()
 }
 
@@ -295,7 +288,7 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
             .h(px(34.))
             .pl(px(10.))
             .pr(px(8.))
-            .rounded(px(7.))
+            .rounded(px(6.))
             .text_size(px(12.5))
             .text_color(colors::text2())
             .cursor_pointer()
@@ -318,7 +311,7 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
                     .flex_none()
                     .px(px(7.))
                     .py(px(2.))
-                    .rounded(px(5.))
+                    .rounded(px(6.))
                     .bg(colors::surface3())
                     .text_size(px(11.))
                     .text_color(colors::text1())

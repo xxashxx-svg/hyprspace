@@ -62,6 +62,22 @@ pub(super) const LINES: &[Line] = &[
     ),
     line("App", "Command palette, again", "", &[&[MOD, "Shift", "P"]]),
     line("App", "Sidebar", "", &[&[MOD, "Shift", "B"]]),
+    line(
+        "App",
+        "Open a thread by its place in the sidebar",
+        if cfg!(target_os = "macos") {
+            "Hold Cmd to see the numbers."
+        } else {
+            "Hold Ctrl to see the numbers."
+        },
+        &[&[MOD, "1-9"]],
+    ),
+    line(
+        "App",
+        "Next thread waiting on you",
+        "",
+        &[&[MOD, "Shift", "J"]],
+    ),
     line("App", "Files and git", "", &[&[MOD, "Shift", "G"]]),
     line(
         "App",
@@ -147,6 +163,25 @@ pub(super) const LINES: &[Line] = &[
         "Screenshot the window you're in",
         "From any app, once switched on in General. Windows only.",
         &[&["Ctrl", "Alt", "S"]],
+    ),
+    line("Approvals and questions", "Allow", "", &[&[ALT, "Y"]]),
+    line(
+        "Approvals and questions",
+        "Always allow",
+        "When the agent offers it.",
+        &[&[ALT, "A"]],
+    ),
+    line(
+        "Approvals and questions",
+        "Deny",
+        "Sending a message denies too.",
+        &[&[ALT, "N"]],
+    ),
+    line(
+        "Approvals and questions",
+        "Pick a question's answer",
+        "",
+        &[&[ALT, "1-9"]],
     ),
     line("Terminal", "Copy", COPY_DESC, COPY),
     line("Terminal", "Paste", "", &[&[MOD, "V"]]),

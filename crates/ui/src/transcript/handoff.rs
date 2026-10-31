@@ -138,6 +138,7 @@ mod tests {
             text: text.into(),
             images: Vec::new(),
             steer: false,
+            at: None,
         }
     }
 

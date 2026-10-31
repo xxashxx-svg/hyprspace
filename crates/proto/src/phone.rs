@@ -821,6 +821,7 @@ mod tests {
                     text: "hi".into(),
                     images: vec!["C:\\a.png".into()],
                 },
+                at: None,
             },
             run(RunEvent::Started {
                 agent: Agent::Claude,

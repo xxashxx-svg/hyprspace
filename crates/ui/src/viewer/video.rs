@@ -285,7 +285,7 @@ impl Video {
             .flex()
             .items_center()
             .gap(px(10.))
-            .rounded(px(10.))
+            .rounded(px(12.))
             .bg(colors::surface2())
             .border_1()
             .border_color(colors::border2())

@@ -479,6 +479,7 @@ impl Root {
             self.unseen.remove(&thread);
         }
         let before = self.status.insert(thread, status);
+        self.alert(thread, before, status, cx);
         // a turn starting from rest is a message sent to it, which brings a shelved thread back
         if status == Status::Working && !matches!(before, Some(Status::Working | Status::Waiting)) {
             self.bring_back(thread);
@@ -954,6 +955,7 @@ impl Root {
         self.screen = Screen::Thread(id);
         self.client.send(Command::Servers);
         self.unseen.remove(&id);
+        self.notice_gone(id, cx);
         self.state.active = Some(id);
         self.save();
         let focus = match &self.views[&id] {

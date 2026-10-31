@@ -279,7 +279,7 @@ impl TranscriptView {
                 .h(px(38.))
                 .pl(px(12.))
                 .pr(px(6.))
-                .rounded(px(10.))
+                .rounded(px(12.))
                 .border_1()
                 .border_color(colors::border2())
                 .bg(colors::surface2())
@@ -306,17 +306,17 @@ impl TranscriptView {
                         .child(count),
                 )
                 .child(
-                    widgets::icon_button("thread-find-up", "chevron-up", 26.)
+                    widgets::icon_button("thread-find-up", "chevron-up", widgets::SMALL)
                         .tooltip(widgets::tip("Previous"))
                         .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.step_find(false, cx))),
                 )
                 .child(
-                    widgets::icon_button("thread-find-down", "chevron-down", 26.)
+                    widgets::icon_button("thread-find-down", "chevron-down", widgets::SMALL)
                         .tooltip(widgets::tip("Next"))
                         .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.step_find(true, cx))),
                 )
                 .child(
-                    widgets::icon_button("thread-find-close", "x", 26.)
+                    widgets::icon_button("thread-find-close", "x", widgets::SMALL)
                         .tooltip(widgets::tip("Close"))
                         .on_click(
                             cx.listener(|v, _: &ClickEvent, window, cx| v.close_find(window, cx)),
@@ -338,6 +338,7 @@ mod tests {
                 text: "Fix the login page".into(),
                 images: Vec::new(),
                 steer: false,
+                at: None,
             },
             Item::Thinking {
                 text: "login login".into(),
