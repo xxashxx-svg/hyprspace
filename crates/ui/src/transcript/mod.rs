@@ -1336,6 +1336,14 @@ impl TranscriptView {
                 ..
             }
         );
+        let stopped = self.stopping
+            && matches!(
+                event,
+                RunEvent::Finished {
+                    status: hyprspace_proto::RunStatus::Interrupted,
+                    ..
+                }
+            );
         let ended = matches!(event, RunEvent::Finished { .. });
         let n = self.model.items.len();
         let had = match self.model.items.last() {
@@ -1368,7 +1376,20 @@ impl TranscriptView {
         }
         if done {
             self.next_queued(cx);
+        } else if stopped {
+            self.after_stop(cx);
         }
+    }
+
+    fn after_stop(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            // a stop the CLI ignored ends in Failed right after, which closes the session first
+            cx.background_executor()
+                .timer(Duration::from_millis(250))
+                .await;
+            let _ = this.update(cx, |v, cx| v.next_queued(cx));
+        })
+        .detach();
     }
 
     /// The engine could not start or reach the session.

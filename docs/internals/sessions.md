@@ -181,8 +181,11 @@ The Codex rows follow its own presets. Codex has no plan mode, so Plan reads and
 ## Queue, limits and delegation
 
 - **A message sent mid-run waits.** It goes in the thread's queue (`Thread.queue`, saved with the
-  state) and sends when the run finishes as Done. Steer sends one now, into the live run. A stopped
-  run and a restart hold the queue until the user sends.
+  state) and sends when the run finishes as Done. Steer sends one now, into the live run. Stop
+  sends the next one too, since stopping with a message queued means "do that instead". It waits
+  250 ms after the stopped run ends, so a backstop's `Failed` can close a session that ignored the
+  stop before the message is sent. A restart or a failed run holds the queue until the user
+  sends.
 - **A usage limit continues by itself.** Claude's rejected `rate_limit_event` (with `resetsAt`) or
   its `rate_limit` error, and Codex's `usageLimitExceeded`, become `RunEvent::Limited`. The UI saves
   `Thread.resume_at`: the CLI's reset time, else the usage meter's spent window, else 30 minutes,
