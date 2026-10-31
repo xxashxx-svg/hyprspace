@@ -131,7 +131,7 @@ jobs:
             feed/latest.json
 
   macos:
-    runs-on: macos-14 # Apple silicon, like darwin-aarch64
+    runs-on: macos-15 # Apple silicon, like darwin-aarch64
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
