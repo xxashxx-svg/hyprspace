@@ -138,6 +138,11 @@ pub fn icon_button(id: impl Into<ElementId>, name: &str, size: f32) -> Stateful<
 }
 
 pub fn icon_frame(id: impl Into<ElementId>, size: f32) -> Stateful<Div> {
+    bare_icon_frame(id, size).hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
+}
+
+/// `icon_frame` without its hover, for a button that hovers its own way.
+pub fn bare_icon_frame(id: impl Into<ElementId>, size: f32) -> Stateful<Div> {
     div()
         .id(id)
         .group("icon-button")
@@ -149,7 +154,6 @@ pub fn icon_frame(id: impl Into<ElementId>, size: f32) -> Stateful<Div> {
         .rounded(px(6.))
         .text_color(colors::text3())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
 }
 
 /// The chevron at the end of a chip.

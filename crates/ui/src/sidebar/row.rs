@@ -286,6 +286,7 @@ impl Root {
                 "unsettle" => "Bring back",
                 "pin" => "Pin or unpin",
                 "snooze" => "Snooze",
+                "discard-draft" => "Discard draft",
                 _ => "Settle",
             }))
             .child(

@@ -96,12 +96,15 @@ pub(super) fn head_button(
     name: &str,
     danger: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    widgets::icon_frame(id, widgets::SMALL)
-        .when(danger, |d| d.hover(|s| s.bg(colors::error().opacity(0.14))))
-        .child(
-            icon(name, 12., colors::text3())
-                .group_hover("icon-button", |s| s.text_color(colors::text1())),
-        )
+    match danger {
+        true => widgets::bare_icon_frame(id, widgets::SMALL)
+            .hover(|s| s.bg(colors::error().opacity(0.14))),
+        false => widgets::icon_frame(id, widgets::SMALL),
+    }
+    .child(
+        icon(name, 12., colors::text3())
+            .group_hover("icon-button", |s| s.text_color(colors::text1())),
+    )
 }
 
 impl Root {

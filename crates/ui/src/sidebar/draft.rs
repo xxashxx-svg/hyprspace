@@ -75,8 +75,7 @@ impl Root {
                     .child(
                         self.row_button(id, "discard-draft", "x", cx, |r, id, _, _, cx| {
                             r.discard_draft(id, cx)
-                        })
-                        .tooltip(crate::widgets::tip("Discard draft")),
+                        }),
                     ),
             )
             .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {

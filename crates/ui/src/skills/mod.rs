@@ -221,12 +221,15 @@ fn label(text: &str) -> Div {
 }
 
 fn small_button(id: impl Into<gpui::ElementId>, glyph: &str, danger: bool) -> gpui::Stateful<Div> {
-    widgets::icon_frame(id, widgets::LARGE)
-        .when(danger, |d| d.hover(|s| s.bg(colors::error().opacity(0.14))))
-        .child(
-            icon(glyph, 14., colors::text3())
-                .group_hover("icon-button", |s| s.text_color(colors::text1())),
-        )
+    match danger {
+        true => widgets::bare_icon_frame(id, widgets::LARGE)
+            .hover(|s| s.bg(colors::error().opacity(0.14))),
+        false => widgets::icon_frame(id, widgets::LARGE),
+    }
+    .child(
+        icon(glyph, 14., colors::text3())
+            .group_hover("icon-button", |s| s.text_color(colors::text1())),
+    )
 }
 
 impl Skills {
