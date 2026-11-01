@@ -36,6 +36,7 @@ fun rgba(c: Long): Color = Color(
 data class Hues(
     val dark: Boolean,
     val bg: Color,
+    val canvas: Color,
     val surface1: Color,
     val surface2: Color,
     val surface3: Color,
@@ -66,7 +67,10 @@ data class Hues(
 
 fun hues(p: Palette, dark: Boolean) = Hues(
     dark = dark,
-    bg = rgba(p.bg), surface1 = rgba(p.surface1), surface2 = rgba(p.surface2), surface3 = rgba(p.surface3),
+    bg = rgba(p.bg),
+    // the desktop's dark background reads grey on a phone, so what you read sits on a deeper one
+    canvas = if (dark) rgba(p.bg).let { Color(it.red * 0.45f, it.green * 0.45f, it.blue * 0.45f) } else rgba(p.surface2),
+    surface1 = rgba(p.surface1), surface2 = rgba(p.surface2), surface3 = rgba(p.surface3),
     accent = rgba(p.accent), onAccent = rgba(p.onAccent), link = rgba(p.link),
     text1 = rgba(p.text1), text2 = rgba(p.text2), text3 = rgba(p.text3),
     border0 = rgba(p.border0), border1 = rgba(p.border1), border2 = rgba(p.border2), ink = rgba(p.ink),

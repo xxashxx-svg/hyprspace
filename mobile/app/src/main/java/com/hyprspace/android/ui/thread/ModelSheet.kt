@@ -47,7 +47,7 @@ import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.feel
 
 @Composable
-fun ModelChip(agent: Agent?, label: String, effort: String, enabled: Boolean, onClick: () -> Unit) {
+fun ModelChip(agent: Agent?, label: String, effort: String, enabled: Boolean, compact: Boolean = false, onClick: () -> Unit) {
     val h = LocalHues.current
     Row(
         Modifier
@@ -59,9 +59,11 @@ fun ModelChip(agent: Agent?, label: String, effort: String, enabled: Boolean, on
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        AgentMark(agent, 13.dp)
-        Text(label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = h.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (effort.isNotEmpty()) Text(effortLabel(effort), style = MaterialTheme.typography.labelLarge, color = h.text3, maxLines = 1)
+        AgentMark(agent, if (compact) 16.dp else 13.dp)
+        if (!compact) {
+            Text(label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = h.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (effort.isNotEmpty()) Text(effortLabel(effort), style = MaterialTheme.typography.labelLarge, color = h.text3, maxLines = 1)
+        }
         Icon(painterResource(R.drawable.ic_chevron_down), null, Modifier.size(14.dp), tint = h.text3)
     }
 }

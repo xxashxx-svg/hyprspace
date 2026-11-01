@@ -76,6 +76,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -213,7 +219,7 @@ fun Chat(
     onAnswer: Answers,
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
     modifier: Modifier = Modifier,
-    model: (@Composable () -> Unit)? = null,
+    model: (@Composable (Boolean) -> Unit)? = null,
     extras: Extras? = null,
     ultra: Boolean = false,
     lines: Int = 0,
@@ -228,6 +234,7 @@ fun Chat(
     val ending = remember(view.items) { ends(view.items) }
     // a run that ended well shows its time under the reply instead of on a line of its own
     val footed = remember(ending) { ending.values.filter { it.status == RunStatus.Done }.map { it.key }.toSet() }
+    val timed = remember(view.items) { folds(view.items).filter { it.ms != null }.map { it.finish }.toSet() }
     // the prompt each ending reply answers, which a fork keeps along with everything before it
     val owner = remember(view.items) {
         var at: Item.User? = null
@@ -325,16 +332,10 @@ fun Chat(
                 Modifier.fillMaxSize().clipToBounds(),
                 state = list,
                 reverseLayout = true,
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = if (busy) 64.dp else 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 overscrollEffect = null,
             ) {
-                if (busy) {
-                    item(key = "working") {
-                        val label = doingNow(waiting = false, stopping = stopping, compacting = doing == "Compacting")
-                        Box(rise()) { Working(label, since) }
-                    }
-                }
                 items(bubbles.asReversed(), key = { "pending${it.id}" }) { p ->
                     Box(rise()) {
                         One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false, end = null)
@@ -355,6 +356,7 @@ fun Chat(
                                 answer,
                                 live = s.key == live,
                                 end = ending[s.key],
+                                timed = ending[s.key]?.key in timed,
                                 fork = onFork?.let { f -> owner[s.key]?.takeIf { !working }?.let { u -> { f(u.at, u.text) } } },
                             )
                         }
@@ -368,9 +370,20 @@ fun Chat(
                 }
             }
             val away by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 48 } }
-            androidx.compose.animation.AnimatedVisibility(
-                away,
+            Row(
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+            AnimatedVisibility(
+                busy,
+                enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f),
+            ) {
+                Working(doingNow(waiting = false, stopping = stopping, compacting = doing == "Compacting"), since)
+            }
+            AnimatedVisibility(
+                away,
                 enter = fadeIn() + scaleIn(initialScale = 0.8f),
                 exit = fadeOut() + scaleOut(targetScale = 0.8f),
             ) {
@@ -389,6 +402,7 @@ fun Chat(
                 ) {
                     Icon(painterResource(R.drawable.ic_arrow_down), "Jump to the newest", Modifier.size(16.dp), tint = h.text2)
                 }
+            }
             }
             }
         }
@@ -437,6 +451,7 @@ private fun One(
     live: Boolean,
     end: Item.Finished?,
     fork: (() -> Unit)? = null,
+    timed: Boolean = false,
 ) {
     val h = LocalHues.current
     when (item) {
@@ -457,9 +472,9 @@ private fun One(
         }
         is Item.Reply -> Column {
             Markdown(revealed(item.key, item.text, live))
-            if (end != null && !live) Foot(item.text, end, fork)
+            if (end != null && !live) Foot(item.text, end, fork, showTime = !timed)
         }
-        is Item.Thinking -> Fold("Thinking", item.text, mono = false)
+        is Item.Thinking -> Thought(item.text)
         is Item.Call -> CallLine(item)
         is Item.Agent -> AgentCard(item)
         is Item.Approval -> {
@@ -600,7 +615,7 @@ private data class Pending(
 
 /** Under the reply that ends a run: copy it, and how long the run took when it finished well. */
 @Composable
-private fun Foot(text: String, end: Item.Finished, fork: (() -> Unit)?) {
+private fun Foot(text: String, end: Item.Finished, fork: (() -> Unit)?, showTime: Boolean) {
     val h = LocalHues.current
     val host = LocalView.current
     Row(Modifier.padding(top = 6.dp).offset(x = (-8).dp), verticalAlignment = Alignment.CenterVertically) {
@@ -616,15 +631,10 @@ private fun Foot(text: String, end: Item.Finished, fork: (() -> Unit)?) {
                 Icon(painterResource(R.drawable.ic_git_branch), "Fork from here", Modifier.size(16.dp), tint = h.text3)
             }
         }
-        if (end.status == RunStatus.Done) {
-            Text(clock(end.ms), Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge, color = h.text3)
+        if (end.status == RunStatus.Done && showTime) {
+            Text(took(end.ms), Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge, color = h.text3)
         }
     }
-}
-
-private fun clock(ms: Long): String {
-    val s = ms / 1000
-    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60) else "%02d:%02d".format(s / 60, s % 60)
 }
 
 @Composable
@@ -748,7 +758,14 @@ private fun TurnEnd(item: Item.Finished) {
 
 /** A muted line led by a chevron that opens to show more. */
 @Composable
-private fun FoldHead(label: String, open: Boolean, trailing: @Composable () -> Unit = {}, onClick: () -> Unit) {
+private fun FoldHead(
+    label: String,
+    open: Boolean,
+    icon: Int? = null,
+    live: Boolean = false,
+    trailing: @Composable () -> Unit = {},
+    onClick: () -> Unit,
+) {
     val h = LocalHues.current
     val host = LocalView.current
     Row(
@@ -756,9 +773,75 @@ private fun FoldHead(label: String, open: Boolean, trailing: @Composable () -> U
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Twist(open)
-        Text(label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (icon == null) Twist(open) else Icon(painterResource(icon), null, Modifier.size(16.dp), tint = h.text3)
+        Shimmer(label, live, Modifier.weight(1f, fill = false))
+        if (icon != null) Twist(open, 12)
         trailing()
+    }
+}
+
+/** A muted one-line label; while [on], a lighter band sweeps across it, then rests. */
+@Composable
+private fun Shimmer(text: String, on: Boolean, modifier: Modifier = Modifier) {
+    val h = LocalHues.current
+    val style = MaterialTheme.typography.bodyMedium
+    if (!on) {
+        Text(text, modifier, style = style, color = h.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        return
+    }
+    val sweep = rememberInfiniteTransition(label = "shimmer").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "shimmer",
+    )
+    Text(
+        text,
+        modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val band = 64.dp.toPx()
+                val x = (sweep.value / 0.55f).coerceAtMost(1f) * (size.width + 2 * band) - band
+                drawRect(
+                    Brush.horizontalGradient(listOf(Color.Transparent, h.text1, Color.Transparent), startX = x - band, endX = x + band),
+                    blendMode = BlendMode.SrcAtop,
+                )
+            },
+        style = style,
+        color = h.text3,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+private fun stepIcon(tool: Tool): Int = when (tool) {
+    is Tool.Command -> R.drawable.step_command
+    is Tool.Read -> R.drawable.step_read
+    is Tool.Edit -> R.drawable.step_edit
+    is Tool.Search -> R.drawable.step_search
+    is Tool.Web -> R.drawable.step_web
+    is Tool.AgentCall -> R.drawable.step_agent
+    else -> R.drawable.step_tool
+}
+
+/** What the agent thought, its first lines in view; a tap shows the rest. */
+@Composable
+private fun Thought(text: String) {
+    val h = LocalHues.current
+    val host = LocalView.current
+    var open by rememberSaveable { mutableStateOf(false) }
+    val said = text.replace("**", "").replace(Regex("\n\\s*\n"), "\n").trim()
+    Row(
+        Modifier.fillMaxWidth().clickableQuiet { host.feel(Feel.Tick); open = !open }.padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(painterResource(R.drawable.step_think), null, Modifier.padding(top = 2.dp).size(16.dp), tint = h.text3)
+        Text(
+            said.ifEmpty { "Thought" },
+            Modifier.weight(1f).animateContentSize(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = h.text3,
+            maxLines = if (open) Int.MAX_VALUE else 4,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -788,9 +871,9 @@ private fun CallRun(calls: List<Item.Call>) {
     val live = calls.any { it.done == null }
     val failed = calls.count { it.done?.ok == false }
     Column(Modifier.fillMaxWidth()) {
-        FoldHead(summary(calls.map { it.tool }), open, trailing = {
+        val icon = calls.groupingBy { stepIcon(it.tool) }.eachCount().maxBy { it.value }.key
+        FoldHead(summary(calls.map { it.tool }), open, icon = icon, live = live, trailing = {
             if (failed > 0) Text("$failed failed", style = MaterialTheme.typography.bodySmall, color = h.text3)
-            if (live) Eclipse(h.text3)
         }) { open = !open }
         Opens(open) {
             Column(Modifier.padding(start = 22.dp, top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -807,14 +890,13 @@ private fun CallLine(c: Item.Call) {
     val tool = c.tool
     val failed = c.done?.ok == false
     Column(Modifier.fillMaxWidth()) {
-        FoldHead(label(tool), open, trailing = {
+        FoldHead(label(tool), open, icon = stepIcon(tool), live = c.done == null, trailing = {
             if (tool is Tool.Edit) {
                 val (add, del) = counts(tool.changes)
                 Text("+$add", fontFamily = Mono, fontSize = 11.sp, color = h.diffAdd)
                 Text("-$del", fontFamily = Mono, fontSize = 11.sp, color = h.diffDel)
             }
             if (failed) Text("Failed", style = MaterialTheme.typography.bodySmall, color = if (tool is Tool.Edit) h.error else h.text3)
-            if (c.done == null) Eclipse(h.text3)
         }) { open = !open }
         Opens(open) {
             Column(Modifier.padding(start = 22.dp, top = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1045,7 +1127,7 @@ private fun Composer(
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
     attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
-    model: (@Composable () -> Unit)?,
+    model: (@Composable (Boolean) -> Unit)?,
     commands: List<Slash>,
 ) {
     val h = LocalHues.current
@@ -1077,7 +1159,7 @@ private fun Composer(
             Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(if (stop) h.surface3 else if (!sendable) h.ink(0.08f) else h.accent)
+                .background(if (stop) h.error.copy(alpha = 0.16f) else if (!sendable) h.ink(0.08f) else h.accent)
                 .clickableQuiet {
                     if (stop) {
                         onStop()
@@ -1096,7 +1178,7 @@ private fun Composer(
                     painterResource(if (stop) R.drawable.ic_square else R.drawable.ic_arrow_up),
                     if (stop) "Stop" else "Send",
                     Modifier.size(if (stop) 14.dp else 18.dp),
-                    tint = if (stop) h.text1 else if (!sendable) h.text3 else h.onAccent,
+                    tint = if (stop) h.error else if (!sendable) h.text3 else h.onAccent,
                 )
             }
         }
@@ -1131,7 +1213,7 @@ private fun Composer(
             Box(Modifier.weight(1f).padding(horizontal = if (open) 12.dp else 6.dp, vertical = if (open) 10.dp else 8.dp)) {
                 if (text.isEmpty()) {
                     val hint = when {
-                        !working -> "Ask anything, or / for commands"
+                        !working -> "Ask anything"
                         denies -> "Send a message to deny and redirect the agent"
                         queues -> "Queue a message for when it finishes"
                         else -> "Steer it, or stop it"
@@ -1150,13 +1232,16 @@ private fun Composer(
                     visualTransformation = if (ultra) UltraWords(h.dark) else androidx.compose.ui.text.input.VisualTransformation.None,
                 )
             }
-            if (!open) send()
+            if (!open) {
+                model?.invoke(true)
+                send()
+            }
         }
         if (open) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 plus()
                 Spacer(Modifier.weight(1f))
-                if (model != null) Box(Modifier.padding(end = 6.dp)) { model() }
+                if (model != null) Box(Modifier.padding(end = 6.dp)) { model(false) }
                 send()
             }
         }
@@ -1181,18 +1266,20 @@ private fun held(target: String): String {
 private fun Working(doing: String, since: Long?) {
     val h = LocalHues.current
     val now = com.hyprspace.android.ui.ticking(since != null)
-    val pulse by rememberInfiniteTransition(label = "working").animateFloat(
-        0.55f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "working",
-    )
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        Modifier
+            .height(38.dp)
+            .clip(CircleShape)
+            .background(h.surface2)
+            .border(1.dp, h.border1, CircleShape)
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Eclipse(h.text2)
         AnimatedContent(
             held(doing),
-            Modifier.weight(1f).clipToBounds(),
+            Modifier.widthIn(max = 220.dp).clipToBounds(),
             transitionSpec = {
                 (slideInVertically { it } + fadeIn(tween(200))) togetherWith (slideOutVertically { -it } + fadeOut(tween(150)))
             },
@@ -1200,14 +1287,13 @@ private fun Working(doing: String, since: Long?) {
         ) { label ->
             Text(
                 label,
-                Modifier.graphicsLayer { alpha = pulse },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
-                color = h.text2,
+                color = h.text1,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        since?.let { Text(elapsed((now - it).coerceAtLeast(0) / 1000), fontFamily = Mono, fontSize = 11.sp, color = h.text3) }
+        since?.let { Text(elapsed((now - it).coerceAtLeast(0) / 1000), fontFamily = Mono, fontSize = 12.sp, color = h.text3) }
     }
 }

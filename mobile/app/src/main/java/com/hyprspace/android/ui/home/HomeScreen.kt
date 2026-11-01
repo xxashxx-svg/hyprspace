@@ -160,7 +160,11 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
         ConnStrip(conn) { app.link.start(); app.link.nudge() }
         val update by app.updater.state.collectAsStateWithLifecycle()
         UpdateStrip(update) { app.updater.install() }
-        Crossfade(board == null, Modifier.weight(1f), label = "board") { waiting ->
+        Crossfade(
+            board == null,
+            Modifier.weight(1f).clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)).background(h.canvas),
+            label = "board",
+        ) { waiting ->
             val b = board
             if (waiting || b == null) {
                 Waiting(conn)
@@ -515,8 +519,8 @@ private fun ThreadRow(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(h.bg)
-            .background(if (waiting) h.waiting.copy(alpha = 0.07f) else h.bg)
+            .background(h.canvas)
+            .background(if (waiting) h.waiting.copy(alpha = 0.07f) else h.canvas)
             .background(if (selected) h.ink(0.07f) else h.ink(0f))
             // the long press buzzes on its own
             .combinedClickable(onClick = { onOpen(t.id) }, onLongClick = onHold)

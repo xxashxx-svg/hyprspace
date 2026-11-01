@@ -262,7 +262,7 @@ private fun inline(n: Node, h: Hues): AnnotatedString = buildAnnotatedString {
     fun walk(node: Node) {
         for (c in node.children()) when (c) {
             is org.commonmark.node.Text -> append(c.literal)
-            is Code -> withStyle(SpanStyle(fontFamily = Mono, fontSize = 14.sp, color = h.text2, background = h.ink(0.06f))) {
+            is Code -> withStyle(SpanStyle(fontFamily = Mono, fontSize = 14.sp, color = h.text1, background = h.ink(0.06f))) {
                 append(" ${c.literal} ")
             }
             is Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { walk(c) }

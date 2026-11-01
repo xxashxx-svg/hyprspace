@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -132,7 +133,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
         if (board != null && t == null) onBack()
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -145,12 +146,12 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                     Text(
                         t?.title?.ifBlank { "New thread" } ?: "",
                         Modifier.weight(1f, fill = false),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
                         color = h.text1,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (t != null) {
+                    if (t != null && t.status != BoardStatus.Done) {
                         Spacer(Modifier.width(8.dp))
                         StatusMark(t.status)
                     }
@@ -223,7 +224,9 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
             Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-                .background(if (h.dark) h.ink(0.03f) else h.surface2),
+                .background(h.canvas)
+                .navigationBarsPadding()
+                .imePadding(),
         ) {
         when (t?.kind) {
             BoardKind.Structured -> {
@@ -285,7 +288,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                     attach = if (app.link.desktopAtLeast(PHOTOS)) { onPick -> rememberAttach(app, app.link.desktopAtLeast(FILES), onPick) } else null,
                     modifier = Modifier.weight(1f),
                     model = catalog?.let {
-                        { ModelChip(t.agent, t.model.orEmpty(), t.effort, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting) { picking = true } }
+                        { compact -> ModelChip(t.agent, t.model.orEmpty(), t.effort, enabled = t.status != BoardStatus.Working && t.status != BoardStatus.Waiting, compact = compact) { picking = true } }
                     },
                     extras = if (queueing) {
                         Extras(
