@@ -4,6 +4,18 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.43 — 2026-11-01
+
+- Runs show as live steps, with a spinner on the step at work
+- The composer floats over the transcript, which fades out behind it
+- /btw opens a side chat in a tab of the right sidebar
+- Delegated threads get cards in the parent, one-line rows in the sidebar and a bar in the child
+- Agents can schedule work into their own thread, listed under Automations in the right sidebar
+- The clock beside Send sets up an automation in plain sentences, and Settings can edit them
+- Scheduled times use a 12-hour clock
+- Closing HyprSpace with work running lists the threads it would stop
+- Fixed runs that jumped when opened and the newest rows hiding behind the composer
+
 ## 0.24.42 — 2026-11-01
 
 - Update Claude Code and Codex from the app: the update chip lists what's behind and updates each through its own updater
