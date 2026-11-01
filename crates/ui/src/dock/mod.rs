@@ -1,8 +1,9 @@
 // The right dock (Ctrl+Shift+G), after the Tauri app's Dock: the folder of the thread on screen as a
-// lazy file tree, and its git working tree with a commit box. It follows whatever the root tells
-// it to, polls git every few seconds while it is out, and hands files and diffs back to the root
-// to show in the viewer card.
+// lazy file tree, its git working tree with a commit box, and the thread's side chats. It follows
+// whatever the root tells it to, polls git every few seconds while it is out, and hands files and
+// diffs back to the root to show in the viewer card.
 
+mod automations;
 mod files;
 mod git;
 pub(crate) mod kinds;
@@ -11,8 +12,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, FontWeight, IntoElement, Render, Task, Window,
-    div, prelude::*,
+    AnyElement, AnyView, ClickEvent, Context, EventEmitter, FontWeight, IntoElement, Render,
+    SharedString, Task, Window, div, prelude::*,
 };
 use hyprspace_proto::state::DockTab;
 use hyprspace_proto::{Client, Command, FolderCommand, FolderEvent, Pane};
@@ -28,6 +29,26 @@ pub enum DockEvent {
     Open(Pane),
     Tab(DockTab),
     Hide,
+    /// A side chat's tab picked, or `None` for Files or Git.
+    Side(Option<u64>),
+    BringBack(u64),
+    DeleteSide(u64),
+    RunAutomation(u64),
+    PauseAutomation(u64, bool),
+    DeleteAutomation(u64),
+    EditAutomation(u64),
+    /// Open a thread: the one an automation just sent to.
+    GoTo(u64),
+}
+
+pub use automations::Automation;
+
+/// A side chat of the thread on screen, drawn by its own view.
+#[derive(Clone)]
+pub struct Side {
+    pub id: u64,
+    pub title: SharedString,
+    pub view: AnyView,
 }
 
 pub struct Dock {
@@ -38,6 +59,13 @@ pub struct Dock {
     tab: DockTab,
     tree: Tree,
     git: GitTab,
+    sides: Vec<Side>,
+    side: Option<u64>,
+    /// The thread the side chats belong to isn't working, so one can be brought back.
+    idle: bool,
+    automations: Vec<Automation>,
+    /// A thread is on screen, so the Automations tab has something to belong to.
+    on_thread: bool,
     _poll: Task<()>,
 }
 
@@ -64,6 +92,11 @@ impl Dock {
             tab: DockTab::Files,
             tree: Tree::default(),
             git: GitTab::new(cx),
+            sides: Vec::new(),
+            side: None,
+            idle: false,
+            automations: Vec::new(),
+            on_thread: false,
             _poll: poll,
         }
     }
@@ -99,6 +132,20 @@ impl Dock {
             }
             self.refresh_git();
         }
+        cx.notify();
+    }
+
+    /// The side chats of the thread on screen, the one picked, and whether that thread is idle.
+    pub fn set_sides(
+        &mut self,
+        sides: Vec<Side>,
+        side: Option<u64>,
+        idle: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.sides = sides;
+        self.side = side;
+        self.idle = idle;
         cx.notify();
     }
 
@@ -140,15 +187,24 @@ impl Dock {
 
     fn set_tab(&mut self, tab: DockTab, cx: &mut Context<Self>) {
         self.tab = tab;
+        if self.side.take().is_some() {
+            cx.emit(DockEvent::Side(None));
+        }
         cx.emit(DockEvent::Tab(tab));
         cx.notify();
+    }
+
+    fn shown_side(&self) -> Option<&Side> {
+        let id = self.side?;
+        self.sides.iter().find(|s| s.id == id)
     }
 
     fn tabs(&self, cx: &mut Context<Self>) -> AnyElement {
         // the Git tab carries how many files changed, so it shows from the Files tab too
         let changed = self.git.changes();
+        let picked = self.shown_side().map(|s| s.id);
         let tab = |id: &'static str, glyph: &str, label: &'static str, which: DockTab| {
-            let on = self.tab == which;
+            let on = picked.is_none() && self.tab == which;
             let count = (which == DockTab::Git && changed > 0).then(|| {
                 div()
                     .px(px(5.))
@@ -199,6 +255,47 @@ impl Dock {
             .border_color(colors::border1())
             .child(tab("dock-files", "folder-tree", "Files", DockTab::Files))
             .child(tab("dock-git", "git-branch", "Git", DockTab::Git))
+            .when(
+                self.on_thread
+                    && (!self.automations.is_empty() || self.tab == DockTab::Automations),
+                |d| {
+                    d.child(tab(
+                        "dock-automations",
+                        "clock",
+                        "Automations",
+                        DockTab::Automations,
+                    ))
+                },
+            )
+            .children(self.sides.iter().map(|s| {
+                let (id, on) = (s.id, picked == Some(s.id));
+                let ink = if on { colors::text1() } else { colors::text3() };
+                div()
+                    .id(("dock-side", id))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .min_w_0()
+                    .max_w(px(160.))
+                    .px(px(10.))
+                    .py(px(6.))
+                    .rounded(px(6.))
+                    .text_size(px(12.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(ink)
+                    .when(on, |d| d.bg(colors::surface3()))
+                    .cursor_pointer()
+                    .when(!on, |d| {
+                        d.hover(|s| s.bg(colors::surface2()).text_color(colors::text1()))
+                    })
+                    .child(icon("message-square", 13., ink))
+                    .child(div().min_w_0().truncate().child(s.title.clone()))
+                    .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
+                        d.side = Some(id);
+                        cx.emit(DockEvent::Side(Some(id)));
+                        cx.notify();
+                    }))
+            }))
             .child(div().flex_1())
             .child(
                 crate::widgets::icon_button("dock-x", "x", crate::widgets::LARGE)
@@ -236,12 +333,69 @@ fn empty(text: &'static str) -> AnyElement {
         .into_any_element()
 }
 
+/// A side chat's title, Bring back and Delete, over the side chat itself.
+fn side_chat(side: &Side, idle: bool, cx: &mut Context<Dock>) -> AnyElement {
+    let id = side.id;
+    let back = crate::widgets::button(("side-back", id), "Bring back")
+        .h(px(26.))
+        .px(px(10.))
+        .text_size(px(12.))
+        .tooltip(crate::widgets::tip(if idle {
+            "Adds this side chat to the thread's next message."
+        } else {
+            "Available when the thread is idle."
+        }))
+        .when(!idle, |d| d.opacity(0.5).cursor_default())
+        .when(idle, |d| {
+            d.on_click(
+                cx.listener(move |_, _: &ClickEvent, _, cx| cx.emit(DockEvent::BringBack(id))),
+            )
+        });
+    let head = div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(px(40.))
+        .px(px(12.))
+        .border_b_1()
+        .border_color(colors::border1())
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(px(13.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text2())
+                .child(side.title.clone()),
+        )
+        .child(back)
+        .child(
+            crate::widgets::icon_button(("side-delete", id), "trash-2", crate::widgets::LARGE)
+                .tooltip(crate::widgets::tip("Delete side chat"))
+                .on_click(
+                    cx.listener(move |_, _: &ClickEvent, _, cx| cx.emit(DockEvent::DeleteSide(id))),
+                ),
+        );
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .child(head)
+        .child(div().flex_1().min_h_0().child(side.view.clone()))
+        .into_any_element()
+}
+
 impl Render for Dock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let body = match (&self.folder, self.tab) {
-            (None, _) => empty("No folder yet. Open a project, or start a thread in a folder."),
-            (Some(_), DockTab::Files) => self.files(cx),
-            (Some(_), DockTab::Git) => self.git_tab(window, cx),
+        let side = self.shown_side().cloned();
+        let body = match (&self.folder, self.tab, side) {
+            (_, _, Some(side)) => side_chat(&side, self.idle, cx),
+            (_, DockTab::Automations, _) if self.on_thread => self.automations_tab(cx),
+            (None, ..) => empty("No folder yet. Open a project, or start a thread in a folder."),
+            (Some(_), DockTab::Files | DockTab::Automations, _) => self.files(cx),
+            (Some(_), DockTab::Git, _) => self.git_tab(window, cx),
         };
         div()
             .size_full()

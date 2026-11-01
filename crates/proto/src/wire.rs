@@ -13,7 +13,7 @@ use crate::folder::{FolderCommand, FolderEvent};
 use crate::peer::{PeerCommand, PeerEvent};
 use crate::phone::{PhoneCommand, PhoneEvent};
 use crate::resources::Resources;
-use crate::run::{Answer, Aside, Delegation, Launch, Prompt, RunEvent};
+use crate::run::{Answer, Delegation, Launch, Prompt, RunEvent};
 use crate::skills::{SkillCommand, SkillEvent};
 use crate::state::{AppState, Background, Effect, Entry};
 use crate::update::{UpdateCommand, UpdateEvent};
@@ -52,21 +52,6 @@ pub enum Command {
     StopTask {
         id: SessionId,
         task: String,
-    },
-    /// A side question about the conversation `launch.resume` names, answered by a fork of it
-    /// that can't use tools and isn't saved, while the session's own run goes on. Claude only.
-    /// Answered with `Event::Aside`; a new one replaces the last.
-    Aside {
-        id: SessionId,
-        launch: Launch,
-        question: String,
-        /// What the box had attached, which goes along with the question.
-        #[serde(default)]
-        images: Vec<PathBuf>,
-    },
-    /// Stop the side question, if it's still answering.
-    DropAside {
-        id: SessionId,
     },
     ExportThread {
         thread: u64,
@@ -270,10 +255,6 @@ pub enum Event {
         id: SessionId,
         event: RunEvent,
     },
-    Aside {
-        id: SessionId,
-        aside: Aside,
-    },
     Title {
         thread: u64,
         title: Option<String>,
@@ -392,6 +373,13 @@ pub enum Event {
         request: u64,
         parent: SessionId,
         ask: Delegation,
+    },
+    /// An agent asked to run something later. Answered with `Command::Delegated`, as a delegation
+    /// is: both answer a call its MCP server holds open.
+    Schedule {
+        request: u64,
+        parent: SessionId,
+        ask: crate::schedule::ScheduleAsk,
     },
 }
 

@@ -110,7 +110,6 @@ import com.hyprspace.android.model.label
 import com.hyprspace.android.model.special
 import com.hyprspace.android.model.summary
 import com.hyprspace.android.net.Answer
-import com.hyprspace.android.net.AsideView
 import com.hyprspace.android.net.Slash
 import com.hyprspace.android.net.BgTask
 import com.hyprspace.android.net.Prompt
@@ -219,8 +218,6 @@ fun Chat(
     ultra: Boolean = false,
     lines: Int = 0,
     onEarlier: (() -> Unit)? = null,
-    aside: AsideView? = null,
-    onDropAside: () -> Unit = {},
     commands: List<Slash> = emptyList(),
     onFork: ((Int, String) -> Unit)? = null,
 ) {
@@ -395,7 +392,6 @@ fun Chat(
             }
             }
         }
-        if (aside != null) AsideCard(aside, onDropAside)
         if (extras != null) {
             val waiting = extras.queue.map { Waiting(it.text, it.images.size, sent = false) } +
                 pending.filter { it.queued }.map { Waiting(it.text, 0, sent = true) }

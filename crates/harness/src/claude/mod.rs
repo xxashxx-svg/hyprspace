@@ -11,7 +11,6 @@
 // the background answers its call at once with a launch note, so that call stays open until the
 // subagent's `task_notification`, and the CLI then starts a run of its own to read the result.
 
-mod aside;
 mod history;
 mod resume;
 

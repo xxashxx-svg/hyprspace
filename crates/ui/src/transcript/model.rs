@@ -2,8 +2,9 @@
 // journal replay go through the same calls, so a thread reopened after a restart looks the way
 // it did. No GPUI here, so all of it is unit tested.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use hyprspace_proto::run::RunFile;
 use hyprspace_proto::{Answer, Prompt, RunEvent, RunStatus, Task, Tool};
@@ -182,6 +183,8 @@ pub struct Transcript {
     pub goal: Option<hyprspace_proto::Goal>,
     last: Option<RunStatus>,
     failed: bool,
+    /// When each call seen live started, and how long it took once it ended.
+    times: HashMap<String, (Instant, Option<Duration>)>,
 }
 
 impl Transcript {
@@ -196,6 +199,11 @@ impl Transcript {
                 .items
                 .iter()
                 .any(|i| matches!(i, Item::Agent(a) if a.state == AgentState::Working))
+    }
+
+    /// When a call seen live started, and how long it took once it ended.
+    pub fn timing(&self, id: &str) -> Option<(Instant, Option<Duration>)> {
+        self.times.get(id).copied()
     }
 
     /// The last call of the live run that hasn't ended.
@@ -394,14 +402,17 @@ impl Transcript {
             },
             RunEvent::Tool { id, tool } => match self.tool(&id) {
                 Some(Item::Tool { tool: t, .. }) => *t = tool,
-                _ => self.items.push(Item::Tool {
-                    id,
-                    tool,
-                    done: None,
-                    open: false,
-                    images: Vec::new(),
-                    live: String::new(),
-                }),
+                _ => {
+                    self.times.insert(id.clone(), (Instant::now(), None));
+                    self.items.push(Item::Tool {
+                        id,
+                        tool,
+                        done: None,
+                        open: false,
+                        images: Vec::new(),
+                        live: String::new(),
+                    })
+                }
             },
             RunEvent::ToolDone {
                 id,
@@ -424,6 +435,9 @@ impl Transcript {
                     *done = Some((ok, output));
                     *images = pictures;
                     live.clear();
+                    if let Some((since, took)) = self.times.get_mut(&id) {
+                        *took = Some(since.elapsed());
+                    }
                 }
             }
             RunEvent::ToolOutput { id, text } => {
@@ -578,6 +592,8 @@ impl Transcript {
     /// After a journal replay: whatever was live when the app closed is over now.
     pub fn settle(&mut self) -> Option<usize> {
         self.compacting = false;
+        // a replay applies every event at once, so its calls would all read as instant
+        self.times.clear();
         let cut = self.run.take().map(|_| {
             for item in &mut self.items {
                 if let Item::Tool {

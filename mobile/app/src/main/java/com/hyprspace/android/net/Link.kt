@@ -208,10 +208,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             }
             // what was open before the line dropped opens again
             val (watched, fitted) = synchronized(lock) { watching.toList() to fits.toMap() }
-            for (t in watched) {
-                asideOf(t).value = null
-                send(s, Up.Watch(t, tail(t)))
-            }
+            for (t in watched) send(s, Up.Watch(t, tail(t)))
             for ((t, size) in fitted) send(s, Up.Fit(t, size.first, size.second))
             _lines.value++
             // a line can go quiet without closing, and whatever is sent into it then is lost:
@@ -358,7 +355,6 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             is Down.Failed -> _failures.tryEmit(d.message)
             is Down.Note -> _failures.tryEmit(d.message)
             is Down.Commands -> _commands.value = d.list
-            is Down.Aside -> asideOf(d.thread).value = d.aside
             is Down.Folders -> _folders.value = d
             is Down.Uploaded -> uploads.remove(d.id)?.complete(d)
             is Down.Fetched -> fetches.remove(d.id)?.complete(d)
@@ -373,13 +369,6 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     private val _commands = MutableStateFlow<List<Slash>>(emptyList())
     val commands: StateFlow<List<Slash>> = _commands
-
-    private val asides = HashMap<Long, MutableStateFlow<AsideView?>>()
-
-    private fun asideOf(thread: Long) = synchronized(lock) { asides.getOrPut(thread) { MutableStateFlow<AsideView?>(null) } }
-
-    /** The thread's side question (`/btw`), which the computer sends again on each watch. */
-    fun aside(thread: Long): StateFlow<AsideView?> = asideOf(thread)
 
     fun term(thread: Long): StateFlow<TermView> = synchronized(lock) {
         terms.getOrPut(thread) { TermBuffer() to MutableStateFlow(TermView()) }.second
@@ -474,7 +463,6 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     fun watch(thread: Long) {
         synchronized(lock) { watching += thread }
-        asideOf(thread).value = null
         send(Up.Watch(thread, tail(thread)))
     }
 

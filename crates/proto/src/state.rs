@@ -328,6 +328,9 @@ pub struct Thread {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub draft_cites: Vec<Cite>,
     pub parent: Option<u64>,
+    /// A side chat (`/btw`): a fork of `parent` shown in the dock, never in a list of threads.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub side: bool,
     pub pinned: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree: Option<Worktree>,
@@ -382,6 +385,7 @@ impl Default for Thread {
             draft_images: Vec::new(),
             draft_cites: Vec::new(),
             parent: None,
+            side: false,
             pinned: None,
             worktree: None,
             updating: None,
@@ -486,6 +490,7 @@ pub enum DockTab {
     #[default]
     Files,
     Git,
+    Automations,
 }
 
 /// The theme (an id from `hyprspace_theme::THEMES`), which side of it to show, and the font

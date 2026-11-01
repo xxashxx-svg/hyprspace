@@ -1,9 +1,9 @@
 use gpui::Context;
 use hyprspace_proto::{Command, Delegation, Launch, Prompt, SessionId, Thread, ThreadKind};
 
-use super::{Root, View};
+use super::{Root, Screen, View};
 use crate::time::now_ms;
-use crate::transcript::Status;
+use crate::transcript::{Delegate, Sender, Status};
 
 impl Root {
     pub(crate) fn delegate(
@@ -90,5 +90,50 @@ impl Root {
                 v.update(cx, |v, cx| v.stop(cx));
             }
         }
+    }
+
+    /// Tells the thread on screen which threads it delegated to, for their cards, and which
+    /// thread delegated it, if one did.
+    pub(crate) fn sync_delegates(&mut self, cx: &mut Context<Self>) {
+        let Screen::Thread(parent) = self.screen else {
+            return;
+        };
+        let Some(View::Structured(view)) = self.views.get(&parent) else {
+            return;
+        };
+        let view = view.clone();
+        let sender = self
+            .state
+            .thread(parent)
+            .filter(|(_, t)| !t.side)
+            .and_then(|(_, t)| t.parent)
+            .and_then(|p| self.state.thread(p))
+            .map(|(_, p)| Sender {
+                id: p.id,
+                title: p.title.clone(),
+                agent: p.agent().map(|l| l.agent),
+                waiting: self.delegations.contains_key(&parent),
+            });
+        view.update(cx, |v, cx| v.set_sender(sender, cx));
+        let mut children: Vec<&Thread> = self
+            .state
+            .spaces
+            .iter()
+            .flat_map(|s| &s.threads)
+            .filter(|t| !t.side && t.parent == Some(parent))
+            .collect();
+        children.sort_by_key(|t| t.created);
+        let children: Vec<Delegate> = children
+            .into_iter()
+            .map(|t| Delegate {
+                id: t.id,
+                title: t.title.clone(),
+                view: match self.views.get(&t.id) {
+                    Some(View::Structured(v)) => Some(v.downgrade()),
+                    _ => None,
+                },
+            })
+            .collect();
+        view.update(cx, |v, cx| v.set_delegates(children, cx));
     }
 }

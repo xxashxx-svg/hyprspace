@@ -2,6 +2,7 @@
 // composer, or settings) on the right. It owns the saved state, keeps one view per opened thread
 // so runs go on while another thread is on screen, and routes the engine's events to them.
 
+mod automations;
 mod delegate;
 mod drafts;
 mod frames;
@@ -11,13 +12,15 @@ mod refs;
 mod render;
 mod scheduled;
 mod settle;
+mod side;
 mod switch;
 mod threads;
 pub mod titlebar;
 mod titles;
 mod worktree;
 
-pub(crate) use scheduled::next as next_run;
+pub(crate) use scheduled::{Fired, next as next_run};
+pub(crate) use side::SideSync;
 pub(crate) use threads::{folder_name, same_folder, scratch_root};
 
 use std::collections::{HashMap, HashSet};
@@ -170,6 +173,9 @@ pub struct Root {
     pub(crate) settled_open: bool,
     pub(crate) snoozed_open: bool,
     pub(crate) working_open: bool,
+    /// A parent's delegated threads shown or hidden under it by hand, over the default of
+    /// showing them while one works.
+    pub(crate) kids_open: HashMap<u64, bool>,
     /// Threads on the Working shelf: busy, or since when they stopped, while they wait to come
     /// back.
     pub(crate) shelf: HashMap<u64, Option<Instant>>,
@@ -189,6 +195,13 @@ pub struct Root {
     pub(crate) pr_open: HashSet<u64>,
     /// Scheduled runs waiting on their worktree, by the request that asked for it.
     pub(crate) scheduled_starts: HashMap<u64, (u64, Start)>,
+    /// The last task run by hand from Settings, a count of such runs, and what came of it.
+    pub(crate) ran: Option<(u64, usize, Fired)>,
+    /// The automation just made from the composer, for its toast, and a count of them.
+    pub(crate) made: Option<(u64, usize)>,
+    /// The scheduled task open for editing in Settings.
+    pub(crate) task_edit: Option<crate::settings::TaskEdit>,
+    _made_timer: Option<gpui::Task<()>>,
     /// Worktree requests made here, numbered apart from the composer's.
     pub(crate) next_request: u64,
     /// The servers each thread's processes listen on, as of the last look.
@@ -439,6 +452,7 @@ impl Root {
             settled_open: false,
             snoozed_open: false,
             working_open: false,
+            kids_open: HashMap::new(),
             shelf: HashMap::new(),
             hover_row: None,
             hold: Default::default(),
@@ -450,6 +464,10 @@ impl Root {
             prs: HashMap::new(),
             pr_open: HashSet::new(),
             scheduled_starts: HashMap::new(),
+            ran: None,
+            made: None,
+            task_edit: None,
+            _made_timer: None,
             next_request: 1 << 40,
             icon_picker: None,
             frames: Default::default(),
@@ -562,11 +580,6 @@ impl Root {
                 self.named(thread, title, cx);
                 cx.notify();
             }
-            Event::Aside { id, aside } => {
-                if let Some(View::Structured(v)) = self.view_of(id) {
-                    v.update(cx, |v, cx| v.heard_aside(aside, cx));
-                }
-            }
             Event::Journal { id, entries } => {
                 if let Some(View::Structured(v)) = self.view_of(id) {
                     v.update(cx, |v, cx| v.replay(entries, cx));
@@ -656,6 +669,11 @@ impl Root {
                 parent,
                 ask,
             } => self.delegate(request, parent, ask, cx),
+            Event::Schedule {
+                request,
+                parent,
+                ask,
+            } => self.schedule_ask(request, parent, ask, cx),
             Event::Folder(e) => self.folder_event(e, cx),
             Event::Background(result) => self.background_arrived(result, window, cx),
             Event::SidebarArt(result) => self.sidebar_art_arrived(result, cx),
@@ -1027,7 +1045,6 @@ impl Root {
                 worktree,
                 when,
             } => {
-                let label = when.label();
                 let task = hyprspace_proto::schedule::Scheduled {
                     id: self.state.take_id(),
                     name: name.clone(),
@@ -1040,13 +1057,14 @@ impl Root {
                     paused: false,
                     last: crate::time::now_ms(),
                     seen: None,
+                    thread: None,
                 };
                 self.state.scheduled.push(task);
                 self.save();
-                self.tell(
-                    format!("Scheduled: {label}. It's in Settings, Scheduled."),
-                    cx,
-                );
+                let id = self.state.scheduled.last().map(|t| t.id);
+                if let Some(id) = id {
+                    self.show_made(id, cx);
+                }
                 if when.watch() {
                     self.poll_watches();
                 }

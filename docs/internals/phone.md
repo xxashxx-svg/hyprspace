@@ -112,8 +112,8 @@ back as `Down::Note`. The phone does a few itself, where the result shows on it:
 opens a new thread. The desktop answers the rest, and one that only shows on the computer (`/diff`,
 `/skills`) says so. The commands the phone offers as `/` is typed come in `Down::Commands`, sent
 on connecting and only when they change, since a board goes out on every status change. The phone
-shows no pending bubble for a `/` message, since it may never become one. A side question reaches every phone watching its thread as `Down::Aside`,
-kept by the bridge so a phone that starts watching later still gets it.
+shows no pending bubble for a `/` message, since it may never become one. `/btw` isn't offered:
+a side chat lives in the desktop's dock, and the board leaves side chats out.
 
 A message sent while a structured thread works joins the desktop's queue, the same queue the
 desktop's box fills. The board carries each thread's queue and background tasks, and the phone

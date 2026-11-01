@@ -1,5 +1,5 @@
 // The images the UI draws, compiled in: Lucide icons (ISC) and the agents' marks, the same ones
-// the Tauri app shows. GPUI tints an `svg()` with the text color, so one file serves every theme.
+// the Tauri app shows, and Material Symbols (Apache 2.0) for a run's steps. GPUI tints an `svg()` with the text color, so one file serves every theme.
 
 use std::borrow::Cow;
 
@@ -89,6 +89,17 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/corner-down-left.svg",
     "icons/tag.svg",
     "icons/calendar.svg",
+    // a run's steps, from Material Symbols
+    "icons/step-think.svg",
+    "icons/step-read.svg",
+    "icons/step-search.svg",
+    "icons/step-command.svg",
+    "icons/step-edit.svg",
+    "icons/step-web.svg",
+    "icons/step-agent.svg",
+    "icons/step-failed.svg",
+    "icons/step-file.svg",
+    "icons/step-tool.svg",
     "brand/vscode.svg",
     "brand/cursor.svg",
     "brand/finder.svg",

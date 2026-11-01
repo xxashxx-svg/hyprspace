@@ -3,17 +3,19 @@
 // as runs or steers, answers approvals, and tells the root when its status changes.
 
 mod approval;
-mod aside;
 mod ask;
 mod autoscroll;
 mod background;
 mod banner;
 mod branch;
+mod carry;
 mod changes;
 mod cites;
 mod commands;
+mod delegated;
 mod doing;
 mod find;
+mod from;
 mod handoff;
 mod links;
 mod model;
@@ -22,6 +24,7 @@ mod notice;
 mod render;
 mod ring;
 mod rows;
+mod steps;
 mod subagent;
 mod tool;
 
@@ -40,6 +43,8 @@ use crate::attach;
 use crate::composer::model_menu::{self, Anchor, Choice, ModelMenu, Spec};
 use crate::input::{InputEvent, TextInput};
 use crate::zoom::px;
+pub use delegated::Child as Delegate;
+pub use from::Sender;
 pub use model::Status;
 use model::{Item, Transcript};
 
@@ -79,6 +84,11 @@ pub enum TranscriptEvent {
         text: String,
         images: Vec<PathBuf>,
     },
+    /// Ask `prompt` in a side chat: a fork of this thread that opens in the dock.
+    Side {
+        launch: Launch,
+        prompt: Prompt,
+    },
     /// Carry the thread on with the other agent, in a new thread that starts with `prompt`.
     Handoff {
         launch: Launch,
@@ -88,6 +98,8 @@ pub enum TranscriptEvent {
         gpui::Point<gpui::Pixels>,
         hyprspace_proto::resources::Server,
     ),
+    /// Open another thread: one this one delegated to.
+    GoTo(u64),
 }
 
 pub struct TranscriptView {
@@ -135,7 +147,8 @@ pub struct TranscriptView {
     requeue_at: Option<usize>,
     task_open: Option<String>,
     task_log: Option<String>,
-    aside: Option<aside::Card>,
+    /// A side chat brought back: its title, and its notes for the next message.
+    carry: Option<(String, String)>,
     /// The agent CLI's version, for `/status`.
     cli_version: Option<String>,
     provider: Option<hyprspace_proto::agents::ProviderStatus>,
@@ -180,6 +193,14 @@ pub struct TranscriptView {
     pub(super) servers: Vec<hyprspace_proto::resources::Server>,
     follow: motion::Follow,
     caught: usize,
+    /// The floating composer's height last frame, which the last row leaves free under it.
+    dock: std::rc::Rc<std::cell::Cell<f32>>,
+    /// The height the last row was last measured with.
+    dock_used: f32,
+    /// The threads this one delegated to, oldest first, for their cards.
+    delegates: Vec<Delegate>,
+    /// The thread that delegated this one, if one did.
+    sender: Option<Sender>,
     reveal: Option<motion::Reveal>,
     partial: Option<(usize, Vec<crate::markdown::Block>)>,
     /// The reply and its length that `partial` is the parse of.
@@ -340,7 +361,7 @@ impl TranscriptView {
             requeue_at: None,
             task_open: None,
             task_log: None,
-            aside: None,
+            carry: None,
             cli_version: None,
             provider: None,
             task_poll: None,
@@ -377,6 +398,10 @@ impl TranscriptView {
             servers: Vec::new(),
             follow: Default::default(),
             caught: 0,
+            dock: Default::default(),
+            dock_used: 0.,
+            delegates: Vec::new(),
+            sender: None,
             reveal: None,
             partial: None,
             partial_at: None,
@@ -435,6 +460,24 @@ impl TranscriptView {
     }
 
     /// The tool the run is in, while it runs one.
+    pub fn set_delegates(&mut self, delegates: Vec<Delegate>, cx: &mut Context<Self>) {
+        if self.delegates != delegates {
+            self.delegates = delegates;
+            cx.notify();
+        }
+    }
+
+    pub fn set_sender(&mut self, sender: Option<Sender>, cx: &mut Context<Self>) {
+        if self.sender != sender {
+            // the first message draws as the sender's card, a height of its own
+            if self.sender.is_some() != sender.is_some() {
+                self.list.remeasure();
+            }
+            self.sender = sender;
+            cx.notify();
+        }
+    }
+
     pub fn doing(&self) -> Option<String> {
         if self.model.compacting {
             return Some("Compacting".into());
@@ -620,6 +663,12 @@ impl TranscriptView {
         cx.notify();
     }
 
+    /// A message from an automation: sent now, or queued behind a run, leaving any open approval
+    /// for the user.
+    pub fn post(&mut self, prompt: Prompt, cx: &mut Context<Self>) {
+        self.offer(prompt, cx);
+    }
+
     /// A message from the phone, sent the way the reply box sends one. A command runs here as it
     /// would from the box, and the lines it adds come back for the phone.
     pub fn send_prompt(&mut self, prompt: Prompt, cx: &mut Context<Self>) -> Vec<String> {
@@ -714,7 +763,7 @@ impl TranscriptView {
             return;
         }
         let prompt = Prompt {
-            text,
+            text: self.with_carry(text),
             images: std::mem::take(&mut self.images),
         };
         self.input.update(cx, |i, cx| i.set_text("", cx));
@@ -883,7 +932,7 @@ impl TranscriptView {
         self.changed(cx);
     }
 
-    fn interrupt(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn interrupt(&mut self, cx: &mut Context<Self>) {
         if self.model.running() {
             self.client.send(Command::Interrupt { id: self.id });
             self.stopping = true;
@@ -1301,7 +1350,7 @@ impl TranscriptView {
 
     /// What the model chip says: the picked model, or the one the CLI says it runs, by its
     /// name in the catalog.
-    fn model_label(&self) -> String {
+    pub(super) fn model_label(&self) -> String {
         let picked = self.launch.model.as_deref().filter(|m| !m.is_empty());
         let reported = self.model.model.as_deref().filter(|_| !self.repicked);
         crate::models::name(
@@ -1712,6 +1761,11 @@ impl TranscriptView {
             }
         } else if same < self.rows.len() || rows.len() > same {
             self.list.splice(same..self.rows.len(), rows.len() - same);
+            // the last row holds the room under the composer, so the row before the change may
+            // have gained or lost it
+            if same > 0 {
+                self.list.remeasure_items(same - 1..same);
+            }
         }
         if std::mem::take(&mut self.remeasure) && same > 0 {
             self.list.remeasure_items(0..same);

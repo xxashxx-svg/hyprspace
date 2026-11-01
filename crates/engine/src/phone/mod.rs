@@ -23,10 +23,10 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use futures::channel::mpsc::UnboundedSender;
 use hyprspace_proto::phone::{
-    AsideView, Ask, Board, BoardKind, Down, Network, PROTOCOL, Pairing, PhoneCommand, PhoneEvent,
-    PhoneStatus, Slash, Up,
+    Ask, Board, BoardKind, Down, Network, PROTOCOL, Pairing, PhoneCommand, PhoneEvent, PhoneStatus,
+    Slash, Up,
 };
-use hyprspace_proto::{Aside, Entry, Event, FolderCommand, SessionId};
+use hyprspace_proto::{Entry, Event, FolderCommand, SessionId};
 use tokio::task::JoinHandle;
 
 use crate::folder::Folders;
@@ -87,8 +87,6 @@ struct Hub {
     ticks: u32,
     sessions: HashMap<u64, SessionId>,
     threads: HashMap<SessionId, u64>,
-    /// Each thread's side question, for the phones that watch it now or later.
-    asides: HashMap<u64, AsideView>,
     commands: Vec<Slash>,
     terms: HashMap<SessionId, Term>,
     journals: HashMap<String, Weak<Journal>>,
@@ -169,7 +167,6 @@ impl Phone {
             ticks: 0,
             sessions: HashMap::new(),
             threads: HashMap::new(),
-            asides: HashMap::new(),
             commands: Vec::new(),
             terms: HashMap::new(),
             journals: HashMap::new(),
@@ -642,7 +639,6 @@ impl Phone {
                     | Ask::Steer { thread, .. }
                     | Ask::Unqueue { thread, .. }
                     | Ask::StopTask { thread, .. }
-                    | Ask::DropAside { thread }
                     | Ask::Fork { thread, .. }
                     | Ask::Retitle { thread } => known(*thread),
                 };
@@ -908,12 +904,6 @@ impl Phone {
             old.live.store(false, Ordering::Relaxed);
         }
         let tx = c.tx.clone();
-        if let Some(aside) = hub.asides.get(&thread) {
-            let _ = tx.unbounded_send(Down::Aside {
-                thread,
-                aside: Some(aside.clone()),
-            });
-        }
         if !structured {
             hub.send_watching();
             return;
@@ -1021,46 +1011,6 @@ impl Phone {
                             data: bytes.clone(),
                         });
                     }
-                }
-            }
-            Event::Aside { id, aside } => {
-                let mut hub = self.hub();
-                let Some(&thread) = hub.threads.get(id) else {
-                    return;
-                };
-                let view = match aside {
-                    Aside::Asked { question } => Some(AsideView {
-                        question: question.clone(),
-                        text: String::new(),
-                        done: false,
-                        error: None,
-                    }),
-                    Aside::Closed => None,
-                    said => hub.asides.get(&thread).cloned().map(|mut v| {
-                        match said {
-                            Aside::Text { text } => v.text.push_str(text),
-                            Aside::Failed { message } => {
-                                v.done = true;
-                                v.error = Some(message.clone());
-                            }
-                            _ => v.done = true,
-                        }
-                        v
-                    }),
-                };
-                match &view {
-                    Some(v) => hub.asides.insert(thread, v.clone()),
-                    None => hub.asides.remove(&thread),
-                };
-                for c in hub
-                    .conns
-                    .values()
-                    .filter(|c| c.watching.contains_key(&thread))
-                {
-                    let _ = c.tx.unbounded_send(Down::Aside {
-                        thread,
-                        aside: view.clone(),
-                    });
                 }
             }
             Event::TerminalExit { id, code } => {

@@ -16,6 +16,9 @@ const WEEK: u64 = 7 * 24 * 60 * 60 * 1000;
 /// At most this many threads from one look, so a burst of failures doesn't start dozens.
 const BURST: usize = 3;
 
+/// A task's thread started: its id, or none while its worktree is made first; or why it didn't.
+pub(crate) type Fired = Result<Option<u64>, &'static str>;
+
 impl Root {
     pub(super) fn run_scheduled(&mut self, now: DateTime<Local>, cx: &mut Context<Self>) {
         let due: Vec<u64> = self
@@ -26,7 +29,7 @@ impl Root {
             .map(|t| t.id)
             .collect();
         for id in due {
-            self.fire(id, None, cx);
+            let _ = self.fire(id, None, cx);
         }
     }
 
@@ -77,24 +80,25 @@ impl Root {
             t.seen = newest.max(seen);
             let paused = t.paused;
             for h in news(items, seen).into_iter().filter(|_| !paused) {
-                self.fire(id, Some(format!("{}\n{}", h.line, h.url)), cx);
+                let _ = self.fire(id, Some(format!("{}\n{}", h.line, h.url)), cx);
             }
         }
         self.save();
     }
 
     /// Starts the task's thread now, with what a watch found after its prompt.
-    pub(crate) fn fire(&mut self, id: u64, found: Option<String>, cx: &mut Context<Self>) {
+    /// Starts a task's thread.
+    pub(crate) fn fire(&mut self, id: u64, found: Option<String>, cx: &mut Context<Self>) -> Fired {
         let Some(t) = self.state.scheduled.iter_mut().find(|t| t.id == id) else {
-            return;
+            return Err("This task is gone.");
         };
         t.last = now_ms();
         let t = t.clone();
         let Some(space) = self.state.space(t.space) else {
-            return;
+            return Err("Its project was removed.");
         };
         let (Some(cwd), setup) = (space.cwd.clone(), space.setup.clone()) else {
-            return;
+            return Err("Its project has no folder to run in.");
         };
         let launch = Launch {
             agent: t.pick.agent,
@@ -110,6 +114,18 @@ impl Root {
             Some(found) => format!("{}\n\n{found}", t.prompt),
             None => t.prompt.clone(),
         };
+        if matches!(t.when, When::Once { .. }) {
+            self.state.scheduled.retain(|s| s.id != id);
+        }
+        if let Some(thread) = t.thread {
+            let view = self
+                .structured_view(thread, cx)
+                .ok_or("Its thread is gone.")?;
+            let prompt = Prompt::text(format!("Scheduled run of \"{}\":\n\n{text}", t.name));
+            view.update(cx, |v, cx| v.post(prompt, cx));
+            self.save();
+            return Ok(Some(thread));
+        }
         let start = Start {
             launch,
             prompt: Some(Prompt::text(text)),
@@ -128,10 +144,12 @@ impl Root {
                     setup: Some(setup).filter(|s| !s.trim().is_empty()),
                 }));
             self.scheduled_starts.insert(request, (t.space, start));
-        } else {
-            self.add_thread(t.space, start, cx);
+            self.save();
+            return Ok(None);
         }
+        let thread = self.add_thread(t.space, start, cx);
         self.save();
+        thread.map(Some).ok_or("The thread couldn't start.")
     }
 
     pub(crate) fn scheduled_worktree(
@@ -165,6 +183,7 @@ impl Root {
 pub(crate) fn next(when: &When, last: u64, now: DateTime<Local>) -> Option<u64> {
     let at = now.timestamp_millis() as u64;
     let (day, minute) = match when {
+        When::Once { at: t } => return Some((*t).max(at)),
         When::Every { minutes } => return Some((last + *minutes as u64 * 60_000).max(at)),
         When::Daily { minute } => (None, *minute),
         When::Weekly { day, minute } => (Some(*day), *minute),
@@ -200,6 +219,7 @@ fn news(items: &[Happening], seen: Option<u64>) -> Vec<&Happening> {
 fn due(when: &When, last: u64, now: DateTime<Local>) -> bool {
     let at = now.timestamp_millis() as u64;
     let latest = match when {
+        When::Once { at: t } => return *t <= at && last < *t,
         When::Every { minutes } => return at.saturating_sub(last) >= *minutes as u64 * 60_000,
         When::Daily { minute } => latest(now, None, *minute),
         When::Weekly { day, minute } => latest(now, Some(*day), *minute),

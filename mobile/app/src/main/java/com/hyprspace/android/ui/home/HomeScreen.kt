@@ -50,6 +50,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -268,6 +270,7 @@ private const val PINS = "0.24.14"
 private sealed interface Row {
     val key: String
     data class Thread(val thread: BoardThread, val space: BoardSpace?, val shelved: Boolean) : Row { override val key = "t${thread.id}" }
+    data class Child(val thread: BoardThread, val last: Boolean) : Row { override val key = "t${thread.id}" }
     data class Shelf(val name: String, val count: Int, val open: Boolean) : Row { override val key = "shelf$name" }
     data object Empty : Row { override val key = "empty" }
 }
@@ -313,7 +316,13 @@ private fun Threads(
     val rows = buildList {
         val active = shown.filter { it.shelf == Shelf.Active }.sortedByDescending { it.rank }
         if (active.isEmpty()) add(Row.Empty)
-        active.forEach { add(Row.Thread(it, spaces[it.space], false)) }
+        // a delegated thread stays under the thread that sent it
+        val ids = active.map { it.id }.toSet()
+        active.filter { it.parent == null || it.parent !in ids }.forEach { p ->
+            add(Row.Thread(p, spaces[p.space], false))
+            val kids = active.filter { it.parent == p.id }
+            kids.forEachIndexed { i, k -> add(Row.Child(k, i == kids.lastIndex)) }
+        }
         val snoozed = shown.filter { it.shelf == Shelf.Snoozed }.sortedByDescending { it.touched }
         if (snoozed.isNotEmpty()) {
             add(Row.Shelf("Snoozed", snoozed.size, snoozedOpen))
@@ -355,6 +364,9 @@ private fun Threads(
                     SwipeRow(left, right, resets[t.id] ?: 0, Modifier.animateItem()) {
                         ThreadRow(t, r.space, r.shelved, now, t.id == current, onOpen) { holding = r }
                     }
+                }
+                is Row.Child -> Box(Modifier.animateItem()) {
+                    ChildRow(r.thread, r.last, now, r.thread.id == current, onOpen)
                 }
                 is Row.Shelf -> Box(Modifier.animateItem()) {
                     ShelfHeader(r) {
@@ -411,6 +423,55 @@ private fun Threads(
                 resets[t.id] = (resets[t.id] ?: 0) + 1
             },
         )
+    }
+}
+
+/** A delegated thread under its parent: one line on a guide, with who runs it and how it went. */
+@Composable
+private fun ChildRow(t: BoardThread, last: Boolean, now: Long, selected: Boolean, onOpen: (Long) -> Unit) {
+    val h = LocalHues.current
+    val line = h.ink(0.1f)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .padding(horizontal = 8.dp)
+            .drawBehind {
+                val x = 20.dp.toPx()
+                val mid = size.height / 2
+                val w = 1.dp.toPx()
+                drawLine(line, Offset(x, 0f), Offset(x, if (last) mid else size.height), w)
+                drawLine(line, Offset(x, mid), Offset(x + 8.dp.toPx(), mid), w)
+            }
+            .padding(start = 30.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) h.ink(0.07f) else h.ink(0f))
+            .clickableQuiet { onOpen(t.id) }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AgentMark(t.agent, 13.dp)
+        Spacer(Modifier.width(9.dp))
+        Text(
+            t.title.ifBlank { "Delegated thread" },
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = h.text1,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(8.dp))
+        val since = t.since
+        when {
+            t.status == BoardStatus.Waiting -> Text("Needs you", style = MaterialTheme.typography.bodySmall, color = h.waiting)
+            t.status == BoardStatus.Failed -> Text("Failed", style = MaterialTheme.typography.bodySmall, color = h.error)
+            since != null -> Text(elapsed((now - since) / 1000), fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = h.busy)
+            t.touched > 0 -> Text(ago(t.touched, now), style = MaterialTheme.typography.bodySmall, color = h.text3)
+        }
+        if (t.status == BoardStatus.Done) {
+            Spacer(Modifier.width(6.dp))
+            StatusMark(t.status)
+        }
     }
 }
 

@@ -76,7 +76,7 @@ fn pr_badge(thread: u64, pr: hyprspace_proto::git::PullRequest) -> AnyElement {
         .into_any_element()
 }
 
-fn elapsed(secs: u64) -> String {
+pub(super) fn elapsed(secs: u64) -> String {
     match secs {
         0..60 => format!("{secs}s"),
         60..3600 => format!("{}m {:02}s", secs / 60, secs % 60),
@@ -448,7 +448,7 @@ impl Root {
     /// A thread's right-click menu, grouped as T3 Code's: where to open it; settling and
     /// snoozing; naming and finding; its project's apps and copying; and the ones that clear away.
     /// Snooze, Open in and Copy open their choices beside them.
-    fn thread_menu(&self, t: &Thread) -> MenuItems {
+    pub(super) fn thread_menu(&self, t: &Thread) -> MenuItems {
         let id = t.id;
         let space = self.state.thread(id).map(|(s, _)| s);
         let mut menu = Vec::new();
@@ -836,6 +836,7 @@ impl Root {
                     .text_color(colors::text3())
                     .child(foot)
                     .children(pr)
+                    .children(self.kids_chip(id, cx))
                     .children(state)
                     .child(agent_mark(agent, working)),
             )

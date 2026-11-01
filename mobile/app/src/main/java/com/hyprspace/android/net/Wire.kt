@@ -17,7 +17,7 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
-const val PROTOCOL = 2
+const val PROTOCOL = 3
 
 /** This build's version and the commit it came from: "0.24.4 (5321b19)". */
 val APP: String =
@@ -177,9 +177,6 @@ sealed interface Ask {
 
     @Serializable @SerialName("stopTask")
     data class StopTask(val thread: Long, val task: String) : Ask
-
-    @Serializable @SerialName("dropAside")
-    data class DropAside(val thread: Long) : Ask
 }
 
 /** When a snoozed thread wakes: `time` at [at] (unix ms), or `done` when its turn ends. */
@@ -233,10 +230,6 @@ sealed interface Down {
 
     @Serializable @SerialName("commands")
     data class Commands(val list: List<Slash>) : Down
-
-    /** A watched thread's side question so far, or null once it's closed. */
-    @Serializable @SerialName("aside")
-    data class Aside(val thread: Long, val aside: AsideView? = null) : Down
 
     @Serializable @SerialName("pong")
     data object Pong : Down
@@ -414,6 +407,8 @@ data class BoardThread(
     val queue: List<Prompt> = emptyList(),
     /** What the agent left running in the background. */
     val tasks: List<BgTask> = emptyList(),
+    /** The thread that delegated this one, which lists it under itself. */
+    val parent: Long? = null,
 )
 
 @Serializable
@@ -674,9 +669,6 @@ sealed interface Tool {
 
 @Serializable
 data class FileChange(val path: String, val kind: ChangeKind, val diff: String)
-
-@Serializable
-data class AsideView(val question: String, val text: String, val done: Boolean, val error: String? = null)
 
 /** A slash command to offer as `/` is typed: the desktop's own when [agent] is null, else that agent's. */
 @Serializable

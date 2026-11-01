@@ -28,7 +28,7 @@ impl Root {
             .flat_map(|s| {
                 s.threads
                     .iter()
-                    .filter(|t| matches!(t.kind, ThreadKind::Structured { .. }))
+                    .filter(|t| !t.side && matches!(t.kind, ThreadKind::Structured { .. }))
                     .map(|t| crate::suggest::Item {
                         label: t.title.clone(),
                         detail: format!("Thread in {}", s.name),

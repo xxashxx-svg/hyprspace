@@ -29,6 +29,9 @@ use crate::{attach, colors, markdown, spinner, widgets};
 /// The transcript and the composer share one column, so their edges line up. Text runs 768px
 /// wide, as T3 Code's chat does.
 const COLUMN: f32 = 816.;
+const DOCK_FADE: f32 = 28.;
+/// How far the last row's own gap reaches into the fade, under the floating composer.
+const DOCK_OVERLAP: f32 = 16.;
 const GUTTER: f32 = 24.;
 const ENTER: Duration = Duration::from_millis(280);
 const UNFOLD: Duration = Duration::from_millis(200);
@@ -58,6 +61,11 @@ pub fn view(
     }
     v.follow.ease(&v.list, window);
     super::autoscroll::step(v, window);
+    // a fold opening at the end grows upward this frame; otherwise the list keeps its top, the end
+    // drops by a frame's growth, and the follow pulls it back a frame late
+    if v.follow.pinned() && slide::flipping(UNFOLD) {
+        v.list.scroll_to_end();
+    }
     if !v.finding() {
         v.follow.step(&v.list, v.model.running(), window, cx);
     }
@@ -158,7 +166,7 @@ pub fn view(
     if !away {
         v.caught = v.model.items.len();
     }
-    let jump = away.then(|| jump(below(v), cx));
+    let jump = away.then(|| jump(below(v), v.dock.get(), cx));
     let ticks = ticks(v, &prompts, window, cx);
     // the first layout of fresh rows draws from the top before the list settles at the bottom
     let last = last_shown(v);
@@ -177,6 +185,13 @@ pub fn view(
         crate::pace::next(window, cx);
     } else {
         v.appear = None;
+    }
+    let dock = v.dock.get();
+    if (dock - v.dock_used).abs() > 0.5 {
+        v.dock_used = dock;
+        if let Some(last) = v.rows.len().checked_sub(1) {
+            v.list.remeasure_items(last..last + 1);
+        }
     }
     let rows = list(
         v.list.clone(),
@@ -235,6 +250,7 @@ pub fn view(
             }
         }))
         .size_full()
+        .relative()
         .flex()
         .flex_col()
         .bg(colors::bg())
@@ -295,13 +311,55 @@ pub fn view(
                     }
                 }))
                 .children(ticks)
-                .children(jump)
                 .children(bar)
                 .children(marker),
         )
-        .child(composer(v, window, cx))
+        .child(floating(v, cx.entity_id(), composer(v, window, cx), jump))
         .children(model_menu(v, window, cx))
         .children(permission_menu(v, window, cx))
+        .into_any_element()
+}
+
+/// The composer over the foot of the transcript, which fades out above it instead of stopping at
+/// an edge. Its height is measured each frame for the list's padding, so the last row still
+/// clears it.
+fn floating(
+    v: &TranscriptView,
+    view: gpui::EntityId,
+    body: AnyElement,
+    jump: Option<AnyElement>,
+) -> AnyElement {
+    let dock = v.dock.clone();
+    let bg = colors::bg();
+    // the view is cached, so a window refresh alone would keep the old padding
+    let measure = gpui::canvas(
+        move |b, _, cx| {
+            let h = f32::from(b.size.height);
+            if (dock.get() - h).abs() > 0.5 {
+                dock.set(h);
+                cx.notify(view);
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0();
+    div()
+        .absolute()
+        .left_0()
+        .right_0()
+        .bottom_0()
+        .flex()
+        .flex_col()
+        .child(div().h(px(DOCK_FADE)).bg(gpui::linear_gradient(
+            180.,
+            gpui::linear_color_stop(bg.opacity(0.), 0.),
+            gpui::linear_color_stop(bg, 1.),
+        )))
+        .child(div().occlude().bg(bg).child(body))
+        .child(measure)
+        // over the fade, which would dim it from under
+        .children(jump)
         .into_any_element()
 }
 
@@ -393,17 +451,55 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             let el = reply(v, ix, part);
             enter(v, ix, el)
         }
-        Row::Quiet(start) => quiet(v, start, cx),
+        Row::Quiet(start) => super::steps::stretch(v, start, cx),
         Row::Fold { prompt, ms } => {
             let label = match ms {
                 Some(ms) => format!("Worked for {}", took(ms / 1000)),
                 None => "Continued".into(),
             };
-            fold_head(
+            let summary = rows::folds(&v.model.items)
+                .into_iter()
+                .find(|f| f.prompt == prompt)
+                .map(|f| {
+                    let calls = || {
+                        f.hide.iter().filter_map(|&j| match &v.model.items[j] {
+                            Item::Tool { tool, done, .. } => Some((tool, done)),
+                            _ => None,
+                        })
+                    };
+                    let failed = calls()
+                        .filter(|(_, done)| matches!(done, Some((false, _))))
+                        .count();
+                    (tool::summary(calls().map(|(t, _)| t)), failed)
+                })
+                .filter(|(s, _)| !s.is_empty())
+                .map(|(s, failed)| {
+                    div()
+                        .flex()
+                        .gap(px(6.))
+                        .min_w_0()
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_color(colors::text3().opacity(0.7))
+                                .child(format!("· {s}")),
+                        )
+                        .when(failed > 0, |d| {
+                            d.child(
+                                div()
+                                    .flex_none()
+                                    .text_color(colors::error())
+                                    .child(format!("{failed} failed")),
+                            )
+                        })
+                        .into_any_element()
+                });
+            run_head(
                 ("turn-fold", prompt),
                 v.unfolded.contains(&prompt),
                 label.into(),
-                None,
+                summary,
                 cx,
                 move |v| {
                     let open = !v.unfolded.remove(&prompt);
@@ -440,9 +536,21 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
         }
     };
     let joined = matches!(v.rows.get(ix + 1), Some(Row::Part { .. }));
+    let delegated = |r: Option<&Row>| matches!(r, Some(Row::Item { ix, .. }) if super::delegated::item(&v.model.items[*ix]));
+    // cards for delegations made one after another stack as a group
+    let stacked = delegated(Some(&row)) && delegated(v.rows.get(ix + 1));
+    // on the last row, not as the list's padding: a padded list reports a scroll past its own end
+    // once rows arrive, and the follow stops a row short
+    let under = if ix + 1 == v.rows.len() {
+        (gpui::px(v.dock_used) - px(DOCK_OVERLAP)).max(gpui::px(0.))
+    } else {
+        gpui::px(0.)
+    };
     let el = centered(column().child(body))
         .when(ix == 0, |d| d.pt(px(24.)))
-        .when(!joined, |d| d.pb(px(20.)));
+        .when(!joined, |d| {
+            d.pb(if stacked { px(6.) } else { px(20.) } + under)
+        });
     let item = match row {
         Row::Item { ix, .. } | Row::Part { ix, .. } | Row::Quiet(ix) => Some(ix),
         _ => None,
@@ -626,7 +734,7 @@ fn retry(v: &TranscriptView, ix: usize, cx: &mut Context<TranscriptView>) -> Opt
     })
 }
 
-fn took(secs: u64) -> String {
+pub(super) fn took(secs: u64) -> String {
     match secs {
         0..60 => format!("{secs}s"),
         60..3600 => format!("{}m {}s", secs / 60, secs % 60),
@@ -714,10 +822,9 @@ fn below(v: &TranscriptView) -> String {
     }
 }
 
-fn jump(label: String, cx: &mut Context<TranscriptView>) -> AnyElement {
+fn jump(label: String, dock: f32, cx: &mut Context<TranscriptView>) -> AnyElement {
     let pill = div()
         .absolute()
-        .bottom(px(12.))
         .left_0()
         .right_0()
         .flex()
@@ -745,12 +852,13 @@ fn jump(label: String, cx: &mut Context<TranscriptView>) -> AnyElement {
                     cx.notify();
                 })),
         );
-    slide::ease_in(pill, "jump-in", 180, |d, t| {
-        d.opacity(t).bottom(px(4. + 8. * t))
+    slide::ease_in(pill, "jump-in", 180, move |d, t| {
+        d.opacity(t)
+            .bottom(gpui::px(dock) - px(DOCK_FADE) + px(4. + 8. * t))
     })
 }
 
-fn enter(v: &TranscriptView, ix: usize, row: AnyElement) -> AnyElement {
+pub(super) fn enter(v: &TranscriptView, ix: usize, row: AnyElement) -> AnyElement {
     let Some(at) = v.born.get(&ix) else {
         return row;
     };
@@ -760,34 +868,6 @@ fn enter(v: &TranscriptView, ix: usize, row: AnyElement) -> AnyElement {
         .top(px(10. * (1. - t)))
         .opacity(t)
         .child(row)
-        .into_any_element()
-}
-
-fn quiet(v: &TranscriptView, start: usize, cx: &mut Context<TranscriptView>) -> AnyElement {
-    let all = &v.model.items;
-    let end = rows::quiet_end(all, start);
-    let mut out = Vec::new();
-    let mut ix = start;
-    while ix < end {
-        let calls = all[ix..end]
-            .iter()
-            .take_while(|i| matches!(i, Item::Tool { .. }))
-            .count();
-        if calls > 1 {
-            let row = tool_run(v, ix, ix + calls, cx);
-            out.push(enter(v, ix, row));
-            ix += calls;
-        } else {
-            let row = item(v, ix, &all[ix], cx);
-            out.push(enter(v, ix, row));
-            ix += 1;
-        }
-    }
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .children(out)
         .into_any_element()
 }
 
@@ -1175,168 +1255,194 @@ fn sent_at(ix: usize, at: u64) -> Div {
         .child(label)
 }
 
-fn item(
+pub(super) fn item(
     v: &TranscriptView,
     ix: usize,
     item: &Item,
     cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
     match item {
+        Item::User { text, .. }
+            if let Some(s) = &v.sender
+                && !v.model.items[..ix]
+                    .iter()
+                    .any(|i| matches!(i, Item::User { .. })) =>
+        {
+            super::from::ask(s, text, cx)
+        }
         Item::User {
             text,
             images,
             steer,
             at,
-        } => div()
-            .flex()
-            .flex_col()
-            .items_end()
-            .gap_1()
-            .when(*steer, |d| {
-                d.child(
+        } => {
+            let (carried, said) = super::carry::split(text);
+            let text = &said.to_string();
+            div()
+                .flex()
+                .flex_col()
+                .items_end()
+                .gap_1()
+                .when(*steer, |d| {
+                    d.child(
+                        div()
+                            .text_size(px(11.5))
+                            .text_color(colors::text3())
+                            .child("Steer"),
+                    )
+                })
+                .when(carried, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(5.))
+                            .text_size(px(11.5))
+                            .text_color(colors::text3())
+                            .child(icon("message-square", 11., colors::text3()))
+                            .child("With notes from a side chat"),
+                    )
+                })
+                .group(SharedString::from(format!("msg-{ix}")))
+                .child(
                     div()
-                        .text_size(px(11.5))
-                        .text_color(colors::text3())
-                        .child("Steer"),
-                )
-            })
-            .group(SharedString::from(format!("msg-{ix}")))
-            .child(
-                div()
-                    .id(("bubble", ix))
-                    .on_hover(cx.listener(move |v, over: &bool, _, cx| {
-                        if !over {
-                            v.light(ix, None, cx);
-                        }
-                    }))
-                    .relative()
-                    .max_w(relative(0.8))
-                    .px(px(16.))
-                    .py(px(10.))
-                    .rounded(px(18.))
-                    .bg(colors::ink(0.06))
-                    .children(at.map(|at| sent_at(ix, at)))
-                    .text_size(px(14.))
-                    .line_height(relative(1.6))
-                    .text_color(colors::text1())
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .when(!text.is_empty(), |d| {
-                        let long = text.lines().count() > 10 || text.len() > 900;
-                        let open = v.expanded.contains(&ix);
-                        let body = SharedString::from(text.clone());
-                        let chip = HighlightStyle {
-                            background_color: Some(colors::ink(0.1)),
-                            ..Default::default()
-                        };
-                        let marks = attach::markers(text);
-                        let cwd = v.model.cwd.clone().unwrap_or_else(|| v.launch.cwd.clone());
-                        let words = crate::suggest::chip_words(v.launch.agent, &cwd, cx);
-                        let mut lit: Vec<_> = marks.iter().map(|(r, _)| r.clone()).collect();
-                        lit.extend(crate::input::chip_spans(text, &words, true));
-                        lit.sort_by_key(|r| r.start);
-                        let styled = StyledText::new(body.clone())
-                            .with_highlights(lit.into_iter().map(|r| (r, chip)));
-                        let layout = styled.layout().clone();
-                        let shown = if marks.is_empty() {
-                            styled.into_any_element()
-                        } else {
-                            let view = cx.entity().downgrade();
-                            InteractiveText::new(("marks", ix), styled)
-                                .on_hover(move |at, _, _, cx| {
-                                    let n = at.and_then(|at| {
-                                        marks.iter().find(|(r, _)| r.contains(&at)).map(|m| m.1)
-                                    });
-                                    let _ = view.update(cx, |v, cx| v.light(ix, n, cx));
-                                })
-                                .into_any_element()
-                        };
-                        let shown = div()
-                            .when(long && !open, |d| d.max_h(px(220.)).overflow_hidden())
-                            .child(markdown::select::wrap(
-                                &format!("u{ix}"),
-                                body,
-                                layout,
-                                shown,
-                            ));
-                        d.child(shown).when(long, |d| {
-                            d.child(
-                                div()
-                                    .id(("show-full", ix))
-                                    .text_size(px(12.))
-                                    .text_color(colors::text3())
-                                    .cursor_pointer()
-                                    .hover(|s| s.text_color(colors::text1()))
-                                    .child(if open {
-                                        "Show less"
-                                    } else {
-                                        "Show full message"
+                        .id(("bubble", ix))
+                        .on_hover(cx.listener(move |v, over: &bool, _, cx| {
+                            if !over {
+                                v.light(ix, None, cx);
+                            }
+                        }))
+                        .relative()
+                        .max_w(relative(0.8))
+                        .px(px(16.))
+                        .py(px(10.))
+                        .rounded(px(18.))
+                        .bg(colors::ink(0.06))
+                        .children(at.map(|at| sent_at(ix, at)))
+                        .text_size(px(14.))
+                        .line_height(relative(1.6))
+                        .text_color(colors::text1())
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .when(!text.is_empty(), |d| {
+                            let long = text.lines().count() > 10 || text.len() > 900;
+                            let open = v.expanded.contains(&ix);
+                            let body = SharedString::from(text.clone());
+                            let chip = HighlightStyle {
+                                background_color: Some(colors::ink(0.1)),
+                                ..Default::default()
+                            };
+                            let marks = attach::markers(text);
+                            let cwd = v.model.cwd.clone().unwrap_or_else(|| v.launch.cwd.clone());
+                            let words = crate::suggest::chip_words(v.launch.agent, &cwd, cx);
+                            let mut lit: Vec<_> = marks.iter().map(|(r, _)| r.clone()).collect();
+                            lit.extend(crate::input::chip_spans(text, &words, true));
+                            lit.sort_by_key(|r| r.start);
+                            let styled = StyledText::new(body.clone())
+                                .with_highlights(lit.into_iter().map(|r| (r, chip)));
+                            let layout = styled.layout().clone();
+                            let shown = if marks.is_empty() {
+                                styled.into_any_element()
+                            } else {
+                                let view = cx.entity().downgrade();
+                                InteractiveText::new(("marks", ix), styled)
+                                    .on_hover(move |at, _, _, cx| {
+                                        let n = at.and_then(|at| {
+                                            marks.iter().find(|(r, _)| r.contains(&at)).map(|m| m.1)
+                                        });
+                                        let _ = view.update(cx, |v, cx| v.light(ix, n, cx));
                                     })
+                                    .into_any_element()
+                            };
+                            let shown = div()
+                                .when(long && !open, |d| d.max_h(px(220.)).overflow_hidden())
+                                .child(markdown::select::wrap(
+                                    &format!("u{ix}"),
+                                    body,
+                                    layout,
+                                    shown,
+                                ));
+                            d.child(shown).when(long, |d| {
+                                d.child(
+                                    div()
+                                        .id(("show-full", ix))
+                                        .text_size(px(12.))
+                                        .text_color(colors::text3())
+                                        .cursor_pointer()
+                                        .hover(|s| s.text_color(colors::text1()))
+                                        .child(if open {
+                                            "Show less"
+                                        } else {
+                                            "Show full message"
+                                        })
+                                        .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+                                            if !v.expanded.remove(&ix) {
+                                                v.expanded.insert(ix);
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                        })
+                        .when(!images.is_empty(), |d| {
+                            let lit = v.lit.filter(|(row, _)| *row == ix).map(|(_, n)| n);
+                            d.child(div().flex().flex_wrap().gap_2().children(
+                                images.iter().enumerate().map(|(k, p)| {
+                                    let path = p.clone();
+                                    div()
+                                        .id(SharedString::from(format!("sent-img-{ix}-{k}")))
+                                        .when(lit.is_some_and(|n| n != k + 1), |d| d.opacity(0.3))
+                                        .on_hover(cx.listener(move |v, over: &bool, _, cx| {
+                                            if *over {
+                                                v.light(ix, None, cx);
+                                            }
+                                        }))
+                                        .child(attach::thumb(p, 120.))
+                                        .when(attach::previews(p) && p.exists(), |d| {
+                                            d.cursor_pointer().on_click(cx.listener(
+                                                move |_, _: &ClickEvent, _, cx| {
+                                                    cx.emit(TranscriptEvent::ShowMedia(
+                                                        path.clone(),
+                                                    ))
+                                                },
+                                            ))
+                                        })
+                                }),
+                            ))
+                        }),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(2.))
+                        .opacity(0.)
+                        .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
+                        .when(!text.is_empty(), |d| {
+                            d.child(widgets::CopyButton::new(
+                                format!("copy-msg-{ix}"),
+                                text.to_string(),
+                            ))
+                        })
+                        .when(!*steer && v.can_rewind(), |d| {
+                            d.child(
+                                widgets::icon_button(("fork", ix), "git-branch", widgets::SMALL)
+                                    .tooltip(widgets::tip("Fork from here into a new thread"))
+                                    .on_click(
+                                        cx.listener(move |v, _: &ClickEvent, _, cx| v.fork(ix, cx)),
+                                    ),
+                            )
+                            .child(
+                                widgets::icon_button(("rewind", ix), "pencil", widgets::SMALL)
+                                    .tooltip(widgets::tip("Edit from here"))
                                     .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
-                                        if !v.expanded.remove(&ix) {
-                                            v.expanded.insert(ix);
-                                        }
-                                        cx.notify();
+                                        v.rewind(ix, cx)
                                     })),
                             )
-                        })
-                    })
-                    .when(!images.is_empty(), |d| {
-                        let lit = v.lit.filter(|(row, _)| *row == ix).map(|(_, n)| n);
-                        d.child(div().flex().flex_wrap().gap_2().children(
-                            images.iter().enumerate().map(|(k, p)| {
-                                let path = p.clone();
-                                div()
-                                    .id(SharedString::from(format!("sent-img-{ix}-{k}")))
-                                    .when(lit.is_some_and(|n| n != k + 1), |d| d.opacity(0.3))
-                                    .on_hover(cx.listener(move |v, over: &bool, _, cx| {
-                                        if *over {
-                                            v.light(ix, None, cx);
-                                        }
-                                    }))
-                                    .child(attach::thumb(p, 120.))
-                                    .when(attach::previews(p) && p.exists(), |d| {
-                                        d.cursor_pointer().on_click(cx.listener(
-                                            move |_, _: &ClickEvent, _, cx| {
-                                                cx.emit(TranscriptEvent::ShowMedia(path.clone()))
-                                            },
-                                        ))
-                                    })
-                            }),
-                        ))
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(2.))
-                    .opacity(0.)
-                    .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
-                    .when(!text.is_empty(), |d| {
-                        d.child(widgets::CopyButton::new(
-                            format!("copy-msg-{ix}"),
-                            text.to_string(),
-                        ))
-                    })
-                    .when(!*steer && v.can_rewind(), |d| {
-                        d.child(
-                            widgets::icon_button(("fork", ix), "git-branch", widgets::SMALL)
-                                .tooltip(widgets::tip("Fork from here into a new thread"))
-                                .on_click(
-                                    cx.listener(move |v, _: &ClickEvent, _, cx| v.fork(ix, cx)),
-                                ),
-                        )
-                        .child(
-                            widgets::icon_button(("rewind", ix), "pencil", widgets::SMALL)
-                                .tooltip(widgets::tip("Edit from here"))
-                                .on_click(
-                                    cx.listener(move |v, _: &ClickEvent, _, cx| v.rewind(ix, cx)),
-                                ),
-                        )
-                    }),
-            )
-            .into_any_element(),
+                        }),
+                )
+                .into_any_element()
+        }
         Item::Text { .. } => reply(v, ix, 0),
         Item::Thinking { text, open } => {
             let head = fold_head(
@@ -1386,6 +1492,14 @@ fn item(
             Some((super::ask::TODO, input)) => super::ask::todo_card(input),
             _ => main_tool(ix, tool, done.as_ref(), *open, images, live, cx),
         },
+        Item::Tool {
+            id,
+            tool: tool @ Tool::Mcp { input, .. },
+            done,
+            ..
+        } if super::delegated::is(tool) => {
+            super::delegated::card(v, ix, id, input, done.as_ref(), cx)
+        }
         Item::Tool {
             tool,
             done,
@@ -1525,6 +1639,58 @@ pub(super) fn fold_head(
         .into_any_element()
 }
 
+/// A finished run's line: a wide band that lights up under the pointer, with what it did after
+/// the time and the chevron at the far end.
+fn run_head(
+    id: impl Into<gpui::ElementId>,
+    open: bool,
+    label: SharedString,
+    summary: Option<AnyElement>,
+    cx: &mut Context<TranscriptView>,
+    toggle: impl Fn(&mut TranscriptView) + 'static,
+) -> AnyElement {
+    let id: ElementId = id.into();
+    let key = fold_key(cx, &id);
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .min_w_0()
+        .mx(px(-10.))
+        .px(px(10.))
+        .py(px(7.))
+        .rounded(px(10.))
+        .text_size(px(12.5))
+        .text_color(colors::text3())
+        .cursor_pointer()
+        .hover(|s| s.bg(colors::ink(0.035)))
+        .child(
+            div()
+                .flex_none()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text2())
+                .child(label),
+        )
+        .child(div().flex_1().min_w_0().flex().children(summary))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(18.))
+                .child(twist(&key, open)),
+        )
+        .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
+            slide::flip(key.clone());
+            toggle(v);
+            settle_fold(cx);
+            cx.notify();
+        }))
+        .into_any_element()
+}
+
 pub(super) fn fold_key(cx: &Context<TranscriptView>, id: &ElementId) -> String {
     format!("{}:{id:?}", cx.entity_id())
 }
@@ -1586,23 +1752,21 @@ fn grow(flip: &str, key: String, open: bool, primed: bool, body: impl IntoElemen
     if primed {
         return body.overflow_hidden().h_0().opacity(0.).into_any_element();
     }
-    let Some(n) = slide::flipped(flip, UNFOLD) else {
+    let Some(at) = slide::flipped_at(flip, UNFOLD) else {
         return body.into_any_element();
     };
-    // the height is read each frame: on a first opening it is known from the second frame on
-    let shown = move |t: f32| if open { t } else { 1. - t };
+    // the height is read each frame: on a first opening it is known from the second frame on.
+    // A loop, not an animation: an animation's id would move the body's elements, and every
+    // animation inside them would play again once the fold ends.
     body.overflow_hidden()
-        .with_animation(
-            ("fold", n),
-            Animation::new(UNFOLD).with_easing(ease_out),
-            move |d, t| {
-                let s = shown(t);
-                let h = FOLD_HEIGHTS
-                    .with(|m| m.borrow().get(&key).copied())
-                    .unwrap_or(0.);
-                d.opacity(s).mt(px(-6. * (1. - s))).h(gpui::px(h * s))
-            },
-        )
+        .looping(UNFOLD.as_millis() as u64, move |d, _| {
+            let t = ease_out((at.elapsed().as_secs_f32() / UNFOLD.as_secs_f32()).min(1.));
+            let s = if open { t } else { 1. - t };
+            let h = FOLD_HEIGHTS
+                .with(|m| m.borrow().get(&key).copied())
+                .unwrap_or(0.);
+            d.opacity(s).mt(px(-6. * (1. - s))).h(gpui::px(h * s))
+        })
         .into_any_element()
 }
 
@@ -1621,96 +1785,7 @@ pub(super) fn settle_fold(cx: &mut Context<TranscriptView>) {
     .detach();
 }
 
-/// A run of tool calls as one line counting them, opening to the single calls.
-fn tool_run(
-    v: &TranscriptView,
-    start: usize,
-    end: usize,
-    cx: &mut Context<TranscriptView>,
-) -> AnyElement {
-    let calls = &v.model.items[start..end];
-    let tools = calls.iter().filter_map(|i| match i {
-        Item::Tool { tool, .. } => Some(tool),
-        _ => None,
-    });
-    let failed = calls
-        .iter()
-        .filter(|i| {
-            matches!(
-                i,
-                Item::Tool {
-                    done: Some((false, _)),
-                    ..
-                }
-            )
-        })
-        .count();
-    let live = calls
-        .iter()
-        .any(|i| matches!(i, Item::Tool { done: None, .. }));
-    let open = v.open_runs.contains(&start);
-    let right = div()
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .flex_none()
-        .when(failed > 0, |d| {
-            d.child(
-                div()
-                    .text_color(colors::error())
-                    .child(format!("{failed} failed")),
-            )
-        })
-        .when(live && !open, |d| {
-            d.child(spinner::ring(("run-live", start), colors::text3()))
-        });
-    let head = fold_head(
-        ("tool-run", start),
-        open,
-        tool::summary(tools).into(),
-        Some(right.into_any_element()),
-        cx,
-        move |v| {
-            if !v.open_runs.remove(&start) {
-                v.open_runs.insert(start);
-            }
-        },
-    );
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .child(head)
-        .when(open || folding(cx, ("tool-run", start)), |d| {
-            let calls: Vec<AnyElement> = (start..end)
-                .filter_map(|ix| match &v.model.items[ix] {
-                    Item::Tool {
-                        tool,
-                        done,
-                        open,
-                        images,
-                        live,
-                        ..
-                    } => Some(main_tool(ix, tool, done.as_ref(), *open, images, live, cx)),
-                    _ => None,
-                })
-                .collect();
-            d.child(unfold(
-                cx,
-                ("tool-run", start),
-                open,
-                div()
-                    .pl(px(26.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .children(calls),
-            ))
-        })
-        .into_any_element()
-}
-
-fn main_tool(
+pub(super) fn main_tool(
     ix: usize,
     t: &Tool,
     done: Option<&(bool, String)>,
@@ -1798,8 +1873,7 @@ pub(super) fn tool_card(
         _ => None,
     };
     let shown = done.map_or(live, |(_, out)| out.as_str());
-    let body_id: ElementId = (key.clone(), 0usize).into();
-    let (asked, said) = (format!("{key}-in"), format!("{key}-out"));
+    let body = tool_body(&key, t, shown, open, 26., cx);
     let head = fold_head(
         (key, 0),
         open,
@@ -1822,28 +1896,44 @@ pub(super) fn tool_card(
         .flex_col()
         .gap(px(6.))
         .child(head)
-        .when(open || folding(cx, body_id.clone()), |d| {
-            let diffs = match t {
-                Tool::Edit { changes } => Some(crate::viewer::edits(changes, cx)),
-                _ => None,
-            };
-            let input = tool::input(t).map(|i| tool::selectable(&asked, &i, cx));
-            let output = (!shown.trim().is_empty()).then(|| tool::selectable(&said, shown, cx));
-            d.child(unfold(
-                cx,
-                body_id,
-                open,
-                div()
-                    .pl(px(26.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .children(input)
-                    .children(diffs)
-                    .children(output),
-            ))
-        })
+        .children(body)
         .into_any_element()
+}
+
+/// A call's input, diffs and output under its head, while it's open or folding. Its fold id is
+/// `(key, 0)`, the head's.
+pub(super) fn tool_body(
+    key: &SharedString,
+    t: &Tool,
+    shown: &str,
+    open: bool,
+    indent: f32,
+    cx: &mut Context<TranscriptView>,
+) -> Option<AnyElement> {
+    let body_id: ElementId = (key.clone(), 0usize).into();
+    if !open && !folding(cx, body_id.clone()) {
+        return None;
+    }
+    let (asked, said) = (format!("{key}-in"), format!("{key}-out"));
+    let diffs = match t {
+        Tool::Edit { changes } => Some(crate::viewer::edits(changes, cx)),
+        _ => None,
+    };
+    let input = tool::input(t).map(|i| tool::selectable(&asked, &i, cx));
+    let output = (!shown.trim().is_empty()).then(|| tool::selectable(&said, shown, cx));
+    Some(unfold(
+        cx,
+        body_id,
+        open,
+        div()
+            .pl(px(indent))
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .children(input)
+            .children(diffs)
+            .children(output),
+    ))
 }
 
 /// The reply box: the prompt, and under it the same row as the composer's (bar.rs) with send or
@@ -1939,12 +2029,8 @@ fn composer(
         .justify_between()
         .gap(px(12.))
         .h(px(28.))
+        .mt(px(2.))
         .px(px(12.))
-        .rounded_b(px(12.))
-        .border_1()
-        .border_t_0()
-        .border_color(colors::border1())
-        .bg(colors::ink(0.025))
         .text_size(px(11.5))
         .text_color(colors::text3())
         .child(
@@ -2056,17 +2142,24 @@ fn composer(
                     .child(n)
             }))
     });
+    let sender = v
+        .sender
+        .as_ref()
+        .filter(|s| s.waiting)
+        .map(|s| super::from::bar(v, s, cx));
     centered(
         column()
             .pb(px(12.))
             .children(super::banner::provider(v, cx))
-            .children(super::aside::card(v, cx))
+            .children(super::carry::chip(v, cx))
             .children(super::approval::dock(v, cx))
             .children(tray(v, cx))
             .children(goal)
             .children(tasks)
-            .child(pill)
-            .child(foot),
+            .map(|d| match sender {
+                Some(bar) => d.child(bar),
+                None => d.child(pill).child(foot),
+            }),
     )
     .into_any_element()
 }

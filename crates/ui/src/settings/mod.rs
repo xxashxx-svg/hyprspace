@@ -24,6 +24,7 @@ mod scheduled;
 mod search;
 mod shortcuts;
 mod sidebar_art;
+mod task_edit;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -38,6 +39,7 @@ use hyprspace_proto::state::ComposerPrefs;
 
 pub(crate) use appearance::{set_terminal_font, terminal_font, terminal_line_height, ui_font};
 pub use search::bind_keys;
+pub(crate) use task_edit::TaskEdit;
 
 use crate::assets::icon;
 use crate::input::TextInput;

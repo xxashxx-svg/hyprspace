@@ -142,6 +142,13 @@ The agent marks in `crates/ui/assets/brand/` are the Claude and OpenAI logos the
 already ships in `src/assets/brand/`, used to name the agent a thread runs. They are trademarks
 of their owners.
 
+## Material Symbols
+
+The icons in `crates/ui/assets/icons/step-*.svg`, which mark the steps of a run, are Google's
+[Material Symbols](https://fonts.google.com/icons) (Rounded, weight 400, from
+`@material-symbols/svg-400` 0.23.0), under the Apache License 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). Copyright Google LLC.
+
 ## Fonts
 
 `crates/ui/assets/fonts/` holds:

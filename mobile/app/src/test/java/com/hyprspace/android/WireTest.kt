@@ -30,12 +30,9 @@ class WireTest {
     @Test
     fun readsEveryMessageTheDesktopSends() {
         val all = lines("down.jsonl").map { wire.decodeFromString(Down.serializer(), it) }
-        assertEquals(20, all.size)
+        assertEquals(18, all.size)
         val slashes = all.filterIsInstance<Down.Commands>().single().list
         assertEquals(listOf(null, com.hyprspace.android.net.Agent.Claude), slashes.map { it.agent })
-        val asides = all.filterIsInstance<Down.Aside>()
-        assertEquals("Tests.", asides[0].aside?.text)
-        assertEquals(null, asides[1].aside)
         val board = (all[2] as Down.BoardMsg).board
         assertEquals("structured", wire.encodeToString(com.hyprspace.android.net.BoardKind.serializer(), board.threads[0].kind).trim('"'))
         assertEquals("opus" to "high", board.start.pick(com.hyprspace.android.net.Agent.Claude))
@@ -43,6 +40,7 @@ class WireTest {
         assertEquals("then this", board.threads[0].queue.single().text)
         assertEquals(com.hyprspace.android.net.TaskKind.Subagent, board.threads[0].tasks.single().kind)
         assertEquals("2", board.threads[0].tasks.single().tool)
+        assertEquals(1L, board.threads[0].parent)
         val entries = (all[3] as Down.Transcript).entries
         val tools = entries.filterIsInstance<Entry.Run>().map { it.event }.filterIsInstance<RunEvent.ToolCall>().map { it.tool }
         assertTrue(tools.any { it is Tool.AgentCall && it.agentType == "general-purpose" })

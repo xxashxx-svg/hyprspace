@@ -3,8 +3,8 @@ use std::ops::Range;
 
 use hyprspace_proto::RunStatus;
 
-use super::ask;
 use super::model::{AgentState, Item};
+use super::{ask, delegated};
 use crate::markdown::{Block, Unit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +31,9 @@ pub enum Row {
 }
 
 fn quiet(item: &Item) -> bool {
-    matches!(item, Item::Tool { .. } | Item::Thinking { .. }) && !ask::special(item)
+    matches!(item, Item::Tool { .. } | Item::Thinking { .. })
+        && !ask::special(item)
+        && !delegated::item(item)
 }
 
 fn todo(item: &Item) -> bool {
@@ -126,6 +128,7 @@ fn foldable(item: &Item) -> bool {
         Item::Thinking { .. } | Item::Text { .. } => true,
         Item::Tool { tool, .. } | Item::Approval { tool, .. } => {
             !matches!(ask::named(tool), Some((ask::QUESTION | ask::PLAN, _)))
+                && !delegated::is(tool)
         }
         Item::Agent(a) => a.state != AgentState::Working,
         _ => false,

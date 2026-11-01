@@ -451,14 +451,3 @@ mod tests {
         assert!(json.contains(r#""kind":"web""#), "{json}");
     }
 }
-
-/// What a side question has said so far, a piece at a time, and how it ended.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum Aside {
-    Asked { question: String },
-    Text { text: String },
-    Done,
-    Failed { message: String },
-    Closed,
-}

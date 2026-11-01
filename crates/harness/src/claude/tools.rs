@@ -106,7 +106,8 @@ fn change(path: String, kind: ChangeKind, diff: String) -> Tool {
 
 pub(crate) fn decode(name: &str, input: &Value) -> Tool {
     match name {
-        "Bash" => Tool::Command {
+        // Claude Code on Windows runs commands through a PowerShell tool instead of Bash
+        "Bash" | "PowerShell" => Tool::Command {
             command: field(input, "command"),
         },
         "Read" => Tool::Read {
@@ -235,6 +236,12 @@ mod tests {
             decode("Bash", &json!({"command": "ls -la"})),
             Tool::Command {
                 command: "ls -la".into()
+            }
+        );
+        assert_eq!(
+            decode("PowerShell", &json!({"command": "ping -n 5 127.0.0.1"})),
+            Tool::Command {
+                command: "ping -n 5 127.0.0.1".into()
             }
         );
         let Tool::Edit { changes } = decode(

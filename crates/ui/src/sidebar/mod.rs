@@ -12,6 +12,7 @@
 // nothing as it fades in, after T3 Code's, so the rows under it glide down instead of jumping.
 
 mod card;
+mod child;
 mod draft;
 mod drag;
 mod icon;
@@ -513,9 +514,10 @@ impl gpui::Render for SidebarView {
                 }
                 _ => None,
             };
+            let next = items.get(ix + 1).cloned();
             let row = weak
                 .update(cx, |r, cx| match item {
-                    Some(item) => r.sidebar_item(&item, now, key, cx),
+                    Some(item) => r.sidebar_item(&item, next.as_ref(), now, key, cx),
                     None => div().into_any_element(),
                 })
                 .unwrap_or_else(|_| div().into_any_element());
@@ -589,7 +591,11 @@ impl Root {
                 .spaces
                 .iter()
                 .filter(|s| !s.archived)
-                .flat_map(|s| s.threads.iter().filter(move |t| keep(t) && hit(s, t)))
+                .flat_map(|s| {
+                    s.threads
+                        .iter()
+                        .filter(move |t| !t.side && keep(t) && hit(s, t))
+                })
                 .collect();
             all.sort_by_key(|t| std::cmp::Reverse(key(t)));
             all
@@ -633,11 +639,12 @@ impl Root {
         }
         // a subagent's thread stays under its parent, on the shelf or off it
         let family = |id: u64, item: fn(u64) -> Item| -> Vec<Item> {
+            let shown = self.kids_shown(id) || !q.is_empty();
             std::iter::once(item(id))
                 .chain(
                     active
                         .iter()
-                        .filter(|c| c.parent == Some(id))
+                        .filter(|c| shown && c.parent == Some(id))
                         .map(|c| item(c.id)),
                 )
                 .collect()
@@ -697,19 +704,33 @@ impl Root {
     fn sidebar_item(
         &self,
         item: &Item,
+        next: Option<&Item>,
         now: u64,
         key: Option<usize>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match *item {
             Item::Thread(id) | Item::Working(id) => match self.state.thread(id) {
+                Some((_, t))
+                    if t.parent
+                        .and_then(|p| self.state.thread(p))
+                        .is_some_and(|(_, p)| p.active()) =>
+                {
+                    let sibling = |n: &u64| {
+                        self.state
+                            .thread(*n)
+                            .is_some_and(|(_, s)| s.parent == t.parent)
+                    };
+                    let last =
+                        !matches!(next, Some(Item::Thread(n) | Item::Working(n)) if sibling(n));
+                    slot()
+                        .relative()
+                        .pl(px(EDGE + child::INDENT))
+                        .child(child::guide(last))
+                        .child(self.child_row(t, now, cx))
+                        .into_any_element()
+                }
                 Some((_, t)) => slot()
-                    .when(
-                        t.parent
-                            .and_then(|p| self.state.thread(p))
-                            .is_some_and(|(_, p)| p.active()),
-                        |d| d.pl(px(EDGE + 16.)),
-                    )
                     .child(self.thread_row(t, now, matches!(item, Item::Thread(_)), key, cx))
                     .into_any_element(),
                 None => div().into_any_element(),

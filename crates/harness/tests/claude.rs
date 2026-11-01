@@ -10,8 +10,7 @@ use common::{count, events, fake, finished, text};
 use hyprspace_harness::{Claude, Harness, Session};
 use hyprspace_proto::run::{ChangeKind, FileChange};
 use hyprspace_proto::{
-    Agent, Answer, Aside, Goal, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind,
-    Tool,
+    Agent, Answer, Goal, Launch, Permission, Prompt, RunEvent, RunStatus, Task, TaskKind, Tool,
 };
 use serde_json::json;
 
@@ -740,87 +739,6 @@ async fn a_background_task_s_output_is_read_on_request() {
     };
     assert_eq!(task, "b1");
     assert!(output.contains("VITE") && output.contains("GET /"));
-}
-
-async fn aside(launch: Launch, question: &str) -> Vec<Aside> {
-    aside_with(launch, question, Vec::new()).await
-}
-
-async fn aside_with(launch: Launch, question: &str, images: Vec<std::path::PathBuf>) -> Vec<Aside> {
-    let mut heard = Vec::new();
-    claude()
-        .aside(launch, question.into(), images, |a| heard.push(a))
-        .await;
-    heard
-}
-
-fn said(heard: &[Aside]) -> String {
-    heard
-        .iter()
-        .filter_map(|a| match a {
-            Aside::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
-#[tokio::test]
-async fn a_side_question_takes_its_images_along() {
-    let dir = tempfile::tempdir().unwrap();
-    // the smallest PNG: its signature is what the content builder checks
-    let png = dir.path().join("shot.png");
-    std::fs::write(
-        &png,
-        [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0],
-    )
-    .unwrap();
-    let mut launch = Launch::new(Agent::Claude, dir.path());
-    launch.resume = Some("fake-session".into());
-    let heard = aside_with(launch, "what is this? [Image 1]", vec![png]).await;
-    assert_eq!(said(&heard), "Side: forked once, 1 image");
-}
-
-#[tokio::test]
-async fn a_big_side_question_reaches_a_cli_that_says_a_lot_as_it_starts() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("loud"), "").unwrap();
-    let mut launch = Launch::new(Agent::Claude, dir.path());
-    launch.resume = Some("fake-session".into());
-    let question = "y".repeat(3 << 20);
-    let heard = tokio::time::timeout(Duration::from_secs(20), aside(launch, &question))
-        .await
-        .expect("an answer within 20s");
-    assert_eq!(said(&heard), "Side: forked once");
-}
-
-#[tokio::test]
-async fn a_side_question_forks_once_and_streams_its_answer() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut launch = Launch::new(Agent::Claude, dir.path());
-    launch.resume = Some("fake-session".into());
-    launch.permission = Permission::Bypass;
-    let said = aside(launch.clone(), "what are you doing?").await;
-    let text: String = said
-        .iter()
-        .filter_map(|a| match a {
-            Aside::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect();
-    // Full access drops to Ask, and the fork isn't saved
-    assert_eq!(text, "Side: forked once");
-    assert_eq!(said.last(), Some(&Aside::Done));
-
-    let said = aside(launch.clone(), "grab-a-tool").await;
-    assert!(
-        matches!(said.last(), Some(Aside::Failed { message }) if message.contains("needs a tool"))
-    );
-
-    launch.resume = None;
-    let said = aside(launch, "anything").await;
-    assert!(
-        matches!(said.as_slice(), [Aside::Failed { message }] if message.contains("Send a message first"))
-    );
 }
 
 #[tokio::test]

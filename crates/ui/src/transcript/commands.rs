@@ -1,5 +1,5 @@
 use gpui::{ClipboardItem, Context};
-use hyprspace_proto::{Command, Permission, Rewind};
+use hyprspace_proto::{Command, Permission, Prompt, Rewind};
 
 use super::model::Item;
 use super::{TranscriptEvent, TranscriptView};
@@ -37,7 +37,7 @@ const OWN: &[(&str, Own, &str)] = &[
     ("effort", Own::Effort, "Pick the effort, or name one"),
     ("fast", Own::Fast, "Turn fast mode on or off"),
     ("plan", Own::Plan, "Plan before changing anything"),
-    ("btw", Own::Btw, "Ask a side question while it works"),
+    ("btw", Own::Btw, "Ask in a side chat while it works"),
     ("context", Own::Context, "How full the context window is"),
     (
         "status",
@@ -153,7 +153,12 @@ pub(crate) fn wants_text(own: Own) -> bool {
 /// Ours that do something from a phone, as (name, what it does).
 pub(crate) fn for_phone() -> Vec<(&'static str, &'static str)> {
     OWN.iter()
-        .filter(|(_, own, _)| !matches!(own, Own::Diff | Own::Skills | Own::Rewind | Own::Login))
+        .filter(|(_, own, _)| {
+            !matches!(
+                own,
+                Own::Diff | Own::Skills | Own::Rewind | Own::Login | Own::Btw
+            )
+        })
         .map(|&(name, _, detail)| (name, detail))
         .collect()
 }
@@ -219,7 +224,7 @@ impl TranscriptView {
                 self.model.note("This thread already plans first.");
             }
             Own::Plan => self.pick_permission(Permission::Plan, cx),
-            Own::Btw => self.ask_aside(arg, images, cx),
+            Own::Btw => self.side(arg, images, cx),
             Own::Context => {
                 let line = self.context_line();
                 self.model.note(line);
@@ -406,6 +411,40 @@ impl TranscriptView {
             }
             None => self.model.note("There's no reply to copy yet."),
         }
+    }
+
+    /// `question` in a side chat: the conversation forked into a thread that opens in the dock
+    /// and asks before it changes anything, while this one keeps working.
+    fn side(&mut self, question: String, images: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
+        let why = if self.remote {
+            Some("/btw works for threads on this computer.")
+        } else if self.launch.resume.is_none() {
+            Some("Send a message first. /btw asks about the conversation so far.")
+        } else if question.is_empty() {
+            Some("Write the question after /btw.")
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            self.model.note(why);
+            return;
+        }
+        let mut launch = self.launch.clone();
+        launch.rewind = Some(Rewind {
+            text: String::new(),
+            nth: 0,
+            fork: true,
+        });
+        if launch.permission != Permission::Plan {
+            launch.permission = Permission::Ask;
+        }
+        cx.emit(TranscriptEvent::Side {
+            launch,
+            prompt: Prompt {
+                text: question,
+                images,
+            },
+        });
     }
 
     /// The whole conversation, carried on in a new thread that starts where this one is.

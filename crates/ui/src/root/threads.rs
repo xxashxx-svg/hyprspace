@@ -525,6 +525,10 @@ impl Root {
                 return cx.notify();
             }
             TranscriptEvent::Reference(target) => return self.reference(thread, *target, cx),
+            TranscriptEvent::GoTo(target) => {
+                self.work.open = Some(*target);
+                return cx.notify();
+            }
             _ => {}
         }
         if self.machines.remote(thread).is_some() {
@@ -557,7 +561,8 @@ impl Root {
         match e {
             TranscriptEvent::Rename(_)
             | TranscriptEvent::Settings(_)
-            | TranscriptEvent::Reference(_) => {}
+            | TranscriptEvent::Reference(_)
+            | TranscriptEvent::GoTo(_) => {}
             TranscriptEvent::NewThread => {
                 self.work.compose = self.state.thread(thread).map(|(s, _)| s.id);
             }
@@ -575,6 +580,9 @@ impl Root {
                 cx,
             ),
             TranscriptEvent::Server(at, server) => self.open_server(*at, *server, cx),
+            TranscriptEvent::Side { launch, prompt } => {
+                self.open_side(thread, launch.clone(), prompt.clone(), cx)
+            }
             TranscriptEvent::Handoff { launch, prompt } => {
                 self.hand_off(thread, launch.clone(), prompt.clone(), cx)
             }
@@ -1027,6 +1035,9 @@ impl Root {
             Action::Pin(id, on) => self.pin(id, on, cx),
             Action::Wake(id) => self.snooze(id, None, window, cx),
             Action::RemoveThread(id) => {
+                for side in self.sides_of(id) {
+                    self.drop_view(side);
+                }
                 self.drop_view(id);
                 let shared = |w: &hyprspace_proto::git::Worktree| {
                     self.state.spaces.iter().flat_map(|s| &s.threads).any(|o| {
@@ -1040,7 +1051,8 @@ impl Root {
                     self.send_worktree(w, hyprspace_proto::git::WorktreeAction::Remove, title);
                 }
                 for s in &mut self.state.spaces {
-                    s.threads.retain(|t| t.id != id);
+                    s.threads
+                        .retain(|t| t.id != id && !(t.side && t.parent == Some(id)));
                 }
                 self.leave(window, cx);
             }

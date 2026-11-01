@@ -254,6 +254,11 @@ impl Follow {
         crate::pace::next(window, cx);
     }
 
+    /// Held at the end, with no trip or wheel moving it.
+    pub fn pinned(&self) -> bool {
+        self.stick && self.trip.is_none() && self.wheel == px(0.)
+    }
+
     pub fn behind(&self, list: &ListState) -> bool {
         self.stick && self.trip.is_none() && max(list) - y(list) > px(0.5)
     }

@@ -53,7 +53,7 @@ pub fn bar(
         .children(ends)
 }
 
-/// A quiet chip that lifts on hover.
+/// A pill for one of the prompt's settings, brightening on hover.
 pub fn chip(id: impl Into<ElementId>) -> Stateful<Div> {
     div()
         .id(id)
@@ -61,17 +61,26 @@ pub fn chip(id: impl Into<ElementId>) -> Stateful<Div> {
         .items_center()
         .gap(px(6.))
         .h(px(26.))
-        .px(px(8.))
+        .px(px(11.))
         .min_w_0()
-        .rounded(px(8.))
+        .rounded_full()
+        .bg(colors::ink(0.06))
         .text_size(px(12.5))
         .text_color(colors::text2())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.06)))
+        .hover(|s| s.bg(colors::ink(0.1)))
 }
 
 pub fn attach(id: impl Into<ElementId>) -> Stateful<Div> {
-    widgets::icon_button(id, "paperclip", widgets::LARGE).tooltip(widgets::tip("Attach images"))
+    widgets::bare_icon_frame(id, 26.)
+        .rounded_full()
+        .bg(colors::ink(0.06))
+        .hover(|s| s.bg(colors::ink(0.1)))
+        .child(
+            icon("paperclip", 14., colors::text3())
+                .group_hover("icon-button", |s| s.text_color(colors::text1())),
+        )
+        .tooltip(widgets::tip("Attach images"))
 }
 
 pub fn model(id: impl Into<ElementId>, agent: Agent, label: String) -> Stateful<Div> {

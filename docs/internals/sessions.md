@@ -99,13 +99,14 @@ how Claude is driven.
   list comes from the CLI binary, the machine one from its `initialize` answer; check both when
   Claude Code adds commands. `/branch` is a fork with an empty `Rewind`, which keeps the whole
   conversation.
-- **`/btw` is a fork that answers once.** The CLI's machine mode has no `/btw`, so a side question
-  runs a second `claude` with the thread's own flags plus `--fork-session
-  --no-session-persistence --max-turns 1`, and its answer stays out of the journal. Keeping the
-  flags keeps the prompt cache: `--tools ""` or plan mode would make it read the whole conversation
-  again at full price. Permission drops to Ask, which the cache doesn't see, and every tool request
-  is refused. It sees the conversation up to the last finished reply, since that's what Claude has
-  saved. Claude threads on this computer only.
+- **`/btw` opens a side chat.** It is the thread forked the way `/branch` forks it (Claude's
+  `--fork-session`, Codex's `thread/fork`), saved as a thread with `side` set and its `parent`, so
+  it can use tools and take follow-ups while the thread keeps working. It starts in Ask (Plan stays
+  Plan), so its first move on files or commands waits for a yes. Its transcript starts empty: the
+  CLI carries the conversation, the view doesn't copy it. Every list of threads leaves side chats
+  out (sidebar, palette search, the phone's board); they show as tabs in the dock of the thread on
+  screen, and go when it's deleted. Bring back, while the thread is idle, puts the side chat's
+  questions, replies and calls ahead of the thread's next message. Threads on this computer only.
 - **A thread names itself with one quiet run.** A new thread's first message, or the whole
   conversation for Regenerate title, goes on stdin to `claude -p` on Haiku or `codex exec
   --ephemeral` on the catalog's Luna model. Nothing is saved, so it never shows in either CLI's
@@ -202,12 +203,22 @@ The Codex rows follow its own presets. Codex has no plan mode, so Plan reads and
   agents on them.
 - **Delegation is an MCP tool.** A top-level structured session gets the `hyprspace` MCP server:
   our own binary as `hyprspace mcp <port> <token>`, passed to Claude as an `--mcp-config` file and
-  to Codex as `config` on `thread/start`. Its one tool, `delegate`, posts to a loopback listener
-  (`engine/src/delegate.rs`), which hands `Event::Delegate` to the UI and holds the call open. The
-  UI starts a child thread (`Thread.parent`) with the parent's folder and permission, and answers
-  with `Command::Delegated` and the child's last reply when it finishes. Stopping the parent stops
-  its children. Children get no tool, so delegation is one level deep. Codex asks about MCP calls
+  to Codex as `config` on `thread/start`. Its tools post to a loopback listener
+  (`engine/src/delegate.rs`), which hands the call to the UI and holds it open until the UI answers
+  with `Command::Delegated`. `delegate` starts a child thread (`Thread.parent`) with the parent's
+  folder and permission, and answers with the child's last reply when it finishes. Stopping the
+  parent stops its children. Children get no tools, so delegation is one level deep.
+- **`schedule` makes an automation tied to its thread.** The agent writes the time in words; the
+  UI reads it on the user's clock (`root/automations.rs`) and answers with what it came to, so the
+  agent can tell the user. Each run posts the task into that thread as a message, queued behind a
+  run and leaving open approvals alone, and a one-off removes itself once it has run. The thread
+  lists its automations in the dock's Automations tab. Codex asks about MCP calls
   with `mcpServer/elicitation/request`, which shows as a normal approval.
+- **A `delegate` call finds its child by title.** The call carries no thread id, so the parent's
+  card takes the child whose title is the one the call asked for (or its task's first line, the
+  way `root/delegate.rs` names it), the nth such call taking the nth such child. Naming children
+  any other way breaks the link. While the parent waits, the child's composer is a bar: what is
+  typed there would never reach the parent.
 
 ## Journals
 

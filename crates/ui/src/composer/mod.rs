@@ -33,7 +33,7 @@ use crate::{attach, colors};
 use clone::CloneCard;
 use model_menu::{Anchor, Choice, Host as _, ModelMenu, Spec};
 pub use pickers::{effort_label, permission_label};
-pub(crate) use schedule::glyph as schedule_glyph;
+pub(crate) use schedule::{glyph as schedule_glyph, minute_of};
 
 actions!(composer, [Background]);
 
@@ -157,6 +157,9 @@ pub struct Composer {
     branch_menu: Option<Point<Pixels>>,
     setup: Entity<TextInput>,
     schedule_menu: Option<Point<Pixels>>,
+    /// Set up to run on a schedule instead of now: what starts it. Its time and label are read
+    /// from their fields when it's scheduled.
+    plan: Option<hyprspace_proto::schedule::When>,
     schedule_at: Entity<TextInput>,
     schedule_label: Entity<TextInput>,
     suggest: crate::suggest::Suggest,
@@ -173,8 +176,8 @@ impl Composer {
         let name = cx.new(|cx| TextInput::new("folder name", false, cx));
         let setup = cx.new(|cx| TextInput::new("npm install", false, cx));
         let schedule_at = cx.new(|cx| {
-            let mut i = TextInput::new("9:00", false, cx);
-            i.set_text("9:00", cx);
+            let mut i = TextInput::new("9:00 AM", false, cx);
+            i.set_text("9:00 AM", cx);
             i
         });
         let schedule_label = cx.new(|cx| {
@@ -241,14 +244,15 @@ impl Composer {
             }),
             cx.subscribe(&schedule_at, |this, _, e: &InputEvent, cx| {
                 if let InputEvent::Submit = e {
-                    this.schedule_daily(cx);
+                    this.submit(false, cx);
                 }
                 cx.notify();
             }),
             cx.subscribe(&schedule_label, |this, _, e: &InputEvent, cx| {
                 if let InputEvent::Submit = e {
-                    this.schedule_labeled(cx);
+                    this.submit(false, cx);
                 }
+                cx.notify();
             }),
         ];
         Self {
@@ -297,6 +301,7 @@ impl Composer {
             branch_menu: None,
             setup,
             schedule_menu: None,
+            plan: None,
             schedule_at,
             schedule_label,
             suggest: Default::default(),
@@ -738,6 +743,9 @@ impl Composer {
     fn submit(&mut self, background: bool, cx: &mut Context<Self>) {
         if self.waiting.iter().any(|w| !w.background) {
             return;
+        }
+        if self.plan.is_some() {
+            return self.schedule_plan(cx);
         }
         if self.saving > 0 {
             self.send_saved = Some(background);

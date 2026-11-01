@@ -12,7 +12,7 @@ use crate::run::{Answer, Permission, Prompt, Task};
 use crate::state::{Entry, Scheme, Snooze};
 
 /// Moves when a message changes shape, so an old phone is told to update rather than misread.
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 /// The phone to the desktop, one JSON text frame each.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -235,10 +235,6 @@ pub enum Ask {
         thread: u64,
         task: String,
     },
-    /// Closes the thread's side question, and stops it if it's still answering.
-    DropAside {
-        thread: u64,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -309,11 +305,6 @@ pub enum Down {
     /// The slash commands to offer, on connecting and whenever they change.
     Commands {
         list: Vec<Slash>,
-    },
-    /// A watched thread's side question (`/btw`) so far, or `None` once it's closed.
-    Aside {
-        thread: u64,
-        aside: Option<AsideView>,
     },
     Pong,
     Folders {
@@ -447,6 +438,9 @@ pub struct BoardThread {
     /// What its agent left running in the background.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tasks: Vec<Task>,
+    /// The thread that delegated this one, which lists it under itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -576,16 +570,6 @@ pub struct Slash {
     pub detail: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<Agent>,
-}
-
-/// A side question and its answer so far. `error` says why it ended without one.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AsideView {
-    pub question: String,
-    pub text: String,
-    pub done: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
 }
 
 fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
@@ -959,6 +943,7 @@ mod tests {
                             label: "Look around".into(),
                             tool: Some("2".into()),
                         }],
+                        parent: Some(1),
                     }],
                     agents: vec![AgentInfo {
                         agent: Agent::Claude,
@@ -1058,19 +1043,6 @@ mod tests {
                         agent: Some(Agent::Claude),
                     },
                 ],
-            },
-            Down::Aside {
-                thread: 2,
-                aside: Some(AsideView {
-                    question: "what now?".into(),
-                    text: "Tests.".into(),
-                    done: true,
-                    error: None,
-                }),
-            },
-            Down::Aside {
-                thread: 2,
-                aside: None,
             },
             Down::Pong,
             Down::Uploaded {
@@ -1226,9 +1198,6 @@ mod tests {
                     thread: 2,
                     task: "b1".into(),
                 },
-            },
-            Up::Ask {
-                ask: Ask::DropAside { thread: 2 },
             },
             Up::Ask {
                 ask: Ask::Permission {

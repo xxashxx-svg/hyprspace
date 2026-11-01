@@ -228,7 +228,6 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
         when (t?.kind) {
             BoardKind.Structured -> {
                 val view by remember(id) { app.link.transcript(id) }.collectAsStateWithLifecycle()
-                val asked by remember(id) { app.link.aside(id) }.collectAsStateWithLifecycle()
                 var picking by remember { mutableStateOf(false) }
                 val catalog = board?.agents?.firstOrNull { it.agent == t.agent }?.catalog?.takeIf { app.link.desktopAtLeast(MODELS) }
                 val queueing = app.link.desktopAtLeast(QUEUE)
@@ -303,8 +302,6 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                     ultra = t.agent == Agent.Claude,
                     lines = lines,
                     onEarlier = { app.link.earlier(id) },
-                    aside = asked,
-                    onDropAside = { app.link.ask(Ask.DropAside(id)) },
                     commands = slashes.filter { it.agent == null || it.agent == t.agent },
                     onFork = if (app.link.desktopAtLeast(NEXT)) {
                         { keep, prompt ->

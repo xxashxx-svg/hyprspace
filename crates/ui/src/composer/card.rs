@@ -102,14 +102,32 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
     });
     // the send button firms up once there is something to send; empty, it starts the agent
     // with no task, as a terminal would
-    let send = if empty {
+    let send = if c.planning() {
+        div()
+            .id("composer-start")
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(6.))
+            .h(px(32.))
+            .px(px(14.))
+            .rounded_full()
+            .bg(colors::accent())
+            .text_size(px(12.5))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(colors::on_accent())
+            .cursor_pointer()
+            .hover(|s| s.bg(colors::accent_hover()))
+            .child(icon("clock", 13., colors::on_accent()))
+            .child("Schedule")
+    } else if empty {
         div()
             .id("composer-start")
             .flex()
             .flex_none()
             .items_center()
             .justify_center()
-            .size(px(28.))
+            .size(px(32.))
             .rounded_full()
             .bg(colors::ink(0.1))
             .cursor_pointer()
@@ -125,8 +143,13 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .into_any_element();
     let schedule = c.can_schedule().then(|| {
         widgets::icon_button("composer-schedule", "clock", widgets::LARGE)
-            .tooltip(widgets::tip("Run on a schedule instead"))
-            .on_click(cx.listener(|c, e: &ClickEvent, _, cx| c.open_schedule(e, cx)))
+            .when(c.planning(), |d| d.bg(colors::ink(0.08)))
+            .tooltip(widgets::tip(if c.planning() {
+                "Start it now instead"
+            } else {
+                "Run on a schedule instead"
+            }))
+            .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_plan(cx)))
             .into_any_element()
     });
     widgets::composer_box(focused)
@@ -154,6 +177,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
                 }),
             )))
         })
+        .children(super::schedule::when_line(c, cx))
         .child(bar::field(&c.input).min_h(px(76.)))
         .child(bar::bar(
             bar::attach("composer-attach")
@@ -184,7 +208,9 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
                     .flex_none()
                     .text_size(px(12.))
                     .text_color(colors::text3())
-                    .child(if cfg!(target_os = "macos") {
+                    .child(if c.planning() {
+                        "Enter schedules it  \u{b7}  Shift+Enter for a new line"
+                    } else if cfg!(target_os = "macos") {
                         "Enter starts it  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
                     } else {
                         "Enter starts it  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"

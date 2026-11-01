@@ -87,7 +87,7 @@ impl Root {
             _ => None,
         };
         for s in self.state.spaces.iter().filter(|s| !s.archived) {
-            for t in &s.threads {
+            for t in s.threads.iter().filter(|t| !t.side) {
                 let glyph = match t.agent() {
                     Some(l) => Glyph::Mark(l.agent),
                     None => Glyph::Icon("square-terminal"),
@@ -252,7 +252,7 @@ impl Root {
             .iter()
             .filter(|s| s.machine.is_none())
             .flat_map(|s| &s.threads)
-            .filter(|t| matches!(t.kind, ThreadKind::Structured { .. }))
+            .filter(|t| !t.side && matches!(t.kind, ThreadKind::Structured { .. }))
             .map(|t| (t.id, t.journal()))
             .collect();
         self.client.send(Command::SearchJournals {

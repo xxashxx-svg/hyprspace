@@ -93,6 +93,9 @@ pub struct Work {
     pub(crate) sign_in: Option<u64>,
     /// A Settings page a thread asked for, opened on the next draw.
     pub(crate) settings: Option<crate::settings::Tab>,
+    /// The side chat shown in the dock, when one is.
+    pub(crate) side: Option<u64>,
+    pub(crate) side_sync: Option<crate::root::SideSync>,
 }
 
 /// The folder the dock follows, the computer it is on, whether the dock is out, and the file the
@@ -131,6 +134,8 @@ impl Work {
             open: None,
             sign_in: None,
             settings: None,
+            side: None,
+            side_sync: None,
         }
     }
 }
@@ -293,6 +298,28 @@ impl Root {
                 self.open_path(path.clone(), *line, *col, window, cx)
             }
             DockEvent::Open(pane) => self.show_viewer(pane.clone(), window, cx),
+            DockEvent::Side(side) => self.work.side = *side,
+            DockEvent::BringBack(side) => self.bring_side_back(*side, cx),
+            DockEvent::DeleteSide(side) => self.delete_side(*side, cx),
+            DockEvent::RunAutomation(id) => {
+                let n = self.ran.as_ref().map_or(0, |(_, n, _)| n + 1);
+                self.ran = Some((*id, n, self.fire(*id, None, cx)));
+            }
+            DockEvent::PauseAutomation(id, paused) => {
+                if let Some(t) = self.state.scheduled.iter_mut().find(|t| t.id == *id) {
+                    t.paused = *paused;
+                }
+                self.save();
+            }
+            DockEvent::DeleteAutomation(id) => {
+                self.state.scheduled.retain(|t| t.id != *id);
+                self.save();
+            }
+            DockEvent::GoTo(thread) => self.work.open = Some(*thread),
+            DockEvent::EditAutomation(id) => {
+                self.edit_task(*id, cx);
+                self.work.settings = Some(crate::settings::Tab::Scheduled);
+            }
         }
         cx.notify();
     }
@@ -316,6 +343,9 @@ impl Root {
 
     /// Tells the dock what to follow, when that changed.
     fn sync_dock(&mut self, space: u64, cx: &mut Context<Self>) {
+        self.sync_sides(cx);
+        self.sync_delegates(cx);
+        self.sync_automations(cx);
         let folder = self.dock_folder(space);
         let machine = self.machine_of(space);
         let viewing = self.work.viewing.as_ref().and_then(|v| match &v.pane {

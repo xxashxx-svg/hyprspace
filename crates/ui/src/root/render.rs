@@ -320,7 +320,7 @@ impl Render for Root {
         let viewer = self.viewer_card(window, cx);
         let snooze = self.snooze_popup(window, cx);
         let icon_picker = self.icon_popup(window, cx);
-        let toast = self.undo_toast(cx);
+        let toast = self.undo_toast(cx).or_else(|| self.made_toast(cx));
         let notice = self.notice_toast(toast.is_some(), cx);
         let close = self.close_dialog(cx);
         let palette = self.palette_overlay(window, cx);

@@ -53,40 +53,6 @@ fn control(id: &str, tool: &str, input: Value, rules: Value) -> Value {
     read().unwrap_or_default()
 }
 
-// a side question: one turn on a fork that isn't saved, with every tool refused
-fn aside(args: &[String]) {
-    if std::env::current_dir()
-        .unwrap_or_default()
-        .join("loud")
-        .exists()
-    {
-        emit(json!({ "type": "system", "subtype": "init", "padding": "x".repeat(1 << 20) }));
-    }
-    let Some(msg) = read() else {
-        return;
-    };
-    if prompt_text(&msg).contains("grab-a-tool") {
-        let answer = control("a1", "Bash", json!({ "command": "ls" }), json!([]));
-        if answer["response"]["response"]["behavior"] != "deny" {
-            say("the tool was allowed");
-        }
-        result("error_max_turns", "", json!([]));
-        return;
-    }
-    let has = |f: &str| args.iter().any(|a| a == f);
-    let forked =
-        has("--fork-session") && has("--max-turns") && !has("--dangerously-skip-permissions");
-    say("Side: ");
-    say(if forked { "forked once" } else { "wrong flags" });
-    let images = msg["message"]["content"].as_array().map_or(0, |blocks| {
-        blocks.iter().filter(|b| b["type"] == "image").count()
-    });
-    if images > 0 {
-        say(&format!(", {images} image"));
-    }
-    done("");
-}
-
 fn title(args: &[String]) {
     let flag = |name: &str| {
         let at = args.iter().position(|a| a == name)?;
@@ -111,9 +77,6 @@ fn title(args: &[String]) {
 pub fn run(args: &[String]) {
     if args.iter().any(|a| a == "--output-format") && args.iter().any(|a| a == "text") {
         return title(args);
-    }
-    if args.iter().any(|a| a == "--no-session-persistence") {
-        return aside(args);
     }
     let flag = |name: &str| {
         let at = args.iter().position(|a| a == name)?;

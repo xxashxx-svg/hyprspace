@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 
 use futures::channel::mpsc::UnboundedSender;
 use hyprspace_harness::Mcp;
+use hyprspace_proto::schedule::ScheduleAsk;
 use hyprspace_proto::{Agent, Delegation, Event, SessionId};
 use serde_json::{Value, json};
 
@@ -71,10 +72,22 @@ impl Delegates {
             .tokens
             .get(v["token"].as_str().unwrap_or_default())
             .copied();
-        let (ok, text) = match (parent, ask(&v)) {
-            (None, _) => (false, "This session can't hand out tasks.".into()),
-            (_, Err(why)) => (false, why),
-            (Some(parent), Ok(ask)) => {
+        let made = parent.map(|parent| match v["tool"].as_str() {
+            Some("schedule") => scheduled(&v).map(|ask| Event::Schedule {
+                request: 0,
+                parent,
+                ask,
+            }),
+            _ => ask(&v).map(|ask| Event::Delegate {
+                request: 0,
+                parent,
+                ask,
+            }),
+        });
+        let (ok, text) = match made {
+            None => (false, "This session can't hand out tasks.".into()),
+            Some(Err(why)) => (false, why),
+            Some(Ok(mut event)) => {
                 let (tx, rx) = mpsc::channel();
                 let request = {
                     let mut inner = self.lock();
@@ -83,11 +96,12 @@ impl Delegates {
                     inner.waiting.insert(request, tx);
                     request
                 };
-                let _ = events.unbounded_send(Event::Delegate {
-                    request,
-                    parent,
-                    ask,
-                });
+                if let Event::Delegate { request: r, .. } | Event::Schedule { request: r, .. } =
+                    &mut event
+                {
+                    *r = request;
+                }
+                let _ = events.unbounded_send(event);
                 rx.recv()
                     .unwrap_or((false, "HyprSpace closed before the task finished.".into()))
             }
@@ -126,6 +140,32 @@ fn ask(v: &Value) -> Result<Delegation, String> {
     })
 }
 
+fn scheduled(v: &Value) -> Result<ScheduleAsk, String> {
+    let opt = |k: &str| {
+        v[k].as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let task = opt("task").ok_or("task can't be empty.")?;
+    let repeat = opt("repeat")
+        .unwrap_or_else(|| "once".into())
+        .to_lowercase();
+    if !["once", "hourly", "daily", "weekly"].contains(&repeat.as_str()) {
+        return Err("repeat has to be once, hourly, daily or weekly.".into());
+    }
+    Ok(ScheduleAsk {
+        name: opt("name"),
+        task,
+        repeat,
+        time: opt("time"),
+        date: opt("date"),
+        day: opt("day"),
+    })
+}
+
+const SCHEDULE: &str = "Run something in this thread later: once at a time, or hourly, daily or weekly. At that time HyprSpace sends the task to this thread as a new message, so it runs with this conversation in view. Times are the user's local time. Use it when the user asks to check, retry or report on something later. The reply says when it will run.";
+
 const TOOL: &str = "Hand a task to another coding agent and wait for its final reply. It runs in its own HyprSpace thread in this folder with this thread's permissions, and the user can watch and answer it there. It doesn't see this conversation, so put everything it needs in the task. Use it to bring in a different agent or model, like a plan from one and the build from another. Several calls at once run in parallel.";
 
 fn tools() -> Value {
@@ -142,6 +182,21 @@ fn tools() -> Value {
                 "title": { "type": "string", "description": "A short name for the thread." }
             },
             "required": ["agent", "task"]
+        }
+    }, {
+        "name": "schedule",
+        "description": SCHEDULE,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": { "type": "string", "description": "What to do when it runs, written as the message to send." },
+                "repeat": { "type": "string", "enum": ["once", "hourly", "daily", "weekly"], "description": "Leave out for once." },
+                "time": { "type": "string", "description": "Local time of day, like 23:00 or 9:30am. Not needed for hourly." },
+                "date": { "type": "string", "description": "For once: the local date, YYYY-MM-DD. Leave out for the next time the clock reaches time." },
+                "day": { "type": "string", "description": "For weekly: the day, like wednesday. Leave out for today's." },
+                "name": { "type": "string", "description": "A short name for it, shown to the user." }
+            },
+            "required": ["task"]
         }
     }]})
 }
@@ -181,6 +236,7 @@ pub fn run(port: u16, token: &str) {
                     body = json!({});
                 }
                 body["token"] = json!(token);
+                body["tool"] = msg["params"]["name"].clone();
                 let out = out.clone();
                 std::thread::spawn(move || {
                     let (ok, text) = call(port, &body.to_string());
@@ -268,5 +324,35 @@ mod tests {
 
         let bad = json!({ "token": "nope", "agent": "codex", "task": "x" }).to_string();
         assert!(!call(port, &bad).0);
+    }
+
+    #[test]
+    fn a_schedule_call_reaches_the_ui_as_a_schedule() {
+        let (tx, mut rx) = futures::channel::mpsc::unbounded();
+        let d = Delegates::default();
+        let mcp = d.mcp(SessionId(5), &tx).unwrap();
+        let (port, token) = (mcp.args[1].parse().unwrap(), mcp.args[2].clone());
+        let body =
+            json!({ "token": token, "tool": "schedule", "task": "Check memory", "time": "11pm" });
+        let waiting = std::thread::spawn(move || call(port, &body.to_string()));
+        let Some(Event::Schedule {
+            request,
+            parent,
+            ask,
+        }) = futures::executor::block_on(rx.next())
+        else {
+            panic!("no schedule");
+        };
+        assert_eq!(parent, SessionId(5));
+        assert_eq!(
+            (ask.task.as_str(), ask.repeat.as_str(), ask.time.as_deref()),
+            ("Check memory", "once", Some("11pm"))
+        );
+        d.answer(request, true, "Scheduled.".into());
+        assert_eq!(waiting.join().unwrap(), (true, "Scheduled.".to_string()));
+
+        let token = mcp.args[2].clone();
+        let bad = json!({ "token": token, "tool": "schedule", "task": "x", "repeat": "monthly" });
+        assert!(!call(port, &bad.to_string()).0);
     }
 }

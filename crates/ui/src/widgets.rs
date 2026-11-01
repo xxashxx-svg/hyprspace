@@ -6,9 +6,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, FontWeight,
-    IntoElement, MouseButton, Pixels, Point, SharedString, Stateful, Window, anchored, deferred,
-    div, point, prelude::*,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, BoxShadow, Div, ElementId,
+    FontWeight, IntoElement, MouseButton, Pixels, Point, SharedString, Stateful, Window, anchored,
+    deferred, div, point, prelude::*,
 };
 
 use crate::assets::icon;
@@ -72,7 +72,7 @@ pub fn send(id: impl Into<ElementId>, icon_name: &str, ready: bool) -> Stateful<
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(28.))
+        .size(px(32.))
         .rounded_full()
         .cursor_pointer();
     if ready {
@@ -95,17 +95,28 @@ pub fn composer_box(focused: bool) -> Div {
         .flex_col()
         .rounded(px(BOX_RADIUS))
         .border_1()
-        .border_color(if focused {
-            colors::ink(0.18)
-        } else {
-            colors::border2()
-        })
-        .bg(if colors::theme().dark {
-            colors::ink(0.04)
-        } else {
-            colors::surface2()
-        })
-        .shadow(colors::lift())
+        .border_color(colors::ink(if focused { 0.13 } else { 0.05 }))
+        .bg(colors::surface2())
+        .shadow(raised(focused))
+}
+
+/// A box standing off the page: a deep shadow under it and, on a dark side, light along its top
+/// edge.
+fn raised(focused: bool) -> Vec<BoxShadow> {
+    let dark = colors::theme().dark;
+    let mut s = colors::shadow();
+    s.push(BoxShadow {
+        color: colors::ink(match (dark, focused) {
+            (false, _) => 0.,
+            (true, false) => 0.07,
+            (true, true) => 0.1,
+        }),
+        offset: point(px(0.), px(1.)),
+        blur_radius: px(0.),
+        spread_radius: px(0.),
+        inset: true,
+    });
+    s
 }
 
 /// Send's neutral twin while a run is live: a round button with a filled square.
@@ -116,7 +127,7 @@ pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(30.))
+        .size(px(32.))
         .rounded_full()
         .border_1()
         .border_color(colors::border2())

@@ -174,7 +174,7 @@ impl Root {
                     .map(|p| p.display().to_string())
                     .unwrap_or_default(),
             });
-            let mut list: Vec<_> = s.threads.iter().collect();
+            let mut list: Vec<_> = s.threads.iter().filter(|t| !t.side).collect();
             list.sort_by_key(|t| std::cmp::Reverse(t.rank()));
             for t in list {
                 threads.push(self.board_thread(s.id, t, now, cx));
@@ -318,6 +318,7 @@ impl Root {
             },
             rank: t.pinned.map_or(t.rank(), |at| i64::MAX - at as i64),
             live: self.views.contains_key(&id),
+            parent: t.parent.filter(|_| !t.side),
             pinned: t.pinned.is_some(),
             queue: t.queue.clone(),
             tasks,
@@ -366,11 +367,6 @@ impl Root {
             Ask::StopTask { thread, task } => {
                 if let Some(v) = self.structured_view(thread, cx) {
                     v.update(cx, |v, cx| v.stop_task(task, cx));
-                }
-            }
-            Ask::DropAside { thread } => {
-                if let Some(v) = self.structured_view(thread, cx) {
-                    v.update(cx, |v, cx| v.drop_aside(cx));
                 }
             }
             Ask::Fork {
@@ -502,7 +498,7 @@ impl Root {
     }
 
     /// A structured thread's view, made (with its history) if it has none yet.
-    fn structured_view(
+    pub(crate) fn structured_view(
         &mut self,
         thread: u64,
         cx: &mut Context<Self>,

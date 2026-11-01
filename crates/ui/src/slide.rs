@@ -51,6 +51,25 @@ pub fn flipped(key: &str, within: Duration) -> Option<usize> {
     })
 }
 
+/// Whether any fold flipped within `within`, and so may still be growing or shrinking.
+pub fn flipping(within: Duration) -> bool {
+    animations() && FLIPS.with(|f| f.borrow().at.values().any(|(_, at)| at.elapsed() < within))
+}
+
+/// When `key` last flipped, if it was within `within`.
+pub fn flipped_at(key: &str, within: Duration) -> Option<Instant> {
+    if !animations() {
+        return None;
+    }
+    FLIPS.with(|f| {
+        f.borrow()
+            .at
+            .get(key)
+            .map(|(_, at)| *at)
+            .filter(|at| at.elapsed() < within)
+    })
+}
+
 /// How much is left of a panel sliding open or shut, if one is. A terminal holds its size until
 /// then and reflows once, instead of rewrapping its text on every frame of the slide.
 pub fn sliding() -> Option<Duration> {
