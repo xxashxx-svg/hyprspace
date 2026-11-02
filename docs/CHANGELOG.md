@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.44 — 2026-11-03
+
+- The title bar shows the project, the thread that started this one, and the title. Click the title for its menu, double-click to rename
+- Replies show as they arrive, and each new paragraph, list or code block fades in
+- Working for sits under your message and becomes Worked for when the run ends
+- Esc closes menus
+
 ## 0.24.43 — 2026-11-01
 
 - Runs show as live steps, with a spinner on the step at work
