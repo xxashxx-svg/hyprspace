@@ -17,7 +17,7 @@ use hyprspace_proto::{Answer, RunStatus, TaskKind, Tool};
 
 use super::model::{self, Item};
 use super::rows::{self, Row};
-use super::{TranscriptEvent, TranscriptView, doing, tool};
+use super::{TranscriptEvent, TranscriptView, tool};
 use crate::assets::icon;
 use crate::composer::bar;
 use crate::composer::model_menu::{self, Host as _, ModelMenu};
@@ -75,22 +75,14 @@ pub fn view(
             crate::pace::next_for(window, cx.entity_id());
         }
     });
-    let revealed = v
-        .reveal
-        .as_mut()
-        .and_then(|r| match v.model.items.get(r.ix) {
-            Some(Item::Text { source, .. }) => r.step(source, window, cx).map(|end| (r.ix, end)),
-            _ => None,
-        });
-    // a reply still coming in goes through the streaming parser even once the reveal caught up,
-    // so its unfinished markup never shows
-    let live = revealed.or_else(|| match v.model.items.last() {
+    // a reply still coming in goes through the streaming parser, so its unfinished markup never
+    // shows
+    let live = match v.model.items.last() {
         Some(Item::Text { source, .. }) if v.model.elapsed().is_some() => {
             Some((v.model.items.len() - 1, source.len()))
         }
         _ => None,
-    });
-    // between beats the text is what it was, and so is its parse
+    };
     if live.is_none() || live != v.partial_at {
         v.partial = live.and_then(|(ix, end)| match v.model.items.get(ix) {
             Some(Item::Text { source, .. }) => {
@@ -110,7 +102,7 @@ pub fn view(
     if slide::animations()
         && let Some((ix, b)) = &v.partial
     {
-        v.fade.grow(*ix, b);
+        v.fade.grow(*ix, b, *ix >= v.seen.max(v.fresh));
     }
     if v.fade.tick() {
         crate::pace::beat(window, cx);
@@ -127,11 +119,6 @@ pub fn view(
     }
     let live = v.model.elapsed().is_some();
     v.working = live.then(|| v.working.unwrap_or(now));
-    if !live {
-        v.doing = Default::default();
-    } else if v.doing.step(doing::label(&v.model, v.stopping), v.stopping) {
-        crate::pace::next(window, cx);
-    }
     if v.working.is_some_and(|at| at.elapsed() < WORKING_IN) {
         crate::pace::next(window, cx);
     }
@@ -742,52 +729,35 @@ pub(super) fn took(secs: u64) -> String {
     }
 }
 
+/// A live run's line, where its "Worked for" line lands once it ends.
 fn working(v: &TranscriptView) -> AnyElement {
-    let took = took(v.model.elapsed().unwrap_or(0));
-    let line = |text: &str| {
-        div()
-            .flex()
-            .items_center()
-            .h(px(22.))
-            .flex_none()
-            .min_w_0()
-            .child(div().min_w_0().truncate().child(text.to_string()))
+    let label = if v.stopping {
+        "Stopping".to_string()
+    } else if v.model.compacting {
+        "Compacting".to_string()
+    } else if v.model.status() == model::Status::Waiting {
+        "Waiting for you".to_string()
+    } else {
+        format!("Working for {}", took(v.model.elapsed().unwrap_or(0)))
     };
-    let label = div()
-        .flex_1()
-        .min_w_0()
-        .h(px(22.))
-        .overflow_hidden()
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(colors::text2())
-        .child(
-            div()
-                .relative()
-                .when(v.doing.prev.is_some(), |d| {
-                    d.top(px(-22. * ease_out(v.doing.roll)))
-                })
-                .flex()
-                .flex_col()
-                .children(v.doing.prev.as_deref().map(line))
-                .child(line(&v.doing.shown)),
-        )
-        .looping(1800, |d, t| {
-            d.opacity(0.55 + 0.45 * (0.5 + 0.5 * (t * std::f32::consts::TAU).cos()))
-        });
     div()
         .flex()
         .items_center()
-        .gap(px(8.))
-        .h(px(22.))
+        .gap(px(10.))
+        .min_w_0()
+        .mx(px(-10.))
+        .px(px(10.))
+        .py(px(7.))
         .text_size(px(12.5))
         .text_color(colors::text3())
-        .child(if v.model.compacting && !v.stopping {
-            spinner::compass(colors::text2())
-        } else {
-            spinner::eclipse("working", colors::text2())
-        })
-        .child(label)
-        .child(div().flex_none().child(took))
+        .child(
+            div()
+                .flex_none()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text2())
+                .child(label),
+        )
+        .child(div().flex_1())
         .when(!v.stopping, |d| {
             d.child(
                 div()
@@ -795,6 +765,7 @@ fn working(v: &TranscriptView) -> AnyElement {
                     .flex_none()
                     .items_center()
                     .gap(px(5.))
+                    .h(px(18.))
                     .child(widgets::keycap("Esc"))
                     .child("to stop"),
             )
@@ -1219,7 +1190,7 @@ fn plain(source: &str) -> String {
     text.chars().take(240).collect()
 }
 
-/// A reply still coming in: being revealed, or the last thing a live run has said.
+/// A reply still coming in: the last thing a live run has said.
 fn streaming(v: &TranscriptView, ix: usize) -> bool {
     v.partial.as_ref().is_some_and(|(p, _)| *p == ix)
         || (v.model.elapsed().is_some() && ix + 1 == v.model.items.len())

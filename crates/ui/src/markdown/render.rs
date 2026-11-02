@@ -2,8 +2,6 @@
 // open in the browser and inline code in the mono font. Text size and line height come from the
 // caller, so a reply and a quoted snippet can differ.
 
-use std::ops::Range;
-
 use gpui::{
     AnyElement, FontStyle, FontWeight, HighlightStyle, InteractiveText, IntoElement, ObjectFit,
     SharedString, StrikethroughStyle, StyledText, UnderlineStyle, div, img, prelude::*, relative,
@@ -11,15 +9,34 @@ use gpui::{
 use hyprspace_theme::MONO;
 
 use super::code::CodeBlock;
-use super::fade::{block_size, local, merge};
 use super::select;
 use super::{Block, Inline, Style};
 use crate::colors;
 use crate::zoom::px;
 
 /// `key` makes the element ids unique per transcript item.
-pub fn render(blocks: &[Block], key: &str, fade: &[(Range<usize>, f32)]) -> AnyElement {
-    from(blocks, key, 0, fade)
+/// `fade` is each top-level block's opacity while it fades in; a block past its end is solid.
+pub fn render(blocks: &[Block], key: &str, fade: &[f32]) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .children(
+            blocks
+                .iter()
+                .enumerate()
+                .map(|(i, b)| shown(block(b, &format!("{key}-{i}")), fade.get(i))),
+        )
+        .into_any_element()
+}
+
+fn shown(el: AnyElement, fade: Option<&f32>) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .when_some(fade.filter(|a| **a < 1.), |d, a| d.opacity(*a))
+        .child(el)
+        .into_any_element()
 }
 
 /// The pieces a long reply can be cut into: a top-level block, or one item of a list.
@@ -44,37 +61,17 @@ pub fn units(blocks: &[Block]) -> Vec<Unit> {
 pub fn part(
     blocks: &[Block],
     key: &str,
-    fade: &[(Range<usize>, f32)],
+    fade: &[f32],
     all: &[Unit],
-    range: Range<usize>,
+    range: std::ops::Range<usize>,
 ) -> AnyElement {
-    let at = |u: Unit| -> usize {
-        if fade.is_empty() {
-            return 0;
-        }
-        let (i, n) = match u {
-            Unit::Block(i) => (i, 0),
-            Unit::Entry(i, n) => (i, n),
-        };
-        let before: usize = blocks[..i].iter().map(block_size).sum();
-        match &blocks[i] {
-            Block::List { items, .. } => {
-                before
-                    + items[..n]
-                        .iter()
-                        .map(|b| super::fade::size(b))
-                        .sum::<usize>()
-            }
-            _ => before,
-        }
-    };
     let units = &all[range.clone()];
     let mut groups = Vec::new();
     let mut k = 0;
     while k < units.len() {
         match units[k] {
             Unit::Block(i) => {
-                groups.push(block(&blocks[i], &format!("{key}-{i}"), at(units[k]), fade));
+                groups.push(shown(block(&blocks[i], &format!("{key}-{i}")), fade.get(i)));
                 k += 1;
             }
             Unit::Entry(i, _) => {
@@ -83,24 +80,18 @@ pub fn part(
                     .take_while(|u| matches!(u, Unit::Entry(j, _) if *j == i))
                     .count();
                 if let Block::List { start, items } = &blocks[i] {
-                    groups.push(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .children(units[k..k + run].iter().filter_map(|&u| match u {
-                                Unit::Entry(_, n) => Some(entry(
-                                    *start,
-                                    n,
-                                    &items[n],
-                                    &format!("{key}-{i}"),
-                                    at(u),
-                                    fade,
-                                )),
-                                Unit::Block(_) => None,
-                            }))
-                            .into_any_element(),
-                    );
+                    let list = div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .children(units[k..k + run].iter().filter_map(|&u| match u {
+                            Unit::Entry(_, n) => {
+                                Some(entry(*start, n, &items[n], &format!("{key}-{i}")))
+                            }
+                            Unit::Block(_) => None,
+                        }))
+                        .into_any_element();
+                    groups.push(shown(list, fade.get(i)));
                 }
                 k += run;
             }
@@ -122,14 +113,7 @@ pub fn part(
         .into_any_element()
 }
 
-fn entry(
-    start: Option<u64>,
-    n: usize,
-    item: &[Block],
-    key: &str,
-    at: usize,
-    fade: &[(Range<usize>, f32)],
-) -> gpui::Div {
+fn entry(start: Option<u64>, n: usize, item: &[Block], key: &str) -> gpui::Div {
     let marker = match start {
         Some(s) => format!("{}.", s + n as u64),
         None => "•".into(),
@@ -148,28 +132,27 @@ fn entry(
             div()
                 .flex_1()
                 .min_w_0()
-                .child(from(item, &format!("{key}-{n}"), at, fade)),
+                .child(from(item, &format!("{key}-{n}"))),
         )
 }
 
-fn from(blocks: &[Block], key: &str, mut at: usize, fade: &[(Range<usize>, f32)]) -> AnyElement {
+fn from(blocks: &[Block], key: &str) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap(px(10.))
-        .children(blocks.iter().enumerate().map(|(i, b)| {
-            let el = block(b, &format!("{key}-{i}"), at, fade);
-            if !fade.is_empty() {
-                at += block_size(b);
-            }
-            el
-        }))
+        .children(
+            blocks
+                .iter()
+                .enumerate()
+                .map(|(i, b)| block(b, &format!("{key}-{i}"))),
+        )
         .into_any_element()
 }
 
-fn block(b: &Block, key: &str, at: usize, fade: &[(Range<usize>, f32)]) -> AnyElement {
+fn block(b: &Block, key: &str) -> AnyElement {
     match b {
-        Block::Paragraph(i) => inline(i, key, at, fade),
+        Block::Paragraph(i) => inline(i, key),
         Block::Heading(level, i) => {
             let size = match level {
                 1 => px(18.),
@@ -180,37 +163,34 @@ fn block(b: &Block, key: &str, at: usize, fade: &[(Range<usize>, f32)]) -> AnyEl
                 .pt_1()
                 .text_size(size)
                 .font_weight(FontWeight::SEMIBOLD)
-                .child(inline(i, key, at, fade))
+                .child(inline(i, key))
                 .into_any_element()
         }
-        Block::Code { lang, text } => CodeBlock::new(key, lang, text)
-            .fade(at, fade)
-            .into_any_element(),
+        Block::Code { lang, text } => CodeBlock::new(key, lang, text).into_any_element(),
         Block::List { start, items } => div()
             .flex()
             .flex_col()
             .gap_1()
-            .children(items.iter().enumerate().scan(at, |at, (n, item)| {
-                let here = *at;
-                if !fade.is_empty() {
-                    *at += super::fade::size(item);
-                }
-                Some(entry(*start, n, item, key, here, fade))
-            }))
+            .children(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(n, item)| entry(*start, n, item, key)),
+            )
             .into_any_element(),
         Block::Quote(inner) => div()
             .pl_3()
             .border_l_2()
             .border_color(colors::border2())
             .text_color(colors::text2())
-            .child(from(inner, key, at, fade))
+            .child(from(inner, key))
             .into_any_element(),
         Block::Rule => div()
             .h(px(1.))
             .my_1()
             .bg(colors::border2())
             .into_any_element(),
-        Block::Table { head, rows } => table(head, rows, key, at, fade),
+        Block::Table { head, rows } => table(head, rows, key),
         Block::Image { url, alt } => image(url, alt, key),
     }
 }
@@ -235,7 +215,7 @@ fn image(url: &str, alt: &str, key: &str) -> AnyElement {
                 },
             )],
         };
-        return inline(&words, key, 0, &[]);
+        return inline(&words, key);
     };
     let show = links.show.clone();
     let open = path.clone();
@@ -280,16 +260,9 @@ fn columns(head: &[Inline], rows: &[Vec<Inline>]) -> Vec<(f32, f32)> {
         .collect()
 }
 
-fn table(
-    head: &[Inline],
-    rows: &[Vec<Inline>],
-    key: &str,
-    at: usize,
-    fade: &[(Range<usize>, f32)],
-) -> AnyElement {
+fn table(head: &[Inline], rows: &[Vec<Inline>], key: &str) -> AnyElement {
     let sizes = columns(head, rows);
-    let mut at = at;
-    let mut row = |cells: &[Inline], key: String, head: bool| {
+    let row = |cells: &[Inline], key: String, head: bool| {
         div()
             .flex()
             .mx(px(4.))
@@ -306,11 +279,7 @@ fn table(
                             .text_size(px(12.5))
                             .text_color(colors::text2())
                     })
-                    .child({
-                        let el = inline(c, &format!("{key}-{i}"), at, fade);
-                        at += c.text.chars().count();
-                        el
-                    })
+                    .child(inline(c, &format!("{key}-{i}")))
             }))
     };
     div()
@@ -336,7 +305,7 @@ fn table(
 }
 
 /// One run of styled text. Links get their own click targets.
-pub fn inline(i: &Inline, key: &str, at: usize, fade: &[(Range<usize>, f32)]) -> AnyElement {
+pub fn inline(i: &Inline, key: &str) -> AnyElement {
     let handler = super::links::current();
     // a path written as code that names a file opens it, as a link would
     let named: Vec<bool> = i
@@ -377,7 +346,6 @@ pub fn inline(i: &Inline, key: &str, at: usize, fade: &[(Range<usize>, f32)]) ->
             )
         })
         .collect();
-    let highlights = merge(i.text.len(), highlights, &local(&i.text, at, fade));
     let fonts: Vec<_> = i
         .spans
         .iter()

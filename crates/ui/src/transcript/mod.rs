@@ -13,7 +13,6 @@ mod changes;
 mod cites;
 mod commands;
 mod delegated;
-mod doing;
 mod find;
 mod from;
 mod handoff;
@@ -201,7 +200,6 @@ pub struct TranscriptView {
     delegates: Vec<Delegate>,
     /// The thread that delegated this one, if one did.
     sender: Option<Sender>,
-    reveal: Option<motion::Reveal>,
     partial: Option<(usize, Vec<crate::markdown::Block>)>,
     /// The reply and its length that `partial` is the parse of.
     partial_at: Option<(usize, usize)>,
@@ -215,7 +213,6 @@ pub struct TranscriptView {
     unread: Option<usize>,
     born: HashMap<usize, Instant>,
     working: Option<Instant>,
-    doing: doing::Doing,
     drag_step: Option<Instant>,
     ticker: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -402,7 +399,6 @@ impl TranscriptView {
             dock_used: 0.,
             delegates: Vec::new(),
             sender: None,
-            reveal: None,
             partial: None,
             partial_at: None,
             stream: Default::default(),
@@ -413,7 +409,6 @@ impl TranscriptView {
             unread: None,
             born: HashMap::new(),
             working: None,
-            doing: Default::default(),
             drag_step: None,
             ticker: None,
             _subs: vec![sub],
@@ -548,11 +543,10 @@ impl TranscriptView {
     }
 
     /// Comes on screen: what arrived while it was away shows as it is, and only what streams in
-    /// from here on animates. A view off screen draws nothing, so its reveal fell behind.
+    /// from here on animates.
     pub fn come_on_screen(&mut self) {
         self.follow.settle();
         self.unread = (self.read > 0 && self.read < self.model.items.len()).then_some(self.read);
-        self.reveal = None;
         self.partial = None;
         self.partial_at = None;
         self.stream = Default::default();
@@ -1433,32 +1427,9 @@ impl TranscriptView {
                 }
             );
         let ended = matches!(event, RunEvent::Finished { .. });
-        let n = self.model.items.len();
-        let had = match self.model.items.last() {
-            Some(Item::Text { source, .. }) => source.len(),
-            _ => 0,
-        };
-        // a reveal still behind redraws on its beat, and the beat shows what arrives
-        let quiet = matches!(event, RunEvent::Text { .. })
-            && self
-                .reveal
-                .as_ref()
-                .is_some_and(|r| r.ix + 1 == n && r.behind(had));
         self.model.apply(event);
-        let text = self.model.items[n.saturating_sub(1)..]
-            .iter()
-            .rposition(|i| matches!(i, Item::Text { .. }))
-            .map(|i| i + n.saturating_sub(1));
-        if let Some(ix) = text
-            && self.reveal.as_ref().is_none_or(|r| r.ix != ix)
-        {
-            let from = if ix + 1 == n { had } else { 0 };
-            self.reveal = Some(motion::Reveal::new(ix, from));
-        }
         self.settle(cx);
-        if !quiet {
-            cx.notify();
-        }
+        cx.notify();
         if ended {
             self.apply_pending();
         }
@@ -1500,7 +1471,6 @@ impl TranscriptView {
             self.model = Transcript::default();
             self.rows.clear();
             self.list.reset(0);
-            self.reveal = None;
             self.partial = None;
             self.partial_at = None;
             self.fade = Default::default();

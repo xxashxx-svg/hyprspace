@@ -390,6 +390,16 @@ impl Render for Root {
                     r.spoil_hold(e.modifiers.secondary(), cx)
                 }),
             )
+            // a menu opened by the mouse has no focus of its own, so Esc is caught on its way in
+            .capture_key_down(cx.listener(|r, e: &gpui::KeyDownEvent, _, cx| {
+                if r.menu.is_some() && e.keystroke.key == "escape" {
+                    r.menu = None;
+                    r.menu_sub = None;
+                    r.delete_armed = false;
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .size_full()
             .flex()
             .flex_col()

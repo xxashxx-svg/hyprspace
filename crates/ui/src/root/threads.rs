@@ -1106,7 +1106,12 @@ impl Root {
     /// Renames a thread in place, after T3 Code's: Enter saves, Esc cancels, and clicking
     /// anywhere else saves too. Enter and Esc give the keyboard back to what had it; a click
     /// away leaves it where the click put it.
-    fn start_rename(&mut self, target: Rename, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn start_rename(
+        &mut self,
+        target: Rename,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Rename::Thread(thread) = target;
         let current = self
             .state
@@ -1135,6 +1140,7 @@ impl Root {
             root.end_rename(&this, true, None, window, cx)
         });
         window.focus(&focus, cx);
+        self.rename_here = false;
         self.rename = Some((target, input, [keys, blur]));
         cx.notify();
     }

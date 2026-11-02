@@ -232,9 +232,15 @@ impl Root {
     /// weight so nothing jumps. It is drawn over the title's line, its text where the title's
     /// was, so the rows below stay put. Clicks in it stay in it: placing the cursor or selecting
     /// text neither opens nor drags the row.
-    fn rename_box(&self, id: u64, size: Pixels, weight: FontWeight) -> Option<AnyElement> {
+    pub(crate) fn rename_box(
+        &self,
+        id: u64,
+        here: bool,
+        size: Pixels,
+        weight: FontWeight,
+    ) -> Option<AnyElement> {
         let (Rename::Thread(r), input, _) = self.rename.as_ref()?;
-        (*r == id).then(|| {
+        (*r == id && self.rename_here == here).then(|| {
             div()
                 .id(("rename", id))
                 .h(px(24.))
@@ -448,7 +454,7 @@ impl Root {
     /// A thread's right-click menu, grouped as T3 Code's: where to open it; settling and
     /// snoozing; naming and finding; its project's apps and copying; and the ones that clear away.
     /// Snooze, Open in and Copy open their choices beside them.
-    pub(super) fn thread_menu(&self, t: &Thread) -> MenuItems {
+    pub(crate) fn thread_menu(&self, t: &Thread) -> MenuItems {
         let id = t.id;
         let space = self.state.thread(id).map(|(s, _)| s);
         let mut menu = Vec::new();
@@ -647,7 +653,7 @@ impl Root {
                     .unwrap_or_default(),
             ),
         };
-        let title: AnyElement = match self.rename_box(id, px(13.5), FontWeight::MEDIUM) {
+        let title: AnyElement = match self.rename_box(id, false, px(13.5), FontWeight::MEDIUM) {
             Some(rename) => rename,
             None if let Some((shown, caret)) = self.typed(id, &t.title) => div()
                 .flex()
@@ -962,16 +968,18 @@ impl Root {
             .when(selected, |d| d.bg(colors::surface3()))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
             .child(tag(&space, look, true))
-            .child(match self.rename_box(id, px(12.5), FontWeight::NORMAL) {
-                Some(rename) => div().flex_1().min_w_0().child(rename),
-                None => div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(12.5))
-                    .text_color(colors::text3())
-                    .child(t.title.clone()),
-            })
+            .child(
+                match self.rename_box(id, false, px(12.5), FontWeight::NORMAL) {
+                    Some(rename) => div().flex_1().min_w_0().child(rename),
+                    None => div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.5))
+                        .text_color(colors::text3())
+                        .child(t.title.clone()),
+                },
+            )
             .children(when.map(|w| {
                 div()
                     .flex_none()

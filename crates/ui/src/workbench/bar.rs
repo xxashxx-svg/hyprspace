@@ -1,7 +1,7 @@
 // The space's half of the title row (`crate::root::titlebar`): a new thread, the Open button (the
 // folder in an editor, Explorer or Finder), and the dock toggle. The space's name and folder sit
-// on the left, or the thread's agent, title and model when a structured thread is on screen, as it
-// has no header of its own.
+// on the left, or the breadcrumb (`crumbs.rs`) when a structured thread or a new one is on screen,
+// as neither has a header of its own.
 
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, IntoElement, MouseButton, Window, div, prelude::*,
@@ -13,9 +13,9 @@ use std::path::Path;
 
 use super::header::{opener_logo, short};
 use super::{ToggleDock, ToggleTerminal};
-use crate::assets::{icon, mark};
+use crate::assets::icon;
 use crate::colors;
-use crate::root::{Action, Root, same_folder};
+use crate::root::{Action, Root, Screen, same_folder};
 use crate::widgets;
 use crate::zoom::px;
 
@@ -101,23 +101,35 @@ impl Root {
                         .on_click(cx.listener(|r, e: &ClickEvent, _, cx| r.toggle_popup(e, cx))),
                 )
         });
-        let thread = self
-            .structured_on_screen()
-            .and_then(|id| self.state.thread(id))
-            .and_then(|(_, t)| match &t.kind {
-                ThreadKind::Structured { launch } => Some((t.title.clone(), launch.clone())),
-                _ => None,
-            });
-        let (badge, name, detail) = match thread {
-            Some((title, launch)) => (
-                Some(mark(launch.agent, 14., colors::brand(launch.agent).0)),
-                title,
-                Some(match place(&launch.cwd) {
-                    Some(place) => format!("{place} · {}", self.model_label(&launch)),
-                    None => self.model_label(&launch),
-                }),
-            ),
-            None => (None, s.name.clone(), folder.as_deref().and_then(place)),
+        let left = match (self.structured_on_screen(), &self.screen) {
+            (Some(thread), _) => self.crumbs(s, Some(thread), cx),
+            (None, Screen::Compose(_)) => self.crumbs(s, None, cx),
+            _ => div()
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_shrink(1.)
+                        .truncate()
+                        .text_size(px(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors::text1())
+                        .child(s.name.clone()),
+                )
+                .children(folder.as_deref().and_then(place).map(|d| {
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(MONO)
+                        .text_size(px(11.))
+                        .text_color(colors::text3())
+                        .child(d)
+                }))
+                .into_any_element(),
         };
         let drawer = self
             .structured_on_screen()
@@ -146,29 +158,9 @@ impl Root {
             .flex()
             .items_center()
             .gap(px(6.))
-            .pl(px(14.))
+            .pl(px(10.))
             .pr(px(6.))
-            .children(badge.map(|b| div().flex_none().mr(px(2.)).child(b)))
-            .child(
-                div()
-                    .min_w_0()
-                    .flex_shrink(1.)
-                    .truncate()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(colors::text1())
-                    .child(name),
-            )
-            .children(detail.map(|d| {
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .font_family(MONO)
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(d)
-            }))
-            .child(div().flex_1())
+            .child(left)
             .children(self.work.notice.clone().map(|n| {
                 div()
                     .min_w_0()

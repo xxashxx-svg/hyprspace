@@ -154,6 +154,10 @@ pub struct Root {
     /// A thread being renamed: its box, and what ends the rename (Enter or Esc, and focus
     /// leaving the box).
     pub(crate) rename: Option<(Rename, Entity<TextInput>, [Subscription; 2])>,
+    /// The rename was started from the title bar, so its box is drawn there, not on the row.
+    pub(crate) rename_here: bool,
+    /// The thread menu waiting out a possible second click on the title, which renames.
+    pub(crate) title_click: Option<gpui::Task<()>>,
     pub(crate) menu: Option<(Point<Pixels>, MenuItems)>,
     /// The menu's line whose choices are open beside it.
     pub(crate) menu_sub: Option<usize>,
@@ -442,6 +446,8 @@ impl Root {
             composing: None,
             unlisted: None,
             rename: None,
+            rename_here: false,
+            title_click: None,
             menu: None,
             menu_sub: None,
             delete_armed: false,

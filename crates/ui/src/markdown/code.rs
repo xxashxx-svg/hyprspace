@@ -24,7 +24,6 @@ pub struct CodeBlock {
     key: SharedString,
     lang: String,
     text: String,
-    fade: Vec<(Range<usize>, f32)>,
 }
 
 impl CodeBlock {
@@ -33,13 +32,7 @@ impl CodeBlock {
             key: format!("code-{key}").into(),
             lang: lang.to_string(),
             text: text.trim_end().to_string(),
-            fade: Vec::new(),
         }
-    }
-
-    pub fn fade(mut self, at: usize, fade: &[(Range<usize>, f32)]) -> Self {
-        self.fade = super::fade::local(&self.text, at, fade);
-        self
     }
 }
 
@@ -242,19 +235,13 @@ impl RenderOnce for CodeBlock {
                             _ => self.text.len(),
                         };
                         let cut = |r: &Range<usize>| (r.start < n).then(|| r.start..r.end.min(n));
-                        let highlights = highlights
+                        let highlights: Vec<_> = highlights
                             .into_iter()
                             .filter_map(|(r, s)| Some((cut(&r)?, s)))
-                            .collect();
-                        let fade: Vec<_> = self
-                            .fade
-                            .iter()
-                            .filter_map(|(r, f)| Some((cut(r)?, *f)))
                             .collect();
                         let mut text = self.text;
                         text.truncate(n);
                         let text = SharedString::from(text);
-                        let highlights = super::fade::merge(text.len(), highlights, &fade);
                         let styled = StyledText::new(text.clone()).with_highlights(highlights);
                         let layout = styled.layout().clone();
                         super::select::wrap(&key, text, layout, styled.into_any_element())

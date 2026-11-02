@@ -6,6 +6,7 @@
 
 mod bar;
 mod card;
+mod crumbs;
 mod drawer;
 mod frame;
 mod header;

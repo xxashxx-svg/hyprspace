@@ -261,7 +261,21 @@ pub fn plan(all: &[Item], loading: bool, live: bool, open: &HashSet<usize>) -> V
         rows.insert(at, Row::Item { ix, user: false });
     }
     if live {
-        rows.push(Row::Working);
+        let first = all
+            .iter()
+            .rposition(|i| matches!(i, Item::Finished { .. }))
+            .map_or(0, |f| f + 1);
+        let at = match all.get(first) {
+            Some(Item::User { .. }) => rows
+                .iter()
+                .position(|r| matches!(r, Row::Item { ix, .. } if *ix == first))
+                .map(|p| p + 1),
+            _ => rows.iter().position(|r| match r {
+                Row::Item { ix, .. } | Row::Part { ix, .. } | Row::Quiet(ix) => *ix >= first,
+                _ => false,
+            }),
+        };
+        rows.insert(at.unwrap_or(rows.len()), Row::Working);
     }
     rows
 }
@@ -313,6 +327,40 @@ mod tests {
             ms: 1,
             error: None,
         }
+    }
+
+    #[test]
+    fn a_live_run_s_line_sits_under_its_prompt() {
+        let open = HashSet::new();
+        let items = [
+            user(),
+            reply("hi"),
+            finished(RunStatus::Done),
+            user(),
+            call("ls"),
+            reply("looking"),
+        ];
+        assert_eq!(
+            plan(&items, false, true, &open),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Item { ix: 1, user: false },
+                Row::Item { ix: 3, user: true },
+                Row::Working,
+                Row::Quiet(4),
+                Row::Item { ix: 5, user: false },
+            ]
+        );
+        let woke = [user(), reply("hi"), finished(RunStatus::Done), call("ls")];
+        assert_eq!(
+            plan(&woke, false, true, &open),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Item { ix: 1, user: false },
+                Row::Working,
+                Row::Quiet(3),
+            ]
+        );
     }
 
     #[test]
