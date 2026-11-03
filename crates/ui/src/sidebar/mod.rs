@@ -90,6 +90,8 @@ fn edge_scroll(y: f32, top: f32, bottom: f32) -> f32 {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Item {
     Draft(u64),
+    /// A settled or snoozed thread with a message typed and not sent.
+    ThreadDraft(u64),
     /// The line under the drafts.
     Rule,
     /// A thread at work.
@@ -616,9 +618,19 @@ impl Root {
                 })
             })
             .collect();
-        if !drafts.is_empty() {
+        // like a new thread's draft, one typed on screen gets its row once the user leaves it
+        let unsent: Vec<u64> = threads(
+            |t| !t.active() && (!t.draft.trim().is_empty() || !t.draft_images.is_empty()),
+            |t| t.last_touch() as i64,
+        )
+        .into_iter()
+        .filter(|t| !matches!(self.screen, Screen::Thread(on) if on == t.id))
+        .map(|t| t.id)
+        .collect();
+        if !drafts.is_empty() || !unsent.is_empty() {
             drafts.sort_by_key(|d| std::cmp::Reverse(d.created));
             items.extend(drafts.iter().map(|d| Item::Draft(d.id)));
+            items.extend(unsent.into_iter().map(Item::ThreadDraft));
             items.push(Item::Rule);
         }
         let mut active = threads(Thread::active, Thread::rank);
@@ -738,6 +750,12 @@ impl Root {
             Item::Shelved(id) => match self.state.thread(id) {
                 Some((_, t)) => slot()
                     .child(self.shelved_row(t, now, key, cx))
+                    .into_any_element(),
+                None => div().into_any_element(),
+            },
+            Item::ThreadDraft(id) => match self.state.thread(id) {
+                Some((s, t)) => slot()
+                    .child(self.thread_draft_row(s, t, cx))
                     .into_any_element(),
                 None => div().into_any_element(),
             },

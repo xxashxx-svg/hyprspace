@@ -99,6 +99,8 @@ pub enum TranscriptEvent {
     ),
     /// Open another thread: one this one delegated to.
     GoTo(u64),
+    /// Back from Settled, from the line at the end of a settled thread.
+    BringBack,
 }
 
 pub struct TranscriptView {
@@ -200,6 +202,8 @@ pub struct TranscriptView {
     delegates: Vec<Delegate>,
     /// The thread that delegated this one, if one did.
     sender: Option<Sender>,
+    /// Settled, and when, if that's known.
+    settled: Option<Option<u64>>,
     partial: Option<(usize, Vec<crate::markdown::Block>)>,
     /// The reply and its length that `partial` is the parse of.
     partial_at: Option<(usize, usize)>,
@@ -399,6 +403,7 @@ impl TranscriptView {
             dock_used: 0.,
             delegates: Vec::new(),
             sender: None,
+            settled: None,
             partial: None,
             partial_at: None,
             stream: Default::default(),
@@ -458,6 +463,13 @@ impl TranscriptView {
     pub fn set_delegates(&mut self, delegates: Vec<Delegate>, cx: &mut Context<Self>) {
         if self.delegates != delegates {
             self.delegates = delegates;
+            cx.notify();
+        }
+    }
+
+    pub fn set_settled(&mut self, settled: Option<Option<u64>>, cx: &mut Context<Self>) {
+        if self.settled != settled {
+            self.settled = settled;
             cx.notify();
         }
     }

@@ -115,6 +115,12 @@ impl Root {
                 waiting: self.delegations.contains_key(&parent),
             });
         view.update(cx, |v, cx| v.set_sender(sender, cx));
+        let settled = self
+            .state
+            .thread(parent)
+            .filter(|(_, t)| t.settled)
+            .map(|(_, t)| t.settled_at);
+        view.update(cx, |v, cx| v.set_settled(settled, cx));
         let mut children: Vec<&Thread> = self
             .state
             .spaces

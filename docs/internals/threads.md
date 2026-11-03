@@ -74,7 +74,8 @@ fit in about 40,000 characters, with tool calls named but not their output.
 Text typed in the composer is saved as a draft (`AppState.drafts`) 600 ms after the last change,
 with its images, picks and worktree choice, so a restart doesn't lose it. Drafts are rows at the
 top of the sidebar, after T3 Code's. A draft started on screen gets its row once the user leaves
-it, so the sidebar doesn't change under their typing.
+it, so the sidebar doesn't change under their typing. A settled or snoozed thread's unsent
+message (`Thread.draft`) gets a row there too, since its own row is out of sight.
 
 - New thread leaves a draft with text as its row and opens an empty composer. Sending removes it.
 - The composer's own space picker moves its draft to the new space. Reaching another space's
@@ -106,7 +107,8 @@ idle agents behind. Settle and snooze replaced it.
   on screen or at work never settles by itself.
 - **Snooze** hides a thread until a time or until its agent finishes. A snoozed thread always
   keeps its session, working or not, and wakes at the top of the list marked new.
-- Opening a settled or snoozed thread doesn't bring it back; sending it a message does. Settling
+- Opening a settled or snoozed thread doesn't bring it back; sending it a message does, and so
+  does Bring back on the line that ends a settled thread's transcript. Settling
   and snoozing show a toast with Undo for five seconds.
 - Saved `archived` threads load as settled, and an archived space loads with its threads settled.
 

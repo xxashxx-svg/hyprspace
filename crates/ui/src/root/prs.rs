@@ -73,7 +73,7 @@ impl Root {
                 continue;
             }
             if let Some(t) = self.state.thread_mut(id) {
-                t.settled = true;
+                t.set_settled(true, crate::time::now_ms());
             }
             self.free(id);
             self.save();

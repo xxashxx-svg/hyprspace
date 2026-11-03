@@ -207,6 +207,14 @@ impl Transcript {
     }
 
     /// The last call of the live run that hasn't ended.
+    /// The last item a run can still be adding to. A run's changes are worked out after it ends
+    /// and can land in the middle of the next one, so they don't count.
+    pub fn tail(&self) -> Option<usize> {
+        self.items
+            .iter()
+            .rposition(|i| !matches!(i, Item::Changes { .. }))
+    }
+
     pub fn running_tool(&self) -> Option<&Tool> {
         self.run.as_ref()?;
         self.items.iter().rev().find_map(|i| match i {
@@ -364,7 +372,7 @@ impl Transcript {
                 if let Some(run) = self.run.as_mut() {
                     run.said = true;
                 }
-                match self.items.last_mut() {
+                match self.tail().and_then(|t| self.items.get_mut(t)) {
                     Some(Item::Text { source, blocks }) => {
                         source.push_str(&text);
                         *blocks = None;
@@ -375,7 +383,7 @@ impl Transcript {
                     }),
                 }
             }
-            RunEvent::Thinking { text } => match self.items.last_mut() {
+            RunEvent::Thinking { text } => match self.tail().and_then(|t| self.items.get_mut(t)) {
                 Some(Item::Thinking { text: t, .. }) => t.push_str(&text),
                 _ => self.items.push(Item::Thinking { text, open: false }),
             },
@@ -614,7 +622,12 @@ impl Transcript {
     /// The prompt of the run cut off at `cut` when nothing came back for it. The CLI may never
     /// have taken it, so a continue message would find nothing to continue.
     pub fn unanswered(&self, cut: usize) -> Option<Prompt> {
-        match self.items.get(cut.checked_sub(1)?)? {
+        let before = self.items.get(..cut)?;
+        match before
+            .iter()
+            .rev()
+            .find(|i| !matches!(i, Item::Changes { .. }))?
+        {
             Item::User { text, images, .. } => Some(Prompt {
                 text: text.clone(),
                 images: images.clone(),
@@ -630,12 +643,13 @@ impl Transcript {
         let Some(run) = &self.run else {
             return;
         };
-        match self.items.last() {
+        let tail = self.tail();
+        match tail.and_then(|t| self.items.get(t)) {
             // Claude starts once the first prompt reaches it
             Some(Item::User { steer: true, .. }) => {
                 let Some(Item::User {
                     text, images, at, ..
-                }) = self.items.pop()
+                }) = tail.map(|t| self.items.remove(t))
                 else {
                     return;
                 };
@@ -859,6 +873,44 @@ mod tests {
     }
 
     #[test]
+    fn the_last_run_s_changes_landing_mid_reply_leave_it_whole() {
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("one"));
+        t.apply(finished(RunStatus::Done, "done"));
+        // a queued prompt starts the next run before the last one's changes are worked out
+        t.prompt(&Prompt::text("two"));
+        t.apply(RunEvent::Thinking { text: "hm".into() });
+        t.apply(RunEvent::Changes {
+            before: "a".into(),
+            after: "b".into(),
+            files: Vec::new(),
+        });
+        t.apply(RunEvent::Thinking { text: "m".into() });
+        t.apply(text("Hi"));
+        t.apply(RunEvent::Changes {
+            before: "b".into(),
+            after: "c".into(),
+            files: Vec::new(),
+        });
+        t.apply(text(" there"));
+        let kinds: Vec<_> = t
+            .items
+            .iter()
+            .map(|i| match i {
+                Item::Text { source, .. } => source.clone(),
+                Item::Thinking { text, .. } => format!("thought {text}"),
+                Item::Changes { .. } => "changes".into(),
+                _ => "-".into(),
+            })
+            .collect();
+        assert_eq!(
+            kinds[3..],
+            ["-", "thought hmm", "changes", "Hi there", "changes"]
+        );
+        assert_eq!(t.tail(), Some(6));
+    }
+
+    #[test]
     fn steers_join_the_live_run_and_approvals_wait() {
         let mut t = Transcript::default();
         t.prompt(&Prompt::text("go"));
@@ -1053,6 +1105,19 @@ mod tests {
         t.apply(text("On it"));
         let cut = t.settle().unwrap();
         assert!(t.unanswered(cut).is_none());
+
+        // the run before's changes landed after the queued prompt went out
+        let mut t = Transcript::default();
+        t.prompt(&Prompt::text("one"));
+        t.apply(finished(RunStatus::Done, "done"));
+        t.prompt(&Prompt::text("two"));
+        t.apply(RunEvent::Changes {
+            before: "a".into(),
+            after: "b".into(),
+            files: Vec::new(),
+        });
+        let cut = t.settle().unwrap();
+        assert_eq!(t.unanswered(cut).unwrap().text, "two");
     }
 
     fn started() -> RunEvent {

@@ -309,6 +309,9 @@ pub struct Thread {
     /// settling existed, so those come back settled.
     #[serde(alias = "archived")]
     pub settled: bool,
+    /// When it settled, unix ms. Threads settled before this was kept have none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settled_at: Option<u64>,
     /// unix ms
     pub created: u64,
     /// When it last did something, unix ms: a turn started or ended, or it was opened. Auto-settle
@@ -375,6 +378,7 @@ impl Default for Thread {
                 run: None,
             },
             settled: false,
+            settled_at: None,
             created: 0,
             touched: 0,
             snooze: None,
@@ -394,6 +398,14 @@ impl Default for Thread {
 }
 
 impl Thread {
+    /// Settles it, or brings it back, keeping when it settled.
+    pub fn set_settled(&mut self, on: bool, now: u64) {
+        if on != self.settled {
+            self.settled_at = on.then_some(now);
+        }
+        self.settled = on;
+    }
+
     /// In the active list: neither settled nor snoozed.
     pub fn active(&self) -> bool {
         !self.settled && self.snooze.is_none()
@@ -710,6 +722,18 @@ pub enum Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thread_keeps_when_it_settled() {
+        let mut t = Thread::default();
+        t.set_settled(true, 5);
+        t.set_settled(true, 9);
+        assert_eq!((t.settled, t.settled_at), (true, Some(5)));
+        t.set_settled(false, 12);
+        assert_eq!((t.settled, t.settled_at), (false, None));
+        let old: Thread = serde_json::from_str(r#"{"id":1,"archived":true}"#).unwrap();
+        assert_eq!((old.settled, old.settled_at), (true, None));
+    }
 
     #[test]
     fn prompts_from_old_journals_load_without_a_time() {

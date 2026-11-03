@@ -196,12 +196,18 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// "default_claude_max_20x" -> "Max 20x". The tier is an internal id, not a label.
+/// "default_claude_pro" -> "Pro". The tier is an internal id, not a label.
 fn plan_label(tier: &str) -> String {
     let t = tier
         .trim_start_matches("default_")
-        .trim_start_matches("claude_")
-        .replace('_', " ");
+        .trim_start_matches("claude_");
+    // the ids kept the plans' old names when Anthropic renamed them on 30 Oct 2026
+    match t {
+        "max_5x" => return "Max".into(),
+        "max_20x" => return "Ultra".into(),
+        _ => {}
+    }
+    let t = t.replace('_', " ");
     t.split_whitespace()
         .map(title_case)
         .collect::<Vec<_>>()
@@ -753,7 +759,7 @@ mod tests {
             ],
             "extra_usage": { "is_enabled": true, "utilization": 10, "used_credits": 2.5, "monthly_limit": 5000 },
         });
-        let u = claude_shape(&d, Some("Max 20x".into()), 7);
+        let u = claude_shape(&d, Some("Ultra".into()), 7);
         let bars: Vec<_> = u
             .bars
             .iter()
@@ -791,6 +797,9 @@ mod tests {
         assert_eq!(u.bars[1].label, "This week");
         assert_eq!(codex_window_label(30 * 86_400), "This month");
         assert_eq!(codex_window_label(0), "Limit");
-        assert_eq!(plan_label("default_claude_max_20x"), "Max 20x");
+        assert_eq!(plan_label("default_claude_max_20x"), "Ultra");
+        assert_eq!(plan_label("default_claude_max_5x"), "Max");
+        assert_eq!(plan_label("default_claude_ultra"), "Ultra");
+        assert_eq!(plan_label("default_claude_pro"), "Pro");
     }
 }

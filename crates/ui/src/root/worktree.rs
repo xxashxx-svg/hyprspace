@@ -32,7 +32,7 @@ impl Root {
             }
             WorktreeAction::Remove => {
                 if let Some(t) = self.state.thread_mut(id) {
-                    t.settled = true;
+                    t.set_settled(true, crate::time::now_ms());
                     t.snooze = None;
                     t.pinned = None;
                 }

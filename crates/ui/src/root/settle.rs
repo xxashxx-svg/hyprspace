@@ -145,7 +145,7 @@ impl Root {
             self.unpeek(thread);
         }
         if let Some(t) = self.state.thread_mut(thread) {
-            t.settled = on;
+            t.set_settled(on, now_ms());
             if on {
                 t.snooze = None;
                 t.pinned = None;
@@ -228,7 +228,7 @@ impl Root {
             },
         });
         if let Some(t) = self.state.thread_mut(u.thread) {
-            t.settled = u.settled;
+            t.set_settled(u.settled, now_ms());
             t.snooze = u.snooze;
         }
         self.leave(window, cx);
@@ -249,7 +249,7 @@ impl Root {
         if let Some(t) = self.state.thread_mut(thread)
             && !t.active()
         {
-            t.settled = false;
+            t.set_settled(false, now_ms());
             t.wake(now_ms());
             self.unpeek(thread);
             self.reveal = Some(thread);
@@ -423,7 +423,7 @@ impl Root {
         for s in self.state.spaces.iter_mut().filter(|s| s.machine.is_none()) {
             for t in &mut s.threads {
                 if t.settles(now, after) && !busy.contains(&t.id) && shown != Some(t.id) {
-                    t.settled = true;
+                    t.set_settled(true, now);
                     settled.push(t.id);
                 }
             }

@@ -77,12 +77,10 @@ pub fn view(
     });
     // a reply still coming in goes through the streaming parser, so its unfinished markup never
     // shows
-    let live = match v.model.items.last() {
-        Some(Item::Text { source, .. }) if v.model.elapsed().is_some() => {
-            Some((v.model.items.len() - 1, source.len()))
-        }
+    let live = v.model.tail().and_then(|t| match &v.model.items[t] {
+        Item::Text { source, .. } if v.model.elapsed().is_some() => Some((t, source.len())),
         _ => None,
-    };
+    });
     if live.is_none() || live != v.partial_at {
         v.partial = live.and_then(|(ix, end)| match v.model.items.get(ix) {
             Some(Item::Text { source, .. }) => {
@@ -514,6 +512,7 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             .child("New")
             .child(div().flex_1().h(px(1.)).bg(colors::ink(0.1)))
             .into_any_element(),
+        Row::Settled => settled(v, cx),
         Row::Working => {
             let t = v.working.filter(|_| slide::animations()).map_or(1., |at| {
                 ease_out((at.elapsed().as_secs_f32() / WORKING_IN.as_secs_f32()).min(1.))
@@ -631,7 +630,11 @@ pub(super) fn replan(v: &mut TranscriptView) {
     let rows = rows::split(rows::plan(&v.model.items, v.loading, live, &open), |ix| {
         reply_blocks(v, ix).map_or(1, |b| rows::rows_for(b))
     });
-    v.sync_rows(rows::mark_new(rows, v.unread));
+    let mut rows = rows::mark_new(rows, v.unread);
+    if v.settled.is_some() && !live && !v.loading {
+        rows.push(Row::Settled);
+    }
+    v.sync_rows(rows);
 }
 
 /// The blocks a reply draws: its streaming parse while it comes in.
@@ -774,6 +777,39 @@ fn working(v: &TranscriptView) -> AnyElement {
                     .child("to stop"),
             )
         })
+        .into_any_element()
+}
+
+/// "Settled 13d ago · Bring back", at the end of a settled thread.
+fn settled(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> AnyElement {
+    let when = match v.settled.flatten() {
+        Some(at) => match crate::time::ago(at, crate::time::now_ms()).as_str() {
+            "now" => "Settled just now".to_string(),
+            ago => format!("Settled {ago} ago"),
+        },
+        None => "Settled".to_string(),
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(7.))
+        .text_size(px(12.5))
+        .text_color(colors::text3())
+        .child(icon("circle-check", 13., colors::text3()))
+        .child(when)
+        .child("·")
+        .child(
+            div()
+                .id("bring-back")
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text2())
+                .cursor_pointer()
+                .hover(|s| s.text_color(colors::text1()))
+                .child("Bring back")
+                .on_click(
+                    cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(TranscriptEvent::BringBack)),
+                ),
+        )
         .into_any_element()
 }
 
@@ -1198,7 +1234,7 @@ fn plain(source: &str) -> String {
 /// A reply still coming in: the last thing a live run has said.
 fn streaming(v: &TranscriptView, ix: usize) -> bool {
     v.partial.as_ref().is_some_and(|(p, _)| *p == ix)
-        || (v.model.elapsed().is_some() && ix + 1 == v.model.items.len())
+        || (v.model.elapsed().is_some() && v.model.tail() == Some(ix))
 }
 
 fn hover_copy(ix: usize, text: &str) -> gpui::Div {

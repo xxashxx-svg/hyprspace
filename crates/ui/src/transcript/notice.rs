@@ -29,8 +29,11 @@ impl TranscriptView {
             }),
             Status::Done => run
                 .iter()
+                .enumerate()
                 .rev()
-                .find_map(|i| match i {
+                // the run before's changes, landed after this prompt, aren't this run's
+                .filter(|(i, _)| super::rows::late(items, from + i).is_none())
+                .find_map(|(_, i)| match i {
                     Item::Changes { files, .. } if files.len() == 1 => Some("Edited 1 file".into()),
                     Item::Changes { files, .. } if !files.is_empty() => {
                         Some(format!("Edited {} files", files.len()))

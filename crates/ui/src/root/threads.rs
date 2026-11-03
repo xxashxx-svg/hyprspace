@@ -529,6 +529,14 @@ impl Root {
                 self.work.open = Some(*target);
                 return cx.notify();
             }
+            TranscriptEvent::BringBack => {
+                self.ask_host(thread, |thread| hyprspace_proto::phone::Ask::Settle {
+                    thread,
+                    on: false,
+                });
+                self.bring_back(thread);
+                return cx.notify();
+            }
             _ => {}
         }
         if self.machines.remote(thread).is_some() {
@@ -562,7 +570,8 @@ impl Root {
             TranscriptEvent::Rename(_)
             | TranscriptEvent::Settings(_)
             | TranscriptEvent::Reference(_)
-            | TranscriptEvent::GoTo(_) => {}
+            | TranscriptEvent::GoTo(_)
+            | TranscriptEvent::BringBack => {}
             TranscriptEvent::NewThread => {
                 self.work.compose = self.state.thread(thread).map(|(s, _)| s.id);
             }
@@ -645,6 +654,8 @@ impl Root {
                     t.draft_images = images.clone();
                     t.draft_cites = cites.clone();
                     self.save();
+                    // a settled thread's draft shows at the top of the sidebar
+                    cx.notify();
                 }
             }
             TranscriptEvent::Queue(queue) => {

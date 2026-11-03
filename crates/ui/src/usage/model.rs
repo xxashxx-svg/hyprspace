@@ -445,7 +445,7 @@ mod tests {
         r.claude = Some(LiveUsage {
             ok: true,
             at: NOW,
-            plan: Some("Max 20x".into()),
+            plan: Some("Ultra".into()),
             bars: vec![bar("session", 40.), bar("weekly", 5.)],
             ..Default::default()
         });

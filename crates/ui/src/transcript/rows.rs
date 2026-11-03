@@ -26,6 +26,8 @@ pub enum Row {
         ms: Option<u64>,
     },
     Working,
+    /// The end of a settled thread: when it settled, and a way back.
+    Settled,
     /// Where what came while the thread was off screen starts.
     New,
 }
@@ -40,12 +42,22 @@ fn todo(item: &Item) -> bool {
     matches!(item, Item::Tool { tool, .. } if ask::named(tool).is_some_and(|(n, _)| n == ask::TODO))
 }
 
+/// Where the stretch of quiet items from `start` ends. The last run's changes can land between
+/// two steps of the next one; the stretch carries on past them, since they show above its prompt.
 pub fn quiet_end(items: &[Item], start: usize) -> usize {
-    start + items[start..].iter().take_while(|i| quiet(i)).count()
+    let mut end = start;
+    for (ix, item) in items.iter().enumerate().skip(start) {
+        if quiet(item) {
+            end = ix + 1;
+        } else if late(items, ix).is_none() {
+            break;
+        }
+    }
+    end
 }
 
 // a run's changes are worked out after it ends, so they can land after the next prompt
-fn late(all: &[Item], ix: usize) -> Option<usize> {
+pub(super) fn late(all: &[Item], ix: usize) -> Option<usize> {
     if !matches!(all[ix], Item::Changes { .. }) {
         return None;
     }
@@ -261,10 +273,15 @@ pub fn plan(all: &[Item], loading: bool, live: bool, open: &HashSet<usize>) -> V
         rows.insert(at, Row::Item { ix, user: false });
     }
     if live {
-        let first = all
+        let after = all
             .iter()
             .rposition(|i| matches!(i, Item::Finished { .. }))
             .map_or(0, |f| f + 1);
+        // the last run's changes land after it ends, so they never start the live one
+        let first = (after..all.len())
+            .find(|&j| matches!(all[j], Item::User { .. }))
+            .or_else(|| (after..all.len()).find(|&j| !matches!(all[j], Item::Changes { .. })))
+            .unwrap_or(after);
         let at = match all.get(first) {
             Some(Item::User { .. }) => rows
                 .iter()
@@ -361,6 +378,64 @@ mod tests {
                 Row::Quiet(3),
             ]
         );
+        let changes = || Item::Changes {
+            before: "a".into(),
+            after: "b".into(),
+            files: Vec::new(),
+            all: false,
+            undo: super::super::model::Undo::Ready,
+        };
+        // the last run's changes, worked out once it ended, came in before the next prompt
+        let next = [
+            user(),
+            reply("hi"),
+            finished(RunStatus::Done),
+            changes(),
+            user(),
+            call("ls"),
+        ];
+        assert_eq!(
+            plan(&next, false, true, &open),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Item { ix: 1, user: false },
+                Row::Item { ix: 3, user: false },
+                Row::Item { ix: 4, user: true },
+                Row::Working,
+                Row::Quiet(5),
+            ]
+        );
+        // or between two steps of the next run, which stay one stretch
+        let mid = [
+            user(),
+            reply("hi"),
+            finished(RunStatus::Done),
+            user(),
+            call("ls"),
+            changes(),
+            call("pwd"),
+        ];
+        assert_eq!(
+            plan(&mid, false, true, &open),
+            [
+                Row::Item { ix: 0, user: true },
+                Row::Item { ix: 1, user: false },
+                Row::Item { ix: 5, user: false },
+                Row::Item { ix: 3, user: true },
+                Row::Working,
+                Row::Quiet(4),
+            ]
+        );
+        assert_eq!(quiet_end(&mid, 4), 7);
+        // a run with no prompt has nowhere else to show them, so they split its steps
+        let woke = [
+            user(),
+            finished(RunStatus::Done),
+            call("ls"),
+            changes(),
+            call("pwd"),
+        ];
+        assert_eq!(quiet_end(&woke, 2), 3);
     }
 
     #[test]

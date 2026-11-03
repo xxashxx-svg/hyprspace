@@ -65,6 +65,10 @@ fn steps(items: &[Item], start: usize, end: usize) -> Vec<Step> {
     let mut out = Vec::new();
     let mut ix = start;
     while ix < end {
+        if matches!(items[ix], Item::Changes { .. }) {
+            ix += 1;
+            continue;
+        }
         let n = items[ix..end].iter().take_while(|i| explores(i)).count();
         if n >= 2 {
             out.push(Step::Explore(ix..ix + n));
@@ -332,7 +336,7 @@ fn one(v: &TranscriptView, ix: usize, cx: &mut Context<TranscriptView>) -> AnyEl
     match &v.model.items[ix] {
         Item::Thinking { text, open } => {
             let open = *open;
-            let working = v.model.running() && ix + 1 == v.model.items.len();
+            let working = v.model.running() && v.model.tail() == Some(ix);
             let id: ElementId = ("thinking", ix).into();
             let lit = if working { Lit::On } else { Lit::Off };
             let head = line(
