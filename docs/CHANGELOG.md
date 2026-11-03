@@ -4,6 +4,15 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.45 — 2026-11-03
+
+- Replies no longer flicker as they stream: numbered lists, bold labels, headings, code fences, links and pictures show once they're whole
+- The view glides steadily as tables and lists arrive, and keeps your place when a run ends
+- Clicking or double-clicking a step no longer selects text or shows Cite
+- A small touchpad bump or a sideways swipe over a table no longer stops the view following the reply
+- A running command shows its newest output lines
+- Long error messages wrap inside their card
+
 ## 0.24.44 — 2026-11-03
 
 - The title bar shows the project, the thread that started this one, and the title. Click the title for its menu, double-click to rename
