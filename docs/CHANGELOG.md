@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.46 — 2026-11-03
+
+- The working line sits under your message even when the last run's edits land after it
+- A reply no longer splits in two, and its steps stay together, when the last run's edits land while it streams
+- A run's summary no longer counts the edits of the run before it
+- Resuming after the app closed mid-run sends your queued prompt again instead of a plain continue
+- A settled thread ends with when it settled and Bring back
+- A message typed in a settled or snoozed thread shows as a draft at the top of the sidebar
+- The usage card names Claude's plans Max and Ultra, as Anthropic now calls them
+
 ## 0.24.45 — 2026-11-03
 
 - Replies no longer flicker as they stream: numbered lists, bold labels, headings, code fences, links and pictures show once they're whole
