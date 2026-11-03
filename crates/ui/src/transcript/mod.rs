@@ -1730,7 +1730,7 @@ impl TranscriptView {
                 self.appear = Some((Instant::now(), None));
             }
         } else if same < self.rows.len() || rows.len() > same {
-            self.list.splice(same..self.rows.len(), rows.len() - same);
+            motion::splice(&self.list, &self.rows, &rows, same);
             // the last row holds the room under the composer, so the row before the change may
             // have gained or lost it
             if same > 0 {

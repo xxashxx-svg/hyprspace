@@ -37,7 +37,13 @@ struct Selection {
     spans: Vec<(Arc<str>, Range<usize>, SharedString)>,
     seen: Vec<(Arc<str>, SharedString)>,
     at: Option<Point<Pixels>>,
+    /// Where the press was. A drag starts only once the pointer leaves it.
+    from: Point<Pixels>,
 }
+
+/// How far the pointer moves before a press becomes a drag, so a click that wobbles, or text
+/// gliding under a still pointer, selects nothing.
+const DRAG: f32 = 3.;
 
 struct Painted {
     surface: Arc<str>,
@@ -52,6 +58,8 @@ thread_local! {
     static PAINTED: RefCell<Vec<Painted>> = const { RefCell::new(Vec::new()) };
     /// The transcript painting right now, set by its `reset`.
     static SURFACE: RefCell<Arc<str>> = RefCell::new(Arc::from(""));
+    /// The text element the last press landed on, if it landed on text.
+    static LAST: RefCell<Option<Arc<str>>> = const { RefCell::new(None) };
 }
 
 /// Paint first in a transcript, before any of its text: forgets the transcript's elements from
@@ -244,7 +252,7 @@ pub fn wrap(key: &str, text: SharedString, layout: TextLayout, body: AnyElement)
                     && e.button == MouseButton::Left
                     && hitbox.is_hovered(window)
                     && layout.bounds().contains(&e.position)
-                    && press(&surface, e)
+                    && press(&surface, e, true)
                 {
                     window.refresh();
                 }
@@ -277,7 +285,7 @@ fn track(window: &mut gpui::Window, surface: Arc<str>, area: gpui::Hitbox) {
                 return;
             }
             let changed = match area.is_hovered(window) {
-                true => press(&surface, e),
+                true => press(&surface, e, false),
                 false => clear(&surface),
             };
             if changed {
@@ -312,7 +320,10 @@ fn index(layout: &TextLayout, at: Point<Pixels>) -> usize {
 
 /// A press in the transcript: Shift grows the selection to it, else one starts at the nearest
 /// element, a word on a double click and the whole element on a triple.
-fn press(surface: &Arc<str>, e: &MouseDownEvent) -> bool {
+/// A double or triple click picks a word or an element only when all its presses landed on that
+/// text. One that began beside it, as on a step's line that opened and slid text under the
+/// pointer, is a click on what it hit.
+fn press(surface: &Arc<str>, e: &MouseDownEvent, on_text: bool) -> bool {
     if e.modifiers.shift && extend(surface, e.position) {
         return true;
     }
@@ -327,12 +338,20 @@ fn press(surface: &Arc<str>, e: &MouseDownEvent) -> bool {
     let Some((key, text, ix)) = near else {
         return clear(surface);
     };
+    let hit = on_text.then(|| key.clone());
+    let before = LAST.with(|l| l.replace(hit.clone()));
+    let clicks = if hit.is_some() && before == hit {
+        e.click_count
+    } else {
+        1
+    };
     begin(
         surface,
         &key,
         &text,
-        pick(&text, ix, e.click_count),
-        e.click_count,
+        pick(&text, ix, clicks),
+        clicks,
+        e.position,
     );
     true
 }
@@ -376,6 +395,7 @@ fn begin(
     text: &SharedString,
     range: Range<usize>,
     clicks: usize,
+    from: Point<Pixels>,
 ) {
     let seen = PAINTED.with(|p| {
         p.borrow()
@@ -394,6 +414,7 @@ fn begin(
             spans: vec![(key.clone(), range, text.clone())],
             seen,
             at: None,
+            from,
         })
     });
 }
@@ -415,6 +436,7 @@ fn aim(surface: &Arc<str>, at: Point<Pixels>) -> bool {
     SELECTION.with(|s| {
         let mut s = s.borrow_mut();
         match s.as_mut().filter(|s| s.surface == *surface && s.dragging) {
+            Some(sel) if sel.at.is_none() && (at - sel.from).magnitude() < DRAG as f64 => false,
             Some(sel) => {
                 sel.at = Some(at);
                 true

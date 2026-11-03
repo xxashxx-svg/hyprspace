@@ -281,8 +281,12 @@ pub fn view(
                     }),
                 )
                 .on_scroll_wheel(cx.listener(|v, e: &ScrollWheelEvent, _, cx| {
-                    let dy = e.delta.pixel_delta(px(20.)).y;
-                    v.follow.wheel(dy > px(0.));
+                    let d = e.delta.pixel_delta(px(20.));
+                    let dy = d.y;
+                    // a sideways swipe over a wide table carries a little vertical drift
+                    if dy.abs() > d.x.abs() {
+                        v.follow.scrolled(dy);
+                    }
                     stir_rail(v, dy, cx);
                     cx.notify();
                 }))
@@ -830,7 +834,8 @@ fn jump(label: String, dock: f32, cx: &mut Context<TranscriptView>) -> AnyElemen
 }
 
 pub(super) fn enter(v: &TranscriptView, ix: usize, row: AnyElement) -> AnyElement {
-    let Some(at) = v.born.get(&ix) else {
+    // a streaming reply fades in by its own blocks
+    let Some(at) = v.born.get(&ix).filter(|_| !v.fade.has(ix)) else {
         return row;
     };
     let t = ease_out((at.elapsed().as_secs_f32() / ENTER.as_secs_f32()).min(1.));
@@ -1510,6 +1515,8 @@ pub(super) fn item(
                 )
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .flex()
                         .flex_col()
                         .gap_1()

@@ -448,7 +448,10 @@ fn call(
         }),
     );
     let indent = size + 8.;
-    let shown = done.as_ref().map_or(live.as_str(), |(_, out)| out.as_str());
+    // a command still running shows its newest lines; its first ones scrolled off long ago
+    let shown = done
+        .as_ref()
+        .map_or(crate::clip::tail(live), |(_, out)| out.as_str());
     let body = tool_body(&key, t, shown, *open, indent, cx);
     let command = matches!(t, Tool::Command { .. });
     let well = match done {

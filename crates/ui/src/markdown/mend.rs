@@ -5,6 +5,7 @@
 /// `text` with its unfinished end mended. A finished reply is never passed through this: a lone
 /// `*` in it may be meant.
 pub fn mend(text: &str) -> String {
+    let text = hold_marker(text);
     if fenced(text) {
         return text.to_string();
     }
@@ -14,6 +15,9 @@ pub fn mend(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 4);
     out.push_str(head);
     out.push_str(&close(tail));
+    // a span dropped for having nothing in it can leave a bare marker, as `- ` from "- `"
+    let kept = hold_marker(&out).len();
+    out.truncate(kept);
     out
 }
 
@@ -27,6 +31,29 @@ fn fenced(text: &str) -> bool {
         .count()
         % 2
         == 1
+}
+
+/// A last line that is only a marker so far, like `2.`, `-`, `#` or a fence's backticks, waits
+/// for what follows it. Drawn now it would be a stray number on the line above, a heading
+/// underline or an empty block.
+fn hold_marker(text: &str) -> &str {
+    let start = text.rfind('\n').map_or(0, |i| i + 1);
+    let whole = text[start..].trim();
+    // inside a quote the marker comes after its `>`s
+    let line = whole.trim_start_matches(['>', ' ']);
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    let bare = ((1..=9).contains(&digits) && matches!(&line[digits..], "" | "." | ")"))
+        || matches!(
+            line,
+            "-" | "--" | "*" | "+" | "_" | "__" | ">" | "`" | "``" | "~" | "~~" | "!"
+        )
+        || ((1..=6).contains(&line.len()) && line.bytes().all(|b| b == b'#'))
+        || line.starts_with("```")
+        || line.starts_with("~~~")
+        // a tag still being written, like `</detail`
+        || (line.starts_with('<') && !line.contains('>'))
+        || (line.is_empty() && !whole.is_empty());
+    if bare { &text[..start] } else { text }
 }
 
 /// Where the last block starts: just past the last blank line.
@@ -67,16 +94,25 @@ fn rule(line: &str) -> bool {
         && l.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
 }
 
-/// A link waits until it is whole: from an unclosed `[`, or a `](` with no `)` after it yet.
+/// A link waits until it is whole: from an unclosed `[`, a `]` that may yet have `(` after it,
+/// or a `](` with no `)` after it yet. A task's box, `[ ]` or `[x]`, shows as it is.
 fn hold_link(tail: &str) -> &str {
     let Some(open) = tail.rfind('[') else {
         return tail;
     };
     let after = &tail[open..];
+    // a picture's `!` waits with its link
+    let from = if tail[..open].ends_with('!') {
+        open - 1
+    } else {
+        open
+    };
     match after.find(']') {
-        None => &tail[..open],
+        None => &tail[..from],
+        Some(_) if matches!(after, "[ ]" | "[x]" | "[X]") => tail,
+        Some(close) if after.len() == close + 1 => &tail[..from],
         Some(close) if after[close..].starts_with("](") && !after[close..].contains(')') => {
-            &tail[..open]
+            &tail[..from]
         }
         _ => tail,
     }
@@ -87,6 +123,7 @@ fn hold_link(tail: &str) -> &str {
 fn close(tail: &str) -> String {
     let mut open: Vec<(&str, usize)> = Vec::new();
     let mut code = false;
+    let mut loose = false;
     let mut i = 0;
     while i < tail.len() {
         let rest = &tail[i..];
@@ -108,31 +145,46 @@ fn close(tail: &str) -> String {
             i += step;
             continue;
         }
-        if let Some(m) = ["**", "~~"].into_iter().find(|m| rest.starts_with(m)) {
-            toggle(&mut open, m, i);
+        let before = tail[..i].chars().next_back();
+        // an underscore inside a word, as in snake_case, is never emphasis
+        let in_word = before.is_some_and(char::is_alphanumeric);
+        if let Some(m) = ["**", "~~", "__"].into_iter().find(|m| rest.starts_with(m)) {
+            if m != "__" || !in_word || open.iter().any(|(o, _)| *o == m) {
+                toggle(&mut open, m, i);
+            }
             i += 2;
             continue;
         }
-        if let Some(rest) = rest.strip_prefix('*') {
-            let before = tail[..i].chars().next_back();
-            let after = rest.chars().next();
+        if let Some(m) = ["*", "_"].into_iter().find(|m| rest.starts_with(m)) {
+            let after = rest[1..].chars().next();
             let opens = after.is_some_and(|c| !c.is_whitespace())
                 && before.is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation());
             let closes = before.is_some_and(|c| !c.is_whitespace());
-            if open.iter().any(|(m, _)| *m == "*") && closes {
-                toggle(&mut open, "*", i);
-            } else if opens {
-                open.push(("*", i));
+            if open.iter().any(|(o, _)| *o == m) && closes {
+                toggle(&mut open, m, i);
+            } else if opens && !(m == "_" && in_word) {
+                open.push((m, i));
+            } else {
+                loose = i + 1 == tail.len()
+                    && (m == "*" || !in_word || open.iter().any(|(o, _)| *o == "__"));
             }
+        } else if rest.starts_with('~') {
+            loose = i + 1 == tail.len();
         }
         i += step;
     }
     let mut out = tail.to_string();
+    // a `*` or `~` at the very end that opens or closes nothing yet, like the first half of `**`
+    if loose {
+        out.pop();
+    }
     for (m, at) in open.iter().rev() {
-        if out[at + m.len()..].trim().is_empty() {
+        let body = out[at + m.len()..].trim_end().len();
+        if body == 0 {
             out.truncate(*at);
         } else {
-            out.push_str(m);
+            // a closer after a space doesn't close, so it goes before the space
+            out.insert_str(at + m.len() + body, m);
         }
     }
     out
@@ -158,6 +210,27 @@ mod tests {
         assert_eq!(mend("**bold `code"), "**bold `code`**");
         assert_eq!(mend("Then **"), "Then ");
         assert_eq!(mend("and `"), "and ");
+        assert_eq!(mend("**Tested*"), "**Tested**");
+        assert_eq!(mend("**Not "), "**Not** ");
+        assert_eq!(mend("~~gone~"), "~~gone~~");
+        assert_eq!(mend("**a \\*"), "**a \\***");
+    }
+
+    #[test]
+    fn a_bare_marker_line_waits() {
+        assert_eq!(mend("What changed:\n-"), "What changed:\n");
+        assert_eq!(mend("Steps:\n1"), "Steps:\n");
+        assert_eq!(mend("1. one\n2."), "1. one\n");
+        assert_eq!(mend("1. one\n   - "), "1. one\n");
+        assert_eq!(mend("Intro\n\n## "), "Intro\n\n");
+        assert_eq!(mend("Code:\n\n```ru"), "Code:\n\n");
+        assert_eq!(mend("```\nlet a;\n``"), "```\nlet a;\n");
+        assert_eq!(mend("In 2024 it"), "In 2024 it");
+        assert_eq!(mend("a\n2024 was"), "a\n2024 was");
+        assert_eq!(mend("> quoted\n> 2."), "> quoted\n");
+        assert_eq!(mend("log\n</detail"), "log\n");
+        assert_eq!(mend("See:\n\n![flow](docs/fl"), "See:\n\n");
+        assert_eq!(mend("Wow!"), "Wow!");
     }
 
     #[test]
@@ -173,6 +246,7 @@ mod tests {
     #[test]
     fn links_wait_until_whole() {
         assert_eq!(mend("see [the docs"), "see ");
+        assert_eq!(mend("see [the docs]"), "see ");
         assert_eq!(mend("see [the docs](https://exa"), "see ");
         assert_eq!(
             mend("see [docs](https://a.b) now"),

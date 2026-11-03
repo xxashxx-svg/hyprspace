@@ -6,6 +6,8 @@
 mod code;
 mod fade;
 pub mod find;
+#[cfg(test)]
+mod flicker;
 pub mod links;
 mod mend;
 mod render;

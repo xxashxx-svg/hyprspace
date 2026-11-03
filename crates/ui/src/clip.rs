@@ -25,6 +25,14 @@ pub fn long(key: &str, text: &str) -> Option<(String, usize)> {
     Some((format!("{key}-{:x}", h.finish()), n - LINES))
 }
 
+/// The newest lines of `text`, as many as a cut block shows.
+pub fn tail(text: &str) -> &str {
+    let text = text.trim_end();
+    text.rmatch_indices('\n')
+        .nth(LINES - 1)
+        .map_or(text, |(i, _)| &text[i + 1..])
+}
+
 // a cut block lays out only what shows; a log of thousands of lines would be shaped every frame
 pub fn head(text: &str) -> &str {
     text.match_indices('\n')
@@ -95,5 +103,15 @@ mod tests {
         let a: String = (0..20).map(|i| format!("{i}\n")).collect();
         let b = format!("{a}more\nand more\n");
         assert_eq!(long("k", &a).unwrap().0, long("k", &b).unwrap().0);
+    }
+
+    #[test]
+    fn a_running_log_shows_its_newest_lines() {
+        let log: String = (0..40).map(|i| format!("{i}\n")).collect();
+        let shown = tail(&log);
+        assert_eq!(shown.lines().count(), LINES);
+        assert!(shown.starts_with("24\n") && shown.ends_with("39"));
+        assert!(long("k", shown).is_none());
+        assert_eq!(tail("one\ntwo\n"), "one\ntwo");
     }
 }

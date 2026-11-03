@@ -4,44 +4,57 @@ use super::Block;
 
 const FADE: Duration = Duration::from_millis(600);
 
-/// A streaming reply's top-level blocks, each fading in once as it first shows. Text that joins
-/// a block already there shows as it is.
+/// Streaming replies' top-level blocks, each fading in once as it first shows. Text that joins a
+/// block already there shows as it is. A reply keeps fading after the next one starts.
 #[derive(Default)]
 pub struct Fade {
-    ix: Option<usize>,
-    born: Vec<Option<Instant>>,
+    replies: Vec<(usize, Vec<Option<Instant>>)>,
 }
 
 impl Fade {
     /// `fresh` is a reply that started while on screen; one already there keeps its blocks solid.
     pub fn grow(&mut self, ix: usize, blocks: &[Block], fresh: bool) {
-        if self.ix != Some(ix) {
-            let old = if fresh { 0 } else { blocks.len() };
-            *self = Fade {
-                ix: Some(ix),
-                born: vec![None; old],
-            };
-        }
-        self.born.truncate(blocks.len());
-        self.born.resize(blocks.len(), Some(Instant::now()));
+        let at = match self.replies.iter().position(|(i, _)| *i == ix) {
+            Some(at) => at,
+            None => {
+                let old = if fresh { 0 } else { blocks.len() };
+                self.replies.push((ix, vec![None; old]));
+                self.replies.len() - 1
+            }
+        };
+        let born = &mut self.replies[at].1;
+        born.truncate(blocks.len());
+        born.resize(blocks.len(), Some(Instant::now()));
+    }
+
+    /// Whether the reply at `ix` is fading in.
+    pub fn has(&self, ix: usize) -> bool {
+        self.replies.iter().any(|(i, _)| *i == ix)
     }
 
     pub fn tick(&mut self) -> bool {
-        for at in &mut self.born {
-            if at.is_some_and(|t| t.elapsed() >= FADE) {
-                *at = None;
+        for (_, born) in &mut self.replies {
+            for at in born.iter_mut() {
+                if at.is_some_and(|t| t.elapsed() >= FADE) {
+                    *at = None;
+                }
             }
         }
-        self.born.iter().any(Option::is_some)
+        // the reply still coming in stays, so a block it adds later counts as new
+        let last = self.replies.last().map(|(i, _)| *i);
+        self.replies
+            .retain(|(i, born)| Some(*i) == last || born.iter().any(Option::is_some));
+        self.replies
+            .iter()
+            .any(|(_, b)| b.iter().any(Option::is_some))
     }
 
     /// Each top-level block's opacity, for the reply at `ix`.
     pub fn at(&self, ix: usize) -> Vec<f32> {
-        if self.ix != Some(ix) {
+        let Some((_, born)) = self.replies.iter().find(|(i, _)| *i == ix) else {
             return Vec::new();
-        }
-        self.born
-            .iter()
+        };
+        born.iter()
             .map(|at| {
                 at.map_or(1., |t| {
                     ease_out((t.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.))
@@ -95,6 +108,9 @@ mod tests {
         assert_eq!(fading(&f), [0]);
         f.grow(3, &parse("Fresh reply"), true);
         assert_eq!(fading(&f), [0]);
+        f.grow(5, &parse("The next reply"), true);
+        assert_eq!(fading(&f), [0], "the first keeps fading");
+        assert!(f.has(5));
     }
 
     #[test]

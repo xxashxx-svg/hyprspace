@@ -25,6 +25,8 @@ pub struct Follow {
     last: Option<Instant>,
     wheel: Pixels,
     wheeled: Option<Instant>,
+    /// How far the wheel has gone up since the view last kept to the end.
+    climb: Pixels,
     /// Until then the view keeps to the end without gliding, while a thread just put on screen
     /// measures its rows.
     calm: Option<Instant>,
@@ -39,17 +41,39 @@ impl Default for Follow {
             last: None,
             wheel: px(0.),
             wheeled: None,
+            climb: px(0.),
             calm: None,
         }
     }
 }
 
 const EASE: f32 = 0.06;
-/// The glide to the end: its spring, in radians a second, settles in about a quarter second, and
-/// it never moves faster than this many px a second.
-const SPRING: f32 = 18.;
+/// The glide to the end: its spring, in radians a second, settles in about half a second, so a
+/// table row or list item landing whole carries into the next instead of lurching, and it never
+/// moves faster than this many px a second.
+const SPRING: f32 = 9.;
 const GLIDE_MAX: f32 = 1400.;
 const SETTLE: Duration = Duration::from_millis(300);
+/// How far up the wheel goes before the view lets go of the end. A touchpad's momentum can end in
+/// a small kick back, which the glide takes back instead.
+const CLIMB: f32 = 8.;
+
+/// Replaces `old`'s rows from `same` on with `new`'s. GPUI sends a view whose top row is inside a
+/// splice to the splice's start, so the top row, when it is still a row, keeps its place.
+pub fn splice<R: PartialEq>(list: &ListState, old: &[R], new: &[R], same: usize) {
+    let top = list.logical_scroll_top();
+    let kept = old
+        .get(top.item_ix)
+        .filter(|_| top.item_ix >= same)
+        .and_then(|r| new.iter().position(|n| n == r));
+    list.splice(same..old.len(), new.len() - same);
+    if let Some(item_ix) = kept {
+        list.scroll_to(ListOffset {
+            item_ix,
+            offset_in_item: top.offset_in_item,
+        });
+    }
+}
 
 fn y(list: &ListState) -> Pixels {
     -list.scroll_px_offset_for_scrollbar().y
@@ -101,7 +125,21 @@ impl Follow {
         self.velocity = 0.;
         self.wheel = px(0.);
         self.stick = true;
+        self.climb = px(0.);
         list.scroll_to_end();
+    }
+
+    /// A turn of the wheel the list scrolls by itself, `up` px towards the top.
+    pub fn scrolled(&mut self, up: Pixels) {
+        if up <= px(0.) {
+            self.climb = px(0.);
+            self.wheel(false);
+            return;
+        }
+        self.climb += up;
+        if self.climb > px(CLIMB) {
+            self.wheel(true);
+        }
     }
 
     pub fn wheel(&mut self, up: bool) {
@@ -226,6 +264,7 @@ impl Follow {
         if !self.stick {
             if max > px(0.) && y >= max - px(1.) {
                 self.stick = true;
+                self.climb = px(0.);
             }
             return;
         }
@@ -265,5 +304,44 @@ impl Follow {
 
     pub fn away(&self, list: &ListState) -> bool {
         !self.stick && self.trip.is_none() && y(list) < max(list) - px(48.)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_splice_keeps_the_row_at_the_top_in_place() {
+        let list = ListState::new(5, gpui::ListAlignment::Top, px(600.));
+        list.scroll_to(ListOffset {
+            item_ix: 3,
+            offset_in_item: px(40.),
+        });
+        // the run ended: its live line and steps fold into one line above the reply
+        splice(&list, &[0, 1, 2, 3, 4], &[0, 9, 3, 4], 1);
+        let top = list.logical_scroll_top();
+        assert_eq!((top.item_ix, top.offset_in_item), (2, px(40.)));
+
+        list.scroll_to_end();
+        splice(&list, &[0, 9, 3, 4], &[0, 9, 3, 4, 5], 4);
+        assert_eq!(
+            list.logical_scroll_top().item_ix,
+            5,
+            "the end stays the end"
+        );
+    }
+
+    #[test]
+    fn a_small_kick_back_keeps_to_the_end() {
+        let mut f = Follow::default();
+        f.scrolled(px(3.));
+        f.scrolled(px(3.));
+        assert!(f.stick, "a touchpad's bump");
+        f.scrolled(px(-1.));
+        f.scrolled(px(6.));
+        assert!(f.stick, "a turn down starts the count again");
+        f.scrolled(px(6.));
+        assert!(!f.stick, "a real turn up lets go");
     }
 }
