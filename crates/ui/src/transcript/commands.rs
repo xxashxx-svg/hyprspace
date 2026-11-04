@@ -232,7 +232,7 @@ impl TranscriptView {
             Own::Status | Own::Version => self.about(own == Own::Status),
             Own::Copy => self.copy_last(cx),
             Own::Export => {
-                cx.write_to_clipboard(ClipboardItem::new_string(markdown(&self.model.items)));
+                crate::clipboard::write(cx, ClipboardItem::new_string(markdown(&self.model.items)));
                 self.model.note("Copied the conversation as Markdown.");
             }
             Own::Branch => self.branch(cx),
@@ -406,7 +406,7 @@ impl TranscriptView {
         });
         match last {
             Some(text) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                crate::clipboard::write(cx, ClipboardItem::new_string(text));
                 self.model.note("Copied the last reply.");
             }
             None => self.model.note("There's no reply to copy yet."),

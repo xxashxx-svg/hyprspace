@@ -4,6 +4,7 @@
 mod assets;
 mod attach;
 mod clip;
+mod clipboard;
 mod colors;
 mod composer;
 mod dock;

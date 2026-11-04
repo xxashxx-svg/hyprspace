@@ -53,12 +53,12 @@ impl TerminalView {
         let Some(text) = self.emu().selection_text() else {
             return false;
         };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        crate::clipboard::write(cx, ClipboardItem::new_string(text));
         true
     }
 
     pub(super) fn paste(&mut self, cx: &mut Context<Self>) {
-        let Some(item) = cx.read_from_clipboard() else {
+        let Some(item) = crate::clipboard::read(cx) else {
             return;
         };
         match item.text().filter(|t| !t.is_empty()) {
@@ -71,9 +71,7 @@ impl TerminalView {
 
     /// Alt+V: the image on the clipboard, or the key itself for a program that binds it.
     pub(super) fn paste_image_or_key(&mut self, cx: &mut Context<Self>) {
-        let pasted = cx
-            .read_from_clipboard()
-            .is_some_and(|item| self.paste_image(&item, cx));
+        let pasted = crate::clipboard::read(cx).is_some_and(|item| self.paste_image(&item, cx));
         if !pasted {
             self.input(b"\x1bv".to_vec(), cx);
         }

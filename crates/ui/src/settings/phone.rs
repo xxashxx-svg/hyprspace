@@ -251,9 +251,10 @@ impl Root {
                             .gap(px(8.))
                             .child(widgets::button("phone-copy-code", "Copy code").on_click(
                                 move |_: &ClickEvent, _, cx| {
-                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                        code.clone(),
-                                    ))
+                                    crate::clipboard::write(
+                                        cx,
+                                        gpui::ClipboardItem::new_string(code.clone()),
+                                    )
                                 },
                             ))
                             .child(
@@ -322,7 +323,7 @@ fn link_row(id: &'static str, url: String, note: &str) -> AnyElement {
             .gap(px(8.))
             .child(
                 widgets::button((id, 0usize), "Copy").on_click(move |_: &ClickEvent, _, cx| {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy.clone()))
+                    crate::clipboard::write(cx, gpui::ClipboardItem::new_string(copy.clone()))
                 }),
             )
             .child(

@@ -613,7 +613,7 @@ impl TextInput {
     }
 
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(item) = cx.read_from_clipboard() else {
+        let Some(item) = crate::clipboard::read(cx) else {
             return;
         };
         let images: Vec<Image> = item
@@ -644,14 +644,14 @@ impl TextInput {
             Some(self.content[self.selected.clone()].to_string())
         };
         if let Some(text) = text {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            crate::clipboard::write(cx, ClipboardItem::new_string(text));
         }
     }
 
     fn cut(&mut self, _: &Cut, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected.is_empty() {
             let text = self.content[self.selected.clone()].to_string();
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            crate::clipboard::write(cx, ClipboardItem::new_string(text));
             self.replace(self.selected.clone(), "", cx);
         }
     }

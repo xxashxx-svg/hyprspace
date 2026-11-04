@@ -117,7 +117,7 @@ impl Root {
                 row("server-copy", "copy", "Copy address").on_click(cx.listener(
                     move |r, _: &ClickEvent, _, cx| {
                         r.work.server_menu = None;
-                        cx.write_to_clipboard(ClipboardItem::new_string(url.clone()));
+                        crate::clipboard::write(cx, ClipboardItem::new_string(url.clone()));
                         cx.notify();
                     },
                 )),

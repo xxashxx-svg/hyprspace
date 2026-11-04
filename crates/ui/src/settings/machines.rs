@@ -254,7 +254,7 @@ impl Root {
                                 .gap(px(8.))
                                 .child(widgets::button("peer-copy", "Copy link").on_click(
                                     move |_: &ClickEvent, _, cx| {
-                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        crate::clipboard::write(cx, gpui::ClipboardItem::new_string(
                                             link.clone(),
                                         ))
                                     },

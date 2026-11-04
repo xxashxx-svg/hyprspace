@@ -22,3 +22,7 @@ image.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# the clipboard's change count, to tell a copy that landed (clipboard.rs)
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_DataExchange"] }

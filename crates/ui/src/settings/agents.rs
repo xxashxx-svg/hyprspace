@@ -129,7 +129,7 @@ fn small(b: gpui::Stateful<gpui::Div>) -> gpui::Stateful<gpui::Div> {
 
 fn copy_button(id: (&'static str, usize), command: String) -> gpui::Stateful<gpui::Div> {
     small(widgets::button(id, "Copy command")).on_click(move |_: &ClickEvent, _, cx| {
-        cx.write_to_clipboard(ClipboardItem::new_string(command.clone()))
+        crate::clipboard::write(cx, ClipboardItem::new_string(command.clone()))
     })
 }
 

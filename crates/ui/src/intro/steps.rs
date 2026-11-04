@@ -254,7 +254,7 @@ impl Root {
                         colors::text3(),
                     ))
                     .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(cmd.to_string()));
+                        crate::clipboard::write(cx, ClipboardItem::new_string(cmd.to_string()));
                         if let Some(i) = &mut r.intro {
                             i.copied = Some(agent);
                         }

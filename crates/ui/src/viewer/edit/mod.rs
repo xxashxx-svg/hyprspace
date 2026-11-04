@@ -502,7 +502,7 @@ impl Editor {
         if self.range().is_empty() && !text.ends_with('\n') {
             text.push('\n');
         }
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        crate::clipboard::write(cx, ClipboardItem::new_string(text));
         if cut {
             self.buf.seal();
             self.type_text(Some(r), "", cx);
@@ -511,7 +511,7 @@ impl Editor {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
+        if let Some(text) = crate::clipboard::read(cx).and_then(|c| c.text()) {
             self.buf.seal();
             self.type_text(None, &text, cx);
             self.buf.seal();

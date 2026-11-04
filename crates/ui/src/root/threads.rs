@@ -1083,7 +1083,7 @@ impl Root {
             }
             Action::CopyTitle(thread) => {
                 if let Some((_, t)) = self.state.thread(thread) {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(t.title.clone()));
+                    crate::clipboard::write(cx, gpui::ClipboardItem::new_string(t.title.clone()));
                 }
             }
             Action::CopyPath(thread) => {
@@ -1093,13 +1093,13 @@ impl Root {
                         ThreadKind::Structured { launch } => launch.cwd.clone(),
                     };
                     let text = cwd.display().to_string();
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                    crate::clipboard::write(cx, gpui::ClipboardItem::new_string(text));
                 }
             }
             Action::Switch(thread) => self.switch_kind(thread, cx),
             Action::CopyConversation(thread) => {
                 if let Some(id) = self.conversation(thread) {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(id));
+                    crate::clipboard::write(cx, gpui::ClipboardItem::new_string(id));
                 }
             }
         }

@@ -646,7 +646,7 @@ impl gpui::RenderOnce for CopyButton {
             .hover(|s| s.bg(colors::ink(0.08)))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(move |_, _, cx| {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
+                crate::clipboard::write(cx, gpui::ClipboardItem::new_string(text.to_string()));
                 copied.update(cx, |c, _| *c = Some(std::time::Instant::now()));
             })
             .tooltip(tip(if fresh { "Copied" } else { "Copy" }))
