@@ -4,6 +4,10 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.48 — 2026-11-05
+
+- Copying and pasting no longer bring back the old clipboard when another program holds it for a moment
+
 ## 0.24.47 — 2026-11-05
 
 - Dragging pictures, videos and files onto a thread's reply box attaches them again
