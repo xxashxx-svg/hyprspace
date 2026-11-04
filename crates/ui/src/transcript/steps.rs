@@ -198,7 +198,7 @@ fn mark(key: ElementId, name: &'static str, size: f32, color: Hsla, lit: Lit) ->
 
 /// `text` with a light passing over it while its step works. `from` and `of` place it in the
 /// whole line, so the verb and what it acted on shine as one.
-fn shine(text: SharedString, from: usize, of: usize) -> AnyElement {
+pub(super) fn shine(text: SharedString, from: usize, of: usize) -> AnyElement {
     if !slide::animations() {
         return div()
             .text_color(colors::text1())

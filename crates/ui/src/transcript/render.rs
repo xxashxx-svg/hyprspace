@@ -303,7 +303,7 @@ pub fn view(
                 .children(bar)
                 .children(marker),
         )
-        .child(floating(v, cx.entity_id(), composer(v, window, cx), jump))
+        .child(floating(v, composer(v, window, cx), jump, cx))
         .children(model_menu(v, window, cx))
         .children(permission_menu(v, window, cx))
         .into_any_element()
@@ -314,10 +314,11 @@ pub fn view(
 /// clears it.
 fn floating(
     v: &TranscriptView,
-    view: gpui::EntityId,
     body: AnyElement,
     jump: Option<AnyElement>,
+    cx: &mut Context<TranscriptView>,
 ) -> AnyElement {
+    let view = cx.entity_id();
     let dock = v.dock.clone();
     let bg = colors::bg();
     // the view is cached, so a window refresh alone would keep the old padding
@@ -345,7 +346,16 @@ fn floating(
             gpui::linear_color_stop(bg.opacity(0.), 0.),
             gpui::linear_color_stop(bg, 1.),
         )))
-        .child(div().occlude().bg(bg).child(body))
+        // it hides the transcript from the pointer, its drop target included, so it takes drops
+        .child(
+            div()
+                .occlude()
+                .bg(bg)
+                .on_drop(cx.listener(|v, paths: &ExternalPaths, window, cx| {
+                    v.drop_paths(paths, window, cx)
+                }))
+                .child(body),
+        )
         .child(measure)
         // over the fade, which would dim it from under
         .children(jump)
@@ -738,14 +748,21 @@ pub(super) fn took(secs: u64) -> String {
 
 /// A live run's line, where its "Worked for" line lands once it ends.
 fn working(v: &TranscriptView) -> AnyElement {
+    let waiting = !v.stopping && !v.model.compacting && v.model.status() == model::Status::Waiting;
     let label = if v.stopping {
         "Stopping".to_string()
     } else if v.model.compacting {
         "Compacting".to_string()
-    } else if v.model.status() == model::Status::Waiting {
+    } else if waiting {
         "Waiting for you".to_string()
     } else {
         format!("Working for {}", took(v.model.elapsed().unwrap_or(0)))
+    };
+    let label = if waiting {
+        label.into_any_element()
+    } else {
+        let of = label.chars().count();
+        super::steps::shine(label.into(), 0, of)
     };
     div()
         .flex()
