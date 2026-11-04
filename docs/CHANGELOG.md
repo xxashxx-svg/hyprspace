@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.47 — 2026-11-05
+
+- Dragging pictures, videos and files onto a thread's reply box attaches them again
+- Working for shines while the agent works, like Thinking does
+
 ## 0.24.46 — 2026-11-03
 
 - The working line sits under your message even when the last run's edits land after it
