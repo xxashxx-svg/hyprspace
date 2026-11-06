@@ -4,6 +4,18 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.49 — 2026-11-06
+
+- New default theme: a raised sidebar over a darker canvas with softer, higher-contrast text. The old look is kept as Onyx
+- Thread rows are two lines, and the sidebar list fades at its edges and scrolls without stutter
+- Settle, snooze and discard now offer Undo in the sidebar's foot instead of a toast
+- Back and forward buttons in the title row, plus Settings and Usage buttons at the foot of the sidebar
+- The right panel's tabs are one switch, side chats keep Bring back and Delete in the tab row, and the Files tab is cleaner
+- The file viewer is wider, and HTML files open in your browser from it
+- The palette, menus, tooltips, the new thread screen and Settings are cleaner and easier to read
+- Long conversations keep a short tick rail, and long lists of past sessions fold behind Show more
+- /btw side chats keep the thread's model and access
+
 ## 0.24.48 — 2026-11-05
 
 - Copying and pasting no longer bring back the old clipboard when another program holds it for a moment
