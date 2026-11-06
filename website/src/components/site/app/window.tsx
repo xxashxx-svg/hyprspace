@@ -1,8 +1,8 @@
 import type { ReactNode } from "react"
-import { ChevronDown, PanelLeft, PanelRight, Plus } from "lucide-react"
+import { ArrowLeft, ArrowRight, ChevronDown, PanelLeft, PanelRight, Plus } from "lucide-react"
 import vscode from "@/assets/app/vscode.svg"
 import { AppIcon } from "../primitives"
-import { Mark, UsageRing, useSeconds } from "./bits"
+import { Tag, UsageRing, useSeconds } from "./bits"
 import { Dock } from "./dock"
 import { Sidebar } from "./sidebar"
 import { Thread } from "./thread"
@@ -43,23 +43,27 @@ function Caption() {
 function Titlebar() {
   return (
     <div className="flex h-10 shrink-0">
-      <div className="hidden w-[272px] shrink-0 items-center gap-0.5 border-r border-(--b0) pl-2 lg:flex">
-        <span className="flex size-[22px] items-center justify-center">
-          <AppIcon className="size-3.5" />
-        </span>
+      <div className="hidden w-[272px] shrink-0 items-center gap-0.5 border-r border-(--b0) bg-(--s1) pl-2 lg:flex">
         <BarButton>
           <PanelLeft className="size-[15px]" />
         </BarButton>
+        <span className="flex h-[26px] items-center gap-1.5 px-1.5 text-[13px] font-medium">
+          <AppIcon className="size-3.5" />
+          HyprSpace
+        </span>
+        <span className="flex size-[22px] items-center justify-center text-(--t2)">
+          <ArrowLeft className="size-3.5" />
+        </span>
+        <span className="flex size-[22px] items-center justify-center text-(--t3) opacity-40">
+          <ArrowRight className="size-3.5" />
+        </span>
       </div>
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5 pl-3.5">
-        <span className="mr-0.5 shrink-0">
-          <Mark agent="claude" size={14} />
-        </span>
-        <span className="min-w-0 shrink truncate text-[13px] font-semibold">
+      <div className="flex min-w-0 flex-1 items-center gap-2 pr-1.5 pl-3.5">
+        <Tag space="hyprspace" />
+        <span className="hidden shrink-0 text-[13px] text-(--t2) sm:block">hyprspace</span>
+        <span className="hidden shrink-0 text-[13px] text-(--t3) sm:block">/</span>
+        <span className="min-w-0 shrink truncate text-[13px] font-medium">
           Keep a conversation through a restart
-        </span>
-        <span className="hidden min-w-0 truncate font-app-mono text-[11px] text-(--t3) md:block">
-          code/hyprspace · Opus 5.5
         </span>
         <span className="flex-1" />
         <div className="flex shrink-0 items-center gap-1.5">

@@ -1,4 +1,4 @@
-import { BarChart3, MessagesSquare, ShieldCheck, SquareTerminal } from "lucide-react"
+import { BarChart3, MessageSquare, MessagesSquare, ShieldCheck, SquareTerminal } from "lucide-react"
 
 import { AppWindow } from "@/components/site/app/window"
 import { TerminalThread } from "@/components/site/app/terminal"
@@ -30,7 +30,7 @@ const bento = [
     span: "lg:col-span-3",
     visual: <ThreadsVignette />,
     title: "Every thread in one list",
-    body: "What each agent is doing, which ones wait on you, and shelves for the ones you snoozed or settled.",
+    body: "Two lines per thread: which ones are working, which wait on you and which are done. Settle or snooze one, and Ctrl+Z brings it back.",
   },
   {
     span: "lg:col-span-3",
@@ -67,13 +67,13 @@ const bento = [
     span: "lg:col-span-2",
     visual: <EditorVignette />,
     title: "Files open in the app",
-    body: "Text files open ready to edit, and Ctrl+S saves. Images and videos open too.",
+    body: "Text files open ready to edit, and Ctrl+S saves. Images and videos open too, and HTML opens in your browser.",
   },
   {
     span: "lg:col-span-2",
     visual: <ComposerVignette />,
     title: "Start from the composer",
-    body: "Pick the agent, model and effort, attach files, press Enter.",
+    body: "Pick the agent, model and effort. Type / for commands and skills, @ for files and threads.",
   },
 ]
 
@@ -221,6 +221,10 @@ function TwoWays() {
               <Point icon={<SquareTerminal />} title="Terminal">
                 The CLI itself in a real terminal, with its own screen and shortcuts. The sidebar still
                 follows what it is doing.
+              </Point>
+              <Point icon={<MessageSquare />} title="Side chats">
+                Ask something with /btw while a run keeps going. The answer waits in the dock, and Bring
+                back hands it to the thread&apos;s next message.
               </Point>
             </div>
           </Reveal>

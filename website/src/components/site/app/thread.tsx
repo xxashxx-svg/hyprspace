@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import { ChevronRight, FileDiff, FilePenLine, Folder, GitBranch, Paperclip, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Counts, Eclipse, Keycap, Mark, UsageRing } from "./bits"
+import { Counts, Keycap, Mark, UsageRing } from "./bits"
 
 function Prompt({ children }: { children: ReactNode }) {
   return (
@@ -82,11 +82,8 @@ function took(secs: number) {
 function Working({ secs }: { secs: number }) {
   return (
     <div className="flex h-[22px] items-center gap-2 text-[12.5px] text-(--t3)">
-      <Eclipse className="text-(--t2)" />
-      <span className="hs-breathe shrink-0 font-medium text-(--t2)">Working</span>
-      <span className="min-w-0 truncate">Read crates/engine/src/persist.rs</span>
+      <span className="hs-breathe shrink-0 font-medium text-(--t2)">Working for {took(38 + secs)}</span>
       <span className="flex-1" />
-      <span className="shrink-0">{took(38 + secs)}</span>
       <span className="hidden shrink-0 items-center gap-[5px] sm:flex">
         <Keycap>Esc</Keycap>
         to stop
@@ -117,7 +114,7 @@ function ReplyBox() {
             <span className="flex size-7 items-center justify-center text-(--t3)">
               <Paperclip className="size-[15px]" />
             </span>
-            <span className="flex size-[30px] items-center justify-center rounded-full border border-(--b2) bg-(--s3)">
+            <span className="flex size-[30px] items-center justify-center rounded-full bg-white/[0.1]">
               <i className="block size-2.5 rounded-[2px] bg-(--t1)" />
             </span>
           </div>

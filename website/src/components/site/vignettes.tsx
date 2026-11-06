@@ -39,7 +39,7 @@ function Limit({ name, when, left }: { name: string; when: string; left: number 
 export function UsageVignette() {
   return (
     <Panel className="bg-(--s2)">
-      <div className="flex h-[38px] items-center gap-0.5 border-b border-(--b1) pr-2.5 pl-1.5">
+      <div className="flex h-[38px] items-center gap-0.5 pr-2.5 pl-1.5">
         <span className="flex items-center gap-1.5 rounded-md bg-white/[0.08] px-2.5 py-1.5 text-[12.5px] font-medium">
           <Mark agent="claude" />
           Claude
@@ -62,7 +62,7 @@ export function UsageVignette() {
 export function PaletteVignette() {
   return (
     <Panel className="bg-(--s2) p-1.5 text-[12.5px]">
-      <div className="flex items-center gap-1 border-b border-(--b1) px-2 pt-1 pb-2 text-(--t2)">
+      <div className="flex items-center gap-1 px-2 pt-1 pb-2 text-(--t2)">
         resume
         <i className="hs-blink block h-3.5 w-px bg-(--t2)" />
       </div>
@@ -72,7 +72,7 @@ export function PaletteVignette() {
           ["crates/engine/src/terminal.rs", "file"],
           ["Resume the last thread", "action"],
         ].map(([label, hint], i) => (
-          <div key={label} className={cn("flex h-7 items-center gap-2 rounded-md px-2", i === 0 && "bg-(--s3)")}>
+          <div key={label} className={cn("flex h-7 items-center gap-2 rounded-md px-2", i === 0 && "bg-white/[0.08]")}>
             <span className="min-w-0 flex-1 truncate">{label}</span>
             <span className="shrink-0 text-[11px] text-(--t3)">{hint}</span>
           </div>
@@ -100,7 +100,7 @@ function MenuItem({ children, on, sub }: { children: ReactNode; on?: boolean; su
   )
 }
 
-const menu = "rounded-[10px] border border-white/[0.13] bg-(--s3) p-[5px] shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7)]"
+const menu = "rounded-[12px] border border-white/[0.1] bg-(--s2) p-[5px] shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7)]"
 
 export function WorktreeVignette() {
   return (
@@ -108,7 +108,7 @@ export function WorktreeVignette() {
       <div className={cn(menu, "w-[170px]")}>
         <MenuItem>Settle thread</MenuItem>
         <MenuItem sub>Snooze</MenuItem>
-        <i className="mx-1 my-1 block h-px bg-white/[0.08]" />
+        <i className="mx-1.5 my-1 block h-px bg-white/[0.06]" />
         <MenuItem>Rename thread</MenuItem>
         <MenuItem on sub>
           Worktree
@@ -154,7 +154,7 @@ export function EditorVignette() {
   const s = "text-[#90d192]"
   return (
     <Panel>
-      <div className="flex h-8 items-center gap-2 border-b border-(--b1) px-3 text-[12px]">
+      <div className="flex h-8 items-center gap-2 px-3 text-[12px]">
         <span className="truncate">crates/engine/src/hooks.rs</span>
         <i className="block size-1.5 rounded-full bg-(--t2)" />
         <span className="flex-1" />
@@ -176,7 +176,7 @@ export function ComposerVignette() {
   const chip = "flex h-[26px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] whitespace-nowrap"
   return (
     <Panel className="p-3">
-      <div className="mb-3 text-center text-[17px] font-medium">What should we work on?</div>
+      <div className="mb-3 text-center text-[17px] font-medium">What should we build in hyprspace?</div>
       <div className="rounded-[18px] bg-white/[0.045]">
         <div className="min-h-[52px] px-4 pt-3 text-[13px] leading-[21px] text-(--t2)">
           Add a reconnect test for the phone bridge

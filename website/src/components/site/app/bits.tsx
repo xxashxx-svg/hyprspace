@@ -64,23 +64,9 @@ export function Tag({ space }: { space: string }) {
   )
 }
 
-export function Eclipse({ className }: { className?: string }) {
-  return (
-    <span className={cn("relative block h-[12.5px] w-[14px] shrink-0", className)}>
-      {[0, -600].map((delay) => (
-        <i
-          key={delay}
-          className="hs-orbit absolute top-1/2 left-1/2 -mt-[2.5px] -ml-[2.5px] block size-[5px] rounded-full bg-current"
-          style={{ animationDelay: `${delay}ms` }}
-        />
-      ))}
-    </span>
-  )
-}
-
 export function Keycap({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-[4px] border border-(--b1) px-[5px] text-[10px] leading-[15px] text-(--t3)">
+    <span className="rounded-[4px] bg-white/[0.08] px-[5px] text-[10px] leading-[16px] text-(--t2)">
       {children}
     </span>
   )

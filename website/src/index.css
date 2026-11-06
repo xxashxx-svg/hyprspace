@@ -111,17 +111,18 @@
 .hs-pulse { animation: hs-pulse 1.4s ease-in-out infinite; }
 
 .app {
-  --bg: #161616;
-  --s2: #1f1f1f;
-  --s3: #2b2b2b;
-  --t1: #f5f5f5;
-  --t2: #a4a4a4;
-  --t3: #747474;
-  --b0: rgb(255 255 255 / 0.035);
-  --b1: rgb(255 255 255 / 0.06);
-  --b2: rgb(255 255 255 / 0.1);
+  --bg: #181818;
+  --s1: #232323;
+  --s2: #222222;
+  --s3: #383838;
+  --t1: #dedede;
+  --t2: #8f8f8f;
+  --t3: #808080;
+  --b0: rgb(255 255 255 / 0.05);
+  --b1: rgb(255 255 255 / 0.08);
+  --b2: rgb(255 255 255 / 0.11);
   --accent: #f5f5f5;
-  --on-accent: #161616;
+  --on-accent: #181818;
   --busy: #f59e0b;
   --wait: #3b82f6;
   --ok: #10b981;
@@ -134,25 +135,11 @@
 
 @keyframes hs-spin { to { transform: rotate(360deg); } }
 @keyframes hs-sheen { from { left: 100%; } to { left: -60%; } }
-@keyframes hs-wait { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes hs-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-@keyframes hs-orbit {
-  0% { transform: translateX(3.5px) scale(1); opacity: 0.65; }
-  12.5% { transform: translateX(2.5px) scale(1.14); opacity: 0.9; }
-  25% { transform: translateX(0) scale(1.2); opacity: 1; z-index: 1; }
-  37.5% { transform: translateX(-2.5px) scale(1.14); opacity: 0.9; }
-  50% { transform: translateX(-3.5px) scale(1); opacity: 0.65; }
-  62.5% { transform: translateX(-2.5px) scale(0.86); opacity: 0.4; }
-  75% { transform: translateX(0) scale(0.8); opacity: 0.3; z-index: 0; }
-  87.5% { transform: translateX(2.5px) scale(0.86); opacity: 0.4; }
-  100% { transform: translateX(3.5px) scale(1); opacity: 0.65; }
-}
 
 .hs-spin { animation: hs-spin 0.9s linear infinite; }
 .hs-sheen { animation: hs-sheen 2.6s linear infinite; }
-.hs-wait { animation: hs-wait 1s ease-in-out infinite; }
 .hs-breathe { animation: hs-breathe 1.8s ease-in-out infinite; }
-.hs-orbit { animation: hs-orbit 1.2s linear infinite; }
 
 /* ---------------------------------------------------------------- page background
    Three stacked layers, all non-interactive and behind everything:

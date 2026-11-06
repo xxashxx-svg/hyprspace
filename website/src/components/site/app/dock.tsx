@@ -1,4 +1,5 @@
-import { ArrowUp, Check, FileCode, FolderTree, GitBranch, X } from "lucide-react"
+import type { ReactNode } from "react"
+import { ArrowUp, Check, FileCode, FolderTree, GitBranch, MessageSquare, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Counts } from "./bits"
 
@@ -50,11 +51,10 @@ export function GitFiles() {
 
 export function CommitBox() {
   return (
-    <div className="flex flex-col gap-2 border-t border-(--b1) p-3">
-      <div className="flex flex-col rounded-lg border border-(--b2) bg-(--s2) text-[12.5px]">
-        <div className="px-2.5 py-2 font-medium">Resume a conversation after a restart</div>
-        <i className="block h-px bg-white/[0.06]" />
-        <div className="min-h-14 px-2.5 py-2 text-(--t3)">Description</div>
+    <div className="flex flex-col gap-2 p-3">
+      <div className="flex flex-col rounded-[10px] bg-white/[0.04] text-[12.5px]">
+        <div className="px-2.5 pt-2 pb-1.5 font-medium">Resume a conversation after a restart</div>
+        <div className="min-h-12 px-2.5 pb-2 text-(--t3)">Description</div>
       </div>
       <div className="flex gap-1.5">
         <span className="flex h-[26px] flex-1 items-center justify-center rounded-md bg-(--accent) text-[12px] font-medium text-(--on-accent)">
@@ -69,35 +69,54 @@ export function CommitBox() {
   )
 }
 
+function Segment({ on, children }: { on?: boolean; children: ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium",
+        on ? "bg-white/[0.1] text-(--t1)" : "text-(--t3)",
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
 export function Dock() {
   return (
     <aside className="hidden w-[320px] shrink-0 flex-col border-l border-(--b0) xl:flex">
-      <div className="flex h-[38px] shrink-0 items-center gap-0.5 border-b border-(--b1) px-1.5">
-        <span className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12.5px] font-medium text-(--t3)">
-          <FolderTree className="size-[13px]" />
-          Files
-        </span>
-        <span className="flex items-center gap-1.5 rounded-md bg-(--s3) px-2.5 py-1.5 text-[12.5px] font-medium">
-          <GitBranch className="size-[13px]" />
-          Git
-          <span className="rounded bg-white/[0.08] px-[5px] font-app-mono text-[10.5px] text-(--t2)">3</span>
-        </span>
+      <div className="flex h-[42px] shrink-0 items-center gap-1 pr-1.5 pl-2">
+        <div className="flex min-w-0 items-center gap-0.5 rounded-[9px] bg-white/[0.045] p-[3px]">
+          <Segment>
+            <FolderTree className="size-[13px] shrink-0" />
+            Files
+          </Segment>
+          <Segment on>
+            <GitBranch className="size-[13px] shrink-0" />
+            Git
+            <span className="font-app-mono text-[11px] text-(--t2)">3</span>
+          </Segment>
+          <Segment>
+            <MessageSquare className="size-[13px] shrink-0" />
+            <span className="truncate">Why did the test hang</span>
+          </Segment>
+        </div>
         <span className="flex-1" />
-        <span className="flex size-[26px] items-center justify-center text-(--t3)">
+        <span className="flex size-[26px] shrink-0 items-center justify-center text-(--t3)">
           <X className="size-3.5" />
         </span>
       </div>
 
-      <div className="flex h-9 shrink-0 items-center gap-[7px] border-b border-(--b1) px-3">
+      <div className="flex h-9 shrink-0 items-center gap-[7px] px-3">
         <GitBranch className="size-[13px] text-(--t3)" />
         <span className="flex-1 truncate font-app-mono text-[12px]">resume-fix</span>
-        <span className="flex h-6 items-center gap-1 rounded-md border border-(--b2) bg-(--s2) px-[9px] text-[11.5px] font-medium">
+        <span className="flex h-6 items-center gap-1 rounded-md bg-white/[0.07] px-[9px] text-[11.5px] font-medium">
           <ArrowUp className="size-3" />
           Push 2
         </span>
       </div>
 
-      <div className="flex h-8 shrink-0 items-center border-b border-(--b1) px-3">
+      <div className="flex h-8 shrink-0 items-center px-3">
         <span className="flex items-center gap-2 text-[12px] text-(--t2)">
           <Tick some />3 changed files
         </span>

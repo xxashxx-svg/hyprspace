@@ -1,4 +1,16 @@
-import { Check, ChevronRight, Folder, GitBranch, Plus, RefreshCw, Search, Settings } from "lucide-react"
+import type { ReactNode } from "react"
+import {
+  ChevronRight,
+  CircleCheck,
+  CircleDashed,
+  CircleHelp,
+  Gauge,
+  ListFilter,
+  RefreshCw,
+  Search,
+  Settings,
+  SquarePen,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AgentMark, Tag, type Agent } from "./bits"
 
@@ -15,8 +27,6 @@ type Row = {
   state: "working" | "waiting" | "done" | "idle"
   since?: number
   ago?: string
-  doing?: string
-  place?: [string, "branch" | "folder"]
   selected?: boolean
 }
 
@@ -27,7 +37,6 @@ export const ROWS: Row[] = [
     agent: "claude",
     state: "working",
     since: 187,
-    doing: "Read crates/engine/src/persist.rs",
     selected: true,
   },
   {
@@ -35,8 +44,6 @@ export const ROWS: Row[] = [
     title: "Rewrite the hero for the new app",
     agent: "codex",
     state: "waiting",
-    since: 412,
-    doing: "Wants to run bun run build",
   },
   {
     space: "Agent-Sdk",
@@ -44,15 +51,12 @@ export const ROWS: Row[] = [
     agent: "claude",
     state: "working",
     since: 64,
-    doing: "2 subagents running",
   },
   {
     space: "hyprspace",
     title: "Cache the dock view",
     agent: "claude",
     state: "done",
-    ago: "4m",
-    place: ["perf-dock", "branch"],
   },
   {
     space: "website",
@@ -60,7 +64,6 @@ export const ROWS: Row[] = [
     agent: "codex",
     state: "idle",
     ago: "1h",
-    place: ["main", "branch"],
   },
   {
     space: "Agent-Sdk",
@@ -68,20 +71,52 @@ export const ROWS: Row[] = [
     agent: "claude",
     state: "idle",
     ago: "3h",
-    place: ["Agent-Sdk", "folder"],
   },
 ]
 
+function Said({ icon, tint, children }: { icon: ReactNode; tint: string; children: ReactNode }) {
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1 text-[11px] font-medium", tint)}>
+      {icon}
+      {children}
+    </span>
+  )
+}
+
+function Slot({ row, secs }: { row: Row; secs: number }) {
+  switch (row.state) {
+    case "working":
+      return (
+        <Said icon={<CircleDashed className="size-3" />} tint="text-(--busy)">
+          <span className="font-app-mono text-[10.5px]">{stopwatch((row.since ?? 0) + secs)}</span>
+        </Said>
+      )
+    case "waiting":
+      return (
+        <Said icon={<CircleHelp className="size-3" />} tint="text-(--wait)">
+          Needs you
+        </Said>
+      )
+    case "done":
+      return (
+        <Said icon={<CircleCheck className="size-3" />} tint="text-(--ok)">
+          Done
+        </Said>
+      )
+    default:
+      return <span className="shrink-0 text-[12px] text-(--t2)">{row.ago}</span>
+  }
+}
+
 export function ThreadRow({ row, secs }: { row: Row; secs: number }) {
   const working = row.state === "working"
-  const waiting = row.state === "waiting"
   const recede = working && !row.selected
+  const quiet = row.state === "idle" && !row.selected
   return (
     <div
       className={cn(
-        "relative flex flex-col gap-[3px] overflow-hidden rounded-lg px-2 pt-2 pb-[9px]",
+        "relative flex flex-col gap-0.5 overflow-hidden rounded-lg px-[9px] pt-[7px] pb-2",
         row.selected && "bg-(--s3)",
-        !row.selected && waiting && "bg-[rgb(59_130_246/0.07)]",
         recede && "opacity-70",
       )}
     >
@@ -91,41 +126,20 @@ export function ThreadRow({ row, secs }: { row: Row; secs: number }) {
           <i className="flex-1 bg-gradient-to-r from-[rgb(245_158_11/0.035)] to-transparent" />
         </span>
       )}
-      <div className="flex min-w-0 items-center gap-[7px]">
+      <div className="flex h-5 min-w-0 items-center gap-1.5">
         <Tag space={row.space} />
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-(--t3)">{row.space}</span>
-        {row.since !== undefined ? (
-          <span className="shrink-0 font-app-mono text-[10.5px] font-medium text-(--busy)">
-            {stopwatch(row.since + secs)}
-          </span>
-        ) : (
-          <span className="shrink-0 text-[11px] text-(--t3)">{row.ago}</span>
-        )}
+        <Slot row={row} secs={secs} />
       </div>
-      <div className={cn("truncate text-[13.5px] text-(--t1)", recede ? "font-normal" : "font-medium")}>
-        {row.title}
-      </div>
-      <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-(--t3)">
-        {row.doing ? (
-          <span className={cn("min-w-0 flex-1 truncate", waiting ? "text-(--wait)" : "text-(--t2)")}>
-            {row.doing}
-          </span>
-        ) : (
-          <span className="flex min-w-0 flex-1 items-center gap-[5px]">
-            {row.place?.[1] === "branch" ? (
-              <GitBranch className="size-[11px] shrink-0" />
-            ) : (
-              <Folder className="size-[11px] shrink-0" />
-            )}
-            <span className="min-w-0 truncate font-app-mono text-[10.5px]">{row.place?.[0]}</span>
-          </span>
-        )}
-        {waiting && <i className="hs-wait block size-[7px] shrink-0 rounded-full bg-(--wait)" />}
-        {row.state === "done" && (
-          <span className="flex size-3 shrink-0 items-center justify-center rounded-full bg-(--ok)">
-            <Check className="size-[9px] text-white" strokeWidth={3} />
-          </span>
-        )}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[13.5px] text-(--t1)",
+            quiet ? "font-normal opacity-75" : "font-medium",
+          )}
+        >
+          {row.title}
+        </span>
         <AgentMark agent={row.agent} working={working} />
       </div>
     </div>
@@ -143,19 +157,31 @@ function Shelf({ label, count }: { label: string; count: number }) {
   )
 }
 
+function Foot({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <span className="flex h-[30px] items-center gap-2 rounded-lg px-[9px] text-[12.5px] text-(--t2)">
+      <span className="text-(--t3)">{icon}</span>
+      {children}
+    </span>
+  )
+}
+
 export function Sidebar({ secs }: { secs: number }) {
   return (
-    <aside className="hidden w-[272px] shrink-0 flex-col border-r border-(--b0) lg:flex">
-      <div className="mb-1 flex items-center gap-1.5 border-b border-(--b0) px-2 py-2.5">
-        <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-(--b0) pr-1.5 pl-2.5">
+    <aside className="hidden w-[272px] shrink-0 flex-col border-r border-(--b0) bg-(--s1) lg:flex">
+      <div className="mb-1 flex items-center gap-0.5 px-2 py-2.5">
+        <div className="flex h-8 min-w-0 flex-1 items-center gap-2 pr-1.5 pl-2.5">
           <Search className="size-3.5 shrink-0 text-(--t3)" />
           <span className="flex-1 text-[13px] text-(--t3)">Search</span>
-          <span className="flex h-5 items-center rounded-[5px] border border-(--b1) px-[5px] text-[10.5px] font-medium text-(--t3)">
+          <span className="flex h-[18px] items-center rounded-[4px] bg-white/[0.08] px-[5px] text-[10.5px] font-medium text-(--t2)">
             Ctrl K
           </span>
         </div>
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-(--b0) text-(--t2)">
-          <Plus className="size-4" />
+        <span className="flex size-7 shrink-0 items-center justify-center text-(--t3)">
+          <ListFilter className="size-3.5" />
+        </span>
+        <span className="flex size-7 shrink-0 items-center justify-center text-(--t2)">
+          <SquarePen className="size-[15px]" />
         </span>
       </div>
 
@@ -169,11 +195,10 @@ export function Sidebar({ secs }: { secs: number }) {
         </div>
       </div>
 
-      <div className="flex items-center border-t border-(--b0) px-2 pt-[7px] pb-2">
-        <span className="flex h-7 flex-1 items-center gap-[9px] rounded-md px-2 text-[12.5px] text-(--t2)">
-          <Settings className="size-4 text-(--t3)" />
-          Settings
-        </span>
+      <div className="flex items-center gap-0.5 px-2 pt-[7px] pb-2">
+        <Foot icon={<Settings className="size-[15px]" />}>Settings</Foot>
+        <Foot icon={<Gauge className="size-[15px]" />}>Usage</Foot>
+        <span className="flex-1" />
         <span className="flex size-7 items-center justify-center text-(--t3)">
           <RefreshCw className="size-[15px]" />
         </span>
