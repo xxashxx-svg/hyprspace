@@ -101,8 +101,8 @@ how Claude is driven.
   conversation.
 - **`/btw` opens a side chat.** It is the thread forked the way `/branch` forks it (Claude's
   `--fork-session`, Codex's `thread/fork`), saved as a thread with `side` set and its `parent`, so
-  it can use tools and take follow-ups while the thread keeps working. It starts in Ask (Plan stays
-  Plan), so its first move on files or commands waits for a yes. Its transcript starts empty: the
+  it can use tools and take follow-ups while the thread keeps working. It keeps the thread's model
+  and permission, so under Full access it acts without asking. Its transcript starts empty: the
   CLI carries the conversation, the view doesn't copy it. Every list of threads leaves side chats
   out (sidebar, palette search, the phone's board); they show as tabs in the dock of the thread on
   screen, and go when it's deleted. Bring back, while the thread is idle, puts the side chat's

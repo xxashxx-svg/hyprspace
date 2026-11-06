@@ -1,4 +1,4 @@
-// Settings, Appearance: the six themes as cards with a swatch for each side, with the Light, Dark
+// Settings, Appearance: the themes as cards with a swatch for each side, with the Light, Dark
 // and System switch beside them; the interface's font, diff colors and animations; and the
 // terminal's font, size and line height. Everything applies the moment it is clicked and is
 // saved at once.

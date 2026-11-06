@@ -141,6 +141,7 @@ pub struct Composer {
     anchor: Anchor,
     effort_anchor: Anchor,
     resumable: Vec<AgentSession>,
+    resume_all: bool,
     /// The (agent, folder) the resume list is for.
     asked: Option<(Agent, PathBuf)>,
     clone: CloneCard,
@@ -276,6 +277,7 @@ impl Composer {
             anchor: Anchor::default(),
             effort_anchor: Anchor::default(),
             resumable: Vec::new(),
+            resume_all: false,
             asked: None,
             clone: CloneCard {
                 url: String::new(),
@@ -457,6 +459,7 @@ impl Composer {
         let key = (agent, cwd.clone());
         if self.asked.as_ref() != Some(&key) {
             self.resumable.clear();
+            self.resume_all = false;
             self.asked = Some(key);
             self.client.send(Command::ListResumable { agent, cwd });
         }
@@ -977,8 +980,8 @@ impl Render for Composer {
             .flex()
             .justify_center()
             .mb(px(20.))
-            .text_size(px(24.))
-            .font_weight(FontWeight::SEMIBOLD)
+            .text_size(px(30.))
+            .font_weight(FontWeight::MEDIUM)
             .text_color(colors::text1())
             .map(|d| match &repo {
                 Some(r) => d.child("Clone ").child(bold(r.label.clone())),

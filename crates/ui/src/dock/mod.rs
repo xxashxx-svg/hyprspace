@@ -207,34 +207,13 @@ impl Dock {
             let on = picked.is_none() && self.tab == which;
             let count = (which == DockTab::Git && changed > 0).then(|| {
                 div()
-                    .px(px(5.))
-                    .rounded(px(4.))
-                    .bg(colors::ink(0.08))
                     .font_family(hyprspace_theme::MONO)
-                    .text_size(px(10.5))
-                    .text_color(colors::text2())
+                    .text_size(px(11.))
+                    .text_color(if on { colors::text2() } else { colors::text3() })
                     .child(changed.to_string())
             });
-            div()
-                .id(id)
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .px(px(10.))
-                .py(px(6.))
-                .rounded(px(6.))
-                .text_size(px(12.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(if on { colors::text1() } else { colors::text3() })
-                .when(on, |d| d.bg(colors::surface3()))
-                .cursor_pointer()
-                .hover(|s| {
-                    if on {
-                        s
-                    } else {
-                        s.bg(colors::surface2()).text_color(colors::text1())
-                    }
-                })
+            segment(id.into(), on)
+                .flex_none()
                 .child(icon(
                     glyph,
                     13.,
@@ -244,15 +223,14 @@ impl Dock {
                 .children(count)
                 .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| d.set_tab(which, cx)))
         };
-        div()
-            .flex_none()
+        let track = div()
             .flex()
+            .min_w_0()
             .items_center()
             .gap(px(2.))
-            .h(px(38.))
-            .px(px(6.))
-            .border_b_1()
-            .border_color(colors::border1())
+            .p(px(3.))
+            .rounded(px(9.))
+            .bg(colors::ink(0.045))
             .child(tab("dock-files", "folder-tree", "Files", DockTab::Files))
             .child(tab("dock-git", "git-branch", "Git", DockTab::Git))
             .when(
@@ -270,24 +248,10 @@ impl Dock {
             .children(self.sides.iter().map(|s| {
                 let (id, on) = (s.id, picked == Some(s.id));
                 let ink = if on { colors::text1() } else { colors::text3() };
-                div()
-                    .id(("dock-side", id))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .min_w_0()
+                segment(("dock-side", id).into(), on)
+                    .tooltip(crate::widgets::tip_text(s.title.clone()))
+                    .min_w(px(48.))
                     .max_w(px(160.))
-                    .px(px(10.))
-                    .py(px(6.))
-                    .rounded(px(6.))
-                    .text_size(px(12.5))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(ink)
-                    .when(on, |d| d.bg(colors::surface3()))
-                    .cursor_pointer()
-                    .when(!on, |d| {
-                        d.hover(|s| s.bg(colors::surface2()).text_color(colors::text1()))
-                    })
                     .child(icon("message-square", 13., ink))
                     .child(div().min_w_0().truncate().child(s.title.clone()))
                     .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
@@ -295,8 +259,43 @@ impl Dock {
                         cx.emit(DockEvent::Side(Some(id)));
                         cx.notify();
                     }))
-            }))
+            }));
+        div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .h(px(42.))
+            .pl(px(8.))
+            .pr(px(6.))
+            .child(track)
             .child(div().flex_1())
+            .children(picked.map(|id| {
+                let idle = self.idle;
+                crate::widgets::icon_button(
+                    ("side-back", id),
+                    "corner-down-left",
+                    crate::widgets::LARGE,
+                )
+                .tooltip(crate::widgets::tip(if idle {
+                    "Bring back: adds this side chat to the thread's next message"
+                } else {
+                    "Bring back works once the thread is idle"
+                }))
+                .when(!idle, |d| d.opacity(0.4).cursor_default())
+                .when(idle, |d| {
+                    d.on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                        cx.emit(DockEvent::BringBack(id))
+                    }))
+                })
+            }))
+            .children(picked.map(|id| {
+                crate::widgets::icon_button(("side-delete", id), "trash-2", crate::widgets::LARGE)
+                    .tooltip(crate::widgets::tip("Delete side chat"))
+                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                        cx.emit(DockEvent::DeleteSide(id))
+                    }))
+            }))
             .child(
                 crate::widgets::icon_button("dock-x", "x", crate::widgets::LARGE)
                     .tooltip(crate::widgets::tip("Hide"))
@@ -304,6 +303,23 @@ impl Dock {
             )
             .into_any_element()
     }
+}
+
+fn segment(id: gpui::ElementId, on: bool) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .h(px(26.))
+        .px(px(10.))
+        .rounded(px(6.))
+        .text_size(px(12.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(if on { colors::text1() } else { colors::text3() })
+        .cursor_pointer()
+        .when(on, |d| d.bg(colors::ink(0.1)))
+        .when(!on, |d| d.hover(|s| s.text_color(colors::text1())))
 }
 
 /// The dim note a tab shows when it has nothing to list.
@@ -333,65 +349,14 @@ fn empty(text: &'static str) -> AnyElement {
         .into_any_element()
 }
 
-/// A side chat's title, Bring back and Delete, over the side chat itself.
-fn side_chat(side: &Side, idle: bool, cx: &mut Context<Dock>) -> AnyElement {
-    let id = side.id;
-    let back = crate::widgets::button(("side-back", id), "Bring back")
-        .h(px(26.))
-        .px(px(10.))
-        .text_size(px(12.))
-        .tooltip(crate::widgets::tip(if idle {
-            "Adds this side chat to the thread's next message."
-        } else {
-            "Available when the thread is idle."
-        }))
-        .when(!idle, |d| d.opacity(0.5).cursor_default())
-        .when(idle, |d| {
-            d.on_click(
-                cx.listener(move |_, _: &ClickEvent, _, cx| cx.emit(DockEvent::BringBack(id))),
-            )
-        });
-    let head = div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .h(px(40.))
-        .px(px(12.))
-        .border_b_1()
-        .border_color(colors::border1())
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(colors::text2())
-                .child(side.title.clone()),
-        )
-        .child(back)
-        .child(
-            crate::widgets::icon_button(("side-delete", id), "trash-2", crate::widgets::LARGE)
-                .tooltip(crate::widgets::tip("Delete side chat"))
-                .on_click(
-                    cx.listener(move |_, _: &ClickEvent, _, cx| cx.emit(DockEvent::DeleteSide(id))),
-                ),
-        );
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .child(head)
-        .child(div().flex_1().min_h_0().child(side.view.clone()))
-        .into_any_element()
-}
-
 impl Render for Dock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let side = self.shown_side().cloned();
         let body = match (&self.folder, self.tab, side) {
-            (_, _, Some(side)) => side_chat(&side, self.idle, cx),
+            (_, _, Some(side)) => div()
+                .size_full()
+                .child(side.view.clone())
+                .into_any_element(),
             (_, DockTab::Automations, _) if self.on_thread => self.automations_tab(cx),
             (None, ..) => empty("No folder yet. Open a project, or start a thread in a folder."),
             (Some(_), DockTab::Files | DockTab::Automations, _) => self.files(cx),

@@ -52,6 +52,16 @@ impl Root {
                 .into();
                 *hint = Some("Click again".into());
             }
+            if let MenuEntry::Item {
+                label,
+                hint,
+                action: Action::DeletePicked,
+            } = e
+                && self.delete_armed
+            {
+                *label = format!("Delete {} threads?", self.selection.len()).into();
+                *hint = Some("Click again".into());
+            }
         }
         let sub = self.menu_sub.and_then(|i| match entries.get(i) {
             Some(MenuEntry::Sub { entries, .. }) => Some((i, entries.clone())),
@@ -108,6 +118,9 @@ fn glyph(action: Action, label: &str) -> Option<&'static str> {
         Action::Switch(_) => "message-square",
         Action::ProjectIcon(_) => "palette",
         Action::RegenerateTitle(_) => "refresh-cw",
+        Action::MarkUnread(_) | Action::UnreadPicked => "mail-dot",
+        Action::SettlePicked => "circle-check",
+        Action::DeletePicked => "trash-2",
         Action::RemoveThread(_) => "trash-2",
         _ => return None,
     })
@@ -148,8 +161,8 @@ fn menu_panel(
         MenuEntry::Divider => div()
             .h(px(1.))
             .my(px((MENU_RULE - 1.) / 2.))
-            .mx(px(2.))
-            .bg(colors::border1())
+            .mx(px(6.))
+            .bg(colors::ink(0.06))
             .into_any_element(),
         MenuEntry::Item {
             label,
@@ -157,7 +170,7 @@ fn menu_panel(
             action,
         } => {
             let action = *action;
-            let danger = matches!(action, Action::RemoveThread(_));
+            let danger = matches!(action, Action::RemoveThread(_) | Action::DeletePicked);
             if matches!(action, Action::Switch(id) if waiting.contains(&id)) {
                 return div()
                     .flex()
@@ -235,9 +248,9 @@ fn menu_panel(
         .p(px(MENU_PAD))
         .flex()
         .flex_col()
-        .rounded(px(8.))
+        .rounded(px(12.))
         .border_1()
-        .border_color(colors::border2())
+        .border_color(colors::ink(0.1))
         .bg(colors::surface2())
         .shadow(colors::shadow())
         .text_size(px(13.))
@@ -320,7 +333,8 @@ impl Render for Root {
         let viewer = self.viewer_card(window, cx);
         let snooze = self.snooze_popup(window, cx);
         let icon_picker = self.icon_popup(window, cx);
-        let toast = self.undo_toast(cx).or_else(|| self.made_toast(cx));
+        let filter = self.filter_popup(window, cx);
+        let toast = self.made_toast(cx);
         let notice = self.notice_toast(toast.is_some(), cx);
         let close = self.close_dialog(cx);
         let palette = self.palette_overlay(window, cx);
@@ -385,13 +399,29 @@ impl Render for Root {
             .on_modifiers_changed(cx.listener(|r, e: &ModifiersChangedEvent, window, cx| {
                 r.hold_keys(&e.modifiers, window, cx)
             }))
-            .capture_any_mouse_down(
-                cx.listener(|r, e: &MouseDownEvent, _, cx| {
-                    r.spoil_hold(e.modifiers.secondary(), cx)
-                }),
+            .capture_any_mouse_down(cx.listener(|r, e: &MouseDownEvent, _, cx| {
+                r.sweep = None;
+                r.spoil_hold(e.modifiers.secondary(), cx)
+            }))
+            .capture_any_mouse_up(
+                cx.listener(|r, _: &gpui::MouseUpEvent, window, cx| r.end_sweep(window, cx)),
             )
             // a menu opened by the mouse has no focus of its own, so Esc is caught on its way in
-            .capture_key_down(cx.listener(|r, e: &gpui::KeyDownEvent, _, cx| {
+            .capture_key_down(cx.listener(|r, e: &gpui::KeyDownEvent, window, cx| {
+                let m = &e.keystroke.modifiers;
+                if e.keystroke.key == "z" && m.secondary() && !m.shift && !m.alt && r.can_undo() {
+                    cx.stop_propagation();
+                    if !e.is_held {
+                        r.undo(window, cx);
+                    }
+                    return;
+                }
+                if r.menu.is_none() && !r.selection.is_empty() && e.keystroke.key == "escape" {
+                    r.selection.clear();
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
                 if r.menu.is_some() && e.keystroke.key == "escape" {
                     r.menu = None;
                     r.menu_sub = None;
@@ -438,6 +468,7 @@ impl Render for Root {
             .children(card)
             .children(snooze)
             .children(icon_picker)
+            .children(filter)
             .children(toast)
             .children(notice)
             .children(close)

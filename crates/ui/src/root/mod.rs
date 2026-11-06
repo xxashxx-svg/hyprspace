@@ -3,9 +3,11 @@
 // so runs go on while another thread is on screen, and routes the engine's events to them.
 
 mod automations;
+mod custom_snooze;
 mod delegate;
 mod drafts;
 mod frames;
+mod history;
 mod prs;
 mod quit;
 mod refs;
@@ -80,6 +82,12 @@ pub enum Action {
     SnoozeUntil(u64, u64),
     /// Snoozes a thread until its agent finishes its turn.
     SnoozeDone(u64),
+    SnoozeCustom(u64),
+    MarkUnread(u64),
+    SettlePicked,
+    SnoozePicked(u64),
+    UnreadPicked,
+    DeletePicked,
     Wake(u64),
     RemoveThread(u64),
     /// Opens the space's folder in an editor or the file manager.
@@ -173,10 +181,18 @@ pub struct Root {
     /// While a row is dragged over the list: the row under the pointer, and whether the dragged
     /// one would land below it (the pointer on its lower half) rather than above.
     pub(crate) drop_at: Option<(u64, bool)>,
-    /// Whether the Settled and Snoozed shelves are open.
-    pub(crate) settled_open: bool,
-    pub(crate) snoozed_open: bool,
-    pub(crate) working_open: bool,
+    pub(crate) dragging: Option<u64>,
+    pub(crate) drop_settled: bool,
+    pub(crate) drop_pin_zone: bool,
+    pub(crate) settled_shown: usize,
+    pub(crate) filter: HashSet<u64>,
+    pub(crate) selection: HashSet<u64>,
+    pub(crate) anchor: Option<u64>,
+    pub(crate) sweep: Option<crate::sidebar::Sweep>,
+    pub(crate) cursor: Option<u64>,
+    pub(crate) list_focus: gpui::FocusHandle,
+    pub(crate) list_focused: bool,
+    pub(crate) filter_menu: Option<Point<Pixels>>,
     /// A parent's delegated threads shown or hidden under it by hand, over the default of
     /// showing them while one works.
     pub(crate) kids_open: HashMap<u64, bool>,
@@ -192,6 +208,7 @@ pub struct Root {
         std::rc::Rc<std::cell::RefCell<HashMap<u64, gpui::Bounds<gpui::Pixels>>>>,
     /// The snooze menu: where it opened, for which thread.
     pub(crate) snooze_menu: Option<(Point<Pixels>, u64)>,
+    pub(crate) snooze_custom: Option<custom_snooze::CustomSnooze>,
     /// Worktree folders asked to be shelved this run, so one with changes isn't asked again.
     pub(crate) shelving: HashSet<std::path::PathBuf>,
     /// Each repo's pull requests as `gh` last listed them, and the threads seen with one open.
@@ -219,6 +236,9 @@ pub struct Root {
     pub(crate) notices: crate::notify::Notices,
     /// Where Settings' Back button returns to.
     pub(crate) back: Screen,
+    pub(crate) past: Vec<Screen>,
+    pub(crate) ahead: Vec<Screen>,
+    traveling: bool,
     pub(crate) settings: crate::settings::Settings,
     /// A folder named on the command line, opened once the state has loaded.
     pub(crate) open_arg: Option<PathBuf>,
@@ -352,6 +372,15 @@ impl Root {
         subs.push(Self::notify_hooks(window, cx));
         let work = crate::workbench::Work::new(client.clone(), window, cx);
         let search = cx.new(|cx| TextInput::new("Search", false, cx));
+        let list_focus = cx.focus_handle();
+        subs.push(cx.on_focus_in(&list_focus, window, |r, _, cx| {
+            r.list_focused = true;
+            cx.notify();
+        }));
+        subs.push(cx.on_focus_out(&list_focus, window, |r, _, _, cx| {
+            r.list_focused = false;
+            cx.notify();
+        }));
         let root = cx.entity();
         let sidebar_view = cx.new(|cx| crate::sidebar::SidebarView::new(&root, cx));
         subs.push(cx.subscribe(&search, |_, input, e: &InputEvent, cx| {
@@ -455,9 +484,18 @@ impl Root {
             peek: None,
             lightbox: None,
             drop_at: None,
-            settled_open: false,
-            snoozed_open: false,
-            working_open: false,
+            dragging: None,
+            drop_settled: false,
+            drop_pin_zone: false,
+            settled_shown: crate::sidebar::SETTLED_PAGE,
+            filter: HashSet::new(),
+            selection: HashSet::new(),
+            anchor: None,
+            sweep: None,
+            cursor: None,
+            list_focus,
+            list_focused: false,
+            filter_menu: None,
             kids_open: HashMap::new(),
             shelf: HashMap::new(),
             hover_row: None,
@@ -465,6 +503,7 @@ impl Root {
             _hover_timer: None,
             row_bounds: Default::default(),
             snooze_menu: None,
+            snooze_custom: None,
             shelving: HashSet::new(),
             servers: HashMap::new(),
             prs: HashMap::new(),
@@ -481,6 +520,9 @@ impl Root {
             _undo_timer: None,
             notices: crate::notify::Notices::new(window),
             back: Screen::Compose(None),
+            past: Vec::new(),
+            ahead: Vec::new(),
+            traveling: false,
             settings: crate::settings::Settings::new(cx),
             open_arg: open,
             work,
@@ -949,6 +991,7 @@ impl Root {
             let first = self.first_space();
             self.compose(first, window, cx);
         }
+        self.past.clear();
         cx.notify();
     }
 

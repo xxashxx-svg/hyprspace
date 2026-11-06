@@ -1,19 +1,19 @@
-// One thread in the sidebar, after T3 Code's: its project's tag and name, with the age or a
-// running count; the title; then what it is doing, or its branch or folder, a dot when it waits on
-// you or a tick when it finished, and its agent's mark, a ring turning around it while it works.
-// Its subagents show in the card beside it on hover. A working row carries a slow sheen and,
-// off screen, fades back; a waiting one a tint. Hovering shows snooze and Settle. On a shelf a thread is one quiet line.
-// Click to open it, right-click for its menu.
+// One thread in the sidebar, after T3 Code's: its project's tag and name, then one slot that says
+// how old it is or its state in words, and gives way to snooze and Settle on hover; the title;
+// its agent's mark beside the title; then its pull request and subagents, when it has them. Rows
+// that want you keep their weight and the rest step back. What it is doing shows
+// in the card beside it on hover. A working row carries a slow sheen and, off screen, fades back.
+// On a shelf a thread is one quiet line. Click to open it, right-click for its menu.
 
 use gpui::{
-    AnyElement, App, ClickEvent, Context, DragMoveEvent, FontWeight, Hsla, IntoElement,
-    MouseButton, ObjectFit, Pixels, SharedString, StyledImage, Transformation, canvas, div, img,
-    linear_color_stop, linear_gradient, percentage, prelude::*, relative,
+    AnyElement, App, ClickEvent, Context, DragMoveEvent, ExternalPaths, FontWeight, Hsla,
+    IntoElement, MouseButton, ObjectFit, Pixels, SharedString, StyledImage, Transformation, canvas,
+    div, img, linear_color_stop, linear_gradient, percentage, prelude::*, relative,
 };
 use hyprspace_proto::git::WorktreeAction;
 use hyprspace_proto::{Agent, Pane, SpaceIcon, Thread, ThreadKind};
 
-use super::Look;
+use super::{Look, Verb};
 
 use super::card::RowCard;
 use crate::workbench::PaneDrag;
@@ -198,32 +198,41 @@ fn letters(name: &str, hue: Option<u16>, dim: bool) -> AnyElement {
         .into_any_element()
 }
 
-/// A thread's agent: its mark, with a ring turning around it while it works. A terminal with no
-/// agent shows the terminal glyph.
-fn agent_mark(agent: Option<Agent>, working: bool) -> AnyElement {
+/// A thread's agent: its mark. A terminal with no agent shows the terminal glyph.
+fn agent_mark(agent: Option<Agent>) -> AnyElement {
     let badge = match agent {
         Some(a) => mark(a, 13., colors::brand(a).0).into_any_element(),
         None => icon("terminal", 12., colors::text3()).into_any_element(),
     };
     div()
-        .relative()
         .flex()
         .flex_none()
         .items_center()
         .justify_center()
         .size(px(16.))
         .child(badge)
-        .when(working, |d| d.child(ring(16., 3.)))
         .into_any_element()
 }
 
-fn jump_cap(n: usize, group: SharedString) -> AnyElement {
+fn jump_cap(n: usize) -> AnyElement {
     widgets::keycap(n.to_string())
         .h(px(16.))
         .flex()
         .items_center()
         .font_family(MONO)
-        .group_hover(group, |s| s.opacity(0.))
+        .into_any_element()
+}
+
+fn said(glyph: &'static str, words: &'static str, tint: Hsla) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .text_size(px(11.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(tint)
+        .child(icon(glyph, 12., tint))
+        .child(words)
         .into_any_element()
 }
 
@@ -252,7 +261,7 @@ impl Root {
                 .rounded(px(6.))
                 .border_1()
                 .border_color(colors::accent())
-                .bg(colors::bg())
+                .bg(colors::surface1())
                 .text_size(size)
                 .font_weight(weight)
                 .text_color(colors::text1())
@@ -264,15 +273,7 @@ impl Root {
         })
     }
 
-    /// A small icon button on a row's hover strip.
-    pub(super) fn row_button(
-        &self,
-        id: u64,
-        key: &'static str,
-        glyph: &'static str,
-        cx: &mut Context<Self>,
-        run: fn(&mut Root, u64, &ClickEvent, &mut gpui::Window, &mut Context<Root>),
-    ) -> gpui::Stateful<gpui::Div> {
+    fn button_look(id: u64, key: &'static str, glyph: &'static str) -> gpui::Stateful<gpui::Div> {
         div()
             .id((key, id))
             .group("icon-button")
@@ -290,7 +291,7 @@ impl Root {
             .tooltip(widgets::tip(match key {
                 "wake" => "Wake",
                 "unsettle" => "Bring back",
-                "pin" => "Pin or unpin",
+                "pin" => "Unpin",
                 "snooze" => "Snooze",
                 "discard-draft" => "Discard draft",
                 _ => "Settle",
@@ -299,6 +300,18 @@ impl Root {
                 icon(glyph, 12., colors::text2())
                     .group_hover("icon-button", |s| s.text_color(colors::text1())),
             )
+    }
+
+    /// A small icon button on a row's hover strip.
+    pub(super) fn row_button(
+        &self,
+        id: u64,
+        key: &'static str,
+        glyph: &'static str,
+        cx: &mut Context<Self>,
+        run: fn(&mut Root, u64, &ClickEvent, &mut gpui::Window, &mut Context<Root>),
+    ) -> gpui::Stateful<gpui::Div> {
+        Self::button_look(id, key, glyph)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |r, e: &ClickEvent, window, cx| {
                 cx.stop_propagation();
@@ -307,51 +320,86 @@ impl Root {
             }))
     }
 
+    fn sweep_button(
+        &self,
+        id: u64,
+        key: &'static str,
+        glyph: &'static str,
+        verb: Verb,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        Self::button_look(id, key, glyph).on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |r, _, _, cx| {
+                cx.stop_propagation();
+                r.menu = None;
+                r.start_sweep(id, verb, cx)
+            }),
+        )
+    }
+
     /// The buttons that show on hover: snooze and Settle, or the one that undoes either.
     fn thread_buttons(&self, t: &Thread, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let id = t.id;
         if t.snooze.is_some() {
             vec![
-                self.row_button(id, "wake", "sun", cx, |r, id, _, window, cx| {
-                    r.snooze(id, None, window, cx)
-                })
-                .into_any_element(),
+                self.sweep_button(id, "wake", "sun", Verb::Wake, cx)
+                    .into_any_element(),
             ]
         } else if t.settled {
             vec![
-                self.row_button(id, "unsettle", "rotate-ccw", cx, |r, id, _, window, cx| {
-                    r.settle(id, false, window, cx)
-                })
-                .into_any_element(),
+                self.sweep_button(id, "unsettle", "rotate-ccw", Verb::Unsettle, cx)
+                    .into_any_element(),
             ]
         } else {
-            let pinned = t.pinned.is_some();
             vec![
-                self.row_button(
-                    id,
-                    "pin",
-                    if pinned { "pin-off" } else { "pin" },
-                    cx,
-                    |r, id, _, _, cx| r.toggle_pin(id, cx),
-                )
-                .into_any_element(),
                 self.row_button(id, "snooze", "clock", cx, |r, id, e, _, cx| {
                     r.open_snooze_menu(e.position(), id, cx)
                 })
                 .into_any_element(),
                 // the one most rows end with gets its word, as T3 Code's does
-                self.row_button(id, "settle", "check", cx, |r, id, _, window, cx| {
-                    r.settle(id, true, window, cx)
-                })
-                .px(px(6.))
-                .child("Settle")
-                .into_any_element(),
+                self.sweep_button(id, "settle", "check", Verb::Settle, cx)
+                    .px(px(6.))
+                    .child("Settle")
+                    .into_any_element(),
             ]
         }
     }
 
-    /// What a thread's hover card says: its title, project and folder, and the agent with its
-    /// model and effort in words.
+    fn running(&self, id: u64, busy: bool, cx: &App) -> Option<u64> {
+        match self.views.get(&id) {
+            Some(View::Structured(v)) => v.read(cx).elapsed(),
+            _ => self
+                .turns
+                .get(&id)
+                .filter(|_| busy)
+                .map(|t| t.elapsed().as_secs()),
+        }
+    }
+
+    /// What a thread is doing, or what it concluded until the next turn. A terminal thread hears
+    /// from its hooks; a structured one reads its own transcript.
+    fn doing(&self, id: u64, cx: &App) -> Option<String> {
+        let status = self.status.get(&id).copied().unwrap_or(Status::Idle);
+        let background = if matches!(status, Status::Working | Status::Waiting) {
+            0
+        } else {
+            self.subagents(id, cx).len()
+        };
+        match background {
+            0 => match self.views.get(&id) {
+                Some(View::Structured(v)) => {
+                    let v = v.read(cx);
+                    v.doing().or_else(|| v.background_line())
+                }
+                _ => self.activity.get(&id).and_then(|a| a.doing.clone()),
+            }
+            .filter(|_| status != Status::Idle),
+            1 => Some("1 subagent running".into()),
+            n => Some(format!("{n} subagents running")),
+        }
+    }
+
     /// The subagents a thread has running: what each was asked, and seconds since it started. A
     /// terminal thread hears of them from its hooks; a structured one reads its own transcript.
     pub(crate) fn subagents(&self, id: u64, cx: &App) -> Vec<(String, u64)> {
@@ -439,6 +487,7 @@ impl Root {
             path: super::card::tidy(&cwd).into(),
             branch,
             agent: t.agent().map(|l| l.agent),
+            doing: self.doing(id, cx).map(Into::into),
             model: model.into(),
             effort: effort.map(Into::into),
             started: when(t.created),
@@ -487,6 +536,7 @@ impl Root {
             if self.busy(id) {
                 times.push(MenuEntry::item("Until it finishes", Action::SnoozeDone(id)));
             }
+            times.push(MenuEntry::item("Custom...", Action::SnoozeCustom(id)));
             menu.push(MenuEntry::Sub {
                 label: "Snooze".into(),
                 icon: "clock",
@@ -498,6 +548,9 @@ impl Root {
             "Rename thread",
             Action::Rename(Rename::Thread(id)),
         ));
+        if !self.unseen.contains(&id) && !space.is_some_and(|s| s.machine.is_some()) {
+            menu.push(MenuEntry::item("Mark unread", Action::MarkUnread(id)));
+        }
         if self.can_rename_itself(id) {
             menu.push(MenuEntry::item(
                 "Regenerate title",
@@ -576,8 +629,8 @@ impl Root {
     }
 
     /// A thread in the list, after T3 Code's: its agent's mark and its project's name, with the
-    /// age or a running count on the right; the title; then what it is doing, or its branch or
-    /// folder, and its model.
+    /// age or a running count on the right; the title and the agent's mark; then its pull request
+    /// and subagents, when it has them.
     pub(crate) fn thread_row(
         &self,
         t: &Thread,
@@ -602,26 +655,7 @@ impl Root {
         // background work takes less attention than a thread that needs you, after T3 Code's: a
         // working row off screen fades as a whole, and comes back up under the pointer
         let recede = working && !selected && !waiting;
-        // a terminal thread hears from its hooks; a structured one reads its own transcript
-        let (running, doing) = match self.views.get(&id) {
-            Some(View::Structured(v)) => {
-                let v = v.read(cx);
-                (v.elapsed(), v.doing().or_else(|| v.background_line()))
-            }
-            _ => (
-                self.turns
-                    .get(&id)
-                    .filter(|_| busy)
-                    .map(|t| t.elapsed().as_secs()),
-                self.activity.get(&id).and_then(|a| a.doing.clone()),
-            ),
-        };
-        // the line says what it does, or what it concluded until the next turn
-        let doing = match background {
-            0 => doing.filter(|_| status != Status::Idle),
-            1 => Some("1 subagent running".into()),
-            n => Some(format!("{n} subagents running")),
-        };
+        let running = self.running(id, busy, cx);
         let agent = t.agent().map(|l| l.agent);
         let (space, machine, look) = self
             .state
@@ -634,25 +668,10 @@ impl Root {
                 )
             })
             .unwrap_or_default();
-        let cwd = match &t.kind {
-            ThreadKind::Terminal { cwd, .. } => cwd.clone(),
-            ThreadKind::Structured { launch } => launch.cwd.clone(),
-        };
-        // a branch when the folder is a repo, otherwise the folder; the icon says which
-        let host = self.machines.place(id).map(|(place, branch)| {
-            let icon = if *branch { "git-branch" } else { "folder" };
-            (icon, place.clone())
-        });
-        let place = match self.git.get(&cwd).map(|g| &g.branch) {
-            _ if let Some(host) = host => host,
-            Some(b) if b.is_repo && !b.branch.is_empty() => ("git-branch", b.branch.clone()),
-            _ => (
-                "folder",
-                cwd.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-            ),
-        };
+        let unseen = self.unseen.contains(&id);
+        let quiet =
+            !selected && !unseen && !waiting && status != Status::Failed && t.resume_at.is_none();
+        let group: SharedString = format!("row-{id}").into();
         let title: AnyElement = match self.rename_box(id, false, px(13.5), FontWeight::MEDIUM) {
             Some(rename) => rename,
             None if let Some((shown, caret)) = self.typed(id, &t.title) => div()
@@ -687,85 +706,103 @@ impl Root {
                 .min_w_0()
                 .truncate()
                 .text_size(px(13.5))
-                .font_weight(if recede {
+                .font_weight(if quiet {
                     FontWeight::NORMAL
                 } else {
                     FontWeight::MEDIUM
                 })
-                .text_color(colors::text1())
+                .text_color(if quiet {
+                    colors::text1().opacity(0.75)
+                } else {
+                    colors::text1()
+                })
+                .when(quiet, |d| {
+                    d.group_hover(group.clone(), |s| s.text_color(colors::text1()))
+                })
                 .child(t.title.clone())
                 .into_any_element(),
         };
-        let group: SharedString = format!("row-{id}").into();
-        let right = match running {
-            Some(secs) => div()
-                .font_family(MONO)
-                .text_size(px(10.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(colors::busy())
-                .child(elapsed(secs)),
-            None => div()
-                .text_size(px(11.))
-                .text_color(colors::text3())
-                .when(t.last_touch() > 0, |d| d.child(ago(t.last_touch(), now))),
-        }
-        // the buttons take its place on hover
-        .flex_none()
-        .group_hover(group.clone(), |s| s.opacity(0.));
-        let state = match status {
-            _ if t.resume_at.is_some() => {
-                Some(icon("clock", 12., colors::busy()).into_any_element())
-            }
-            Status::Waiting => Some(
-                widgets::status_dot(status)
-                    .looping(1000, |d, t| d.opacity(0.35 + 0.65 * (t * 2.0 - 1.0).abs()))
+        let says: AnyElement = match key {
+            _ if let Some(badge) = self.swept(id) => badge,
+            Some(n) => jump_cap(n),
+            None if t.resume_at.is_some() => said("clock", "Limited", colors::busy()),
+            None if waiting => said("circle-help", "Needs you", colors::waiting()),
+            None if status == Status::Failed => said("circle-alert", "Failed", colors::error()),
+            None if working => match running {
+                Some(secs) => div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .text_color(colors::busy())
+                    .child(icon("circle-dashed", 12., colors::busy()))
+                    .child(
+                        div()
+                            .font_family(MONO)
+                            .text_size(px(10.5))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(elapsed(secs)),
+                    )
                     .into_any_element(),
-            ),
-            Status::Done if background == 0 => Some(
+                None => said("circle-dashed", "Working", colors::busy()),
+            },
+            None if unseen && status == Status::Done && background == 0 => {
+                said("circle-check", "Done", colors::ok())
+            }
+            None => div()
+                .text_size(px(12.))
+                .text_color(colors::text2())
+                .when(t.last_touch() > 0, |d| d.child(ago(t.last_touch(), now)))
+                .into_any_element(),
+        };
+        let slot = div()
+            .relative()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_end()
+            .min_w(px(32.))
+            .h(px(20.))
+            .child(
                 div()
                     .flex()
-                    .flex_none()
                     .items_center()
-                    .justify_center()
-                    .size(px(12.))
-                    .rounded_full()
-                    .bg(colors::ok())
-                    .child(icon("check", 9., colors::on_accent()))
-                    .into_any_element(),
-            ),
-            Status::Failed => Some(widgets::status_dot(status).into_any_element()),
-            Status::Done | Status::Working | Status::Idle => None,
-        };
-        let foot = match doing {
-            Some(doing) => div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_color(if waiting {
-                    colors::waiting()
-                } else {
-                    colors::text2()
-                })
-                .child(doing),
-            None => div()
-                .flex_1()
-                .min_w_0()
+                    .group_hover(group.clone(), |s| s.opacity(0.))
+                    .child(says),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(-2.))
+                    .right(px(-5.))
+                    .flex()
+                    .gap(px(1.))
+                    .p(px(1.))
+                    .rounded(px(6.))
+                    .bg(colors::surface3())
+                    .opacity(0.)
+                    .when(self.sweep.is_none(), |d| {
+                        d.group_hover(group.clone(), |s| s.opacity(1.))
+                    })
+                    .children(self.thread_buttons(t, cx)),
+            );
+        let pr = self.pr_of(t).cloned().map(|pr| pr_badge(id, pr));
+        let kids = self.kids_chip(id, cx);
+        let chips = (pr.is_some() || kids.is_some()).then(|| {
+            div()
                 .flex()
                 .items_center()
-                .gap(px(5.))
-                .child(icon(place.0, 11., colors::text3()))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .font_family(MONO)
-                        .text_size(px(10.5))
-                        .child(place.1),
-                ),
+                .gap(px(6.))
+                .min_w_0()
+                .h(px(16.))
+                .children(pr)
+                .children(kids)
+        });
+        let picked = self.selection.contains(&id);
+        let menu = if picked && self.selection.len() > 1 {
+            self.bulk_menu()
+        } else {
+            self.thread_menu(t)
         };
-        let pr = self.pr_of(t).cloned().map(|pr| pr_badge(id, pr));
-        let menu = self.thread_menu(t);
-        let buttons = self.thread_buttons(t, cx);
         let row = div()
             .id(("thread", id))
             .group(group.clone())
@@ -774,16 +811,14 @@ impl Root {
             .flex()
             .flex_none()
             .flex_col()
-            .gap(px(3.))
-            .pt(px(8.))
-            .px(px(8.))
-            .pb(px(9.))
-            .rounded(px(8.))
+            .gap(px(2.))
+            .pt(px(7.))
+            .px(px(9.))
+            .pb(px(8.))
+            .rounded(px(super::RADIUS))
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
-            .when(!selected && waiting, |d| {
-                d.bg(colors::waiting().opacity(0.07))
-            })
+            .when(picked && !selected, |d| d.bg(colors::ink(0.09)))
             .when(recede, |d| d.opacity(0.7))
             .when(!selected, |d| {
                 d.hover(move |s| {
@@ -792,13 +827,24 @@ impl Root {
                 })
             })
             .when(working, |d| d.child(sheen()))
+            .children(self.key_ring(id))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(7.))
+                    .gap(px(6.))
                     .min_w_0()
+                    .h(px(20.))
                     .child(tag(&space, look.clone(), false))
+                    .when(t.pinned.is_some() && t.active(), |d| {
+                        d.child(
+                            self.row_button(id, "pin", "pin", cx, |r, id, _, _, cx| {
+                                r.pin(id, false, cx)
+                            })
+                            .h(px(16.))
+                            .min_w(px(16.)),
+                        )
+                    })
                     .child(
                         div()
                             .flex_1()
@@ -825,45 +871,24 @@ impl Root {
                                 .child(div().min_w_0().truncate().child(name)),
                         )
                     })
-                    .when(t.pinned.is_some() && t.active(), |d| {
-                        d.child(icon("pin", 11., colors::text3()))
-                    })
-                    .child(right)
-                    .children(key.map(|n| jump_cap(n, group.clone()))),
+                    .child(slot),
             )
-            .child(title)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(6.))
                     .min_w_0()
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
-                    .child(foot)
-                    .children(pr)
-                    .children(self.kids_chip(id, cx))
-                    .children(state)
-                    .child(agent_mark(agent, working)),
+                    .child(div().flex_1().min_w_0().child(title))
+                    .child(agent_mark(agent)),
             )
-            .child(
-                div()
-                    .absolute()
-                    .top(px(5.))
-                    .right(px(6.))
-                    .flex()
-                    .gap(px(2.))
-                    .p(px(1.))
-                    .rounded(px(6.))
-                    .bg(colors::surface3())
-                    .opacity(0.)
-                    .group_hover(group, |s| s.opacity(1.))
-                    .children(buttons),
+            .children(chips)
+            .on_click(
+                cx.listener(move |r, e: &ClickEvent, window, cx| r.row_click(id, e, window, cx)),
             )
-            .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                r.menu = None;
-                r.open_thread(id, window, cx)
-            }))
+            .on_mouse_move(
+                cx.listener(move |r, e: &gpui::MouseMoveEvent, _, cx| r.sweep_over(id, e, cx)),
+            )
             .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
             .on_hover(cx.listener(move |r, on: &bool, _, cx| r.row_hovered(id, *on, cx)))
             // where the row is drawn, for the card that shows beside it
@@ -889,6 +914,11 @@ impl Root {
             // while a row is dragged: which half of this one the pointer is on
             .when(drops, |d| {
                 d.on_drag_move(cx.listener(move |r, e: &DragMoveEvent<PaneDrag>, _, cx| {
+                    let dragged = e.drag(cx).pane.thread();
+                    if r.dragging != dragged {
+                        r.dragging = dragged;
+                        cx.notify();
+                    }
                     let (p, b) = (e.event.position, e.bounds);
                     let next = if b.contains(&p) {
                         Some((id, p.y > b.center().y))
@@ -904,9 +934,17 @@ impl Root {
                 }))
                 .on_drop(cx.listener(move |r, d: &PaneDrag, _, cx| {
                     let below = r.drop_at.is_some_and(|(t, below)| t == id && below);
-                    r.drop_at = None;
+                    r.end_drag();
                     r.drop_on_thread(d, id, below, cx)
                 }))
+                .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent().opacity(0.08)))
+                .on_drop(cx.listener(
+                    move |r, paths: &ExternalPaths, window, cx| {
+                        cx.stop_propagation();
+                        r.open_thread(id, window, cx);
+                        r.drop_anywhere(paths, window, cx);
+                    },
+                ))
             })
             // the line where a dragged row would land
             .children(
@@ -950,6 +988,12 @@ impl Root {
             .thread(id)
             .map(|(s, _)| (s.name.clone(), self.look_of(s)))
             .unwrap_or_default();
+        let picked = self.selection.contains(&id);
+        let menu = if picked && self.selection.len() > 1 {
+            self.bulk_menu()
+        } else {
+            self.thread_menu(t)
+        };
         let when = match t.snooze {
             Some(snooze) => Some(self.wake_text(snooze)),
             None => (t.last_touch() > 0).then(|| ago(t.last_touch(), now)),
@@ -963,10 +1007,12 @@ impl Root {
             .gap(px(8.))
             .h(px(30.))
             .px(px(8.))
-            .rounded(px(6.))
+            .rounded(px(super::RADIUS))
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
+            .when(picked && !selected, |d| d.bg(colors::ink(0.09)))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+            .children(self.key_ring(id))
             .child(tag(&space, look, true))
             .child(
                 match self.rename_box(id, false, px(12.5), FontWeight::NORMAL) {
@@ -980,7 +1026,8 @@ impl Root {
                         .child(t.title.clone()),
                 },
             )
-            .children(when.map(|w| {
+            .children(self.swept(id))
+            .children(when.filter(|_| self.swept(id).is_none()).map(|w| {
                 div()
                     .flex_none()
                     .text_size(px(11.))
@@ -988,24 +1035,25 @@ impl Root {
                     .group_hover(group.clone(), |s| s.opacity(0.))
                     .child(w)
             }))
-            .children(key.map(|n| jump_cap(n, group.clone())))
+            .children(key.map(jump_cap))
             .child(
                 div()
                     .absolute()
                     .right(px(6.))
                     .flex()
                     .opacity(0.)
-                    .group_hover(group, |s| s.opacity(1.))
+                    .when(self.sweep.is_none(), |d| {
+                        d.group_hover(group, |s| s.opacity(1.))
+                    })
                     .children(self.thread_buttons(t, cx)),
             )
-            .on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
-                r.menu = None;
-                r.open_thread(id, window, cx)
-            }))
-            .on_mouse_down(
-                MouseButton::Right,
-                self.context_menu(self.thread_menu(t), cx),
+            .on_click(
+                cx.listener(move |r, e: &ClickEvent, window, cx| r.row_click(id, e, window, cx)),
             )
+            .on_mouse_move(
+                cx.listener(move |r, e: &gpui::MouseMoveEvent, _, cx| r.sweep_over(id, e, cx)),
+            )
+            .on_mouse_down(MouseButton::Right, self.context_menu(menu, cx))
             .on_hover(cx.listener(move |r, on: &bool, _, cx| r.row_hovered(id, *on, cx)))
             .child({
                 let bounds = self.row_bounds.clone();

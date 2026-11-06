@@ -233,6 +233,7 @@ impl Root {
         if self.screen != Screen::Settings {
             self.back = self.screen;
             self.screen = Screen::Settings;
+            self.left(self.back);
             self.clear_search(cx);
         }
         self.settings.set_tab(tab);
@@ -284,7 +285,9 @@ impl Root {
         cx: &mut Context<Self>,
     ) {
         self.park_elsewhere(space, cx);
+        let from = self.screen;
         self.screen = Screen::Compose(space);
+        self.left(from);
         self.refresh_composer(cx);
         let focus = self.composer.focus_handle(cx);
         window.focus(&focus, cx);
@@ -971,7 +974,9 @@ impl Root {
         {
             v.update(cx, |v, _| v.come_on_screen());
         }
+        let from = self.screen;
         self.screen = Screen::Thread(id);
+        self.left(from);
         self.client.send(Command::Servers);
         self.unseen.remove(&id);
         self.notice_gone(id, cx);
@@ -1080,6 +1085,18 @@ impl Root {
             }
             Action::SnoozeDone(id) => {
                 self.snooze(id, Some(hyprspace_proto::Snooze::Done), window, cx)
+            }
+            Action::SnoozeCustom(id) => {
+                self.snooze_menu = Some((at, id));
+                self.open_custom_snooze(window, cx);
+            }
+            Action::SettlePicked
+            | Action::SnoozePicked(_)
+            | Action::UnreadPicked
+            | Action::DeletePicked => self.act_picked(action, window, cx),
+            Action::MarkUnread(id) => {
+                self.unseen.insert(id);
+                cx.notify();
             }
             Action::CopyTitle(thread) => {
                 if let Some((_, t)) = self.state.thread(thread) {

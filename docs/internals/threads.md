@@ -109,8 +109,29 @@ idle agents behind. Settle and snooze replaced it.
   keeps its session, working or not, and wakes at the top of the list marked new.
 - Opening a settled or snoozed thread doesn't bring it back; sending it a message does, and so
   does Bring back on the line that ends a settled thread's transcript. Settling
-  and snoozing show a toast with Undo for five seconds.
+  and snoozing put "Settled, Ctrl+Z to undo" in the sidebar's foot for five seconds.
+- Settling or snoozing the thread on screen opens the next one in the list, as T3 Code does. The
+  composer shows only when none is left.
+- Ctrl+Z (Cmd+Z) undoes while that line shows. The window catches it before the focused box
+  only then, so a text box keeps its own undo the rest of the time.
+- Several at once: Ctrl+click and Shift+click pick rows for the bulk menu, and holding a row's
+  Settle (or Wake, or Bring back) and dragging across rows sweeps them in. Either way one Undo
+  puts them all back.
 - Saved `archived` threads load as settled, and an archived space loads with its threads settled.
+
+## The sidebar's rows
+
+- **One slot holds the age or the state.** The right end of a row's first line says how old it
+  is, or "Needs you", "Failed", "Done" or the running time, and the hover buttons take that
+  place. What the agent is doing went to the hover card, since the slot says the state.
+- **Unread is contrast, not a dot**, after T3 Code's. Rows that want you (unseen, waiting,
+  failed, limited) keep their weight; the rest step back to a lighter title. `Root.unseen` lives
+  in memory, so after a restart nothing reads as unread.
+- **The shelves sit at the bottom.** The list is virtual, so flex can't push them down: a filler
+  row takes the room the last layout left, and is nothing once the list is longer than the
+  sidebar.
+- The space filter lives in memory. Labels for Pinned and Active, and a pin zone when nothing is
+  pinned, show only while a row is dragged; a row dropped among pinned ones is pinned there.
 
 ## Worktree folders
 
@@ -184,7 +205,7 @@ back-to-back runs don't make it jump) or needs you.
 Notifications are off until switched on in Settings, General, Experimental; Ash doesn't want
 them by default. Off means no OS notification, toast, flash or taskbar count. Once on, a thread
 that starts waiting on you, fails or finishes notifies, by a switch per kind (finished starts off). With the window in the background that is an OS notification, a
-taskbar flash or a dock bounce; in front, a toast at the top with Open. The thread on screen in
+taskbar flash or a dock bounce; in front, a card in the top right corner with Open. The thread on screen in
 a focused window never notifies, and nothing leaves the computer.
 
 - **Only a run moving on notifies**: out of Working, or out of Waiting into failed or done. A view

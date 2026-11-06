@@ -179,8 +179,6 @@ pub fn render(
         .gap(px(10.))
         .px(px(14.))
         .py(px(11.))
-        .border_b_1()
-        .border_color(colors::border1())
         .child(icon("github", 15., colors::text1()))
         .child(
             div()
@@ -333,8 +331,7 @@ pub fn render(
         .gap(px(14.))
         .px(px(14.))
         .py(px(8.))
-        .border_t_1()
-        .border_color(colors::border1())
+        .bg(colors::ink(0.025))
         .text_size(px(11.))
         .text_color(colors::text3())
         .child(

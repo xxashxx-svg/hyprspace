@@ -203,7 +203,7 @@ impl Root {
         let card = slide::ease_in(card, "close-card", 200, |d, t| {
             d.opacity(t).mt(px(12. * (1. - t)))
         });
-        let scrim = colors::hsla(colors::theme().shadow);
+        let scrim = colors::bg();
         Some(slide::ease_in(
             div()
                 .id("close-dialog")
@@ -223,7 +223,7 @@ impl Root {
                 .child(card),
             "close-scrim",
             200,
-            move |d, t| d.bg(scrim.opacity(0.6 * t)),
+            move |d, t| d.bg(scrim.opacity(0.64 * t)),
         ))
     }
 }

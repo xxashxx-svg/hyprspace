@@ -551,44 +551,49 @@ pub fn render(
     let rows = open.items.iter().enumerate().map(|(i, item)| {
         let on = i == open.sel;
         let pick = pick.clone();
-        let (glyph, name) = match open.kind {
-            Kind::Command if item.insert.starts_with('$') => {
-                ("square-slash", format!("${}", item.label))
-            }
-            Kind::Command => ("square-slash", format!("/{}", item.label)),
-            Kind::File if item.insert.starts_with(THREAD) => ("message-square", item.label.clone()),
-            Kind::File => ("file", item.label.clone()),
-            Kind::Pr => ("github", item.label.clone()),
+        let (glyph, sigil) = match open.kind {
+            Kind::Command if item.insert.starts_with('$') => (None, Some("$")),
+            Kind::Command => (None, Some("/")),
+            Kind::File if item.insert.starts_with(THREAD) => (Some("message-square"), None),
+            Kind::File => (Some("file"), None),
+            Kind::Pr => (Some("github"), None),
         };
         div()
             .id(("suggest", i))
             .flex()
             .items_center()
-            .gap(px(9.))
-            .h(px(30.))
+            .gap(px(10.))
+            .h(px(32.))
             .px(px(10.))
-            .rounded(px(6.))
+            .rounded(px(8.))
             .cursor_pointer()
-            .when(on, |d| d.bg(colors::surface3()))
-            .when(!on, |d| d.hover(|s| s.bg(colors::ink(0.06))))
+            .when(on, |d| d.bg(colors::ink(0.08)))
+            .when(!on, |d| d.hover(|s| s.bg(colors::ink(0.05))))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(move |_: &ClickEvent, w, cx| pick(i, w, cx))
-            .child(icon(
-                glyph,
-                13.,
-                if on { colors::text1() } else { colors::text3() },
-            ))
-            .child(
-                div()
-                    .flex_none()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors::text1())
-                    .child(SharedString::from(name)),
+            .children(
+                glyph.map(|g| icon(g, 14., if on { colors::text1() } else { colors::text3() })),
             )
             .child(
                 div()
+                    .flex()
+                    .flex_1()
                     .min_w_0()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .children(sigil.map(|g| div().flex_none().text_color(colors::text3()).child(g)))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(colors::text1())
+                            .child(SharedString::from(item.label.clone())),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .max_w(relative(0.45))
                     .truncate()
                     .text_size(px(12.))
                     .text_color(colors::text3())
@@ -608,18 +613,18 @@ pub fn render(
         })
         .flex()
         .flex_col()
-        .p(px(5.))
-        .rounded(px(12.))
+        .p(px(6.))
+        .rounded(px(14.))
         .border_1()
-        .border_color(colors::border2())
+        .border_color(colors::ink(0.1))
         .bg(colors::surface2())
         .shadow(colors::shadow())
         .child(
             div()
                 .px(px(10.))
-                .pt(px(4.))
-                .pb(px(3.))
-                .text_size(px(11.))
+                .pt(px(5.))
+                .pb(px(4.))
+                .text_size(px(12.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors::text3())
                 .child(match open.kind {

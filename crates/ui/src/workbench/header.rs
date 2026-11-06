@@ -31,6 +31,10 @@ pub fn short(path: &Path) -> String {
     }
 }
 
+thread_local! {
+    pub static DROP_VERB: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
 /// A thread picked up by its sidebar row: dropped on another row it moves there, dropped on the
 /// Settled shelf it settles.
 pub struct PaneDrag {
@@ -85,7 +89,14 @@ impl Render for Ghost {
                     .text_size(px(12.5))
                     .text_color(colors::text1())
                     .child(badge)
-                    .child(div().truncate().child(self.title.clone())),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(self.title.clone()),
+                    )
+                    .children(DROP_VERB.get().map(crate::sidebar::verb_badge)),
             )
     }
 }

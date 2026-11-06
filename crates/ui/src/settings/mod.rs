@@ -358,7 +358,7 @@ impl Root {
             .p(px(10.))
             .border_r_1()
             .border_color(colors::border0())
-            .bg(colors::bg())
+            .bg(colors::surface1())
             .child(
                 div()
                     .px(px(10.))

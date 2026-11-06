@@ -1,4 +1,4 @@
-// The six themes of src/themes.ts: a hue and a name, with both sides derived from the hue the
+// The themes of src/themes.ts: a hue and a name, with both sides derived from the hue the
 // same way, so they read as one family. Shared bits (status colors, ANSI) come from tokens.css.
 
 use crate::oklch::{oklch, oklch_a};
@@ -22,7 +22,7 @@ pub const THEMES: &[ThemeInfo] = &[
     ThemeInfo {
         id: "t3",
         name: "HyprSpace",
-        blurb: "Neutral",
+        blurb: "Gray",
         hue: 264.0,
         tint: 0.0,
         dark: (0.97, 0.0),
@@ -73,6 +73,15 @@ pub const THEMES: &[ThemeInfo] = &[
         dark: (0.65, 0.2),
         light: (0.5, 0.2),
     },
+    ThemeInfo {
+        id: "onyx",
+        name: "Onyx",
+        blurb: "Neutral",
+        hue: 264.0,
+        tint: 0.0,
+        dark: (0.97, 0.0),
+        light: (0.22, 0.0),
+    },
 ];
 
 const WHITE: Color = Color::rgb(0xffffff);
@@ -90,7 +99,29 @@ pub fn blue_orange(dark: bool) -> (Color, Color) {
 
 pub fn build(id: &str, dark: bool) -> Theme {
     let t = THEMES.iter().find(|t| t.id == id).unwrap_or(&THEMES[0]);
-    make(t.hue, t.tint, if dark { t.dark } else { t.light }, dark)
+    let theme = make(t.hue, t.tint, if dark { t.dark } else { t.light }, dark);
+    if t.id == "t3" && dark {
+        raised(theme)
+    } else {
+        theme
+    }
+}
+
+fn raised(mut t: Theme) -> Theme {
+    t.bg = oklch(0.209, 0.0, 0.0);
+    t.term_bg = t.bg;
+    t.surface1 = oklch(0.256, 0.0, 0.0);
+    t.surface2 = oklch(0.252, 0.0, 0.0);
+    t.surface3 = oklch(0.341, 0.0, 0.0);
+    t.text1 = oklch(0.9, 0.0, 0.0);
+    t.text2 = oklch(0.65, 0.0, 0.0);
+    t.text3 = oklch(0.6, 0.0, 0.0);
+    t.term_fg = t.text1;
+    t.cursor = t.text1;
+    t.border0 = t.ink.a(0.05);
+    t.border1 = t.ink.a(0.08);
+    t.border2 = t.ink.a(0.11);
+    t
 }
 
 /// The theme taken from a picture's main color: its hue, with a grey picture kept near neutral.
@@ -242,15 +273,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_default_matches_tokens_css() {
-        let d = build("t3", true);
+    fn onyx_matches_tokens_css() {
+        let d = build("onyx", true);
         assert_eq!(d.bg, Color::rgb(0x161616));
         assert_eq!(d.border2, Color::rgba(0xffffff1a));
         assert_eq!(d.on_accent, d.bg);
-        let l = build("t3", false);
+        let l = build("onyx", false);
         assert_eq!(l.ink, BLACK);
         assert_eq!(l.on_accent, WHITE);
-        assert_eq!(build("nope", true), d);
+        assert_eq!(build("nope", true), build("t3", true));
     }
 
     #[test]
@@ -266,5 +297,8 @@ mod tests {
         }
         // a bright accent gets dark text on it
         assert_ne!(build("ember", true).on_accent, WHITE);
+        let g = build("t3", true);
+        assert_ne!(g.surface1, g.bg);
+        assert_ne!(g.on_accent, WHITE);
     }
 }

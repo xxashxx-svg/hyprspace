@@ -413,8 +413,8 @@ impl TranscriptView {
         }
     }
 
-    /// `question` in a side chat: the conversation forked into a thread that opens in the dock
-    /// and asks before it changes anything, while this one keeps working.
+    /// `question` in a side chat: the conversation forked into a thread that opens in the dock,
+    /// with this one's model and access, while this one keeps working.
     fn side(&mut self, question: String, images: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
         let why = if self.remote {
             Some("/btw works for threads on this computer.")
@@ -435,9 +435,6 @@ impl TranscriptView {
             nth: 0,
             fork: true,
         });
-        if launch.permission != Permission::Plan {
-            launch.permission = Permission::Ask;
-        }
         cx.emit(TranscriptEvent::Side {
             launch,
             prompt: Prompt {

@@ -985,7 +985,7 @@ fn ticks(
     });
     let now = current(v, prompts, &seen);
     let height = f32::from(v.list.viewport_bounds().size.height) / crate::zoom::zoom();
-    let (shown, pitch) = fit_ticks(prompts.len(), height - 96.);
+    let (shown, pitch) = (fit_ticks(prompts.len(), height - 96.), PITCH);
     let last = prompts.len() - 1;
     let prompt_of = |n: usize| (n * last + (shown - 1) / 2) / (shown - 1);
     let hover = v.hover_tick.get().filter(|&h| h < shown);
@@ -1207,9 +1207,13 @@ fn fade_rail(
     shown
 }
 
-fn fit_ticks(prompts: usize, room: f32) -> (usize, f32) {
-    let shown = prompts.min((room / 4.).floor().max(2.) as usize);
-    (shown, (room / shown as f32).clamp(4., 8.))
+const PITCH: f32 = 8.;
+const MOST_TICKS: usize = 40;
+
+fn fit_ticks(prompts: usize, room: f32) -> usize {
+    prompts
+        .min((room / PITCH).floor().max(2.) as usize)
+        .min(MOST_TICKS)
 }
 
 fn previews(items: &[Item]) -> Vec<(String, String)> {
@@ -2487,4 +2491,17 @@ fn model_menu(
         &v.anchor
     };
     model_menu::render(menu, &spec, anchor, window, cx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_chat_keeps_a_short_rail() {
+        assert_eq!(fit_ticks(5, 800.), 5);
+        assert_eq!(fit_ticks(300, 800.), MOST_TICKS);
+        assert_eq!(fit_ticks(300, 160.), 20);
+        assert_eq!(fit_ticks(300, 4.), 2);
+    }
 }

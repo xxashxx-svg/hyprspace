@@ -302,8 +302,6 @@ fn setup_box(input: &gpui::Entity<TextInput>) -> AnyElement {
         .pt(px(8.))
         .px(px(10.))
         .pb(px(5.))
-        .border_t_1()
-        .border_color(colors::border1())
         .flex()
         .flex_col()
         .gap(px(6.))

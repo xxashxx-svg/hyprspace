@@ -141,6 +141,106 @@ pub fn wake_short(at: NaiveDateTime, now: NaiveDateTime) -> String {
     }
 }
 
+pub fn parse_when(text: &str, now: NaiveDateTime) -> Option<NaiveDateTime> {
+    let text = text.trim().to_lowercase();
+    let text = text.strip_prefix("in ").unwrap_or(&text).trim();
+    let words: Vec<&str> = text.split_whitespace().filter(|w| *w != "at").collect();
+    let (first, rest) = words.split_first()?;
+    let day = match *first {
+        "today" => Some(now.date()),
+        "tomorrow" | "tmr" | "tmrw" => Some(now.date() + Duration::days(1)),
+        w => weekday_named(w).map(|d| {
+            let ahead = (d.num_days_from_monday() as i64
+                - now.weekday().num_days_from_monday() as i64)
+                .rem_euclid(7);
+            now.date() + Duration::days(if ahead == 0 { 7 } else { ahead })
+        }),
+    };
+    let at = match day {
+        Some(day) => {
+            let time = match rest.concat() {
+                t if t.is_empty() => NaiveTime::from_hms_opt(9, 0, 0),
+                t => clock_named(&t, true),
+            }?;
+            day.and_time(time)
+        }
+        None => match clock_named(&words.concat(), false) {
+            Some(time) => {
+                let today = now.date().and_time(time);
+                if today > now {
+                    today
+                } else {
+                    today + Duration::days(1)
+                }
+            }
+            None => now + span(&words.concat())?,
+        },
+    };
+    (at > now).then_some(at)
+}
+
+fn weekday_named(w: &str) -> Option<Weekday> {
+    let days = [
+        ("mon", Weekday::Mon),
+        ("tue", Weekday::Tue),
+        ("wed", Weekday::Wed),
+        ("thu", Weekday::Thu),
+        ("fri", Weekday::Fri),
+        ("sat", Weekday::Sat),
+        ("sun", Weekday::Sun),
+    ];
+    days.iter()
+        .find(|(short, _)| w.len() >= 3 && w.starts_with(short))
+        .map(|(_, d)| *d)
+}
+
+fn clock_named(t: &str, bare: bool) -> Option<NaiveTime> {
+    let (t, half) = match t.strip_suffix("am").or_else(|| t.strip_suffix("a")) {
+        Some(t) => (t, Some(false)),
+        None => match t.strip_suffix("pm").or_else(|| t.strip_suffix("p")) {
+            Some(t) => (t, Some(true)),
+            None => (t, None),
+        },
+    };
+    if half.is_none() && !bare && !t.contains(':') {
+        return None;
+    }
+    let (h, m) = match t.split_once(':') {
+        Some((h, m)) => (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?),
+        None => (t.parse::<u32>().ok()?, 0),
+    };
+    let h = match half {
+        Some(pm) if (1..=12).contains(&h) => h % 12 + if pm { 12 } else { 0 },
+        Some(_) => return None,
+        None => h,
+    };
+    NaiveTime::from_hms_opt(h, m, 0)
+}
+
+fn span(t: &str) -> Option<Duration> {
+    let mut total = Duration::zero();
+    let mut rest = t;
+    while !rest.is_empty() {
+        let digits = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        let n: i64 = rest[..digits].parse().ok()?;
+        rest = &rest[digits..];
+        let unit = rest
+            .find(|c: char| c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        total += match &rest[..unit] {
+            "m" | "min" | "mins" | "minute" | "minutes" => Duration::minutes(n),
+            "h" | "hr" | "hrs" | "hour" | "hours" => Duration::hours(n),
+            "d" | "day" | "days" => Duration::days(n),
+            "w" | "wk" | "week" | "weeks" => Duration::weeks(n),
+            _ => return None,
+        };
+        rest = &rest[unit..];
+    }
+    (total > Duration::zero()).then_some(total)
+}
+
 fn weekday(d: Weekday) -> &'static str {
     match d {
         Weekday::Mon => "Mon",
@@ -240,5 +340,27 @@ mod tests {
         assert_eq!(left(135 * m, 0), "in 2h 15m");
         assert_eq!(left((2 * 1440 + 240) * m, 0), "in 2d 4h");
         assert_eq!(left(0, 5 * m), "in under a minute");
+    }
+
+    #[test]
+    fn reads_a_typed_wake_time() {
+        let now = at(2026, 11, 6, 14, 0);
+        let when = |t: &str| parse_when(t, now);
+        assert_eq!(when("45m"), Some(at(2026, 11, 6, 14, 45)));
+        assert_eq!(when("in 2 hours"), Some(at(2026, 11, 6, 16, 0)));
+        assert_eq!(when("1h30m"), Some(at(2026, 11, 6, 15, 30)));
+        assert_eq!(when("3pm"), Some(at(2026, 11, 6, 15, 0)));
+        assert_eq!(when("9:30am"), Some(at(2026, 11, 7, 9, 30)));
+        assert_eq!(when("at 17:15"), Some(at(2026, 11, 6, 17, 15)));
+        assert_eq!(when("tomorrow"), Some(at(2026, 11, 7, 9, 0)));
+        assert_eq!(when("Tomorrow 10 am"), Some(at(2026, 11, 7, 10, 0)));
+        assert_eq!(when("tomorrow 14"), Some(at(2026, 11, 7, 14, 0)));
+        assert_eq!(when("mon"), Some(at(2026, 11, 9, 9, 0)));
+        assert_eq!(when("friday 3pm"), Some(at(2026, 11, 13, 15, 0)));
+        assert_eq!(when("today 1pm"), None);
+        assert_eq!(when("13pm"), None);
+        assert_eq!(when("soon"), None);
+        assert_eq!(when("10"), None);
+        assert_eq!(when(""), None);
     }
 }

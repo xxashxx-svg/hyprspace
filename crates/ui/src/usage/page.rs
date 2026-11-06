@@ -75,8 +75,6 @@ pub(super) fn card(id: &str, name: &str, plan: Option<String>, right: Option<Str
                 .gap(px(10.))
                 .px(px(16.))
                 .py(px(12.))
-                .border_b_1()
-                .border_color(colors::border1())
                 .child(
                     div()
                         .flex()
@@ -134,8 +132,6 @@ pub(super) fn note(text: String) -> AnyElement {
     div()
         .px(px(16.))
         .py(px(10.))
-        .border_t_1()
-        .border_color(colors::border0())
         .text_size(px(12.))
         .text_color(colors::text3())
         .child(text)

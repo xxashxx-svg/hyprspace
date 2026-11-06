@@ -61,7 +61,7 @@ fn badge(name: &'static str, color: gpui::Hsla) -> AnyElement {
         .bottom(px(-3.))
         .size(px(9.))
         .rounded_full()
-        .bg(colors::bg())
+        .bg(colors::surface1())
         .flex()
         .items_center()
         .justify_center()
@@ -208,6 +208,7 @@ impl Root {
             .text_size(px(12.5))
             .when(selected, |d| d.bg(colors::surface3()))
             .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+            .children(self.key_ring(id))
             .child(
                 div()
                     .relative()

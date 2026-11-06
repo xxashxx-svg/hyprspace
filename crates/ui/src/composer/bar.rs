@@ -64,18 +64,16 @@ pub fn chip(id: impl Into<ElementId>) -> Stateful<Div> {
         .px(px(11.))
         .min_w_0()
         .rounded_full()
-        .bg(colors::ink(0.06))
         .text_size(px(12.5))
         .text_color(colors::text2())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.1)))
+        .hover(|s| s.bg(colors::ink(0.08)))
 }
 
 pub fn attach(id: impl Into<ElementId>) -> Stateful<Div> {
     widgets::bare_icon_frame(id, 26.)
         .rounded_full()
-        .bg(colors::ink(0.06))
-        .hover(|s| s.bg(colors::ink(0.1)))
+        .hover(|s| s.bg(colors::ink(0.08)))
         .child(
             icon("paperclip", 14., colors::text3())
                 .group_hover("icon-button", |s| s.text_color(colors::text1())),

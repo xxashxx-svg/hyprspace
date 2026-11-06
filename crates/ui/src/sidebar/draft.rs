@@ -2,7 +2,7 @@ use gpui::{AnyElement, ClickEvent, Context, FontWeight, SharedString, Stateful, 
 use hyprspace_proto::{Draft, Space, Thread};
 
 use super::icon::Look;
-use super::{row_hover, tag};
+use super::tag;
 use crate::assets::icon;
 use crate::colors;
 use crate::root::{Root, Screen};
@@ -95,17 +95,20 @@ fn draft_card(
         .pt(px(8.))
         .px(px(8.))
         .pb(px(9.))
-        .rounded(px(8.))
+        .rounded(px(super::RADIUS))
         .cursor_pointer()
         .when(selected, |d| d.bg(colors::surface3()))
-        .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+        .when(!selected, |d| {
+            d.bg(colors::busy().opacity(0.05))
+                .hover(|s| s.bg(colors::busy().opacity(0.09)))
+        })
         .child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(7.))
                 .min_w_0()
-                .child(icon("square-pen", 12., colors::text2()))
+                .child(icon("square-pen", 12., colors::busy()))
                 .child(tag(space, look.clone(), false))
                 .child(
                     div()

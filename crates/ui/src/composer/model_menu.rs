@@ -426,8 +426,7 @@ pub fn render<H: Host>(
         div()
             .px(px(12.))
             .py(px(8.))
-            .border_t_1()
-            .border_color(colors::border1())
+            .bg(colors::ink(0.025))
             .text_size(px(11.))
             .text_color(colors::text3())
             .child(line)
@@ -560,8 +559,6 @@ fn models_body<H: Host>(m: &ModelMenu, spec: &Spec, cx: &mut Context<H>) -> AnyE
         .h(px(40.))
         .mb(px(4.))
         .px(px(14.))
-        .border_b_1()
-        .border_color(colors::border1())
         .child(icon("search", 13., colors::text3()))
         .child(if m.query.is_empty() {
             div().text_color(colors::text3()).child("Search models")

@@ -194,7 +194,7 @@ pub(crate) static THEME: Setting = setting(
     Appearance,
     "Theme",
     "Theme",
-    "Six themes, each with a light and a dark side.",
+    "Seven themes, each with a light and a dark side.",
     "color colour dark light system scheme mode accent orchid grove ocean ember iris",
     &[Field::Theme, Field::Scheme],
 );

@@ -107,6 +107,38 @@ pub(super) const LINES: &[Line] = &[
     line("App", "Zoom out", "", &[&[MOD, "-"]]),
     line("App", "Actual size", "", &[&[MOD, "0"]]),
     line(
+        "Sidebar",
+        "Move through the threads",
+        "Down from the search box. Enter opens one, Esc goes back.",
+        &[&["\u{2193}"], &["\u{2191}"]],
+    ),
+    line(
+        "Sidebar",
+        "First or last thread",
+        "",
+        &[&["Home"], &["End"]],
+    ),
+    line("Sidebar", "Rename the thread", "", &[&["F2"]]),
+    line("Sidebar", "The thread's menu", "", &[&["Shift", "F10"]]),
+    line(
+        "Sidebar",
+        "Pick several threads",
+        "Right-click one of them to settle, snooze or delete them all.",
+        &[&[MOD, "Click"], &["Shift", "Click"]],
+    ),
+    line(
+        "Sidebar",
+        "Settle several threads",
+        "Hold Settle and drag across rows.",
+        &[&["Drag"]],
+    ),
+    line(
+        "Sidebar",
+        "Undo a settle or snooze",
+        "For five seconds after.",
+        &[&[MOD, "Z"]],
+    ),
+    line(
         "Settings",
         "Search settings",
         "/ works too.",

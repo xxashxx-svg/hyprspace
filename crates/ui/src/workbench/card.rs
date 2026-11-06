@@ -1,7 +1,7 @@
 // The viewer card: a file or a diff over the window, on a dimmed backdrop. Its header names the
 // file and its folder, marks unsaved edits, and carries the diff's line counts, a button to view
-// the whole file from a diff, one to open it in the user's editor, and close. Esc or a click
-// outside closes it too, asking first about unsaved edits.
+// the whole file from a diff, Open in browser for a page, one to open it in the user's editor, and
+// close. Esc or a click outside closes it too, asking first about unsaved edits.
 
 use std::path::{Path, PathBuf};
 
@@ -20,8 +20,8 @@ use crate::widgets::tip;
 use crate::zoom::px;
 
 /// The card's margin from the window's edges, and its widest.
-const MARGIN: f32 = 48.;
-const MAX_W: f32 = 1100.;
+const MARGIN: f32 = 24.;
+const MAX_W: f32 = 1500.;
 
 impl Root {
     /// The file a pane shows, with the line to open it at: a diff's file sits under its repo.
@@ -83,7 +83,6 @@ impl Root {
         let size = window.viewport_size();
         let z = crate::zoom::zoom();
         let (vw, vh) = (f32::from(size.width) / z, f32::from(size.height) / z);
-        let scrim = colors::hsla(colors::theme().shadow);
 
         let mut actions: Vec<AnyElement> = Vec::new();
         if let Some((add, del)) = counts {
@@ -126,6 +125,20 @@ impl Root {
                         .into_any_element(),
                 );
             }
+            if !diff && page(&path) {
+                let url = file_url(&path);
+                actions.push(
+                    crate::widgets::button_frame("card-browser")
+                        .h(px(24.))
+                        .px(px(9.))
+                        .mr(px(2.))
+                        .text_size(px(12.))
+                        .child(icon("globe", 12., colors::text2()))
+                        .child("Open in browser")
+                        .on_click(move |_: &ClickEvent, _, cx| cx.open_url(&url))
+                        .into_any_element(),
+                );
+            }
             let client = self.client.clone();
             actions.push(
                 head_button(("card-editor", 0), "external-link", false)
@@ -151,13 +164,10 @@ impl Root {
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(6.))
-            .h(px(38.))
-            .pl(px(12.))
-            .pr(px(8.))
-            .border_b_1()
-            .border_color(colors::border1())
-            .bg(colors::surface1())
+            .gap(px(8.))
+            .h(px(46.))
+            .pl(px(18.))
+            .pr(px(10.))
             .child(if diff {
                 icon("file-diff", 13., colors::text3())
             } else {
@@ -169,8 +179,8 @@ impl Root {
                     .min_w_0()
                     .flex_shrink(1.)
                     .truncate()
-                    .text_size(px(12.5))
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
                     .text_color(colors::text1())
                     .child(name),
             )
@@ -195,8 +205,7 @@ impl Root {
                     .flex_1()
                     .min_w(px(8.))
                     .truncate()
-                    .font_family(MONO)
-                    .text_size(px(11.))
+                    .text_size(px(12.))
                     .text_color(colors::text3())
                     .child(dir),
             )
@@ -208,9 +217,9 @@ impl Root {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded(px(8.))
+            .rounded(px(14.))
             .border_1()
-            .border_color(colors::border2())
+            .border_color(colors::ink(0.1))
             .bg(colors::bg())
             .shadow(colors::shadow())
             // clicks inside stay inside; only the backdrop closes it
@@ -225,7 +234,7 @@ impl Root {
                         .w(size.width)
                         .h(size.height)
                         .occlude()
-                        .bg(scrim.opacity(0.64))
+                        .bg(colors::bg().opacity(0.64))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -249,5 +258,49 @@ impl Root {
             .with_priority(2)
             .into_any_element(),
         )
+    }
+}
+
+fn page(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"))
+}
+
+fn file_url(path: &Path) -> String {
+    let p = path.to_string_lossy().replace('\\', "/");
+    let p: String = p
+        .chars()
+        .map(|c| match c {
+            ' ' => "%20".to_string(),
+            '#' => "%23".to_string(),
+            '%' => "%25".to_string(),
+            '?' => "%3F".to_string(),
+            c => c.to_string(),
+        })
+        .collect();
+    if p.starts_with('/') {
+        format!("file://{p}")
+    } else {
+        format!("file:///{p}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_page_opens_by_its_file_url() {
+        assert_eq!(
+            file_url(Path::new(r"C:\Users\Ash\My Site\index.html")),
+            "file:///C:/Users/Ash/My%20Site/index.html"
+        );
+        assert_eq!(
+            file_url(Path::new("/Users/ash/a#b/index.html")),
+            "file:///Users/ash/a%23b/index.html"
+        );
+        assert!(page(Path::new("x/INDEX.HTM")));
+        assert!(!page(Path::new("x/index.md")));
     }
 }

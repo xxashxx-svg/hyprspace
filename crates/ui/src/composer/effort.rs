@@ -489,8 +489,6 @@ fn switch<H: Host>(
         .flex()
         .items_center()
         .pt(px(10.))
-        .border_t_1()
-        .border_color(colors::ink(0.08))
         .child(
             div()
                 .flex_1()

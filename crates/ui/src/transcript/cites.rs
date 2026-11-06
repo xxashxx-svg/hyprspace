@@ -164,8 +164,6 @@ pub(super) fn peek(
         .px(px(14.))
         .pt(px(10.))
         .pb(px(8.))
-        .border_b_1()
-        .border_color(colors::border1())
         .text_size(px(11.5))
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text3())

@@ -12,7 +12,7 @@ mod frame;
 mod header;
 mod servers;
 
-pub use header::{PaneDrag, short};
+pub use header::{DROP_VERB, PaneDrag, short};
 pub use servers::link as server_link;
 
 use std::collections::HashMap;

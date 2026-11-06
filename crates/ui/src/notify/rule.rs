@@ -59,9 +59,9 @@ impl Kind {
 
     pub fn toast(self) -> &'static str {
         match self {
-            Kind::Waiting => "is waiting on you",
-            Kind::Failed => "failed",
-            Kind::Done => "is done",
+            Kind::Waiting => "Waiting on you",
+            Kind::Failed => "Failed",
+            Kind::Done => "Done",
         }
     }
 }

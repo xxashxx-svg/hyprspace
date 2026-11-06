@@ -165,33 +165,11 @@ impl Root {
                 .child(label)
         };
         let toast = widgets::toast("made-toast")
-            .child(icon(
-                crate::composer::schedule_glyph(&t.when),
-                14.,
-                colors::text2(),
+            .child(icon(schedule_glyph(&t.when), 14., colors::text2()))
+            .child(widgets::toast_text(
+                format!("Scheduled \u{b7} {}", t.when.label()),
+                next,
             ))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(colors::text1())
-                            .child(format!("Scheduled \u{b7} {}", t.when.label())),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(colors::text3())
-                            .child(next),
-                    ),
-            )
-            .child(div().flex_none().w(px(1.)).h(px(16.)).bg(colors::border1()))
             .child(
                 action("made-view", "View").on_click(cx.listener(|r, _: &ClickEvent, _, cx| {
                     r.made = None;
@@ -215,20 +193,7 @@ impl Root {
                     },
                 )),
             );
-        let toast = crate::slide::ease_in(toast, ("made-toast", serial), 180, |d, t| {
-            d.opacity(t).mt(px(-8. * (1. - t)))
-        });
-        Some(
-            div()
-                .absolute()
-                .top(px(52.))
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(toast)
-                .into_any_element(),
-        )
+        Some(widgets::toast_at(toast, ("made-toast", serial), 0))
     }
 
     pub(crate) fn schedule_ask(

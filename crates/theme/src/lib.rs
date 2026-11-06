@@ -207,7 +207,7 @@ mod tests {
         let (d, l) = (Theme::dark(), Theme::light());
         assert_eq!(d.border1.0 >> 8, 0xffffff);
         assert_eq!(l.border1.0 >> 8, 0x000000);
-        assert_eq!(d.ink(0.1), d.border2);
+        assert_eq!(d.ink(0.11), d.border2);
         assert!(d.dark && !l.dark);
     }
 }

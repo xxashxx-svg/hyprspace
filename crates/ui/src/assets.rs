@@ -136,6 +136,9 @@ const FILES: &[(&str, &[u8])] = files!(
     "icons/info.svg",
     "icons/minus.svg",
     "icons/ellipsis.svg",
+    "icons/circle-dashed.svg",
+    "icons/list-filter.svg",
+    "icons/mail-dot.svg",
     // the title row's caption buttons on Windows
     "caption/min.svg",
     "caption/max.svg",

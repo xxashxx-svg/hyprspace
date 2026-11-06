@@ -31,6 +31,35 @@ fn reorder(list: &[(u64, i64)], id: u64, target: u64, below: bool) -> Option<Vec
 }
 
 impl Root {
+    pub(crate) fn end_drag(&mut self) {
+        self.drop_at = None;
+        self.dragging = None;
+        self.drop_settled = false;
+        self.drop_pin_zone = false;
+    }
+
+    fn pinned(&self, thread: u64) -> bool {
+        self.state
+            .thread(thread)
+            .is_some_and(|(_, t)| t.pinned.is_some())
+    }
+
+    pub(super) fn drop_verb(&self) -> Option<&'static str> {
+        let dragged = self.dragging?;
+        if self.drop_settled {
+            return Some("Settle");
+        }
+        if self.drop_pin_zone {
+            return Some("Pin");
+        }
+        let (target, _) = self.drop_at?;
+        match (self.pinned(dragged), self.pinned(target)) {
+            (false, true) => Some("Pin"),
+            (true, false) => Some("Unpin"),
+            _ => None,
+        }
+    }
+
     /// A thread dropped on another row of the list moves to the line shown: above that row, or
     /// below it. Every row at work gets its place written down, so they all keep the order shown.
     pub(crate) fn drop_on_thread(
@@ -43,6 +72,12 @@ impl Root {
         let Some(id) = d.pane.thread() else {
             return;
         };
+        if self.pinned(target) {
+            return self.drop_among_pinned(id, target, below, cx);
+        }
+        if self.pinned(id) {
+            self.pin(id, false, cx);
+        }
         // a host keeps its own threads' order
         let mut list: Vec<(u64, i64)> = self
             .state
@@ -59,6 +94,30 @@ impl Root {
         for (t, place) in places {
             if let Some(thread) = self.state.thread_mut(t) {
                 thread.order = Some(place);
+            }
+        }
+        self.save();
+        cx.notify();
+    }
+
+    fn drop_among_pinned(&mut self, id: u64, target: u64, below: bool, cx: &mut Context<Self>) {
+        if !self.pinned(id) {
+            self.pin(id, true, cx);
+        }
+        let mut list: Vec<(u64, i64)> = self
+            .state
+            .spaces
+            .iter()
+            .flat_map(|s| s.threads.iter())
+            .filter_map(|t| t.pinned.map(|at| (t.id, -(at as i64))))
+            .collect();
+        list.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
+        let Some(places) = reorder(&list, id, target, below) else {
+            return;
+        };
+        for (t, place) in places {
+            if let Some(thread) = self.state.thread_mut(t) {
+                thread.pinned = Some((-place) as u64);
             }
         }
         self.save();

@@ -560,7 +560,7 @@ impl Render for FolderPicker {
                     .pr(px(6.))
                     .rounded(px(8.))
                     .cursor_pointer()
-                    .when(on, |d| d.bg(accent.opacity(0.14)))
+                    .when(on, |d| d.bg(crate::colors::ink(0.08)))
                     .on_mouse_move(cx.listener(move |p, _, _, cx| {
                         if p.sel != i {
                             p.sel = i;
@@ -672,8 +672,6 @@ impl Render for FolderPicker {
                     .h(px(46.))
                     .pl(px(18.))
                     .pr(px(14.))
-                    .border_b_1()
-                    .border_color(colors::border1())
                     .child(
                         div()
                             .id("folders-back")
@@ -706,8 +704,7 @@ impl Render for FolderPicker {
                     .gap(px(14.))
                     .px(px(14.))
                     .py(px(9.))
-                    .border_t_1()
-                    .border_color(colors::border1())
+                    .bg(colors::ink(0.025))
                     .text_size(px(11.))
                     .text_color(colors::text3())
                     .child(
@@ -796,7 +793,7 @@ impl crate::root::Root {
     ) -> Option<AnyElement> {
         let picker = self.folder_picker.clone()?;
         let size = window.viewport_size();
-        let scrim = crate::colors::hsla(crate::colors::theme().shadow);
+        let scrim = crate::colors::bg();
         Some(
             deferred(
                 anchored().position(point(px(0.), px(0.))).child(

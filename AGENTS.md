@@ -125,7 +125,7 @@ work done, walk this list:
   provider-shaped feature needs a decision per agent, even if it's "not for Codex".
 - **Platforms.** Windows and macOS. `secondary` in a key binding is Ctrl on Windows and Cmd on
   macOS.
-- **Themes.** Six themes, each with a light and a dark side. Check both sides.
+- **Themes.** Seven themes, each with a light and a dark side. Check both sides.
 - **Entry points.** A thing reachable from a menu is often also in the command palette, Settings or
   a key binding. Besides its `KeyBinding`, a shortcut is written out by hand in Settings,
   Shortcuts, in the palette's hints and in the intro's shortcuts step. A change goes in all of

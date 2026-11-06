@@ -1,9 +1,8 @@
-// The sidebar: a search box and a New thread button on top, then every thread at work as one
-// list, most recently active first, after T3 Code's: each row carries its project as a colored
-// tag with the project's name, so a space needs no header of its own. Snoozed, Settled and
-// Archived sit below as shelves behind a rule, and Settings at the foot. Right-click a thread for
-// its menu and its project's; drag the right edge to resize. The drag handle follows zeron's
-// shell (MIT, see THIRD_PARTY_NOTICES.md).
+// The sidebar: a search box, a space filter and a New thread button on top, then every thread at
+// work as one list, after T3 Code's: each row carries its project as a colored tag with the
+// project's name, so a space needs no header of its own. Snoozed and Settled sit at the bottom as
+// shelves, and Settings at the foot. Right-click a thread for its menu; drag the right edge to
+// resize. The drag handle follows zeron's shell (MIT, see THIRD_PARTY_NOTICES.md).
 //
 // It is a view of its own, cached, so a frame that only changes a terminal reuses its layout. Its
 // rows are a virtual list: only the ones on screen are laid out, which is what keeps scrolling
@@ -15,15 +14,19 @@ mod card;
 mod child;
 mod draft;
 mod drag;
+mod filter;
 mod icon;
 mod icon_picker;
 mod jump;
+mod keys;
 mod row;
+mod select;
 mod working;
 pub(crate) use icon::Look;
 pub(crate) use icon_picker::IconPicker;
 pub(crate) use jump::{Hold, NextWaiting, bind_keys};
 pub(crate) use row::tag;
+pub(crate) use select::{Sweep, Verb, verb_badge};
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -35,7 +38,8 @@ use gpui::{
     AnyElement, ClickEvent, Context, DispatchPhase, DragMoveEvent, Entity, ExternalPaths,
     Focusable, FontWeight, HitboxBehavior, IntoElement, ListAlignment, ListOffset, ListState,
     MouseButton, MouseDownEvent, Pixels, ScrollWheelEvent, Subscription, Transformation,
-    WeakEntity, Window, canvas, div, img, list, percentage, prelude::*,
+    WeakEntity, Window, canvas, div, img, linear_color_stop, linear_gradient, list, percentage,
+    prelude::*,
 };
 use hyprspace_proto::{Space, Thread};
 use hyprspace_theme::MONO;
@@ -67,12 +71,15 @@ const LINE: f32 = 20.;
 /// up to this many pixels a frame, faster nearer the edge.
 const EDGE_ZONE: f32 = 56.;
 const EDGE_SPEED: f32 = 14.;
+const FADE: f32 = 20.;
 /// How long a row that joins the list takes to grow in, T3 Code's 150 ms.
 const ARRIVE: Duration = Duration::from_millis(150);
 /// More rows than this joining at once, like a search cleared, just appear.
 const MAX_ARRIVALS: usize = 40;
 const MOVE: Duration = Duration::from_millis(240);
 const MAX_MOVES: usize = 3;
+pub(crate) const SETTLED_PAGE: usize = 10;
+const SETTLED_MORE: usize = 25;
 
 /// How far the list scrolls this frame for a drag at `y` in a list spanning `top..bottom`:
 /// negative up, positive down, nothing away from the edges.
@@ -121,6 +128,10 @@ enum Item {
     Nothing {
         searching: bool,
     },
+    Fill,
+    More(usize),
+    Marker(&'static str),
+    PinZone,
 }
 
 impl Item {
@@ -132,6 +143,7 @@ impl Item {
             (Item::Snoozed { .. }, Item::Snoozed { .. }) => true,
             (Item::Settled { .. }, Item::Settled { .. }) => true,
             (Item::Nothing { .. }, Item::Nothing { .. }) => true,
+            (Item::More(_), Item::More(_)) => true,
             (a, b) => a == b,
         }
     }
@@ -207,7 +219,7 @@ impl Slide {
         let moved = div()
             .relative()
             .top(self.from * (1. - ease_out(t)))
-            .when(self.lift, |d| d.bg(colors::bg()))
+            .when(self.lift, |d| d.bg(colors::surface1()))
             .child(row);
         if self.lift {
             gpui::deferred(moved).with_priority(1).into_any_element()
@@ -291,6 +303,7 @@ pub struct SidebarView {
     /// The rows last listed were the saved state's, not the empty list before it loaded, which
     /// would make every row at launch look new.
     loaded: bool,
+    fill: Rc<Cell<Pixels>>,
     _watch: Subscription,
 }
 
@@ -307,6 +320,7 @@ impl SidebarView {
             arrivals: Rc::default(),
             slides: Rc::default(),
             loaded: false,
+            fill: Rc::default(),
             _watch: cx.observe(root, |v: &mut Self, _, cx| {
                 v.stale = true;
                 cx.notify();
@@ -384,6 +398,42 @@ impl SidebarView {
         }
     }
 
+    // a virtual list can't push its last rows down with flex, so the filler takes the room the
+    // last layout left
+    fn refill(&mut self, window: &mut Window) {
+        let Some(at) = self.items.iter().position(|i| *i == Item::Fill) else {
+            return;
+        };
+        let view = self.list.viewport_bounds().size.height;
+        let want = if self.list.logical_scroll_top().item_ix > 0 {
+            Some(px(0.))
+        } else {
+            let mut above = px(0.);
+            let mut want = None;
+            for ix in (0..self.items.len()).filter(|&ix| ix != at) {
+                match self.list.bounds_for_item(ix) {
+                    Some(b) => above += b.size.height,
+                    None => break,
+                }
+                if above >= view {
+                    want = Some(px(0.));
+                    break;
+                }
+                if ix + 1 == self.items.len() {
+                    want = Some(view - above);
+                }
+            }
+            want
+        };
+        if let Some(want) = want
+            && (want - self.fill.get()).abs() > px(0.5)
+        {
+            self.fill.set(want);
+            self.list.remeasure_items(at..at + 1);
+            window.request_animation_frame();
+        }
+    }
+
     fn wheel(&self, cx: &mut Context<Self>) -> AnyElement {
         let pending = self.pending.clone();
         let view = cx.weak_entity();
@@ -451,6 +501,7 @@ impl gpui::Render for SidebarView {
                 self.list.scroll_to(ListOffset { item_ix, ..top });
             }
             self.items = Rc::new(items);
+            window.request_animation_frame();
         }
         self.loaded = loaded;
         // a thread just opened or made shows its row, even with the list scrolled past it. This
@@ -476,6 +527,7 @@ impl gpui::Render for SidebarView {
                 });
             }
         }
+        self.refill(window);
         // a status, a line of activity or a subagent can change a row's height
         if std::mem::take(&mut self.stale) {
             self.list.remeasure();
@@ -493,6 +545,14 @@ impl gpui::Render for SidebarView {
             }
         }
         let wheel = self.wheel(cx);
+        let top = self.list.logical_scroll_top();
+        let above = top.item_ix > 0 || top.offset_in_item > px(0.);
+        let view = self.list.viewport_bounds();
+        let below = self.items.len().checked_sub(1).is_some_and(|last| {
+            self.list
+                .bounds_for_item(last)
+                .is_none_or(|b| b.bottom() > view.bottom() + px(0.5))
+        });
         let keys: Rc<HashMap<u64, usize>> = Rc::new(if held {
             thread_ids(&self.items).zip(1..=9).collect()
         } else {
@@ -501,8 +561,12 @@ impl gpui::Render for SidebarView {
         let (items, weak, now) = (self.items.clone(), self.root.clone(), now_ms());
         let arrivals = self.arrivals.clone();
         let slides = self.slides.clone();
+        let fill = self.fill.clone();
         let rows = list(self.list.clone(), move |ix, window, cx| {
             let item = items.get(ix).cloned();
+            if item == Some(Item::Fill) {
+                return div().h(fill.get()).into_any_element();
+            }
             let slide = item.as_ref().and_then(|i| slides.borrow().get(i).copied());
             let arrival = match item {
                 Some(Item::Thread(id) | Item::Working(id) | Item::Shelved(id)) => {
@@ -551,16 +615,64 @@ impl gpui::Render for SidebarView {
                 }
             }))
             .child(rows)
+            .when(above, |d| d.child(fade(true)))
+            .when(below, |d| d.child(fade(false)))
             .child(wheel)
             .into_any_element();
         root.update(cx, |r, cx| r.sidebar(rows, cx))
     }
 }
 
+fn fade(top: bool) -> gpui::Div {
+    let (solid, clear) = (colors::surface1(), colors::surface1().opacity(0.));
+    let d = div().absolute().left_0().right_0().h(px(FADE));
+    if top {
+        d.top_0().bg(linear_gradient(
+            180.,
+            linear_color_stop(solid, 0.),
+            linear_color_stop(clear, 1.),
+        ))
+    } else {
+        d.bottom_0().bg(linear_gradient(
+            180.,
+            linear_color_stop(clear, 0.),
+            linear_color_stop(solid, 1.),
+        ))
+    }
+}
+
+const FOOT_LABELS: f32 = 250.;
+
+fn foot_button(
+    id: &'static str,
+    glyph: &'static str,
+    label: &'static str,
+    wide: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(8.))
+        .h(px(30.))
+        .px(px(9.))
+        .rounded(px(RADIUS))
+        .text_size(px(12.5))
+        .text_color(colors::text2())
+        .cursor_pointer()
+        .hover(|s| s.bg(row_hover()).text_color(colors::text1()))
+        .child(icon(glyph, 15., colors::text3()))
+        .when(wide, |d| d.child(label))
+        .when(!wide, |d| d.tooltip(crate::widgets::tip(label)))
+}
+
 /// The wash a sidebar row lifts to on hover.
 pub(crate) fn row_hover() -> gpui::Hsla {
-    colors::surface3()
+    colors::ink(0.06)
 }
+
+pub(crate) const RADIUS: f32 = 8.;
 
 /// A shelf's arrow, as T3 Code's: up while it is open, down while it is shut.
 fn twist(open: bool) -> impl IntoElement {
@@ -583,9 +695,10 @@ impl Root {
     fn sidebar_items(&self, cx: &mut Context<Self>) -> Vec<Item> {
         let q = self.search.read(cx).text().trim().to_lowercase();
         let hit = |s: &Space, t: &Thread| {
-            q.is_empty()
-                || t.title.to_lowercase().contains(&q)
-                || s.name.to_lowercase().contains(&q)
+            self.shows_space(s.id)
+                && (q.is_empty()
+                    || t.title.to_lowercase().contains(&q)
+                    || s.name.to_lowercase().contains(&q))
         };
         let threads = |keep: fn(&Thread) -> bool, key: fn(&Thread) -> i64| -> Vec<&Thread> {
             let mut all: Vec<&Thread> = self
@@ -612,6 +725,7 @@ impl Root {
             .filter(|d| {
                 self.state.space(d.space).is_some_and(|s| {
                     !s.archived
+                        && self.shows_space(s.id)
                         && (q.is_empty()
                             || d.text.to_lowercase().contains(&q)
                             || s.name.to_lowercase().contains(&q))
@@ -661,13 +775,30 @@ impl Root {
                 )
                 .collect()
         };
-        for t in inbox {
+        let dragging = self.dragging.is_some() && cx.has_active_drag();
+        let pinned = inbox.iter().filter(|t| t.pinned.is_some()).count();
+        if dragging {
+            items.push(if pinned == 0 {
+                Item::PinZone
+            } else {
+                Item::Marker("Pinned")
+            });
+        }
+        for (i, t) in inbox.iter().enumerate() {
+            if dragging && pinned > 0 && i == pinned {
+                items.push(Item::Marker("Active"));
+            }
             items.extend(family(t.id, Item::Thread));
         }
         let searching = !q.is_empty();
+        let snoozed = threads(|t| t.snooze.is_some(), recent);
+        let settled = threads(|t| t.settled, recent);
+        if !working.is_empty() || !snoozed.is_empty() || !settled.is_empty() {
+            items.push(Item::Fill);
+        }
         if !working.is_empty() {
             working.sort_by_key(|t| std::cmp::Reverse(t.last_touch()));
-            let open = self.working_open || searching;
+            let open = self.state.shelves.working || searching;
             items.push(Item::WorkingShelf {
                 count: working.len(),
                 open,
@@ -683,9 +814,8 @@ impl Root {
                 }
             }
         }
-        let snoozed = threads(|t| t.snooze.is_some(), recent);
         if !snoozed.is_empty() {
-            let open = self.snoozed_open || searching;
+            let open = self.state.shelves.snoozed || searching;
             items.push(Item::Snoozed {
                 count: snoozed.len(),
                 open,
@@ -694,15 +824,22 @@ impl Root {
                 items.extend(snoozed.iter().map(|t| Item::Shelved(t.id)));
             }
         }
-        let settled = threads(|t| t.settled, recent);
         if !settled.is_empty() {
-            let open = self.settled_open || searching;
+            let open = self.state.shelves.settled || searching;
             items.push(Item::Settled {
                 count: settled.len(),
                 open,
             });
             if open {
-                items.extend(settled.iter().map(|t| Item::Shelved(t.id)));
+                let shown = if searching {
+                    settled.len()
+                } else {
+                    self.settled_shown.min(settled.len())
+                };
+                items.extend(settled[..shown].iter().map(|t| Item::Shelved(t.id)));
+                if shown < settled.len() {
+                    items.push(Item::More(settled.len() - shown));
+                }
             }
         }
         items.push(Item::Gap(4));
@@ -769,6 +906,86 @@ impl Root {
                 .child(div().h(px(1.)).bg(colors::ink(0.08)))
                 .into_any_element(),
             Item::Gap(h) => div().h(px(h as f32)).into_any_element(),
+            Item::Fill => div().into_any_element(),
+            Item::Marker(label) => div()
+                .relative()
+                .h(px(0.))
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(-8.))
+                        .left(px(EDGE + 10.))
+                        .right(px(EDGE + 10.))
+                        .h(px(16.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(colors::text3())
+                        .child(label)
+                        .child(div().flex_1().h(px(1.)).bg(colors::ink(0.08))),
+                )
+                .into_any_element(),
+            Item::PinZone => slot()
+                .child(
+                    div()
+                        .id("pin-zone")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(6.))
+                        .h(px(32.))
+                        .rounded(px(RADIUS))
+                        .border_1()
+                        .border_dashed()
+                        .border_color(colors::ink(0.2))
+                        .text_size(px(12.))
+                        .text_color(colors::text3())
+                        .child(icon("pin", 12., colors::text3()))
+                        .child("Drop here to pin")
+                        .drag_over::<PaneDrag>(|s, _, _, _| {
+                            s.border_color(colors::accent().opacity(0.5))
+                                .bg(colors::accent().opacity(0.06))
+                                .text_color(colors::text1())
+                        })
+                        .on_drag_move(cx.listener(|r, e: &DragMoveEvent<PaneDrag>, _, cx| {
+                            let over = e.bounds.contains(&e.event.position);
+                            if r.drop_pin_zone != over {
+                                r.drop_pin_zone = over;
+                                cx.notify();
+                            }
+                        }))
+                        .on_drop(cx.listener(|r, d: &PaneDrag, _, cx| {
+                            r.end_drag();
+                            if let Some(id) = d.pane.thread() {
+                                r.pin(id, true, cx);
+                            }
+                        })),
+                )
+                .into_any_element(),
+            Item::More(left) => slot()
+                .child(
+                    div()
+                        .id("settled-more")
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .h(px(30.))
+                        .px(px(8.))
+                        .rounded(px(RADIUS))
+                        .text_size(px(12.5))
+                        .text_color(colors::text3())
+                        .cursor_pointer()
+                        .hover(|s| s.bg(row_hover()).text_color(colors::text2()))
+                        .child(icon("chevron-down", 12., colors::text3()))
+                        .child(format!("Show {} more", left.min(SETTLED_MORE)))
+                        .on_click(cx.listener(|r, _: &ClickEvent, _, cx| {
+                            r.settled_shown += SETTLED_MORE;
+                            cx.notify();
+                        })),
+                )
+                .into_any_element(),
             Item::WorkingShelf { count, open } => slot()
                 .pt(px(10.))
                 .child(self.shelf_header(
@@ -777,7 +994,8 @@ impl Root {
                     count,
                     open,
                     cx.listener(|r, _: &ClickEvent, _, cx| {
-                        r.working_open = !r.working_open;
+                        r.state.shelves.working = !r.state.shelves.working;
+                        r.save();
                         cx.notify();
                     }),
                 ))
@@ -790,7 +1008,8 @@ impl Root {
                     count,
                     open,
                     cx.listener(|r, _: &ClickEvent, _, cx| {
-                        r.snoozed_open = !r.snoozed_open;
+                        r.state.shelves.snoozed = !r.state.shelves.snoozed;
+                        r.save();
                         cx.notify();
                     }),
                 ))
@@ -800,9 +1019,17 @@ impl Root {
                 .child(
                     div()
                         .id("settled-shelf")
-                        .rounded(px(6.))
+                        .rounded(px(RADIUS))
                         .drag_over::<PaneDrag>(|s, _, _, _| s.bg(colors::accent().opacity(0.12)))
+                        .on_drag_move(cx.listener(|r, e: &DragMoveEvent<PaneDrag>, _, cx| {
+                            let over = e.bounds.contains(&e.event.position);
+                            if r.drop_settled != over {
+                                r.drop_settled = over;
+                                cx.notify();
+                            }
+                        }))
                         .on_drop(cx.listener(|r, d: &PaneDrag, window, cx| {
+                            r.end_drag();
                             r.drop_on_settled(d, window, cx)
                         }))
                         .child(self.shelf_header(
@@ -811,7 +1038,8 @@ impl Root {
                             count,
                             open,
                             cx.listener(|r, _: &ClickEvent, _, cx| {
-                                r.settled_open = !r.settled_open;
+                                r.state.shelves.settled = !r.state.shelves.settled;
+                                r.save();
                                 cx.notify();
                             }),
                         )),
@@ -833,6 +1061,11 @@ impl Root {
 
     /// The sidebar's frame around its list of rows.
     pub(crate) fn sidebar(&mut self, rows: AnyElement, cx: &mut Context<Self>) -> AnyElement {
+        if !cx.has_active_drag() {
+            self.end_drag();
+        }
+        let verb = self.drop_verb();
+        crate::workbench::DROP_VERB.set(verb);
         let q = self.search.read(cx).text().trim().to_lowercase();
         let width = self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
         // the corner picture sits behind everything, faded into the sidebar's own color
@@ -851,7 +1084,7 @@ impl Root {
             .h_full()
             .flex()
             .flex_col()
-            .bg(colors::bg())
+            .bg(colors::surface1())
             .border_r_1()
             .border_color(colors::border0())
             .overflow_hidden()
@@ -860,6 +1093,10 @@ impl Root {
             .child(
                 div()
                     .id("sidebar-rows")
+                    .track_focus(&self.list_focus)
+                    .on_key_down(cx.listener(|r, e: &gpui::KeyDownEvent, window, cx| {
+                        r.list_key(e, window, cx)
+                    }))
                     .flex_1()
                     .min_h_0()
                     .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(colors::accent().opacity(0.06)))
@@ -908,12 +1145,10 @@ impl Root {
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(px(2.))
             .px(px(8.))
             .py(px(10.))
             .mb(px(4.))
-            .border_b_1()
-            .border_color(colors::border0())
             .child(
                 div()
                     .id("sidebar-search")
@@ -925,11 +1160,15 @@ impl Root {
                     .h(px(32.))
                     .pl(px(10.))
                     .pr(px(6.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(colors::border0())
-                    .hover(|s| s.bg(colors::ink(0.03)))
+                    .rounded(px(RADIUS))
+                    .hover(|s| s.bg(row_hover()))
                     .cursor_text()
+                    .capture_key_down(cx.listener(|r, e: &gpui::KeyDownEvent, window, cx| {
+                        if e.keystroke.key == "down" && !e.keystroke.modifiers.modified() {
+                            cx.stop_propagation();
+                            r.enter_list(window, cx);
+                        }
+                    }))
                     .child(icon("search", 14., glass))
                     .child(
                         div()
@@ -942,6 +1181,7 @@ impl Root {
                     .child(end)
                     .on_click(move |_, window, cx| window.focus(&focused, cx)),
             )
+            .child(self.filter_button(cx))
             .child(
                 div()
                     .id("sidebar-new")
@@ -949,13 +1189,12 @@ impl Root {
                     .flex_none()
                     .items_center()
                     .justify_center()
-                    .size(px(32.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(colors::border0())
+                    .size(px(28.))
+                    .rounded(px(RADIUS))
                     .cursor_pointer()
-                    .hover(|s| s.bg(colors::ink(0.06)))
-                    .child(icon("plus", 16., colors::text2()))
+                    .hover(|s| s.bg(row_hover()))
+                    .tooltip(widgets::tip("New thread"))
+                    .child(icon("square-pen", 15., colors::text2()))
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
                         r.menu = None;
                         r.park_draft(cx);
@@ -996,7 +1235,7 @@ impl Root {
             .gap(px(8.))
             .h(px(26.))
             .px(px(8.))
-            .rounded(px(6.))
+            .rounded(px(RADIUS))
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(colors::text3())
@@ -1016,39 +1255,29 @@ impl Root {
     }
 
     fn foot(&self, cx: &mut Context<Self>) -> AnyElement {
-        let on = self.screen == Screen::Settings;
+        let note = self.undo_note(cx);
+        let wide = note.is_none() && self.state.sidebar_width >= FOOT_LABELS;
         div()
             .flex_none()
             .flex()
             .items_center()
+            .gap(px(2.))
             .px(px(8.))
             .pt(px(7.))
             .pb(px(8.))
-            .border_t_1()
-            .border_color(colors::border0())
             .child(
-                div()
-                    .id("settings")
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .gap(px(9.))
-                    .h(px(28.))
-                    .px(px(8.))
-                    .rounded(px(6.))
-                    .text_size(px(12.5))
-                    .text_color(if on { colors::text1() } else { colors::text2() })
-                    .cursor_pointer()
-                    .when(on, |d| d.bg(colors::surface3()))
-                    .when(!on, |d| {
-                        d.hover(|s| s.bg(row_hover()).text_color(colors::text1()))
-                    })
-                    .child(icon("settings", 16., colors::text3()))
-                    .child("Settings")
-                    .on_click(
-                        cx.listener(|r, _: &ClickEvent, window, cx| r.open_settings(window, cx)),
-                    ),
+                foot_button("settings", "settings", "Settings", wide).on_click(
+                    cx.listener(|r, _: &ClickEvent, window, cx| r.open_settings(window, cx)),
+                ),
             )
+            .child(
+                foot_button("usage", "gauge", "Usage", wide).on_click(cx.listener(
+                    |r, _: &ClickEvent, window, cx| {
+                        r.open_settings_at(crate::settings::Tab::Usage, window, cx)
+                    },
+                )),
+            )
+            .child(note.unwrap_or_else(|| div().flex_1().into_any_element()))
             .child(self.update_button(cx))
             .into_any_element()
     }
@@ -1099,7 +1328,7 @@ impl Root {
             .items_center()
             .justify_center()
             .size(px(28.))
-            .rounded(px(6.))
+            .rounded(px(RADIUS))
             .cursor_pointer()
             .hover(|s| s.bg(row_hover()))
             .child(glyph)

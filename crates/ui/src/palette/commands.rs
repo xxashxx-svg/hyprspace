@@ -430,7 +430,6 @@ impl Root {
     ) -> Option<AnyElement> {
         let palette = self.palette.clone()?;
         let size = window.viewport_size();
-        let scrim = crate::colors::hsla(crate::colors::theme().shadow);
         Some(
             deferred(
                 anchored().position(point(px(0.), px(0.))).child(
@@ -439,7 +438,7 @@ impl Root {
                         .w(size.width)
                         .h(size.height)
                         .occlude()
-                        .bg(scrim.opacity(0.64))
+                        .bg(crate::colors::bg().opacity(0.64))
                         .flex()
                         .items_start()
                         .justify_center()

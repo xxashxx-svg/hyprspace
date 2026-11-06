@@ -205,8 +205,6 @@ impl Limits {
             .h(px(38.))
             .px(px(6.))
             .pr(px(10.))
-            .border_b_1()
-            .border_color(colors::border1())
             .children(tabs)
             .child(div().flex_1())
             .children(plan);

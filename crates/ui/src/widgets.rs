@@ -6,9 +6,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, BoxShadow, Div, ElementId,
-    FontWeight, IntoElement, MouseButton, Pixels, Point, SharedString, Stateful, Window, anchored,
-    deferred, div, point, prelude::*,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, FontWeight,
+    IntoElement, MouseButton, Pixels, Point, SharedString, Stateful, Window, anchored, deferred,
+    div, point, prelude::*,
 };
 
 use crate::assets::icon;
@@ -95,28 +95,9 @@ pub fn composer_box(focused: bool) -> Div {
         .flex_col()
         .rounded(px(BOX_RADIUS))
         .border_1()
-        .border_color(colors::ink(if focused { 0.13 } else { 0.05 }))
+        .border_color(colors::ink(if focused { 0.08 } else { 0. }))
         .bg(colors::surface2())
-        .shadow(raised(focused))
-}
-
-/// A box standing off the page: a deep shadow under it and, on a dark side, light along its top
-/// edge.
-fn raised(focused: bool) -> Vec<BoxShadow> {
-    let dark = colors::theme().dark;
-    let mut s = colors::shadow();
-    s.push(BoxShadow {
-        color: colors::ink(match (dark, focused) {
-            (false, _) => 0.,
-            (true, false) => 0.07,
-            (true, true) => 0.1,
-        }),
-        offset: point(px(0.), px(1.)),
-        blur_radius: px(0.),
-        spread_radius: px(0.),
-        inset: true,
-    });
-    s
+        .shadow(colors::shadow())
 }
 
 /// Send's neutral twin while a run is live: a round button with a filled square.
@@ -129,11 +110,9 @@ pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
         .justify_center()
         .size(px(32.))
         .rounded_full()
-        .border_1()
-        .border_color(colors::border2())
-        .bg(colors::surface3())
+        .bg(colors::ink(0.1))
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.14)))
+        .hover(|s| s.bg(colors::ink(0.16)))
         .child(div().size(px(10.)).rounded(px(2.)).bg(colors::text1()))
 }
 
@@ -285,9 +264,9 @@ fn menu_frame() -> Stateful<Div> {
         .flex()
         .flex_col()
         .gap(px(1.))
-        .rounded(px(8.))
+        .rounded(px(12.))
         .border_1()
-        .border_color(colors::border2())
+        .border_color(colors::ink(0.1))
         .bg(colors::surface2())
         .shadow(colors::shadow())
         .text_size(px(12.5))
@@ -308,8 +287,7 @@ pub fn popup_with_note(
         .mb(px(-5.))
         .px(px(12.))
         .py(px(8.))
-        .border_t_1()
-        .border_color(colors::border1())
+        .bg(colors::ink(0.025))
         .text_size(px(11.))
         .text_color(colors::text3())
         .child(note);
@@ -394,7 +372,7 @@ pub fn menu_item(
 }
 
 pub fn menu_rule() -> Div {
-    div().h(px(1.)).mx(px(2.)).my(px(4.)).bg(colors::border1())
+    div().h(px(1.)).mx(px(6.)).my(px(4.)).bg(colors::ink(0.06))
 }
 
 pub fn toast(id: impl Into<ElementId>) -> Stateful<Div> {
@@ -404,16 +382,49 @@ pub fn toast(id: impl Into<ElementId>) -> Stateful<Div> {
         .flex()
         .items_center()
         .gap(px(10.))
-        .max_w(px(440.))
-        .h(px(38.))
-        .pl(px(14.))
-        .pr(px(6.))
-        .rounded(px(12.))
-        .bg(colors::surface3())
+        .w(px(340.))
+        .py(px(10.))
+        .pl(px(12.))
+        .pr(px(8.))
+        .rounded(px(10.))
+        .bg(colors::surface2())
         .border_1()
-        .border_color(colors::border1())
+        .border_color(colors::border2())
         .shadow(colors::shadow())
         .text_size(px(13.))
+}
+
+pub fn toast_text(title: impl Into<SharedString>, line: impl Into<SharedString>) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_w_0()
+        .gap(px(1.))
+        .child(
+            div()
+                .truncate()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text1())
+                .child(title.into()),
+        )
+        .child(
+            div()
+                .truncate()
+                .text_size(px(12.))
+                .text_color(colors::text2())
+                .child(line.into()),
+        )
+}
+
+pub fn toast_at(toast: Stateful<Div>, key: impl Into<ElementId>, nth: usize) -> AnyElement {
+    let toast = crate::slide::ease_in(toast, key, 300, |d, t| d.opacity(t).mt(px(-12. * (1. - t))));
+    div()
+        .absolute()
+        .top(px(52. + 70. * nth as f32))
+        .right(px(16.))
+        .child(toast)
+        .into_any_element()
 }
 
 pub fn status_dot(status: Status) -> Div {
@@ -514,19 +525,12 @@ pub fn segment(
         .h(px(26.))
         .px(px(11.))
         .rounded(px(6.))
-        .border_1()
-        .border_color(gpui::transparent_black())
         .text_size(px(12.5))
         .font_weight(FontWeight::MEDIUM)
         .text_color(fg)
         .cursor_pointer()
-        .when(on && !risky, |d| {
-            d.bg(colors::ink(0.1)).border_color(colors::ink(0.06))
-        })
-        .when(on && risky, |d| {
-            d.bg(colors::error().opacity(0.14))
-                .border_color(colors::error().opacity(0.4))
-        })
+        .when(on && !risky, |d| d.bg(colors::ink(0.1)))
+        .when(on && risky, |d| d.bg(colors::error().opacity(0.16)))
         .when(!on, |d| d.hover(|s| s.text_color(colors::text1())))
         .children(icon_name.map(|n| icon(n, 14., glyph)))
         .child(label.into())
@@ -565,10 +569,7 @@ pub fn keycap(label: impl Into<SharedString>) -> Div {
         .h(px(18.))
         .px(px(5.))
         .rounded(px(4.))
-        .bg(colors::ink(0.06))
-        .border_1()
-        .border_b_2()
-        .border_color(colors::ink(0.08))
+        .bg(colors::ink(0.08))
         .text_size(px(10.5))
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text2())
@@ -592,12 +593,12 @@ impl gpui::Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
         div()
             .font_family(crate::settings::ui_font())
-            .px(px(8.))
-            .py(px(4.))
-            .rounded(px(6.))
+            .px(px(9.))
+            .py(px(5.))
+            .rounded(px(8.))
             .border_1()
-            .border_color(colors::border2())
-            .bg(colors::surface3())
+            .border_color(colors::ink(0.1))
+            .bg(colors::surface2())
             .shadow(colors::shadow())
             .text_size(px(12.))
             .text_color(colors::text1())

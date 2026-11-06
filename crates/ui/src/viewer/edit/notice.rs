@@ -84,8 +84,6 @@ impl Editor {
                 .gap(px(6.))
                 .h(px(40.))
                 .px(px(12.))
-                .border_b_1()
-                .border_color(colors::border1())
                 .bg(colors::surface1())
                 .child(
                     div()
@@ -113,7 +111,7 @@ impl Editor {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let (glyph, tint) = crate::dock::kinds::file_icon(&name);
-        let scrim = colors::hsla(colors::theme().shadow);
+        let scrim = colors::bg();
         let card = div()
             .w(px(400.))
             .flex()
@@ -195,7 +193,7 @@ impl Editor {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(scrim.opacity(0.6))
+                .bg(scrim.opacity(0.64))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(|e, _, _, cx| {

@@ -22,8 +22,8 @@ use crate::colors;
 use crate::widgets::{self, tip};
 use crate::zoom::px;
 
-const ROW: f32 = 26.;
-const INDENT: f32 = 12.;
+const ROW: f32 = 28.;
+const INDENT: f32 = 14.;
 
 /// A file's git state, as the tree shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,18 +199,8 @@ impl Tree {
         let pad = r.depth as f32 * INDENT + 8.;
         let name_color = match git {
             Some((d, _)) => d.color(),
-            None if viewing => colors::text1(),
-            None => colors::text2(),
+            None => colors::text1(),
         };
-        let guides = (1..=r.depth).map(|d| {
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .left(px((d - 1) as f32 * INDENT + 14.))
-                .w(px(1.))
-                .bg(colors::ink(0.07))
-        });
         let glyph = if r.dir {
             icon(
                 if r.open { "folder-open" } else { "folder" },
@@ -234,15 +224,10 @@ impl Tree {
             .pl(px(pad))
             .pr(px(8.))
             .rounded(px(6.))
-            .text_size(px(12.5))
+            .text_size(px(13.))
             .cursor_pointer()
-            .when(viewing, |d| {
-                d.bg(colors::accent().opacity(0.1))
-                    .border_l_2()
-                    .border_color(colors::accent())
-            })
-            .hover(|s| s.bg(colors::surface3().opacity(0.55)))
-            .children(guides)
+            .when(viewing, |d| d.bg(colors::ink(0.08)))
+            .hover(|s| s.bg(colors::ink(0.05)))
             .child(if r.dir {
                 icon(
                     if r.open {
@@ -285,8 +270,8 @@ impl Tree {
                     .flex_none()
                     .pl(px(6.))
                     .font_family(MONO)
-                    .text_size(px(10.))
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::MEDIUM)
                     .text_color(d.color().opacity(0.85))
                     .child(letter)
             }))
@@ -353,25 +338,37 @@ impl Dock {
             .flex_col()
             .child(
                 div()
+                    .id("files-head")
+                    .group("files-head")
                     .flex_none()
                     .flex()
                     .items_center()
                     .gap(px(2.))
-                    .h(px(36.))
+                    .h(px(34.))
                     .pl(px(14.))
                     .pr(px(8.))
                     .child(
                         div()
+                            .flex()
                             .flex_1()
                             .min_w_0()
-                            .truncate()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(colors::text2())
-                            .child(name),
+                            .items_center()
+                            .gap(px(7.))
+                            .child(icon("folder", 14., colors::text3()))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(12.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(colors::text1())
+                                    .child(name),
+                            ),
                     )
                     .child(
                         widgets::icon_button("files-collapse", "chevrons-down-up", widgets::SMALL)
+                            .invisible()
+                            .group_hover("files-head", |s| s.visible())
                             .tooltip(tip("Collapse folders"))
                             .on_click(cx.listener(|d, _: &ClickEvent, _, cx| {
                                 d.tree.collapse();
@@ -380,6 +377,8 @@ impl Dock {
                     )
                     .child(
                         widgets::icon_button("files-refresh", "refresh-cw", widgets::SMALL)
+                            .invisible()
+                            .group_hover("files-head", |s| s.visible())
                             .tooltip(tip("Refresh"))
                             .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.refresh(cx))),
                     ),

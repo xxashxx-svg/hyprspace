@@ -4,8 +4,8 @@ use hyprspace_proto::{Command, FolderCommand, Pane};
 
 use super::diff::{self, Diff};
 use super::{Body, Viewer};
+use crate::widgets;
 use crate::zoom::px;
-use crate::{colors, widgets};
 
 impl Viewer {
     pub(super) fn request(&self) {
@@ -95,8 +95,6 @@ impl Viewer {
                 .items_center()
                 .px(px(12.))
                 .py(px(8.))
-                .border_b_1()
-                .border_color(colors::border0())
                 .child(
                     widgets::segments().children(options.into_iter().enumerate().map(
                         |(i, (label, scope))| {

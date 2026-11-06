@@ -57,6 +57,15 @@ pub struct AppState {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub scheduled: Vec<crate::schedule::Scheduled>,
     pub notify: NotifyPrefs,
+    pub shelves: Shelves,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Shelves {
+    pub working: bool,
+    pub snoozed: bool,
+    pub settled: bool,
 }
 
 impl Default for AppState {
@@ -85,6 +94,7 @@ impl Default for AppState {
             agent_checks: true,
             scheduled: Vec::new(),
             notify: NotifyPrefs::default(),
+            shelves: Shelves::default(),
         }
     }
 }

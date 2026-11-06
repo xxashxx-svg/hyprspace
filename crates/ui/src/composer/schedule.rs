@@ -262,8 +262,6 @@ pub(super) fn when_line(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyE
             .gap(px(7.))
             .px(px(14.))
             .py(px(10.))
-            .border_b_1()
-            .border_color(colors::ink(0.07))
             .text_size(px(13.))
             .text_color(colors::text2())
             .child(icon("clock", 14., tint))

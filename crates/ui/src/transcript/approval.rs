@@ -86,7 +86,7 @@ pub fn dock(v: &TranscriptView, cx: &mut Context<TranscriptView>) -> Option<AnyE
         .rounded(px(12.))
         .bg(colors::ink(0.035))
         .border_1()
-        .border_color(colors::waiting().opacity(0.35))
+        .border_color(colors::ink(0.1))
         .child(
             div()
                 .flex()

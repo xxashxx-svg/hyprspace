@@ -222,30 +222,37 @@ impl Focusable for Palette {
     }
 }
 
-/// A shortcut as keycaps: Ctrl, Shift, G on Windows; the glyphs on macOS.
+/// A shortcut as text: Ctrl+Shift+G on Windows, the glyphs on macOS.
 // Ctrl means `secondary` (Cmd on macOS); a binding on the real Control key is written Control
-fn keycaps(hint: &str, small: bool) -> AnyElement {
-    let caps = hint.split('+').map(|k| {
-        let k = if cfg!(target_os = "macos") {
-            match k {
-                "Ctrl" => "⌘",
-                "Control" => "⌃",
-                "Shift" => "⇧",
-                "Alt" => "⌥",
-                k => k,
+fn shortcut(hint: &str) -> AnyElement {
+    let keys: Vec<&str> = hint
+        .split('+')
+        .map(|k| {
+            if cfg!(target_os = "macos") {
+                match k {
+                    "Ctrl" => "\u{2318}",
+                    "Control" => "\u{2303}",
+                    "Shift" => "\u{21e7}",
+                    "Alt" => "\u{2325}",
+                    k => k,
+                }
+            } else if k == "Control" {
+                "Ctrl"
+            } else {
+                k
             }
-        } else if k == "Control" {
-            "Ctrl"
-        } else {
-            k
-        };
-        keycap(k, small)
-    });
+        })
+        .collect();
+    let text = if cfg!(target_os = "macos") {
+        keys.concat()
+    } else {
+        keys.join("+")
+    };
     div()
-        .flex()
         .flex_none()
-        .gap(px(3.))
-        .children(caps)
+        .text_size(px(12.))
+        .text_color(colors::text3())
+        .child(text)
         .into_any_element()
 }
 
@@ -293,35 +300,36 @@ impl Render for Palette {
                 section = item.section;
                 list = list.child(
                     div()
+                        .flex_none()
                         .pt(px(10.))
                         .px(px(10.))
-                        .pb(px(5.))
-                        .text_size(px(11.))
-                        .font_weight(FontWeight::SEMIBOLD)
+                        .pb(px(4.))
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::MEDIUM)
                         .text_color(colors::text3())
                         .child(section),
                 );
             }
             let on = i == self.sel;
-            let glyph_color = if on { colors::text1() } else { colors::text2() };
+            let glyph_color = if on { colors::text1() } else { colors::text3() };
             let glyph: AnyElement = match item.glyph {
-                Glyph::Icon(name) => icon(name, 15., glyph_color).into_any_element(),
-                Glyph::Mark(agent) => mark(agent, 14., colors::brand(agent).0).into_any_element(),
+                Glyph::Icon(name) => icon(name, 16., glyph_color).into_any_element(),
+                Glyph::Mark(agent) => mark(agent, 15., colors::brand(agent).0).into_any_element(),
             };
             let mono = item.section == IN_TERMINALS;
             list = list.child(
                 div()
                     .id(("palette-item", i))
+                    .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(11.))
-                    .min_h(px(38.))
-                    .py(px(5.))
-                    .pl(px(6.))
-                    .pr(px(10.))
+                    .gap(px(10.))
+                    .min_h(px(34.))
+                    .py(px(6.))
+                    .px(px(10.))
                     .rounded(px(8.))
                     .cursor_pointer()
-                    .when(on, |d| d.bg(colors::surface3()))
+                    .when(on, |d| d.bg(colors::ink(0.08)))
                     .on_mouse_move(cx.listener(move |p, _, _, cx| {
                         if p.sel != i {
                             p.sel = i;
@@ -335,13 +343,7 @@ impl Render for Palette {
                             .flex_none()
                             .items_center()
                             .justify_center()
-                            .size(px(28.))
-                            .rounded(px(6.))
-                            .bg(if on {
-                                colors::ink(0.08)
-                            } else {
-                                colors::ink(0.05)
-                            })
+                            .size(px(18.))
                             .child(glyph),
                     )
                     .child(
@@ -362,14 +364,14 @@ impl Render for Palette {
                             .children(item.sub.clone().map(|s| {
                                 div()
                                     .truncate()
-                                    .text_size(px(if mono { 11. } else { 11.5 }))
+                                    .text_size(px(if mono { 11. } else { 12. }))
                                     .line_height(px(15.))
                                     .when(mono, |d| d.font_family(MONO))
                                     .text_color(colors::text3())
                                     .child(s)
                             })),
                     )
-                    .children(item.hint.map(|h| keycaps(h, false))),
+                    .children(item.hint.map(shortcut)),
             );
         }
         let foot_item = |caps: Vec<&str>, what: &'static str| {
@@ -387,13 +389,13 @@ impl Render for Palette {
             .on_action(cx.listener(Self::next))
             .occlude()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .w(px(620.))
+            .w(px(576.))
             .max_w(relative(0.92))
             .flex()
             .flex_col()
-            .rounded(px(12.))
+            .rounded(px(16.))
             .border_1()
-            .border_color(colors::border2())
+            .border_color(colors::ink(0.1))
             .bg(colors::surface2())
             .shadow(colors::shadow())
             .overflow_hidden()
@@ -401,12 +403,9 @@ impl Render for Palette {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(11.))
+                    .gap(px(10.))
                     .h(px(52.))
-                    .pl(px(18.))
-                    .pr(px(14.))
-                    .border_b_1()
-                    .border_color(colors::border1())
+                    .px(px(18.))
                     .child(icon("search", 16., colors::text3()))
                     .child(
                         div()
@@ -414,8 +413,7 @@ impl Render for Palette {
                             .min_w_0()
                             .text_size(px(15.))
                             .child(self.input.clone()),
-                    )
-                    .child(keycap("Esc", false)),
+                    ),
             )
             .child(list)
             .child(
@@ -423,11 +421,13 @@ impl Render for Palette {
                     .flex()
                     .gap(px(16.))
                     .px(px(16.))
-                    .py(px(8.))
+                    .py(px(9.))
                     .border_t_1()
-                    .border_color(colors::border1())
-                    .text_size(px(11.))
-                    .text_color(colors::text3())
+                    .border_color(colors::ink(0.07))
+                    .bg(colors::ink(0.025))
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors::text2())
                     .child(foot_item(vec!["↑", "↓"], "move"))
                     .child(foot_item(vec!["↵"], "run"))
                     .child(foot_item(vec!["Esc"], "close")),

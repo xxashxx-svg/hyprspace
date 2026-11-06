@@ -143,14 +143,12 @@ fn callout(who: &str, text: &str) -> AnyElement {
         .flex()
         .items_center()
         .gap(px(10.))
-        .px(px(14.))
-        .py(px(11.))
+        .px(px(16.))
+        .py(px(12.))
         .rounded(px(12.))
-        .border_1()
-        .border_color(c.opacity(0.35))
-        .bg(c.opacity(0.11))
+        .bg(colors::ink(0.035))
         .text_size(px(13.))
-        .text_color(c)
+        .text_color(colors::text2())
         .child(icon("triangle-alert", 14., c))
         .child(
             div()
@@ -158,7 +156,8 @@ fn callout(who: &str, text: &str) -> AnyElement {
                 .gap(px(4.))
                 .child(
                     div()
-                        .font_weight(FontWeight::SEMIBOLD)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(colors::text1())
                         .child(format!("{who}:")),
                 )
                 .child(text.to_string()),

@@ -1,7 +1,7 @@
 // The composer's box, the question over it, the line under it, and the resume list. The box is
 // the reply box's twin (bar.rs), with Structured beside the round send button. Over it, the
 // question names the space, which is the button to change it. Under it: the computer and
-// branch the thread starts on, and the keys.
+// branch the thread starts on.
 
 use std::path::PathBuf;
 
@@ -190,7 +190,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
         .into_any_element()
 }
 
-/// The line under the box: the computer and branch the thread starts on, and the keys.
+/// The line under the box: the computer and branch the thread starts on.
 pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
     div()
         .flex()
@@ -201,22 +201,6 @@ pub fn footer(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .children(super::machine::chip(c, cx))
         .children(super::worktree::branch_chip(c, cx))
         .children(super::worktree::chip(c, cx))
-        .child(div().flex_1())
-        .when(!c.cloning(cx), |d| {
-            d.child(
-                div()
-                    .flex_none()
-                    .text_size(px(12.))
-                    .text_color(colors::text3())
-                    .child(if c.planning() {
-                        "Enter schedules it  \u{b7}  Shift+Enter for a new line"
-                    } else if cfg!(target_os = "macos") {
-                        "Enter starts it  \u{b7}  Cmd+Enter in the background  \u{b7}  Shift+Enter for a new line"
-                    } else {
-                        "Enter starts it  \u{b7}  Ctrl+Enter in the background  \u{b7}  Shift+Enter for a new line"
-                    }),
-            )
-        })
         .into_any_element()
 }
 
@@ -243,8 +227,7 @@ pub fn ask(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .min_w_0()
         .items_center()
         .gap(px(4.))
-        .pl(px(6.))
-        .pr(px(2.))
+        .px(px(6.))
         .rounded(px(8.))
         .cursor_pointer()
         .hover(|s| s.bg(colors::ink(0.06)))
@@ -255,20 +238,10 @@ pub fn ask(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
                 .font_weight(FontWeight::NORMAL)
                 .text_color(colors::text2())
         })
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .when(named, |d| {
-                    d.underline().text_decoration_color(colors::border2())
-                })
-                .child(label),
-        )
-        .child(icon(
-            "chevron-down",
-            if named { 16. } else { 13. },
-            colors::text3(),
-        ))
+        .child(div().min_w_0().truncate().child(label))
+        .when(!named, |d| {
+            d.child(icon("chevron-down", 13., colors::text3()))
+        })
         .on_click(cx.listener(move |c, e: &ClickEvent, _, cx| match pick {
             Some(pick) => c.pick_folder(pick, cx),
             None => c.open_places(e, cx),
@@ -291,9 +264,11 @@ pub fn ask(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
         .justify_center()
         .child(lead("What should we build in"))
         .child(button)
-        .child(lead("?"))
+        .child(lead("?").ml(px(-5.)))
         .into_any_element()
 }
+
+const RESUME_SHOWN: usize = 5;
 
 /// The agent's saved conversations for this folder, to pick one up again.
 pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElement> {
@@ -302,7 +277,13 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
     }
     let agent = c.agent()?.agent;
     let now = time::now_ms();
-    let rows = c.resumable.iter().enumerate().map(|(i, s)| {
+    let total = c.resumable.len();
+    let shown = if c.resume_all {
+        total
+    } else {
+        total.min(RESUME_SHOWN)
+    };
+    let rows = c.resumable.iter().take(shown).enumerate().map(|(i, s)| {
         let session = s.clone();
         let group = format!("resume-{i}");
         div()
@@ -318,10 +299,7 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
             .text_size(px(12.5))
             .text_color(colors::text2())
             .cursor_pointer()
-            .hover(|d| {
-                d.bg(colors::surface3().opacity(0.65))
-                    .text_color(colors::text1())
-            })
+            .hover(|d| d.bg(colors::ink(0.05)).text_color(colors::text1()))
             .child(div().flex_1().min_w_0().truncate().child(s.title.clone()))
             .child(
                 div()
@@ -338,7 +316,7 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
                     .px(px(7.))
                     .py(px(2.))
                     .rounded(px(6.))
-                    .bg(colors::surface3())
+                    .bg(colors::ink(0.1))
                     .text_size(px(11.))
                     .text_color(colors::text1())
                     .invisible()
@@ -346,6 +324,35 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
                     .child("Resume"),
             )
             .on_click(cx.listener(move |c, _: &ClickEvent, _, cx| c.resume(session.clone(), cx)))
+    });
+    let more = (total > RESUME_SHOWN).then(|| {
+        let open = c.resume_all;
+        div()
+            .id("resume-more")
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .h(px(32.))
+            .pl(px(10.))
+            .rounded(px(6.))
+            .text_size(px(12.))
+            .text_color(colors::text3())
+            .cursor_pointer()
+            .hover(|d| d.bg(colors::ink(0.05)).text_color(colors::text1()))
+            .child(icon(
+                if open { "chevron-up" } else { "chevron-down" },
+                12.,
+                colors::text3(),
+            ))
+            .child(if open {
+                "Show fewer".to_string()
+            } else {
+                format!("Show {} more", total - RESUME_SHOWN)
+            })
+            .on_click(cx.listener(|c, _: &ClickEvent, _, cx| {
+                c.resume_all = !c.resume_all;
+                cx.notify();
+            }))
     });
     Some(
         div()
@@ -362,8 +369,6 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
                     .gap_2()
                     .h(px(34.))
                     .px(px(12.))
-                    .border_b_1()
-                    .border_color(colors::border1())
                     .text_size(px(12.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors::text2())
@@ -378,7 +383,14 @@ pub fn resume_list(c: &Composer, cx: &mut Context<Composer>) -> Option<AnyElemen
                             .child(c.resumable.len().to_string()),
                     ),
             )
-            .child(div().flex().flex_col().p(px(4.)).children(rows))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .p(px(4.))
+                    .children(rows)
+                    .children(more),
+            )
             .into_any_element(),
     )
 }

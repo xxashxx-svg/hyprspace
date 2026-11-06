@@ -1,7 +1,7 @@
 // The card that shows beside a thread's row when the pointer rests on it, after T3 Code's, in
 // the frame the app's menus and panels share: the thread's title under the agent's mark, then
 // its project, folder, branch, agent and effort as labeled lines, and the subagents it has
-// running. The row itself only has room for the agent's mark. It floats just past the sidebar's
+// running, and what it is doing, which the row has no room for. It floats just past the sidebar's
 // edge, level with the row, the way T3 Code's does, so the list under the pointer stays in view.
 
 use std::path::Path;
@@ -20,7 +20,7 @@ use crate::root::{Rename, Root};
 use crate::zoom::px;
 
 /// How long the pointer rests on a row before its card shows.
-const AFTER: Duration = Duration::from_millis(450);
+const AFTER: Duration = Duration::from_millis(150);
 /// The card's width, and the room its labels take.
 const WIDTH: f32 = 300.;
 const LABEL: f32 = 58.;
@@ -36,6 +36,7 @@ pub struct RowCard {
     pub path: SharedString,
     pub branch: Option<SharedString>,
     pub agent: Option<Agent>,
+    pub doing: Option<SharedString>,
     /// The agent with its model, "Claude Opus 5.5", or "Terminal".
     pub model: SharedString,
     /// The effort it runs at, "High" or "High (default)", for a model that takes one.
@@ -114,8 +115,6 @@ impl RowCard {
             .gap(px(8.))
             .h(px(38.))
             .px(px(12.))
-            .border_b_1()
-            .border_color(colors::border1())
             .child(div().flex_none().child(agent))
             .child(
                 div()
@@ -127,6 +126,14 @@ impl RowCard {
                     .text_color(colors::text1())
                     .child(self.title.clone()),
             );
+        let doing = self.doing.clone().map(|d| {
+            div()
+                .px(px(12.))
+                .pt(px(9.))
+                .text_size(px(12.))
+                .text_color(colors::text2())
+                .child(d)
+        });
         let fields = div()
             .flex()
             .flex_col()
@@ -224,8 +231,6 @@ impl RowCard {
                 .gap(px(6.))
                 .px(px(12.))
                 .py(px(10.))
-                .border_t_1()
-                .border_color(colors::border1())
                 .child(
                     div()
                         .text_size(px(11.5))
@@ -283,14 +288,15 @@ impl RowCard {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded(px(6.))
+            .rounded(px(12.))
             .border_1()
-            .border_color(colors::border2())
+            .border_color(colors::ink(0.1))
             .bg(colors::surface2())
             .shadow(colors::shadow())
             .text_size(px(12.))
             .text_color(colors::text1())
             .child(head)
+            .children(doing)
             .child(fields)
             .children(subs)
             .into_any_element()
@@ -301,6 +307,11 @@ impl Root {
     /// The pointer came onto a thread's row, or left it. The card waits a moment, so sweeping
     /// across the list doesn't flash one card after another.
     pub(crate) fn row_hovered(&mut self, thread: u64, on: bool, cx: &mut Context<Self>) {
+        // rows slide under a still pointer while the list scrolls, and a redraw of the whole
+        // window at every row crossing makes the scroll stutter
+        let shown = self
+            .hover_row
+            .is_some_and(|(_, since)| since.elapsed() >= AFTER);
         if on {
             self.hover_row = Some((thread, Instant::now()));
             self._hover_timer = Some(cx.spawn(async move |this, cx| {
@@ -310,7 +321,9 @@ impl Root {
         } else if self.hover_row.is_some_and(|(t, _)| t == thread) {
             self.hover_row = None;
         }
-        cx.notify();
+        if shown {
+            cx.notify();
+        }
     }
 
     /// The card for the row under the pointer, past the sidebar's edge and level with the row.

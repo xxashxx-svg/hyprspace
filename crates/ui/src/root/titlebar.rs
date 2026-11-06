@@ -1,12 +1,12 @@
 // The window's top row, drawn by us in place of the system's title bar the way zeron does it:
-// the sidebar toggle, search (the palette) and New thread over the sidebar, the space's bar over
+// the sidebar toggle, the app's name and back and forward over the sidebar, the space's bar over
 // the rest, and on Windows the caption buttons. macOS keeps its traffic lights, inset at the left end.
 // Windows drags and snaps the window through the row's hit-test areas; macOS gets the drag from
 // `start_window_move`.
 
 use gpui::{
-    AnyElement, ClickEvent, Context, IntoElement, MouseButton, Window, WindowControlArea, div,
-    prelude::*, svg,
+    AnyElement, ClickEvent, Context, FontWeight, IntoElement, MouseButton, Window,
+    WindowControlArea, div, prelude::*, svg,
 };
 
 use super::{Root, Screen};
@@ -18,9 +18,9 @@ use crate::{colors, widgets};
 
 pub const HEIGHT: f32 = 40.;
 
-/// The sidebar buttons' width with their padding: three 28px buttons, the gaps between, and
-/// 8px before and 4px after.
-const NAV: f32 = 8. + 3. * 28. + 2. * 2. + 4.;
+/// What the row keeps over a shut sidebar: the toggle, the app's name, back and forward, and their
+/// padding.
+const NAV: f32 = 8. + 28. + 100. + 2. * 22. + 3. * 2. + 8.;
 
 /// Room the traffic lights take at the row's left end on macOS.
 const LIGHTS: f32 = if cfg!(target_os = "macos") { 78. } else { 0. };
@@ -40,8 +40,12 @@ impl Root {
                 .flex()
                 .items_center()
                 .pl(px(LIGHTS + 8.))
-                .when(open, |d| d.border_r_1().border_color(colors::border0()))
-                .child(self.nav(cx));
+                .when(open, |d| {
+                    d.border_r_1()
+                        .border_color(colors::border0())
+                        .bg(colors::surface1())
+                })
+                .child(self.nav(true, cx));
             // shut, the row keeps just the buttons
             slide(
                 "titlebar-sidebar",
@@ -93,13 +97,27 @@ impl Root {
                 })
             })
             .children(left)
+            .when(!sidebar, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .w(px(self.state.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH)))
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .pl(px(LIGHTS + 8.))
+                        .border_r_1()
+                        .border_color(colors::border0())
+                        .bg(colors::surface1())
+                        .child(self.nav(false, cx)),
+                )
+            })
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .h_full()
                     .flex()
-                    .when(!sidebar, |d| d.pl(px(LIGHTS)))
                     .when(line, |d| d.border_b_1().border_color(colors::border0()))
                     .child(bar)
                     .when(cfg!(target_os = "windows"), |d| d.child(caption(window))),
@@ -109,16 +127,35 @@ impl Root {
 }
 
 impl Root {
-    /// The logo and the button that hides or shows the sidebar, as the Tauri app had them. Search
-    /// and New thread live at the top of the sidebar itself. The button occludes the row so a
-    /// click doesn't drag the window.
-    fn nav(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn nav(&self, toggle: bool, cx: &mut Context<Self>) -> AnyElement {
+        let arrow =
+            |id: &'static str, glyph: &str, back: bool| {
+                let on = self.can_travel(back);
+                widgets::icon_button(id, glyph, widgets::SMALL)
+                    .occlude()
+                    .tooltip(widgets::tip(if back { "Go back" } else { "Go forward" }))
+                    .when(!on, |d| d.opacity(0.35).cursor_default())
+                    .when(on, |d| {
+                        d.on_click(cx.listener(move |r, _: &ClickEvent, window, cx| {
+                            r.travel(back, window, cx)
+                        }))
+                    })
+            };
         div()
             .id("sidebar-nav")
             .flex()
             .flex_none()
             .items_center()
             .gap(px(2.))
+            .when(toggle, |d| {
+                d.child(
+                    widgets::icon_button("sidebar-toggle", "panel-left", widgets::LARGE)
+                        .occlude()
+                        .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
+                            r.toggle_sidebar(&ToggleSidebar, window, cx)
+                        })),
+                )
+            })
             .child(
                 div()
                     .id("logo-home")
@@ -126,25 +163,28 @@ impl Root {
                     .flex()
                     .flex_none()
                     .items_center()
-                    .justify_center()
-                    .size(px(22.))
+                    .gap(px(6.))
+                    .h(px(26.))
+                    .px(px(6.))
                     .rounded(px(6.))
                     .cursor_pointer()
-                    .hover(|s| s.bg(colors::surface3()))
+                    .hover(|s| s.bg(colors::ink(0.06)))
                     .tooltip(widgets::tip("New thread"))
                     .child(crate::assets::logo(14.))
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors::text1())
+                            .child("HyprSpace"),
+                    )
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
                         r.menu = None;
                         r.new_thread(r.current_space(), window, cx);
                     })),
             )
-            .child(
-                widgets::icon_button("sidebar-toggle", "panel-left", widgets::LARGE)
-                    .occlude()
-                    .on_click(cx.listener(|r, _: &ClickEvent, window, cx| {
-                        r.toggle_sidebar(&ToggleSidebar, window, cx)
-                    })),
-            )
+            .child(arrow("nav-back", "arrow-left", true))
+            .child(arrow("nav-forward", "arrow-right", false))
             .into_any_element()
     }
 }

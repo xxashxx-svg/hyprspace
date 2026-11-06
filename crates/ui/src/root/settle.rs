@@ -1,7 +1,7 @@
 // Settling and snoozing threads, after T3 Code's. Settled threads leave their space for the
 // Settled shelf at the bottom of the sidebar; untouched ones settle by themselves after a while. A snoozed thread hides
 // until a time, or until its agent finishes, and comes back marked new. Either can be undone for
-// a few seconds from the toast.
+// a few seconds from the line in the sidebar's foot.
 //
 // A settled thread known to be idle gives up its terminal and agent process; the conversation
 // resumes when it is opened again. That is what keeps dozens of threads cheap. A thread at work
@@ -27,14 +27,13 @@ use crate::zoom::px;
 
 /// How long the toast offers Undo.
 const UNDO_FOR: Duration = Duration::from_secs(5);
+const FADE: Duration = Duration::from_millis(200);
 
 /// What the toast can put back.
 #[derive(Clone)]
 pub(crate) struct Undo {
-    thread: u64,
+    threads: Vec<(u64, bool, Option<Snooze>)>,
     what: &'static str,
-    settled: bool,
-    snooze: Option<Snooze>,
     draft: Option<Draft>,
     at: Instant,
     /// Tells this toast from the last, so each one eases in.
@@ -87,15 +86,21 @@ impl Root {
         }
     }
 
-    fn remember(&mut self, thread: u64, what: &'static str, cx: &mut Context<Self>) {
-        let Some((_, t)) = self.state.thread(thread) else {
+    fn remember(&mut self, threads: &[u64], what: &'static str, cx: &mut Context<Self>) {
+        let threads: Vec<_> = threads
+            .iter()
+            .filter_map(|&id| {
+                self.state
+                    .thread(id)
+                    .map(|(_, t)| (id, t.settled, t.snooze))
+            })
+            .collect();
+        if threads.is_empty() {
             return;
-        };
+        }
         let undo = Undo {
-            thread,
+            threads,
             what,
-            settled: t.settled,
-            snooze: t.snooze,
             draft: None,
             at: Instant::now(),
             serial: 0,
@@ -105,10 +110,8 @@ impl Root {
 
     pub(crate) fn remember_draft(&mut self, draft: Draft, cx: &mut Context<Self>) {
         let undo = Undo {
-            thread: draft.id,
+            threads: Vec::new(),
             what: "Discarded",
-            settled: false,
-            snooze: None,
             draft: Some(draft),
             at: Instant::now(),
             serial: 0,
@@ -121,7 +124,9 @@ impl Root {
         self.undo = Some(undo);
         // the toast leaves by itself
         self._undo_timer = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(UNDO_FOR).await;
+            cx.background_executor().timer(UNDO_FOR - FADE).await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+            cx.background_executor().timer(FADE).await;
             let _ = this.update(cx, |r, cx| {
                 if r.undo.as_ref().is_some_and(|u| u.at.elapsed() >= UNDO_FOR) {
                     r.undo = None;
@@ -139,35 +144,46 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ask_host(thread, |thread| Ask::Settle { thread, on });
-        if on {
-            self.remember(thread, "Settled", cx);
-            self.unpeek(thread);
-        }
-        if let Some(t) = self.state.thread_mut(thread) {
-            t.set_settled(on, now_ms());
-            if on {
-                t.snooze = None;
-                t.pinned = None;
-            } else {
-                // back in the active list for a full window before it can settle again
-                t.touched = now_ms();
-            }
-        }
-        if on {
-            self.free(thread);
-        }
-        self.leave(window, cx);
-        self.save();
-        cx.notify();
+        self.settle_many(&[thread], on, window, cx);
     }
 
-    pub(crate) fn toggle_pin(&mut self, thread: u64, cx: &mut Context<Self>) {
-        let pinned = self
-            .state
-            .thread(thread)
-            .is_some_and(|(_, t)| t.pinned.is_some());
-        self.pin(thread, !pinned, cx);
+    pub(crate) fn settle_many(
+        &mut self,
+        threads: &[u64],
+        on: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let next = if on {
+            self.next_after(threads, cx)
+        } else {
+            None
+        };
+        if on {
+            self.remember(threads, "Settled", cx);
+        }
+        for &thread in threads {
+            self.ask_host(thread, |thread| Ask::Settle { thread, on });
+            if on {
+                self.unpeek(thread);
+            }
+            if let Some(t) = self.state.thread_mut(thread) {
+                t.set_settled(on, now_ms());
+                if on {
+                    t.snooze = None;
+                    t.pinned = None;
+                } else {
+                    // back in the active list for a full window before it can settle again
+                    t.touched = now_ms();
+                }
+            }
+            if on {
+                self.free(thread);
+            }
+        }
+        self.move_on(next, window, cx);
+        self.save();
+        cx.notify();
     }
 
     pub(crate) fn pin(&mut self, thread: u64, on: bool, cx: &mut Context<Self>) {
@@ -187,27 +203,81 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.snooze_many(&[thread], until, window, cx);
+    }
+
+    pub(crate) fn snooze_many(
+        &mut self,
+        threads: &[u64],
+        until: Option<Snooze>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.snooze_menu = None;
-        self.ask_host(thread, |thread| match until {
-            Some(until) => Ask::Snooze { thread, until },
-            None => Ask::Settle { thread, on: false },
-        });
+        self.snooze_custom = None;
+        let next = if until.is_some() {
+            self.next_after(threads, cx)
+        } else {
+            None
+        };
         if until.is_some() {
-            self.remember(thread, "Snoozed", cx);
-            self.unpeek(thread);
+            self.remember(threads, "Snoozed", cx);
         }
-        if let Some(t) = self.state.thread_mut(thread) {
-            match until {
-                Some(_) => t.snooze = until,
-                None => t.wake(now_ms()),
+        for &thread in threads {
+            self.ask_host(thread, |thread| match until {
+                Some(until) => Ask::Snooze { thread, until },
+                None => Ask::Settle { thread, on: false },
+            });
+            if until.is_some() {
+                self.unpeek(thread);
+            }
+            if let Some(t) = self.state.thread_mut(thread) {
+                match until {
+                    Some(_) => t.snooze = until,
+                    None => t.wake(now_ms()),
+                }
+            }
+            if until.is_none() {
+                self.unseen.insert(thread);
             }
         }
-        if until.is_none() {
-            self.unseen.insert(thread);
-        }
-        self.leave(window, cx);
+        self.move_on(next, window, cx);
         self.save();
         cx.notify();
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        self.undo
+            .as_ref()
+            .is_some_and(|u| u.at.elapsed() < UNDO_FOR)
+    }
+
+    fn next_after(&self, threads: &[u64], cx: &mut Context<Self>) -> Option<u64> {
+        let Screen::Thread(on) = self.screen else {
+            return None;
+        };
+        if !threads.contains(&on) {
+            return None;
+        }
+        let list: Vec<u64> = self
+            .jump_list(cx)
+            .into_iter()
+            .filter(|&t| t == on || self.state.thread(t).is_some_and(|(_, t)| t.active()))
+            .collect();
+        let at = list.iter().position(|&t| t == on)?;
+        let free = |t: &&u64| !threads.contains(t);
+        list[at + 1..]
+            .iter()
+            .find(free)
+            .or_else(|| list[..at].iter().rev().find(free))
+            .copied()
+    }
+
+    fn move_on(&mut self, next: Option<u64>, window: &mut Window, cx: &mut Context<Self>) {
+        match next {
+            Some(next) => self.open_thread(next, window, cx),
+            None => self.leave(window, cx),
+        }
     }
 
     pub(crate) fn undo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -220,16 +290,18 @@ impl Root {
             cx.notify();
             return;
         }
-        self.ask_host(u.thread, |thread| match u.snooze {
-            Some(until) => Ask::Snooze { thread, until },
-            None => Ask::Settle {
-                thread,
-                on: u.settled,
-            },
-        });
-        if let Some(t) = self.state.thread_mut(u.thread) {
-            t.set_settled(u.settled, now_ms());
-            t.snooze = u.snooze;
+        for (thread, settled, snooze) in u.threads {
+            self.ask_host(thread, |thread| match snooze {
+                Some(until) => Ask::Snooze { thread, until },
+                None => Ask::Settle {
+                    thread,
+                    on: settled,
+                },
+            });
+            if let Some(t) = self.state.thread_mut(thread) {
+                t.set_settled(settled, now_ms());
+                t.snooze = snooze;
+            }
         }
         self.leave(window, cx);
         self.save();
@@ -473,10 +545,27 @@ impl Root {
                 .into_any_element(),
             );
         }
+        rows.push(
+            choice("snooze-custom", "Custom...", String::new())
+                .on_click(
+                    cx.listener(|r, _: &ClickEvent, window, cx| r.open_custom_snooze(window, cx)),
+                )
+                .into_any_element(),
+        );
         let close = cx.listener(|r, _: &(), _, cx| {
             r.snooze_menu = None;
+            r.snooze_custom = None;
             cx.notify();
         });
+        if let Some(body) = self.custom_snooze_body(cx) {
+            return Some(widgets::popup(
+                at,
+                widgets::Open::Down,
+                window,
+                move |w, cx| close(&(), w, cx),
+                body,
+            ));
+        }
         Some(widgets::popup(
             at,
             widgets::Open::Down,
@@ -512,84 +601,50 @@ impl Root {
         cx.notify();
     }
 
-    /// The toast after a settle or a snooze, with Undo, for a few seconds.
-    pub(crate) fn undo_toast(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let u = self.undo.as_ref().filter(|u| u.at.elapsed() < UNDO_FOR)?;
-        let (title, snooze) = match &u.draft {
-            Some(d) => (crate::composer::title_of(&d.text), None),
-            None => self
-                .state
-                .thread(u.thread)
-                .map(|(_, t)| (t.title.clone(), t.snooze))
-                .unwrap_or_default(),
+    /// The line in the sidebar's foot after a settle, a snooze or a discard, for a few seconds.
+    pub(crate) fn undo_note(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let u = self.undo.as_ref()?;
+        let left = UNDO_FOR.saturating_sub(u.at.elapsed());
+        if left.is_zero() {
+            return None;
+        }
+        let what = match u.threads.len() {
+            n if n > 1 => format!("{} {n},", u.what),
+            _ => format!("{},", u.what),
         };
-        let (glyph, what) = match snooze.filter(|_| u.what == "Snoozed") {
-            Some(s) => ("clock", format!("Snoozed until {}", self.wake_text(s))),
-            None if u.draft.is_some() => ("trash-2", u.what.to_string()),
-            None => ("archive", u.what.to_string()),
+        let key = if cfg!(target_os = "macos") {
+            "Cmd+Z"
+        } else {
+            "Ctrl+Z"
         };
-        let toast = widgets::toast("undo-toast")
-            .child(icon(glyph, 14., colors::text2()))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(colors::text1())
-                            .child(what),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(colors::text3())
-                            .child(title),
-                    ),
-            )
-            .child(div().flex_none().w(px(1.)).h(px(16.)).bg(colors::border1()))
+        let note = div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .overflow_hidden()
+            .justify_end()
+            .items_center()
+            .gap(px(4.))
+            .px(px(6.))
+            .text_size(px(11.5))
+            .text_color(colors::text3())
+            .child(div().flex_none().child(what))
             .child(
                 div()
                     .id("undo")
-                    .flex_none()
-                    .h(px(26.))
-                    .px(px(10.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(6.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors::text1())
+                    .min_w_0()
+                    .truncate()
                     .cursor_pointer()
-                    .hover(|s| s.bg(colors::ink(0.08)))
-                    .child("Undo")
+                    .hover(|s| s.text_color(colors::text1()))
+                    .child(format!("{key} to undo"))
                     .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.undo(window, cx))),
-            )
-            .child(
-                widgets::icon_button("undo-close", "x", widgets::SMALL).on_click(cx.listener(
-                    |r, _: &ClickEvent, _, cx| {
-                        r.undo = None;
-                        cx.notify();
-                    },
-                )),
             );
-        let toast = crate::slide::ease_in(toast, ("undo-toast", u.serial), 180, |d, t| {
-            d.opacity(t).mt(px(-8. * (1. - t)))
-        });
-        Some(
-            div()
-                .absolute()
-                .top(px(52.))
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(toast)
-                .into_any_element(),
-        )
+        let fade = FADE.as_millis() as u64;
+        Some(if left <= FADE {
+            crate::slide::ease_in(note, ("undo-out", u.serial), fade, |d, t| d.opacity(1. - t))
+        } else {
+            crate::slide::ease_in(note, ("undo-in", u.serial), fade, |d, t| d.opacity(t))
+        })
     }
 
     /// When a snoozed thread wakes, for its row.

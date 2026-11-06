@@ -229,16 +229,14 @@ impl Dock {
                 .h(px(24.))
                 .px(px(9.))
                 .rounded(px(6.))
-                .border_1()
-                .border_color(colors::border2())
-                .bg(colors::surface2())
+                .bg(colors::ink(0.07))
                 .text_size(px(11.5))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors::text1())
                 .when(busy, |d| d.opacity(0.5))
                 .when(!busy, |d| {
                     d.cursor_pointer()
-                        .hover(|s| s.bg(colors::surface3()))
+                        .hover(|s| s.bg(colors::ink(0.11)))
                         .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.push(cx)))
                 })
                 .child(icon("arrow-up", 12., colors::text1()))
@@ -258,7 +256,7 @@ impl Dock {
                 .size(px(24.))
                 .rounded(px(6.))
                 .cursor_pointer()
-                .hover(|s| s.bg(colors::surface2()))
+                .hover(|s| s.bg(colors::ink(0.06)))
                 .child(icon("refresh-cw", 12., colors::text3()))
                 .on_click(cx.listener(|d, _: &ClickEvent, _, cx| d.refresh(cx)))
                 .into_any_element()
@@ -270,8 +268,6 @@ impl Dock {
             .gap(px(7.))
             .h(px(36.))
             .px(px(12.))
-            .border_b_1()
-            .border_color(colors::border1())
             .child(icon("git-branch", 13., colors::text3()))
             .child(
                 div()
@@ -315,7 +311,7 @@ impl Dock {
             .h(px(28.))
             .px(px(6.))
             .rounded(px(6.))
-            .hover(|s| s.bg(colors::surface3().opacity(0.55)))
+            .hover(|s| s.bg(colors::ink(0.05)))
             .child(
                 div()
                     .id(("git-tick", ix))
@@ -483,8 +479,6 @@ impl Dock {
                         .items_center()
                         .h(px(32.))
                         .px(px(12.))
-                        .border_b_1()
-                        .border_color(colors::border1())
                         .child(
                             div()
                                 .id("git-all")
@@ -575,22 +569,14 @@ impl Dock {
                     .pt(px(12.))
                     .px(px(12.))
                     .pb(px(12.))
-                    .border_t_1()
-                    .border_color(colors::border1())
-                    .bg(colors::surface1())
-                    // the message as one card: its summary, a hairline, its description
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .rounded(px(8.))
+                            .rounded(px(10.))
                             .border_1()
-                            .border_color(if typing {
-                                colors::accent()
-                            } else {
-                                colors::border2()
-                            })
-                            .bg(colors::surface2())
+                            .border_color(colors::ink(if typing { 0.12 } else { 0. }))
+                            .bg(colors::ink(0.04))
                             .text_size(px(12.5))
                             .child(
                                 div()
@@ -599,12 +585,11 @@ impl Dock {
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(self.git.summary.clone()),
                             )
-                            .child(div().h(px(1.)).bg(colors::ink(0.06)))
                             .child(
                                 div()
                                     .min_h(px(56.))
                                     .px(px(10.))
-                                    .py(px(8.))
+                                    .pb(px(8.))
                                     .child(self.git.body.clone()),
                             ),
                     )

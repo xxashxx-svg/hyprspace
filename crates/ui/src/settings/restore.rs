@@ -284,7 +284,7 @@ impl Root {
                         }),
                     )),
             );
-        let scrim = colors::hsla(colors::theme().shadow);
+        let scrim = colors::bg();
         Some(
             div()
                 .id("settings-restore-box")
@@ -294,7 +294,7 @@ impl Root {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(scrim.opacity(0.6))
+                .bg(scrim.opacity(0.64))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(|r, _, _, cx| {

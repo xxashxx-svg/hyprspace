@@ -267,7 +267,6 @@ impl FolderPicker {
     }
 
     fn render_list(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let accent = colors::accent();
         let label = |text: &'static str| {
             div()
                 .px(px(10.))
@@ -324,7 +323,7 @@ impl FolderPicker {
                             .px(px(10.))
                             .rounded(px(8.))
                             .cursor_pointer()
-                            .when(on, |d| d.bg(accent.opacity(0.14)))
+                            .when(on, |d| d.bg(crate::colors::ink(0.08)))
                             .on_mouse_move(cx.listener(move |p, _, _, cx| {
                                 if p.pick != row {
                                     p.pick = row;
@@ -359,7 +358,7 @@ impl FolderPicker {
                     .px(px(10.))
                     .rounded(px(8.))
                     .cursor_pointer()
-                    .when(on, |d| d.bg(accent.opacity(0.14)))
+                    .when(on, |d| d.bg(crate::colors::ink(0.08)))
                     .on_mouse_move(cx.listener(move |p, _, _, cx| {
                         if p.pick != row {
                             p.pick = row;
@@ -401,8 +400,6 @@ impl FolderPicker {
             .gap(px(11.))
             .h(px(50.))
             .px(px(18.))
-            .border_b_1()
-            .border_color(colors::border1())
             .child(icon("search", 15., colors::text3()))
             .child(
                 div()
@@ -437,8 +434,6 @@ impl FolderPicker {
             .gap(px(8.))
             .h(px(50.))
             .px(px(12.))
-            .border_b_1()
-            .border_color(colors::border1())
             .child(
                 div()
                     .id("source-back")
@@ -669,8 +664,7 @@ fn panel(
                 .items_center()
                 .px(px(14.))
                 .py(px(9.))
-                .border_t_1()
-                .border_color(colors::border1())
+                .bg(colors::ink(0.025))
                 .text_size(px(11.))
                 .text_color(colors::text3())
                 .child(foot),
