@@ -4,6 +4,16 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.50 — 2026-11-09
+
+- File paths in replies show as the file's icon and name, and open the file on click
+- Inline code sits in rounded chips, and tables and code blocks are flatter and easier to read
+- The changed-files card is compact, with file icons, and shows up to 8 files before Show more
+- The interface font is now Inter. Geist is still in Settings, Appearance
+- Hovers fade in, and long messages, folds and the file tree slide open
+- The transcript and sidebar have a scrollbar you can drag
+- The stop button is red while a run is live, and the prompt box is lighter
+
 ## 0.24.49 — 2026-11-06
 
 - New default theme: a raised sidebar over a darker canvas with softer, higher-contrast text. The old look is kept as Onyx
