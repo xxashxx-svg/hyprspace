@@ -171,7 +171,7 @@ pub fn rainbow(hue: f64, dark: bool) -> Color {
 }
 
 /// The UI font, zeron's. The UI bundles it (crates/ui/assets/fonts).
-pub const SANS: &str = "Geist";
+pub const SANS: &str = "Inter";
 
 /// Code, paths and numbers in the UI, zeron's. Bundled with the UI like `SANS`.
 pub const MONO: &str = "Geist Mono";

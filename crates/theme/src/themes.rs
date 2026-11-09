@@ -164,7 +164,11 @@ fn make(hue: f64, tint: f64, (al, ac): (f64, f64), dark: bool) -> Theme {
             accent_hover: oklch(if ac > 0.0 { al + 0.06 } else { al - 0.08 }, ac, hue),
             accent_dim: ink.a(0.07),
             on_accent: on_accent(al),
-            link: oklch(al.max(0.72), ac.min(0.14), hue),
+            link: if ac > 0.0 {
+                oklch(al.max(0.72), ac.min(0.14), hue)
+            } else {
+                oklch(0.74, 0.13, 250.0)
+            },
             text1: oklch(0.97, tint / 2.0, hue),
             text2: oklch(0.72, tint / 2.0, hue),
             text3: oklch(0.56, tint / 2.0, hue),
@@ -182,7 +186,11 @@ fn make(hue: f64, tint: f64, (al, ac): (f64, f64), dark: bool) -> Theme {
             diff_del: Color::rgb(0xef4444),
             term_fg: oklch(0.95, tint / 2.0, hue),
             cursor: oklch(0.82, ac.min(0.1), hue),
-            selection: oklch_a(0.82, ac.min(0.1), hue, 0.25),
+            selection: if ac > 0.0 {
+                oklch_a(0.82, ac.min(0.1), hue, 0.25)
+            } else {
+                oklch_a(0.62, 0.17, 255.0, 0.38)
+            },
             ansi: XTERM,
             syntax: syntax::derive(hue, tint, true),
         }
@@ -199,7 +207,11 @@ fn make(hue: f64, tint: f64, (al, ac): (f64, f64), dark: bool) -> Theme {
             accent_hover: oklch(al - 0.06, ac, hue),
             accent_dim: ink.a(0.05),
             on_accent: on_accent(al),
-            link: oklch(al, ac, hue),
+            link: if ac > 0.0 {
+                oklch(al, ac, hue)
+            } else {
+                oklch(0.52, 0.17, 255.0)
+            },
             text1: oklch(0.22, tint, hue),
             text2: oklch(0.46, tint, hue),
             text3: oklch(0.6, tint, hue),
@@ -217,7 +229,11 @@ fn make(hue: f64, tint: f64, (al, ac): (f64, f64), dark: bool) -> Theme {
             diff_del: Color::rgb(0xdc2626),
             term_fg: oklch(0.25, tint, hue),
             cursor: oklch(al, ac, hue),
-            selection: oklch_a(al, ac, hue, 0.22),
+            selection: if ac > 0.0 {
+                oklch_a(al, ac, hue, 0.22)
+            } else {
+                oklch_a(0.62, 0.17, 255.0, 0.28)
+            },
             ansi: XTERM_LIGHT,
             syntax: syntax::derive(hue, tint, false),
         }

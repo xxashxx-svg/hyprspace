@@ -101,7 +101,7 @@ pub(super) fn stretch(
     div()
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(px(2.))
         .children(rows)
         .into_any_element()
 }
@@ -289,7 +289,7 @@ fn line(
             .text_color(colors::text2())
             .when(mono, |d| {
                 d.font_family(MONO)
-                    .text_size(px(if small { 11.5 } else { 12. }))
+                    .text_size(px(if small { 12. } else { 13. }))
             })
             .child(text)
     });
@@ -297,19 +297,19 @@ fn line(
         .id(id)
         .flex()
         .items_center()
-        .gap(px(if small { 7. } else { 8. }))
+        .gap(px(6.))
         .min_h(px(if small { 21. } else { ROW }))
         .min_w_0()
-        .text_size(px(if small { 12.5 } else { 13. }))
-        .text_color(colors::text3())
-        .child(lead)
+        .text_size(px(if small { 13. } else { 14. }))
+        .text_color(colors::text2())
+        .child(div().flex_none().opacity(0.7).child(lead))
         .child(div().flex_none().child(verb))
         .children(what)
         .child(div().flex_1())
         .children(right)
         .when_some(toggle, |d, toggle| {
             d.cursor_pointer()
-                .hover(|s| s.text_color(colors::text2()))
+                .hover(|s| s.text_color(colors::text1()))
                 .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
                     slide::flip(key.clone());
                     toggle(v);

@@ -186,7 +186,7 @@ pub fn mono(text: &str) -> AnyElement {
 pub fn selectable(key: &str, text: &str, cx: &mut Context<TranscriptView>) -> AnyElement {
     let long = clip::long(key, text);
     let shown = match &long {
-        Some((k, _)) if !clip::open(k) => clip::head(text),
+        Some((k, _)) if !clip::open(k) && !clip::gliding(k) => clip::head(text),
         _ => text,
     };
     let body: SharedString = shown.trim_end().to_string().into();

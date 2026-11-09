@@ -92,8 +92,8 @@ impl Root {
                 .absolute()
                 .inset_0()
                 .rounded(px(RADIUS))
-                .border_1()
-                .border_color(colors::accent().opacity(0.5))
+                .border_2()
+                .border_color(colors::accent().opacity(0.75))
                 .into_any_element()
         })
     }

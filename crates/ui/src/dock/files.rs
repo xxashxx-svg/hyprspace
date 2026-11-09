@@ -6,10 +6,11 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Hsla, IntoElement, UniformListScrollHandle, div,
-    prelude::*, uniform_list,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, FontWeight, Hsla, IntoElement,
+    Transformation, UniformListScrollHandle, div, percentage, prelude::*, uniform_list,
 };
 use hyprspace_proto::folder::{DirEntry, GitStatus};
 use hyprspace_proto::{Client, Command, FolderCommand, Pane};
@@ -18,12 +19,17 @@ use hyprspace_theme::MONO;
 use super::kinds::file_icon;
 use super::{Dock, DockEvent, empty, loading};
 use crate::assets::icon;
-use crate::colors;
 use crate::widgets::{self, tip};
 use crate::zoom::px;
+use crate::{colors, slide};
 
 const ROW: f32 = 28.;
 const INDENT: f32 = 14.;
+const TURN: Duration = Duration::from_millis(160);
+
+fn turn_key(dir: &Path) -> String {
+    format!("tree:{}", dir.display())
+}
 
 /// A file's git state, as the tree shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,6 +161,7 @@ impl Tree {
     }
 
     fn toggle(&mut self, client: &Client, dir: PathBuf) {
+        slide::flip(turn_key(&dir));
         if !self.open.remove(&dir) {
             if !self.kids.contains_key(&dir) {
                 ask(client, dir.clone());
@@ -229,16 +236,7 @@ impl Tree {
             .when(viewing, |d| d.bg(colors::ink(0.08)))
             .hover(|s| s.bg(colors::ink(0.05)))
             .child(if r.dir {
-                icon(
-                    if r.open {
-                        "chevron-down"
-                    } else {
-                        "chevron-right"
-                    },
-                    12.,
-                    colors::text3(),
-                )
-                .into_any_element()
+                chevron(&r.path, r.open)
             } else {
                 div().w(px(12.)).flex_none().into_any_element()
             })
@@ -287,7 +285,40 @@ impl Tree {
                     }));
                 }
             }))
-            .into_any_element()
+            .map(|row| match arrived(&r.path) {
+                Some(n) => row
+                    .with_animation(
+                        ("arrive", n),
+                        Animation::new(TURN).with_easing(slide::ease_out),
+                        |d, t| d.opacity(t),
+                    )
+                    .into_any_element(),
+                None => row.into_any_element(),
+            })
+    }
+}
+
+/// The flip that brought `path` into the tree, while its rows are still fading in.
+fn arrived(path: &Path) -> Option<usize> {
+    path.ancestors()
+        .skip(1)
+        .find_map(|dir| slide::flipped(&turn_key(dir), TURN))
+}
+
+fn chevron(dir: &Path, open: bool) -> AnyElement {
+    let turn = move |t: f32| percentage(if open { 0.25 * t } else { 0.25 * (1. - t) });
+    let glyph = icon("chevron-right", 12., colors::text3());
+    match slide::flipped(&turn_key(dir), TURN) {
+        Some(n) => glyph
+            .with_animation(
+                ("twist", n),
+                Animation::new(TURN).with_easing(slide::ease_out),
+                move |c, t| c.with_transformation(Transformation::rotate(turn(t))),
+            )
+            .into_any_element(),
+        None => glyph
+            .with_transformation(Transformation::rotate(turn(1.)))
+            .into_any_element(),
     }
 }
 

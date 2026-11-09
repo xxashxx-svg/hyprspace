@@ -13,6 +13,7 @@ use gpui::{
 
 use crate::assets::icon;
 use crate::colors;
+use crate::hover::fill_on_hover;
 use crate::transcript::Status;
 use crate::zoom::px;
 
@@ -37,7 +38,7 @@ pub fn button_frame(id: impl Into<ElementId>) -> Stateful<Div> {
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text1())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.1)))
+        .child(fill_on_hover("hover", colors::ink(0.04), 8.))
 }
 
 /// The one button that moves things forward, in the theme's accent.
@@ -60,7 +61,7 @@ pub fn primary_frame(id: impl Into<ElementId>) -> Stateful<Div> {
         .bg(colors::accent())
         .text_color(colors::on_accent())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::accent_hover()))
+        .child(fill_on_hover("hover", colors::accent_hover(), 6.))
 }
 
 /// The round send button in a prompt box: the accent once there is something to send, muted
@@ -77,16 +78,21 @@ pub fn send(id: impl Into<ElementId>, icon_name: &str, ready: bool) -> Stateful<
         .cursor_pointer();
     if ready {
         b.bg(colors::accent())
-            .hover(|s| s.bg(colors::accent_hover()))
+            .child(fill_on_hover("hover", colors::accent_hover(), 16.))
             .child(icon(icon_name, 15., colors::on_accent()))
     } else {
         b.bg(colors::ink(0.1))
-            .hover(|s| s.bg(colors::ink(0.16)))
+            .child(fill_on_hover("hover", colors::ink(0.07), 16.))
             .child(icon(icon_name, 15., colors::text3()))
     }
 }
 
-pub const BOX_RADIUS: f32 = 20.;
+/// Digits all one width, for numbers that tick while they're watched.
+pub fn tabular() -> gpui::FontFeatures {
+    gpui::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)]))
+}
+
+pub const BOX_RADIUS: f32 = 16.;
 
 pub fn composer_box(focused: bool) -> Div {
     div()
@@ -95,12 +101,12 @@ pub fn composer_box(focused: bool) -> Div {
         .flex_col()
         .rounded(px(BOX_RADIUS))
         .border_1()
-        .border_color(colors::ink(if focused { 0.08 } else { 0. }))
+        .border_color(colors::ink(if focused { 0.1 } else { 0.05 }))
         .bg(colors::surface2())
-        .shadow(colors::shadow())
+        .shadow(colors::lift())
 }
 
-/// Send's neutral twin while a run is live: a round button with a filled square.
+/// Send's twin while a run is live: a round red button with a white square.
 pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
     div()
         .id(id)
@@ -110,10 +116,10 @@ pub fn stop(id: impl Into<ElementId>) -> Stateful<Div> {
         .justify_center()
         .size(px(32.))
         .rounded_full()
-        .bg(colors::ink(0.1))
+        .bg(colors::error().opacity(0.88))
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.16)))
-        .child(div().size(px(10.)).rounded(px(2.)).bg(colors::text1()))
+        .child(fill_on_hover("hover", colors::error(), 16.))
+        .child(div().size(px(9.)).rounded(px(1.5)).bg(colors::on_status()))
 }
 
 pub const SMALL: f32 = 22.;
@@ -128,7 +134,9 @@ pub fn icon_button(id: impl Into<ElementId>, name: &str, size: f32) -> Stateful<
 }
 
 pub fn icon_frame(id: impl Into<ElementId>, size: f32) -> Stateful<Div> {
-    bare_icon_frame(id, size).hover(|s| s.bg(colors::ink(0.06)).text_color(colors::text1()))
+    bare_icon_frame(id, size)
+        .hover(|s| s.text_color(colors::text1()))
+        .child(fill_on_hover("hover", colors::ink(0.06), 6.))
 }
 
 /// `icon_frame` without its hover, for a button that hovers its own way.
@@ -344,7 +352,7 @@ pub fn menu_item(
         .py(px(6.))
         .rounded(px(6.))
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.06)))
+        .child(fill_on_hover("hover", colors::ink(0.06), 6.))
         .child(
             div()
                 .flex()
@@ -553,7 +561,7 @@ pub fn select(id: impl Into<ElementId>, label: impl Into<SharedString>) -> State
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors::text1())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.08)))
+        .child(fill_on_hover("hover", colors::ink(0.035), 8.))
         .child(div().flex_1().min_w_0().truncate().child(label.into()))
         .child(icon("chevron-down", 12., colors::text3()))
 }

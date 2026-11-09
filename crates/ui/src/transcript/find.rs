@@ -120,6 +120,7 @@ impl TranscriptView {
                 _ => None,
             })
             .unwrap_or(0);
+        let _links = markdown::links::scope(Some(super::links::handler(self, cx)));
         let Some(f) = self.find.as_mut() else {
             return;
         };

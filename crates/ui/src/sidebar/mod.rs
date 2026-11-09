@@ -615,6 +615,11 @@ impl gpui::Render for SidebarView {
                 }
             }))
             .child(rows)
+            .child(crate::scrollbar::bar(
+                "sidebar",
+                self.list.clone(),
+                |_, _, _| {},
+            ))
             .when(above, |d| d.child(fade(true)))
             .when(below, |d| d.child(fade(false)))
             .child(wheel)

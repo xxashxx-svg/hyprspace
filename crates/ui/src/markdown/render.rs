@@ -2,16 +2,21 @@
 // open in the browser and inline code in the mono font. Text size and line height come from the
 // caller, so a reply and a quoted snippet can differ.
 
+use std::ops::Range;
+
 use gpui::{
-    AnyElement, FontStyle, FontWeight, HighlightStyle, InteractiveText, IntoElement, ObjectFit,
-    SharedString, StrikethroughStyle, StyledText, UnderlineStyle, div, img, prelude::*, relative,
+    AnyElement, Bounds, Canvas, FontStyle, FontWeight, HighlightStyle, InteractiveText,
+    IntoElement, ObjectFit, SharedString, StrikethroughStyle, StyledText, TextLayout,
+    TransformationMatrix, canvas, div, fill, img, point, prelude::*, relative, size,
 };
 use hyprspace_theme::MONO;
 
 use super::code::CodeBlock;
+use super::label::{GAP, label};
 use super::select;
 use super::{Block, Inline, Style};
 use crate::colors;
+use crate::dock::kinds::file_icon;
 use crate::zoom::px;
 
 /// `key` makes the element ids unique per transcript item.
@@ -25,15 +30,26 @@ pub fn render(blocks: &[Block], key: &str, fade: &[f32]) -> AnyElement {
             blocks
                 .iter()
                 .enumerate()
-                .map(|(i, b)| shown(block(b, &format!("{key}-{i}")), fade.get(i))),
+                .map(|(i, b)| shown(block(b, &format!("{key}-{i}")), fade.get(i), lead(b, i))),
         )
         .into_any_element()
 }
 
-fn shown(el: AnyElement, fade: Option<&f32>) -> AnyElement {
+/// Room above a heading that follows other blocks, so it starts a section instead of hugging
+/// the text above it.
+fn lead(b: &Block, i: usize) -> f32 {
+    if i > 0 && matches!(b, Block::Heading(..)) {
+        8.
+    } else {
+        0.
+    }
+}
+
+fn shown(el: AnyElement, fade: Option<&f32>, lead: f32) -> AnyElement {
     div()
         .flex()
         .flex_col()
+        .pt(px(lead))
         .when_some(fade.filter(|a| **a < 1.), |d, a| d.opacity(*a))
         .child(el)
         .into_any_element()
@@ -71,7 +87,11 @@ pub fn part(
     while k < units.len() {
         match units[k] {
             Unit::Block(i) => {
-                groups.push(shown(block(&blocks[i], &format!("{key}-{i}")), fade.get(i)));
+                groups.push(shown(
+                    block(&blocks[i], &format!("{key}-{i}")),
+                    fade.get(i),
+                    lead(&blocks[i], i),
+                ));
                 k += 1;
             }
             Unit::Entry(i, _) => {
@@ -91,7 +111,7 @@ pub fn part(
                             Unit::Block(_) => None,
                         }))
                         .into_any_element();
-                    groups.push(shown(list, fade.get(i)));
+                    groups.push(shown(list, fade.get(i), 0.));
                 }
                 k += run;
             }
@@ -160,8 +180,8 @@ fn block(b: &Block, key: &str) -> AnyElement {
                 _ => px(14.5),
             };
             div()
-                .pt_1()
                 .text_size(size)
+                .line_height(relative(1.3))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(inline(i, key))
                 .into_any_element()
@@ -262,22 +282,22 @@ fn columns(head: &[Inline], rows: &[Vec<Inline>]) -> Vec<(f32, f32)> {
 
 fn table(head: &[Inline], rows: &[Vec<Inline>], key: &str) -> AnyElement {
     let sizes = columns(head, rows);
+    let last = sizes.len().saturating_sub(1);
     let row = |cells: &[Inline], key: String, head: bool| {
         div()
             .flex()
-            .mx(px(4.))
             .when(!head, |d| d.border_t_1().border_color(colors::border1()))
             .children(cells.iter().enumerate().map(|(i, c)| {
                 let (grow, min) = sizes.get(i).copied().unwrap_or((3., 0.));
                 let mut cell = div().flex_basis(relative(0.)).min_w(px(min));
                 cell.style().flex_grow = Some(grow);
                 cell.style().flex_shrink = Some(1.);
-                cell.px(px(10.))
+                cell.pl(px(if i == 0 { 0. } else { 12. }))
+                    .pr(px(if i == last { 0. } else { 12. }))
                     .py(px(7.))
                     .when(head, |d| {
-                        d.font_weight(FontWeight::MEDIUM)
-                            .text_size(px(12.5))
-                            .text_color(colors::text2())
+                        d.font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors::text1())
                     })
                     .child(inline(c, &format!("{key}-{i}")))
             }))
@@ -286,14 +306,11 @@ fn table(head: &[Inline], rows: &[Vec<Inline>], key: &str) -> AnyElement {
         .id(SharedString::from(format!("{key}-table")))
         .overflow_x_scroll()
         .restrict_scroll_to_axis()
-        .rounded(px(12.))
-        .bg(colors::ink(0.035))
         .child(
             div()
                 .flex()
                 .flex_col()
                 .min_w_full()
-                .py(px(2.))
                 .child(row(head, format!("{key}-h"), true))
                 .children(
                     rows.iter()
@@ -307,36 +324,17 @@ fn table(head: &[Inline], rows: &[Vec<Inline>], key: &str) -> AnyElement {
 /// One run of styled text. Links get their own click targets.
 pub fn inline(i: &Inline, key: &str) -> AnyElement {
     let handler = super::links::current();
-    // a path written as code that names a file opens it, as a link would
-    let named: Vec<bool> = i
-        .spans
-        .iter()
-        .map(|(r, s)| {
-            s.code
-                && s.link.is_none()
-                && handler
-                    .as_ref()
-                    .is_some_and(|h| (h.file)(&i.text[r.clone()]).is_some())
-        })
-        .collect();
+    let (i, icons) = label(i);
     let highlights: Vec<_> = i
         .spans
         .iter()
-        .zip(&named)
-        .map(|((range, s), named)| {
-            let link = s.link.is_some() || *named;
+        .map(|(range, s)| {
             (
                 range.clone(),
                 HighlightStyle {
-                    color: link.then(colors::link),
+                    color: s.link.is_some().then(colors::link),
                     font_weight: s.bold.then_some(FontWeight::SEMIBOLD),
                     font_style: s.italic.then_some(FontStyle::Italic),
-                    // GPUI can't round a highlight's corners, so the wash stays faint
-                    background_color: s.code.then(|| colors::ink(0.06)),
-                    underline: link.then(|| UnderlineStyle {
-                        thickness: px(1.),
-                        ..Default::default()
-                    }),
                     strikethrough: s.strike.then(|| StrikethroughStyle {
                         thickness: px(1.),
                         ..Default::default()
@@ -346,11 +344,15 @@ pub fn inline(i: &Inline, key: &str) -> AnyElement {
             )
         })
         .collect();
-    let fonts: Vec<_> = i
+    let code: Vec<_> = i
         .spans
         .iter()
-        .filter(|(_, s)| s.code)
-        .map(|(r, _)| (r.clone(), SharedString::from(MONO)))
+        .filter(|(_, s)| s.code && s.link.is_none())
+        .map(|(r, _)| r.clone())
+        .collect();
+    let fonts: Vec<_> = code
+        .iter()
+        .map(|r| (r.clone(), SharedString::from(MONO)))
         .collect();
     let text = StyledText::new(i.text.clone())
         .with_highlights(highlights)
@@ -359,14 +361,7 @@ pub fn inline(i: &Inline, key: &str) -> AnyElement {
     let links: Vec<_> = i
         .spans
         .iter()
-        .zip(&named)
-        .filter_map(|((r, s), named)| {
-            let url = s
-                .link
-                .clone()
-                .or_else(|| named.then(|| i.text[r.clone()].to_string()))?;
-            Some((r.clone(), url))
-        })
+        .filter_map(|(r, s)| Some((r.clone(), s.link.clone()?)))
         .collect();
     let body = if links.is_empty() {
         text.into_any_element()
@@ -388,7 +383,61 @@ pub fn inline(i: &Inline, key: &str) -> AnyElement {
             })
             .into_any_element()
     };
+    let body = if code.is_empty() && icons.is_empty() {
+        body
+    } else {
+        div()
+            .relative()
+            .child(marks(layout.clone(), code, icons))
+            .child(body)
+            .into_any_element()
+    };
     select::wrap(key, i.text.clone().into(), layout, body)
+}
+
+/// Rounded chips under inline code, and each named file's icon in the room left for it.
+fn marks(layout: TextLayout, code: Vec<Range<usize>>, icons: Vec<(usize, String)>) -> Canvas<()> {
+    canvas(
+        |_, _, _| {},
+        move |_, _, window, cx| {
+            let line = layout.line_height();
+            let chip = line * 0.78;
+            for r in &code {
+                for rect in select::rects(&layout, r) {
+                    let rect = Bounds::new(
+                        point(rect.left(), rect.top() + (line - chip) / 2.),
+                        size(rect.size.width, chip),
+                    );
+                    window.paint_quad(fill(rect, colors::ink(0.07)).corner_radii(px(4.)));
+                }
+            }
+            for (at, name) in &icons {
+                let (Some(a), Some(b)) = (
+                    layout.position_for_index(*at),
+                    layout.position_for_index(at + GAP.len()),
+                ) else {
+                    continue;
+                };
+                if b.y != a.y {
+                    continue;
+                }
+                let side = (line * 0.56).min(b.x - a.x);
+                let (glyph, tint) = file_icon(name.split(':').next().unwrap_or(name));
+                window
+                    .paint_svg(
+                        Bounds::new(point(a.x, a.y + (line - side) / 2.), size(side, side)),
+                        format!("icons/{glyph}.svg").into(),
+                        None,
+                        TransformationMatrix::unit(),
+                        tint,
+                        cx,
+                    )
+                    .ok();
+            }
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 #[cfg(test)]

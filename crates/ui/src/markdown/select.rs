@@ -602,6 +602,7 @@ fn join(spans: &[(Arc<str>, Range<usize>, SharedString)]) -> String {
         .map(|(_, r, t)| t.get(r.clone()).unwrap_or_default())
         .collect::<Vec<_>>()
         .join("\n")
+        .replace(['\u{2007}', '\u{202F}'], "")
 }
 
 /// The word around `ix` for a double click: a run of letters, digits and `_`, or the one

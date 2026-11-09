@@ -292,6 +292,19 @@ pub fn view(
                 // before any text, so selection knows this transcript's elements
                 .child(markdown::select::reset(surface.clone()))
                 .child(rows)
+                .child(crate::scrollbar::bar(
+                    format!("{}:transcript", cx.entity_id()),
+                    v.list.clone(),
+                    {
+                        let view = cx.weak_entity();
+                        move |up, _, cx| {
+                            let _ = view.update(cx, |v, cx| {
+                                v.follow.wheel(up);
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
                 .children(cover)
                 .child(markdown::select::tail(surface, {
                     let view = cx.weak_entity();
@@ -447,7 +460,7 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             enter(v, ix, el)
         }
         Row::Part { ix, part } => {
-            let el = reply(v, ix, part);
+            let el = reply(v, ix, part, cx.entity_id());
             enter(v, ix, el)
         }
         Row::Quiet(start) => super::steps::stretch(v, start, cx),
@@ -561,6 +574,7 @@ fn list_row(v: &mut TranscriptView, ix: usize, cx: &mut Context<TranscriptView>)
             format!("{}:{row:?}", turn_key(v, *prompt)),
             *open,
             v.turn_primed,
+            6.,
             el,
         ),
         _ => el.into_any_element(),
@@ -660,7 +674,11 @@ fn reply_blocks(v: &TranscriptView, ix: usize) -> Option<&Vec<markdown::Block>> 
 }
 
 /// Piece `part` of a reply, spaced from the next as the reply drawn whole would space them.
-fn reply(v: &TranscriptView, ix: usize, part: usize) -> AnyElement {
+fn msg_key(view: gpui::EntityId, ix: usize) -> SharedString {
+    SharedString::from(format!("{view}:msg-{ix}"))
+}
+
+fn reply(v: &TranscriptView, ix: usize, part: usize, view: gpui::EntityId) -> AnyElement {
     let (Some(Item::Text { source, .. }), Some(b)) = (v.model.items.get(ix), reply_blocks(v, ix))
     else {
         return div().into_any_element();
@@ -683,7 +701,6 @@ fn reply(v: &TranscriptView, ix: usize, part: usize) -> AnyElement {
         markdown::part(b, &key, &fade, &units, range)
     };
     div()
-        .group(SharedString::from(format!("msg-{ix}")))
         .flex()
         .flex_col()
         .gap(px(2.))
@@ -692,7 +709,9 @@ fn reply(v: &TranscriptView, ix: usize, part: usize) -> AnyElement {
         .text_color(colors::text1())
         .child(body)
         .when(last && !streaming(v, ix), |d| {
-            d.child(hover_copy(ix, source))
+            let key = msg_key(view, ix);
+            d.child(crate::hover::watch(key.clone()))
+                .child(hover_copy(&key, ix, source))
         })
         .when(!last && in_list, |d| d.pb_1())
         .when(!last && !in_list, |d| d.pb(px(10.)))
@@ -769,15 +788,16 @@ fn working(v: &TranscriptView) -> AnyElement {
         .items_center()
         .gap(px(10.))
         .min_w_0()
-        .mx(px(-10.))
-        .px(px(10.))
-        .py(px(7.))
-        .text_size(px(12.5))
+        .pt(px(4.))
+        .pb(px(8.))
+        .border_b_1()
+        .border_color(colors::border1())
+        .text_size(px(14.))
         .text_color(colors::text3())
         .child(
             div()
                 .flex_none()
-                .font_weight(FontWeight::MEDIUM)
+                .font_features(widgets::tabular())
                 .text_color(colors::text2())
                 .child(label),
         )
@@ -1258,18 +1278,17 @@ fn streaming(v: &TranscriptView, ix: usize) -> bool {
         || (v.model.elapsed().is_some() && v.model.tail() == Some(ix))
 }
 
-fn hover_copy(ix: usize, text: &str) -> gpui::Div {
+fn hover_copy(key: &SharedString, ix: usize, text: &str) -> gpui::Div {
     div()
         .flex()
-        .opacity(0.)
-        .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
+        .opacity(crate::hover::level(key))
         .child(widgets::CopyButton::new(
             format!("copy-msg-{ix}"),
             text.to_string(),
         ))
 }
 
-fn sent_at(ix: usize, at: u64) -> Div {
+fn sent_at(key: &SharedString, at: u64) -> Div {
     let label = crate::time::sent_label(crate::time::local(at), crate::time::local_now());
     div()
         .absolute()
@@ -1283,8 +1302,7 @@ fn sent_at(ix: usize, at: u64) -> Div {
         .text_size(px(11.))
         .line_height(relative(1.))
         .text_color(colors::text3())
-        .opacity(0.)
-        .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
+        .opacity(crate::hover::level(key))
         .child(label)
 }
 
@@ -1336,7 +1354,7 @@ pub(super) fn item(
                             .child("With notes from a side chat"),
                     )
                 })
-                .group(SharedString::from(format!("msg-{ix}")))
+                .child(crate::hover::watch(msg_key(cx.entity_id(), ix)))
                 .child(
                     div()
                         .id(("bubble", ix))
@@ -1351,7 +1369,7 @@ pub(super) fn item(
                         .py(px(10.))
                         .rounded(px(18.))
                         .bg(colors::ink(0.06))
-                        .children(at.map(|at| sent_at(ix, at)))
+                        .children(at.map(|at| sent_at(&msg_key(cx.entity_id(), ix), at)))
                         .text_size(px(14.))
                         .line_height(relative(1.6))
                         .text_color(colors::text1())
@@ -1388,14 +1406,14 @@ pub(super) fn item(
                                     })
                                     .into_any_element()
                             };
-                            let shown = div()
-                                .when(long && !open, |d| d.max_h(px(220.)).overflow_hidden())
-                                .child(markdown::select::wrap(
-                                    &format!("u{ix}"),
-                                    body,
-                                    layout,
-                                    shown,
-                                ));
+                            let shown =
+                                markdown::select::wrap(&format!("u{ix}"), body, layout, shown);
+                            let clip = format!("{}:message{ix}", cx.entity_id());
+                            let shown = if long {
+                                crate::clip::clipped(&clip, open, 220., shown)
+                            } else {
+                                shown
+                            };
                             d.child(shown).when(long, |d| {
                                 d.child(
                                     div()
@@ -1413,6 +1431,7 @@ pub(super) fn item(
                                             if !v.expanded.remove(&ix) {
                                                 v.expanded.insert(ix);
                                             }
+                                            crate::clip::glide(&clip);
                                             cx.notify();
                                         })),
                                 )
@@ -1449,8 +1468,7 @@ pub(super) fn item(
                     div()
                         .flex()
                         .gap(px(2.))
-                        .opacity(0.)
-                        .group_hover(SharedString::from(format!("msg-{ix}")), |s| s.opacity(1.))
+                        .opacity(crate::hover::level(&msg_key(cx.entity_id(), ix)))
                         .when(!text.is_empty(), |d| {
                             d.child(widgets::CopyButton::new(
                                 format!("copy-msg-{ix}"),
@@ -1476,7 +1494,7 @@ pub(super) fn item(
                 )
                 .into_any_element()
         }
-        Item::Text { .. } => reply(v, ix, 0),
+        Item::Text { .. } => reply(v, ix, 0, cx.entity_id()),
         Item::Thinking { text, open } => {
             let head = fold_head(
                 ("thinking", ix),
@@ -1674,8 +1692,7 @@ pub(super) fn fold_head(
         .into_any_element()
 }
 
-/// A finished run's line: a wide band that lights up under the pointer, with what it did after
-/// the time and the chevron at the far end.
+/// A finished run's line over a hairline: the time, the chevron right after it, then what it did.
 fn run_head(
     id: impl Into<gpui::ElementId>,
     open: bool,
@@ -1688,34 +1705,43 @@ fn run_head(
     let key = fold_key(cx, &id);
     div()
         .id(id)
+        .group("run-head")
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(px(6.))
         .min_w_0()
-        .mx(px(-10.))
-        .px(px(10.))
-        .py(px(7.))
-        .rounded(px(10.))
-        .text_size(px(12.5))
+        .pt(px(4.))
+        .pb(px(8.))
+        .border_b_1()
+        .border_color(colors::border1())
+        .text_size(px(14.))
         .text_color(colors::text3())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::ink(0.035)))
         .child(
             div()
                 .flex_none()
-                .font_weight(FontWeight::MEDIUM)
+                .font_features(widgets::tabular())
                 .text_color(colors::text2())
+                .group_hover("run-head", |s| s.text_color(colors::text1()))
                 .child(label),
         )
-        .child(div().flex_1().min_w_0().flex().children(summary))
         .child(
             div()
                 .flex()
                 .flex_none()
                 .items_center()
                 .justify_center()
-                .size(px(18.))
+                .size(px(14.))
                 .child(twist(&key, open)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .pl(px(4.))
+                .text_size(px(12.5))
+                .children(summary),
         )
         .on_click(cx.listener(move |v, _: &ClickEvent, _, cx| {
             slide::flip(key.clone());
@@ -1762,10 +1788,28 @@ pub(super) fn unfold(
     body: impl IntoElement,
 ) -> AnyElement {
     let key = fold_key(cx, &id.into());
-    grow(&key, key.clone(), open, false, body)
+    grow(&key, key.clone(), open, false, 6., body)
 }
 
-fn grow(flip: &str, key: String, open: bool, primed: bool, body: impl IntoElement) -> AnyElement {
+/// `unfold` for a body that sits flush under what's above it, with no gap to close.
+pub(super) fn reveal(
+    cx: &Context<TranscriptView>,
+    id: impl Into<ElementId>,
+    open: bool,
+    body: impl IntoElement,
+) -> AnyElement {
+    let key = fold_key(cx, &id.into());
+    grow(&key, key.clone(), open, false, 0., body)
+}
+
+fn grow(
+    flip: &str,
+    key: String,
+    open: bool,
+    primed: bool,
+    gap: f32,
+    body: impl IntoElement,
+) -> AnyElement {
     let mark = key.clone();
     let measure = gpui::canvas(
         move |b, _, _| {
@@ -1800,7 +1844,7 @@ fn grow(flip: &str, key: String, open: bool, primed: bool, body: impl IntoElemen
             let h = FOLD_HEIGHTS
                 .with(|m| m.borrow().get(&key).copied())
                 .unwrap_or(0.);
-            d.opacity(s).mt(px(-6. * (1. - s))).h(gpui::px(h * s))
+            d.opacity(s).mt(px(-gap * (1. - s))).h(gpui::px(h * s))
         })
         .into_any_element()
 }

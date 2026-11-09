@@ -192,7 +192,6 @@ impl Root {
                         widgets::primary("close-cancel", "Keep working")
                             .h(px(28.))
                             .px(px(12.))
-                            .rounded(px(8.))
                             .text_size(px(12.5))
                             .on_click(cx.listener(|r, _: &ClickEvent, _, cx| {
                                 r.closing = false;

@@ -23,6 +23,7 @@ use hyprspace_theme::MONO;
 use super::row_hover;
 use crate::assets::{icon, mark};
 use crate::colors;
+use crate::hover::fill_on_hover;
 use crate::pace::Looping;
 use crate::root::{Action, MenuEntry, MenuItems, Rename, Root, Screen, View};
 use crate::time::{ago, local_now, now_ms, presets, to_ms, wake_short};
@@ -751,6 +752,7 @@ impl Root {
             None => div()
                 .text_size(px(12.))
                 .text_color(colors::text2())
+                .font_features(crate::widgets::tabular())
                 .when(t.last_touch() > 0, |d| d.child(ago(t.last_touch(), now)))
                 .into_any_element(),
         };
@@ -821,10 +823,8 @@ impl Root {
             .when(picked && !selected, |d| d.bg(colors::ink(0.09)))
             .when(recede, |d| d.opacity(0.7))
             .when(!selected, |d| {
-                d.hover(move |s| {
-                    let s = s.bg(row_hover());
-                    if recede { s.opacity(1.) } else { s }
-                })
+                d.when(recede, |d| d.hover(|s| s.opacity(1.)))
+                    .child(fill_on_hover("hover", row_hover(), super::RADIUS))
             })
             .when(working, |d| d.child(sheen()))
             .children(self.key_ring(id))
@@ -1011,7 +1011,9 @@ impl Root {
             .cursor_pointer()
             .when(selected, |d| d.bg(colors::surface3()))
             .when(picked && !selected, |d| d.bg(colors::ink(0.09)))
-            .when(!selected, |d| d.hover(|s| s.bg(row_hover())))
+            .when(!selected, |d| {
+                d.child(fill_on_hover("hover", row_hover(), super::RADIUS))
+            })
             .children(self.key_ring(id))
             .child(tag(&space, look, true))
             .child(

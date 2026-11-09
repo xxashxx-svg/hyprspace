@@ -36,6 +36,7 @@ const MIN_LINE: f32 = 1.0;
 const MAX_LINE: f32 = 1.6;
 /// The interface font that follows the system: Segoe UI on Windows, SF on macOS.
 pub(super) const SYSTEM_UI: &str = ".SystemUIFont";
+pub(super) const GEIST: &str = "Geist";
 
 /// Monospace families people install for terminals, offered when they are on this machine.
 /// Anything else installed with "Mono" or "Code" in its name is offered too.
@@ -143,10 +144,10 @@ pub(super) fn font_label(family: &str) -> String {
 
 /// The interface Font menu's name for a saved family.
 pub(super) fn ui_font_label(family: &str) -> &'static str {
-    if family == SYSTEM_UI {
-        "System"
-    } else {
-        "Geist (built in)"
+    match family {
+        SYSTEM_UI => "System",
+        GEIST => "Geist (built in)",
+        _ => "Inter (built in)",
     }
 }
 

@@ -527,7 +527,7 @@ pub struct Appearance {
     pub terminal_font_size: f32,
     /// A terminal row's height as a multiple of the font's own line box.
     pub terminal_line_height: f32,
-    /// The font everything outside terminals draws in. Empty means the bundled Geist.
+    /// The font everything outside terminals draws in. Empty means the bundled Inter.
     pub ui_font: String,
     /// Which pair of colors marks added and removed lines.
     pub diff_colors: DiffColors,

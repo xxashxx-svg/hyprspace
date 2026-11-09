@@ -262,7 +262,6 @@ impl Root {
                         widgets::primary("task-save", "Save")
                             .h(px(28.))
                             .px(px(12.))
-                            .rounded(px(8.))
                             .text_size(px(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .on_click(cx.listener(|r, _: &ClickEvent, _, cx| r.save_task(cx))),

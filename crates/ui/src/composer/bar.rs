@@ -17,7 +17,7 @@ use crate::{colors, widgets};
 /// The prompt, across the box.
 pub fn field(input: &Entity<TextInput>) -> Div {
     div()
-        .px(px(18.))
+        .px(px(16.))
         .pt(px(16.))
         .pb(px(8.))
         .text_size(px(14.))
@@ -60,19 +60,19 @@ pub fn chip(id: impl Into<ElementId>) -> Stateful<Div> {
         .flex()
         .items_center()
         .gap(px(6.))
-        .h(px(26.))
-        .px(px(11.))
+        .h(px(28.))
+        .px(px(9.))
         .min_w_0()
-        .rounded_full()
-        .text_size(px(12.5))
+        .rounded(px(8.))
+        .text_size(px(14.))
         .text_color(colors::text2())
         .cursor_pointer()
         .hover(|s| s.bg(colors::ink(0.08)))
 }
 
 pub fn attach(id: impl Into<ElementId>) -> Stateful<Div> {
-    widgets::bare_icon_frame(id, 26.)
-        .rounded_full()
+    widgets::bare_icon_frame(id, 28.)
+        .rounded(px(8.))
         .hover(|s| s.bg(colors::ink(0.08)))
         .child(
             icon("paperclip", 14., colors::text3())

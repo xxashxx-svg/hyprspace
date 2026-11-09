@@ -100,6 +100,11 @@ tokens!(
     selection,
 );
 
+/// White, for a mark on a status fill such as the red stop button.
+pub fn on_status() -> Hsla {
+    hsla(Color::rgb(0xffffff))
+}
+
 /// `rgba(var(--ink), a)`: a line or wash that works on both sides.
 pub fn ink(a: f32) -> Hsla {
     hsla(theme().ink(a))
@@ -163,7 +168,22 @@ pub fn syntax(kind: Kind) -> HighlightStyle {
     }
 }
 
-/// tokens.css's `--shadow-2`: under the composer and popups.
+/// The prompt box's shadow: a hairline on the light side, none on the dark, where its outline
+/// carries the edge.
+pub fn lift() -> Vec<BoxShadow> {
+    if theme().dark {
+        return Vec::new();
+    }
+    vec![BoxShadow {
+        color: hsla(theme().ink(0.05)),
+        offset: point(px(0.), px(1.)),
+        blur_radius: px(2.),
+        spread_radius: px(0.),
+        inset: false,
+    }]
+}
+
+/// tokens.css's `--shadow-2`: under popups.
 pub fn shadow() -> Vec<BoxShadow> {
     vec![BoxShadow {
         color: hsla(theme().shadow),

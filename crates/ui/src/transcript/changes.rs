@@ -4,12 +4,15 @@ use hyprspace_proto::{Command, Pane};
 use hyprspace_theme::MONO;
 
 use super::model::{Item, Undo};
+use super::render::{fold_key, folding, reveal, settle_fold};
 use super::{TranscriptEvent, TranscriptView};
 use crate::assets::icon;
+use crate::dock::kinds::file_icon;
+use crate::hover::fill_on_hover;
 use crate::zoom::px;
 use crate::{colors, widgets};
 
-const FIRST: usize = 3;
+const FIRST: usize = 8;
 
 impl TranscriptView {
     fn undo_run(&mut self, ix: usize, cx: &mut Context<Self>) {
@@ -41,12 +44,14 @@ impl TranscriptView {
     }
 }
 
-fn counts(added: u32, removed: u32) -> AnyElement {
+fn counts(added: u32, removed: u32, size: f32) -> AnyElement {
     div()
         .flex()
+        .flex_none()
         .gap(px(6.))
         .font_family(MONO)
-        .text_size(px(12.))
+        .text_size(px(size))
+        .font_features(widgets::tabular())
         .child(
             div()
                 .text_color(colors::diff_add())
@@ -73,24 +78,28 @@ fn row(
     };
     let pane = run_pane(v, ix, &f.path);
     let local = pane.is_some();
+    let (glyph, tint) = file_icon(&name);
     div()
         .id(SharedString::from(format!("changed-{ix}-{i}")))
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(14.))
-        .py(px(7.))
-        .border_t_1()
-        .border_color(colors::border0())
+        .gap(px(8.))
+        .h(px(28.))
+        .mx(px(8.))
+        .px(px(8.))
+        .rounded(px(6.))
         .when(local, |d| {
-            d.cursor_pointer().hover(|s| s.bg(colors::ink(0.04)))
+            d.cursor_pointer()
+                .child(fill_on_hover("hover", colors::ink(0.05), 6.))
         })
+        .child(icon(glyph, 14., tint))
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.))
+                .font_family(MONO)
+                .text_size(px(12.))
                 .child(
                     div()
                         .flex()
@@ -98,7 +107,7 @@ fn row(
                         .child(div().text_color(colors::text1()).child(name)),
                 ),
         )
-        .child(counts(f.added, f.removed))
+        .child(counts(f.added, f.removed, 11.))
         .when_some(pane, |d, pane| {
             d.on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
                 cx.emit(TranscriptEvent::Open(pane.clone()))
@@ -179,36 +188,20 @@ pub(super) fn card(
     let head = div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(14.))
-        .py(px(12.))
+        .gap(px(8.))
+        .pl(px(16.))
+        .pr(px(8.))
+        .py(px(8.))
         .child(
             div()
-                .flex()
                 .flex_none()
-                .items_center()
-                .justify_center()
-                .size(px(34.))
-                .rounded(px(8.))
-                .bg(colors::ink(0.06))
-                .child(icon("file-diff", 16., colors::text1())),
+                .text_size(px(13.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors::text1())
+                .child(title),
         )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .text_size(px(13.5))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(colors::text1())
-                        .child(title),
-                )
-                .child(counts(added, removed)),
-        )
+        .child(counts(added, removed, 11.))
+        .child(div().flex_1())
         .when_some(run_pane(v, ix, ""), |d, pane| {
             d.child(undo_button).child(
                 widgets::button(("view-changes", ix), "View changes").on_click(cx.listener(
@@ -216,34 +209,41 @@ pub(super) fn card(
                 )),
             )
         });
-    let shown = if all {
-        files.len()
-    } else {
-        files.len().min(FIRST)
-    };
-    let more = files.len() - shown;
+    let first = files.len().min(FIRST);
+    let more = if all { 0 } else { files.len() - first };
     div()
         .flex()
         .flex_col()
-        .rounded(px(12.))
-        .border_1()
-        .border_color(colors::border1())
-        .bg(colors::ink(0.025))
+        .rounded(px(8.))
+        .bg(colors::ink(0.03))
         .overflow_hidden()
+        .pb(px(8.))
         .child(head)
         .children(note.map(|(line, color)| {
             div()
-                .px(px(14.))
+                .px(px(16.))
                 .pb(px(10.))
                 .text_size(px(12.))
                 .text_color(color)
                 .child(line)
         }))
         .children(
-            files[..shown]
+            files[..first]
                 .iter()
                 .enumerate()
                 .map(|(i, f)| row(v, ix, i, f, cx)),
+        )
+        .when(
+            first < files.len() && (all || folding(cx, ("more-files", ix))),
+            |d| {
+                let rest = div().flex().flex_col().children(
+                    files[first..]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| row(v, ix, first + i, f, cx)),
+                );
+                d.child(reveal(cx, ("more-files", ix), all, rest))
+            },
         )
         .when(more > 0 || (all && files.len() > FIRST), |d| {
             d.child(
@@ -252,15 +252,14 @@ pub(super) fn card(
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .px(px(14.))
-                    .py(px(9.))
-                    .border_t_1()
-                    .border_color(colors::border0())
-                    .bg(colors::ink(0.03))
+                    .h(px(28.))
+                    .mx(px(8.))
+                    .px(px(8.))
+                    .rounded(px(6.))
                     .cursor_pointer()
-                    .hover(|s| s.bg(colors::ink(0.05)))
+                    .child(fill_on_hover("hover", colors::ink(0.05), 6.))
                     .text_size(px(12.5))
-                    .text_color(colors::text2())
+                    .text_color(colors::text3())
                     .child(if all {
                         "Show fewer files".to_string()
                     } else if more == 1 {
@@ -277,6 +276,8 @@ pub(super) fn card(
                         if let Some(Item::Changes { all, .. }) = v.model.items.get_mut(ix) {
                             *all = !*all;
                         }
+                        crate::slide::flip(fold_key(cx, &("more-files", ix).into()));
+                        settle_fold(cx);
                         cx.notify();
                     })),
             )

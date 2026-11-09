@@ -153,6 +153,9 @@ The icons in `crates/ui/assets/icons/step-*.svg`, which mark the steps of a run,
 
 `crates/ui/assets/fonts/` holds:
 
+- Inter, Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter), the static
+  TrueType files from the v4.1 release's `extras/ttf/`: Regular, Medium, SemiBold, Bold and
+  Italic.
 - Geist and Geist Mono, Copyright 2024 The Geist Project Authors
   (https://github.com/vercel/geist-font), the TrueType files zeron ships in
   `crates/ui/assets/fonts/` at commit `64ad6f6`: Regular, Medium, SemiBold, Bold and Italic.
@@ -162,7 +165,7 @@ The icons in `crates/ui/assets/icons/step-*.svg`, which mark the steps of a run,
   converted to TrueType from the Tauri app's woff2 files in `src/assets/fonts/`: Regular, Bold,
   Italic and Bold Italic.
 
-Both are licensed under the SIL Open Font License, Version 1.1:
+All three are licensed under the SIL Open Font License, Version 1.1:
 
 ```
 -----------------------------------------------------------

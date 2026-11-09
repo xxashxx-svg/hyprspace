@@ -128,7 +128,6 @@ pub fn bar(v: &TranscriptView, s: &Sender, cx: &mut Context<TranscriptView>) -> 
                 )
                 .child(
                     widgets::button_frame("open-sender")
-                        .rounded_full()
                         .child(icon("arrow-left", 13., colors::text2()))
                         .child(
                             div()

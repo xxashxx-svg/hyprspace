@@ -5,7 +5,7 @@ use gpui::{AnyElement, ClickEvent, Context, SharedString, Window, div, point, pr
 use hyprspace_proto::state::Pick;
 
 use super::agents::effort_name;
-use super::appearance::{SYSTEM_UI, mono_families};
+use super::appearance::{GEIST, SYSTEM_UI, mono_families};
 use super::general::MODES;
 use super::{Picker, Root};
 use crate::widgets;
@@ -96,7 +96,7 @@ impl Root {
             }))
     }
 
-    /// The interface font: the bundled Geist, or whatever the system uses for its own UI.
+    /// The interface font: the bundled Inter or Geist, or whatever the system uses for its own UI.
     fn ui_font_menu(&self, cx: &mut Context<Self>) -> gpui::Div {
         let current = self.state.appearance.ui_font.clone();
         let system = if cfg!(target_os = "macos") {
@@ -105,7 +105,8 @@ impl Root {
             "Segoe UI, as Windows draws its own"
         };
         let choices = [
-            (String::new(), "Geist", "Built in"),
+            (String::new(), "Inter", "Built in"),
+            (GEIST.to_string(), "Geist", "Built in"),
             (SYSTEM_UI.to_string(), "System", system),
         ];
         div()

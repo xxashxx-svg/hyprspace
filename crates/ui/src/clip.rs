@@ -1,17 +1,24 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::time::Duration;
 
-use gpui::{App, ClickEvent, Div, SharedString, Stateful, Window, div, prelude::*};
+use gpui::{
+    AnyElement, App, ClickEvent, Div, SharedString, Stateful, Window, canvas, div, prelude::*,
+};
 
 use crate::colors;
+use crate::pace::Looping;
+use crate::slide::{self, ease_out};
 use crate::zoom::px;
 
 const LINES: usize = 16;
+const GLIDE: Duration = Duration::from_millis(200);
 
 thread_local! {
     // the list drops rows that scroll away, and their state with them
     static OPEN: RefCell<HashSet<String>> = RefCell::default();
+    static HEIGHTS: RefCell<HashMap<String, f32>> = RefCell::default();
 }
 
 pub fn long(key: &str, text: &str) -> Option<(String, usize)> {
@@ -51,14 +58,65 @@ pub fn flip(key: &str) {
             o.insert(key.to_string());
         }
     });
+    glide(key);
+}
+
+/// Starts `key`'s box sliding to its new height.
+pub fn glide(key: &str) {
+    slide::flip(format!("clip:{key}"));
+}
+
+/// Whether `key`'s box is still sliding, and so needs all of its text drawn.
+pub fn gliding(key: &str) -> bool {
+    slide::flipped(&format!("clip:{key}"), GLIDE).is_some()
 }
 
 pub fn lines(height: f32) -> f32 {
     LINES as f32 * height
 }
 
-pub fn cut(key: &str, height: f32, body: Div) -> Div {
-    body.when(!open(key), |d| d.max_h(px(height)).overflow_hidden())
+pub fn cut(key: &str, height: f32, body: Div) -> AnyElement {
+    clipped(key, open(key), height, body)
+}
+
+/// `body` cut to `height` while shut, sliding between that and its whole height after `glide`.
+pub fn clipped(key: &str, open: bool, height: f32, body: impl IntoElement) -> AnyElement {
+    let mark = key.to_string();
+    let measure = canvas(
+        move |b, _, _| {
+            let h = f32::from(b.size.height);
+            HEIGHTS.with(|m| m.borrow_mut().insert(mark, h));
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0();
+    let outer = div().w_full().flex().flex_col().overflow_hidden().child(
+        div()
+            .relative()
+            .w_full()
+            .flex_none()
+            .child(body)
+            .child(measure),
+    );
+    let Some(at) = slide::flipped_at(&format!("clip:{key}"), GLIDE) else {
+        return outer
+            .when(!open, |d| d.max_h(px(height)))
+            .into_any_element();
+    };
+    let shut = f32::from(px(height));
+    let key = key.to_string();
+    outer
+        .looping(GLIDE.as_millis() as u64, move |d, _| {
+            let t = ease_out((at.elapsed().as_secs_f32() / GLIDE.as_secs_f32()).min(1.));
+            let s = if open { t } else { 1. - t };
+            let whole = HEIGHTS
+                .with(|m| m.borrow().get(&key).copied())
+                .unwrap_or(shut)
+                .max(shut);
+            d.h(gpui::px(shut + (whole - shut) * s))
+        })
+        .into_any_element()
 }
 
 pub fn more(

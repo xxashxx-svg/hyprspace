@@ -19,6 +19,8 @@ use hyprspace_theme::MONO;
 use crate::colors;
 use crate::zoom::px;
 
+const LINE: f32 = 18.;
+
 #[derive(IntoElement)]
 pub struct CodeBlock {
     key: SharedString,
@@ -196,8 +198,11 @@ impl RenderOnce for CodeBlock {
             .relative()
             .flex()
             .flex_col()
-            .rounded(px(12.))
+            .rounded(px(8.))
             .bg(colors::ink(0.035))
+            .when(!colors::theme().dark, |d| {
+                d.border_1().border_color(colors::border1())
+            })
             .map(|d| {
                 if named {
                     d.child(
@@ -207,9 +212,10 @@ impl RenderOnce for CodeBlock {
                             .justify_between()
                             .pl(px(14.))
                             .pr(px(6.))
-                            .pt(px(5.))
+                            .pt(px(6.))
+                            .font_family(MONO)
                             .text_size(px(11.))
-                            .text_color(colors::text3())
+                            .text_color(colors::text1().opacity(0.6))
                             .child(lang)
                             .child(copy),
                     )
@@ -221,15 +227,15 @@ impl RenderOnce for CodeBlock {
                 let code = div()
                     .pl(px(14.))
                     .pr(px(if named { 14. } else { 40. }))
-                    .pt(px(if named { 2. } else { 10. }))
-                    .pb(px(10.))
+                    .pt(px(if named { 6. } else { 12. }))
+                    .pb(px(12.))
                     .font_family(MONO)
-                    .text_size(px(12.))
-                    .line_height(px(19.))
+                    .text_size(px(13.))
+                    .line_height(px(LINE))
                     .text_color(colors::hsla(colors::theme().syntax.plain))
                     .child({
                         let n = match &long {
-                            Some((k, _)) if !crate::clip::open(k) => {
+                            Some((k, _)) if !crate::clip::open(k) && !crate::clip::gliding(k) => {
                                 crate::clip::head(&self.text).len()
                             }
                             _ => self.text.len(),
@@ -248,10 +254,10 @@ impl RenderOnce for CodeBlock {
                     });
                 match &long {
                     Some((k, _)) => {
-                        let top = if named { 2. } else { 10. };
-                        crate::clip::cut(k, top + crate::clip::lines(19.), code)
+                        let top = if named { 6. } else { 12. };
+                        crate::clip::cut(k, top + crate::clip::lines(LINE), code)
                     }
-                    None => code,
+                    None => code.into_any_element(),
                 }
             })
             .children(long.map(|(_, more)| more.pl(px(14.)).pb(px(10.))))

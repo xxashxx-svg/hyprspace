@@ -143,7 +143,7 @@ pub fn unit_texts(blocks: &[Block], unit: super::Unit, out: &mut Vec<String>) {
 pub fn texts(blocks: &[Block], out: &mut Vec<String>) {
     for b in blocks {
         match b {
-            Block::Paragraph(i) | Block::Heading(_, i) => out.push(i.text.clone()),
+            Block::Paragraph(i) | Block::Heading(_, i) => out.push(shown(i)),
             Block::Code { text, .. } => out.push(text.trim_end().to_string()),
             Block::List { items, .. } => {
                 for item in items {
@@ -153,13 +153,17 @@ pub fn texts(blocks: &[Block], out: &mut Vec<String>) {
             Block::Quote(inner) => texts(inner, out),
             Block::Rule | Block::Image { .. } => {}
             Block::Table { head, rows } => {
-                out.extend(head.iter().map(|c| c.text.clone()));
+                out.extend(head.iter().map(shown));
                 for row in rows {
-                    out.extend(row.iter().map(|c| c.text.clone()));
+                    out.extend(row.iter().map(shown));
                 }
             }
         }
     }
+}
+
+fn shown(i: &super::Inline) -> String {
+    super::label::label(i).0.text
 }
 
 #[cfg(test)]

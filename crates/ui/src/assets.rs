@@ -146,9 +146,14 @@ const FILES: &[(&str, &[u8])] = files!(
     "caption/close.svg",
 );
 
-/// Geist and Geist Mono as zeron ships them, and the Tauri app's JetBrains Mono Nerd Font for
-/// the terminal, converted from woff2 since GPUI loads TrueType.
+/// Inter for the interface, Geist and Geist Mono as zeron ships them, and the Tauri app's
+/// JetBrains Mono Nerd Font for the terminal, converted from woff2 since GPUI loads TrueType.
 const FONTS: &[&[u8]] = &[
+    include_bytes!("../assets/fonts/Inter-Regular.ttf"),
+    include_bytes!("../assets/fonts/Inter-Medium.ttf"),
+    include_bytes!("../assets/fonts/Inter-SemiBold.ttf"),
+    include_bytes!("../assets/fonts/Inter-Bold.ttf"),
+    include_bytes!("../assets/fonts/Inter-Italic.ttf"),
     include_bytes!("../assets/fonts/Geist.ttf"),
     include_bytes!("../assets/fonts/Geist-Medium.ttf"),
     include_bytes!("../assets/fonts/Geist-SemiBold.ttf"),
