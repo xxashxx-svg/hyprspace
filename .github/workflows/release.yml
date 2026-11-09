@@ -243,6 +243,18 @@ jobs:
           fi
           # every platform is in: publish, which is when releases/latest starts pointing here
           gh release edit "$tag" --repo "$RELEASES_REPO" --draft=false --latest
+      # a release published with github.token fires no `release` event, so this can't be its own workflow
+      - name: Announce on Discord
+        if: ${{ !inputs.dry_run }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          [ -n "$DISCORD_WEBHOOK" ] || exit 0
+          gh release view "${{ needs.windows.outputs.tag }}" --repo "$RELEASES_REPO" --json name,url,body \
+            | jq '{embeds: [{title: .name, url: .url, description: (.body | .[0:4000])}]}' \
+            | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
 
   # The Android app (mobile/, Kotlin and Compose). Its version is its own (hyprspace.version in
   # mobile/gradle.properties), so this only runs when you ask for it, and attaches the APK to the
