@@ -4,6 +4,11 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.52 — 2026-11-11
+
+- Phones can now reach a computer set to Anywhere from any network, with the latest Android app
+- A connection through the relays moves back to Wi-Fi or Tailscale as soon as the computer answers there
+
 ## 0.24.51 — 2026-11-11
 
 - Your other computers can reach this one from any network, without Tailscale. Set Settings, Phone, Networks to Anywhere and pair with the copied link
