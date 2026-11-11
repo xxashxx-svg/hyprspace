@@ -1,0 +1,19 @@
+[package]
+name = "hyprspace_far"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hyprspace-far = { path = "../../crates/far", default-features = false, features = ["ring"] }
+jni = { version = "0.21", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

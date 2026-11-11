@@ -75,6 +75,11 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      # mobile/far, the native library that reaches a computer from any network
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - run: cargo install cargo-ndk --locked
       - name: test and build
         working-directory: mobile
         run: ./gradlew testDebugUnitTest assembleDebug --no-daemon

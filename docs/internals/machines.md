@@ -21,7 +21,10 @@ connections), `crates/engine/src/phone/` (the host's side, shared with the phone
   `i`, and every welcome repeats it, so computers paired before Anywhere was on learn it on their
   next connection. A client dials the local addresses first and the key 750 ms later, and the
   first that answers wins. The lookup can miss a host for a few seconds after it starts
-  listening, so the dial retries until its 15 second limit.
+  listening, so the dial retries until its 15 second limit. A line that came through the relays
+  keeps trying the local addresses (every 30 seconds here; on the phone, 3 seconds in and on
+  every network change) and moves over to the first that answers, so walking back onto the
+  host's Wi-Fi ends up on the direct line without a visible reconnect.
 - **The host owns the thread.** It lives in the host's state and sidebar and in its journal, and
   the host's UI does what the other computer asks the same way a click would (`Ask`), so both
   screens show it. A thread started from here on the host appears in the host's sidebar too.

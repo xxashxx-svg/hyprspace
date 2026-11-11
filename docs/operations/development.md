@@ -140,7 +140,10 @@ for permissions again. A locally built app never updates itself.
 ## The Android app
 
 `mobile/` is a Gradle project: Kotlin, Compose, AGP 9. It needs JDK 17 and the Android SDK
-(`ANDROID_HOME`, or `sdk.dir` in `mobile/local.properties`) with platform 37.
+(`ANDROID_HOME`, or `sdk.dir` in `mobile/local.properties`) with platform 37. Every build also
+builds `mobile/far`, the Rust library behind Anywhere, so it needs Rust with the
+`aarch64-linux-android` and `x86_64-linux-android` targets and `cargo install cargo-ndk`. Gradle
+installs the NDK it names on its own.
 
 ```bash
 cd mobile

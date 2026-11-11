@@ -4,7 +4,8 @@ import java.net.URLDecoder
 import kotlinx.serialization.Serializable
 
 /**
- * What the desktop's pairing QR code holds: `hyprspace://pair?n=name&h=host,host&p=port&f=fp&c=secret`.
+ * What the desktop's pairing QR code holds: `hyprspace://pair?n=name&h=host,host&p=port&f=fp&c=secret`,
+ * and `&i=key` when the computer can be reached from any network.
  * A code typed by hand has no fingerprint; the proofs both sides trade over the certificate
  * stand in for it (Link.pair).
  */
@@ -14,6 +15,7 @@ data class PairLink(
     val port: Int,
     val fingerprint: String?,
     val code: String,
+    val far: String? = null,
 ) {
     companion object {
         fun parse(text: String): PairLink? {
@@ -24,16 +26,17 @@ data class PairLink(
                 val i = kv.indexOf('=')
                 if (i <= 0) null else kv.substring(0, i) to URLDecoder.decode(kv.substring(i + 1), "UTF-8")
             }.toMap()
-            return from(q["n"], q["h"], q["p"], q["f"], q["c"])
+            return from(q["n"], q["h"], q["p"], q["f"], q["c"], q["i"])
         }
 
         /** The same fields from wherever they came; null when any that matter is missing. */
-        fun from(name: String?, hosts: String?, port: String?, fingerprint: String?, code: String?): PairLink? {
+        fun from(name: String?, hosts: String?, port: String?, fingerprint: String?, code: String?, far: String? = null): PairLink? {
             val h = hosts?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
             val p = port?.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
             val c = code?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-            if (h.isEmpty()) return null
-            return PairLink(name?.takeIf { it.isNotBlank() } ?: h.first(), h, p, fingerprint?.takeIf { it.isNotBlank() }, c)
+            val i = far?.trim()?.takeIf { it.isNotEmpty() }
+            if (h.isEmpty() && i == null) return null
+            return PairLink(name?.takeIf { it.isNotBlank() } ?: h.firstOrNull() ?: "Computer", h, p, fingerprint?.takeIf { it.isNotBlank() }, c, i)
         }
 
         /** "192.168.1.20:47821" or a bare host, as typed on the manual pairing screen. */
@@ -61,6 +64,8 @@ data class Desktop(
     val paired: Long,
     /** The address that answered last, tried first. */
     val last: String? = null,
+    /** The computer's iroh key, when it can be reached from any network. */
+    val far: String? = null,
 ) {
     /** Hosts in the order to try them. */
     fun order(): List<String> = (listOfNotNull(last) + hosts).distinct()

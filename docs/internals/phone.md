@@ -10,7 +10,10 @@ A paired Android phone reaches the desktop app directly, with no server between 
 - **Off until switched on.** `AppState.phone` holds the switch and the network choice; on
   launch the UI sends `PhoneCommand::Enable` from it. Everywhere binds `0.0.0.0`; Tailscale only
   binds each Tailscale address (100.64.0.0/10) and nothing else. Anywhere is Everywhere plus an
-  iroh endpoint for other computers (docs/internals/machines.md); phones don't speak iroh.
+  iroh endpoint (docs/internals/machines.md). The app reaches it through `mobile/far`, a Rust
+  library that opens a port on the phone and forwards each connection over iroh, so the app's
+  TLS, pinning and pairing run unchanged on top. The library is built with the same
+  `hyprspace-far` crate the desktop dials with.
 - **TLS with a pinned certificate.** The engine makes an ECDSA certificate on first use
   (`rcgen`, kept in `phone.json` beside the state). No authority vouches for it, so the phone
   pins its SHA-256 at pairing and refuses any other. rustls uses aws-lc-rs because reqwest

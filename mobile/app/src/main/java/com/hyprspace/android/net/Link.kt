@@ -61,8 +61,8 @@ private sealed interface WsEvent {
     data class Gone(val why: String) : WsEvent
 }
 
-/** One socket and what it hears, in order. */
-private class Socket(val host: String, val ws: WebSocket, val events: Channel<WsEvent>)
+/** One socket and what it hears, in order. A [far] one goes through a port on this phone (Far). */
+private class Socket(val host: String, val port: Int, val far: Boolean, val ws: WebSocket, val events: Channel<WsEvent>)
 
 class Link(private val store: Store, private val scope: CoroutineScope) {
     private val _conn = MutableStateFlow<Conn>(if (store.saved.value.current() == null) Conn.None else Conn.Connecting)
@@ -84,6 +84,8 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     private val lock = Any()
 
     @Volatile private var socket: Socket? = null
+    /** A local line found while on the relays, for the next session to take over. */
+    @Volatile private var handoff: Socket? = null
     /** When the computer last said anything on the open line. */
     @Volatile private var heard = 0L
     private val _lines = MutableStateFlow(0)
@@ -115,6 +117,8 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         }
         socket?.ws?.close(1000, null)
         socket = null
+        handoff?.ws?.cancel()
+        handoff = null
         if (_conn.value !is Conn.Denied) {
             _conn.value = if (store.saved.value.current() == null) Conn.None else Conn.Offline("Paused", 0)
         }
@@ -172,6 +176,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 _conn.value = why
                 return
             }
+            if (handoff != null) continue
             // a line that was up and dropped is worth a quick retry; one that never came up waits longer each time
             if (why is Conn.Online) wait = 1_000L
             val reason = (why as? Conn.Offline)?.message ?: "Lost the connection. Reconnecting."
@@ -184,7 +189,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     /** One connection, start to end. Returns why it ended. */
     private suspend fun session(d: Desktop): Conn {
         val trust = Pinned(d.id)
-        val s = open(d.order(), d.port, trust)
+        val s = handoff?.also { handoff = null } ?: open(d.order(), d.port, d.far, trust)
         if (s == null) {
             unreachable = true
             return Conn.Offline("Can't reach ${d.name}. Is HyprSpace open there with Phone on?", 0)
@@ -199,7 +204,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                     seen = d.id to first.version
                     store.update { saved ->
                         saved.copy(desktops = saved.desktops.map {
-                            if (it.id == d.id) it.copy(last = s.host, name = first.desktop) else it
+                            if (it.id == d.id) it.copy(last = if (s.far) it.last else s.host, name = first.desktop, far = first.far) else it
                         })
                     }
                 }
@@ -225,6 +230,18 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                     if (quiet > 4_000) send(s, Up.Ping)
                 }
             }
+            val home = if (s.far && d.hosts.isNotEmpty()) scope.launch {
+                delay(HOME_AFTER)
+                while (true) {
+                    val near = open(d.order(), d.port, null, trust)
+                    if (near != null) {
+                        handoff = near
+                        s.ws.cancel()
+                        break
+                    }
+                    nudge.receive()
+                }
+            } else null
             try {
                 while (true) {
                     val down = next(s) ?: break
@@ -233,6 +250,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 }
             } finally {
                 watchdog.cancel()
+                home?.cancel()
             }
             return Conn.Online("", "")
         } finally {
@@ -263,32 +281,53 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     /**
      * Opens a socket to whichever host answers first. Each starts a quarter second after the one
-     * before, so the likeliest address gets a head start without the others waiting on it.
+     * before, so the likeliest address gets a head start without the others waiting on it. A
+     * computer with a [far] key is also tried through the relays, after the local addresses.
      */
-    private suspend fun open(hosts: List<String>, port: Int, trust: Pinned): Socket? = coroutineScope {
+    private suspend fun open(hosts: List<String>, port: Int, far: String?, trust: Pinned): Socket? = coroutineScope {
         val http = client(trust)
         val result = CompletableDeferred<Socket?>()
         val sockets = Collections.synchronizedList(ArrayList<Socket>())
         val failed = AtomicInteger(0)
-        val tries = hosts.mapIndexed { i, host ->
+        val routes = hosts.size + if (far != null) 1 else 0
+        suspend fun attempt(host: String, port: Int, isFar: Boolean) {
+            if (result.isCompleted) return
+            val events = Channel<WsEvent>(Channel.UNLIMITED)
+            val bracketed = if (host.contains(':')) "[$host]" else host
+            val ws = http.newWebSocket(Request.Builder().url("wss://$bracketed:$port/").build(), Listener(events))
+            val s = Socket(host, port, isFar, ws, events)
+            sockets += s
+            if (events.receive() is WsEvent.Open) {
+                if (!result.complete(s)) ws.cancel()
+            } else if (failed.incrementAndGet() == routes) {
+                result.complete(null)
+            }
+        }
+        val near = hosts.mapIndexed { i, host ->
             launch {
                 delay(250L * i)
-                if (result.isCompleted) return@launch
-                val events = Channel<WsEvent>(Channel.UNLIMITED)
-                val bracketed = if (host.contains(':')) "[$host]" else host
-                val ws = http.newWebSocket(Request.Builder().url("wss://$bracketed:$port/").build(), Listener(events))
-                val s = Socket(host, ws, events)
-                sockets += s
-                if (events.receive() is WsEvent.Open) {
-                    if (!result.complete(s)) ws.cancel()
-                } else if (failed.incrementAndGet() == hosts.size) {
+                attempt(host, port, false)
+            }
+        }
+        val relayed = far?.let { key ->
+            launch {
+                delay(if (hosts.isEmpty()) 0 else FAR_AFTER)
+                val local = withContext(Dispatchers.IO) { Far.open(key) }
+                if (local != null) {
+                    attempt(LOOPBACK, local, true)
+                } else if (failed.incrementAndGet() == routes) {
                     result.complete(null)
                 }
             }
         }
-        val won = withTimeoutOrNull(8_000) { result.await() }
-        tries.forEach { it.cancel() }
-        synchronized(sockets) { for (s in sockets) if (s !== won) s.ws.cancel() }
+        val tries = near + listOfNotNull(relayed)
+        var won: Socket? = null
+        try {
+            won = withTimeoutOrNull(if (far != null) 20_000 else 8_000) { result.await() }
+        } finally {
+            tries.forEach { it.cancel() }
+            synchronized(sockets) { for (s in sockets) if (s !== won) s.ws.cancel() }
+        }
         won
     }
 
@@ -313,7 +352,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             send(live, Up.Leave)
         } else {
             withTimeoutOrNull(6_000) {
-                val s = open(d.order(), d.port, Pinned(d.id)) ?: return@withTimeoutOrNull
+                val s = open(d.order(), d.port, d.far, Pinned(d.id)) ?: return@withTimeoutOrNull
                 try {
                     send(s, Up.Hello(d.token, deviceName()))
                     if (next(s) is Down.Welcome) send(s, Up.Leave)
@@ -419,7 +458,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         val host = if (s.host.contains(':')) "[${s.host}]" else s.host
         return withContext(Dispatchers.IO) {
             runCatching {
-                http.newCall(Request.Builder().url("https://$host:${d.port}$url").build()).execute().use { res ->
+                http.newCall(Request.Builder().url("https://$host:${s.port}$url").build()).execute().use { res ->
                     check(res.isSuccessful) { "The computer didn't send it." }
                     into.parentFile?.mkdirs()
                     into.outputStream().use { out -> res.body.byteStream().copyTo(out) }
@@ -499,7 +538,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
      */
     suspend fun pair(link: PairLink): Result<Desktop> {
         val trust = Pinned(link.fingerprint)
-        val s = open(link.hosts, link.port, trust)
+        val s = open(link.hosts, link.port, link.far, trust)
             ?: return Result.failure(Exception("Can't reach ${link.name}. Check that this phone is on the same network or on Tailscale, and that Phone is on in HyprSpace's Settings."))
         try {
             val id = trust.seen ?: return Result.failure(Exception("The computer's certificate went missing."))
@@ -511,7 +550,10 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                     if (first.proof != prove(key, "desktop $id")) {
                         return Result.failure(Exception("That computer couldn't show it knows the code, so this phone didn't pair. Check that the address is your computer's."))
                     }
-                    val d = Desktop(id, first.desktop, link.hosts, link.port, token, System.currentTimeMillis(), s.host)
+                    val d = Desktop(
+                        id, first.desktop, link.hosts, link.port, token, System.currentTimeMillis(),
+                        last = s.host.takeIf { !s.far }, far = first.far ?: link.far,
+                    )
                     store.remember(d)
                     Result.success(d)
                 }
@@ -543,6 +585,11 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     companion object {
         private const val TAG = "HyprLink"
+        private const val LOOPBACK = "127.0.0.1"
+        /** How long the local addresses get to answer before the relays are tried too. */
+        private const val FAR_AFTER = 750L
+        /** How long a line on the relays runs before it checks whether the local addresses answer now. */
+        private const val HOME_AFTER = 3_000L
         private const val TAIL = 200_000
 
         /** What the computer's Settings lists this phone as. */

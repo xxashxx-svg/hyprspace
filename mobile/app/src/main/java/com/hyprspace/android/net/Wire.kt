@@ -203,7 +203,7 @@ data class NewThread(
 @Serializable
 sealed interface Down {
     @Serializable @SerialName("welcome")
-    data class Welcome(val desktop: String, val version: String, val token: String? = null, val proof: String? = null) : Down
+    data class Welcome(val desktop: String, val version: String, val token: String? = null, val proof: String? = null, val far: String? = null) : Down
 
     @Serializable @SerialName("denied")
     data class Denied(val message: String, val forget: Boolean = false) : Down

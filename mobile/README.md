@@ -22,7 +22,9 @@ install signed with a different key, like a local build, can't update this way.
 
 ## Building
 
-Kotlin, Compose, AGP 9 and Gradle 9. You need JDK 17 and the Android SDK with platform 37.
+Kotlin, Compose, AGP 9 and Gradle 9. You need JDK 17 and the Android SDK with platform 37,
+and for `far/` (the Rust library behind reaching a computer from any network) Rust with the
+`aarch64-linux-android` and `x86_64-linux-android` targets and `cargo install cargo-ndk`.
 
 ```bash
 ./gradlew assembleDebug        # installs beside a release as "HyprSpace" (.dev)

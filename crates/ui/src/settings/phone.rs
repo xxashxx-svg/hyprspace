@@ -60,10 +60,10 @@ impl Root {
                         Network::Everywhere => NETWORKS.desc,
                         Network::Tailscale => "Only devices on your tailnet.",
                         Network::Anywhere => {
-                            "Your other computers can also reach this one from any network, \
-                             through n0's public relays. They learn its key and address and \
-                             pass along encrypted traffic they can't read. Phones still use \
-                             Wi-Fi or Tailscale."
+                            "Your phones and other computers can also reach this one from any \
+                             network, through n0's public relays. They learn its key and \
+                             address and pass along encrypted traffic they can't read. Phones \
+                             need the latest app."
                         }
                     },
                     networks,

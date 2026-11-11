@@ -96,6 +96,11 @@ class ModelTest {
         assertEquals("abc-_d", l.fingerprint)
         assertNull(PairLink.parse("https://example.com"))
         assertNull(PairLink.parse("hyprspace://pair?h=1.2.3.4&p=0&c=x"))
+        assertNull(l.far)
+        val far = PairLink.parse("hyprspace://pair?n=Desk&h=&p=47821&f=fp&c=s3cret&i=k3y")!!
+        assertEquals(emptyList<String>(), far.hosts)
+        assertEquals("k3y", far.far)
+        assertNull(PairLink.parse("hyprspace://pair?n=Desk&h=&p=47821&f=fp&c=s3cret"))
         val typed = PairLink.typed("192.168.1.4:47000", "K7MX-Q2RT")!!
         assertEquals(47000, typed.port)
         assertNull(typed.fingerprint)

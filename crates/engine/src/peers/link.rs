@@ -37,20 +37,38 @@ const DIAL: Duration = Duration::from_secs(6);
 const DIAL_FAR: Duration = Duration::from_secs(15);
 /// How long the local addresses get to answer before the relays are tried too.
 const FAR_AFTER: Duration = Duration::from_millis(750);
+/// How often a connection through the relays checks whether the local addresses answer now.
+const HOME_EVERY: Duration = Duration::from_secs(30);
 const SILENT: Duration = Duration::from_secs(50);
 const MAX_MESSAGE: usize = 64 << 20;
 
+enum End {
+    Dropped,
+    Forgotten,
+    Home(Box<Ws>),
+}
+
 pub(super) async fn run(peers: Peers, id: String) {
     let mut wait = 1;
+    let mut home = None;
     loop {
         let Some(saved) = peers.saved(&id) else {
             return;
         };
-        match dial(&saved).await {
-            Ok(ws) => {
+        let dialed = match home.take() {
+            Some(ws) => Ok((ws, false)),
+            None => dial(&saved).await,
+        };
+        match dialed {
+            Ok((ws, far)) => {
                 wait = 1;
-                if !session(&peers, &saved, ws).await {
-                    return;
+                match session(&peers, &saved, ws, far).await {
+                    End::Forgotten => return,
+                    End::Home(ws) => {
+                        home = Some(*ws);
+                        continue;
+                    }
+                    End::Dropped => {}
                 }
             }
             Err(e) => {
@@ -67,8 +85,9 @@ pub(super) async fn run(peers: Peers, id: String) {
     }
 }
 
-/// One connection, from hello to close. False when the host forgot this computer.
-async fn session(peers: &Peers, saved: &Saved, ws: Ws) -> bool {
+/// One connection, from hello to close. One through the relays ends early when the host's
+/// local addresses answer, and hands that line back to take over.
+async fn session(peers: &Peers, saved: &Saved, ws: Ws, far: bool) -> End {
     let (mut sink, mut stream) = ws.split();
     let hello = Up::Hello {
         token: saved.token.clone(),
@@ -79,7 +98,7 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws) -> bool {
     };
     if sink.send(text(&hello)).await.is_err() {
         peers.offline(&saved.id, Some(format!("Can't reach {}.", saved.name)));
-        return true;
+        return End::Dropped;
     }
     let version = match timeout(DIAL, stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => match serde_json::from_str::<Down>(&t) {
@@ -89,17 +108,17 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws) -> bool {
             }
             Ok(Down::Denied { forget: true, .. }) => {
                 peers.forget(&saved.id);
-                return false;
+                return End::Forgotten;
             }
             Ok(Down::Denied { message, .. }) => {
                 peers.offline(&saved.id, Some(message));
-                return true;
+                return End::Dropped;
             }
             _ => String::new(),
         },
         _ => {
             peers.offline(&saved.id, Some(format!("Can't reach {}.", saved.name)));
-            return true;
+            return End::Dropped;
         }
     };
     let (tx, mut rx) = futures::channel::mpsc::unbounded();
@@ -108,8 +127,25 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws) -> bool {
     let mut ping = tokio::time::interval(Duration::from_secs(20));
     let mut heard = tokio::time::Instant::now();
     let mut forgotten = false;
+    let mut back = None;
+    let home = async {
+        if !far {
+            return std::future::pending().await;
+        }
+        loop {
+            tokio::time::sleep(HOME_EVERY).await;
+            if let Ok((ws, false)) = dial_near(saved).await {
+                return ws;
+            }
+        }
+    };
+    tokio::pin!(home);
     loop {
         tokio::select! {
+            ws = &mut home => {
+                back = Some(ws);
+                break;
+            }
             msg = stream.next() => match msg.inspect(|_| heard = tokio::time::Instant::now()) {
                 Some(Ok(Message::Text(t))) => {
                     if let Ok(down) = serde_json::from_str::<Down>(&t) {
@@ -147,8 +183,15 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws) -> bool {
         }
     }
     let _ = sink.close().await;
+    if let Some(ws) = back {
+        return End::Home(Box::new(ws));
+    }
     peers.offline(&saved.id, None);
-    !forgotten
+    if forgotten {
+        End::Forgotten
+    } else {
+        End::Dropped
+    }
 }
 
 fn text(up: &Up) -> Message {
@@ -195,7 +238,7 @@ pub(super) async fn pair(link: &str) -> Result<(Saved, String), String> {
         token: String::new(),
         far,
     };
-    let ws = dial(&saved).await?;
+    let (ws, _) = dial(&saved).await?;
     let (mut sink, mut stream) = ws.split();
     let ask = Up::Pair {
         proof: prove(&code, &fingerprint),
@@ -234,8 +277,16 @@ pub(super) async fn pair(link: &str) -> Result<(Saved, String), String> {
 }
 
 /// The first way to the host that answers: each of its addresses a quarter second after the
-/// last, then its key through the relays.
-async fn dial(saved: &Saved) -> Result<Ws, String> {
+/// last, then its key through the relays. True when it came through the relays.
+async fn dial(saved: &Saved) -> Result<(Ws, bool), String> {
+    race(saved, true).await
+}
+
+async fn dial_near(saved: &Saved) -> Result<(Ws, bool), String> {
+    race(saved, false).await
+}
+
+async fn race(saved: &Saved, relays: bool) -> Result<(Ws, bool), String> {
     let tls = TlsConnector::from(config(&saved.id));
     let port = saved.port;
     let mut tries: Vec<_> = saved
@@ -251,12 +302,12 @@ async fn dial(saved: &Saved) -> Result<Ws, String> {
                     .await
                     .map_err(|_| ())?;
                 let _ = tcp.set_nodelay(true);
-                connect(tls, Box::new(tcp)).await
+                Ok::<_, ()>((connect(tls, Box::new(tcp)).await?, false))
             }
             .boxed()
         })
         .collect();
-    if let Some(far) = saved.far.clone() {
+    if let Some(far) = saved.far.clone().filter(|_| relays) {
         let (tls, wait) = (
             tls.clone(),
             if tries.is_empty() {
@@ -268,8 +319,8 @@ async fn dial(saved: &Saved) -> Result<Ws, String> {
         tries.push(
             async move {
                 tokio::time::sleep(wait).await;
-                let stream = crate::phone::far::dial(&far).await?;
-                connect(tls, Box::new(stream)).await
+                let stream = hyprspace_far::dial(&far).await.ok_or(())?;
+                Ok::<_, ()>((connect(tls, Box::new(stream)).await?, true))
             }
             .boxed(),
         );
@@ -278,9 +329,13 @@ async fn dial(saved: &Saved) -> Result<Ws, String> {
     if tries.is_empty() {
         return Err(unreachable);
     }
-    let limit = if saved.far.is_some() { DIAL_FAR } else { DIAL };
+    let limit = if relays && saved.far.is_some() {
+        DIAL_FAR
+    } else {
+        DIAL
+    };
     match timeout(limit, futures::future::select_ok(tries)).await {
-        Ok(Ok((ws, _))) => Ok(ws),
+        Ok(Ok((won, _))) => Ok(won),
         _ => Err(unreachable),
     }
 }
