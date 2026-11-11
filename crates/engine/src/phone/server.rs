@@ -10,7 +10,7 @@ use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use hyprspace_proto::phone::{Down, INPUT, OUTPUT, Up, frame, unframe};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout};
 use tokio_rustls::TlsAcceptor;
@@ -51,13 +51,16 @@ pub async fn listen(phone: Phone, listener: TcpListener, tls: TlsAcceptor) {
         let Ok(permit) = waiting.clone().try_acquire_owned() else {
             continue;
         };
+        let _ = tcp.set_nodelay(true);
         tokio::spawn(serve(phone.clone(), tcp, tls.clone(), permit));
     }
 }
 
-async fn serve(phone: Phone, tcp: TcpStream, tls: TlsAcceptor, permit: OwnedSemaphorePermit) {
-    let _ = tcp.set_nodelay(true);
-    let Ok(Ok(stream)) = timeout(HANDSHAKE, tls.accept(tcp)).await else {
+pub(super) async fn serve<S>(phone: Phone, raw: S, tls: TlsAcceptor, permit: OwnedSemaphorePermit)
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let Ok(Ok(stream)) = timeout(HANDSHAKE, tls.accept(raw)).await else {
         return;
     };
     super::web::handle(phone, stream, permit, false).await;

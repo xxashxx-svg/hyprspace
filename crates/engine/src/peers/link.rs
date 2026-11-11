@@ -8,7 +8,6 @@ use futures::{FutureExt, SinkExt, StreamExt};
 use hyprspace_proto::peer::Found;
 use hyprspace_proto::phone::{Down, OUTPUT, PROTOCOL, Up, unframe};
 use sha2::{Digest, Sha256};
-use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
@@ -28,9 +27,16 @@ use super::{Peers, Saved};
 use crate::phone::squeeze::Unsqueeze;
 use crate::phone::{host_name, prove};
 
-type Ws = WebSocketStream<TlsStream<TcpStream>>;
+type Ws = WebSocketStream<TlsStream<Box<dyn Io>>>;
+
+trait Io: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Io for T {}
 
 const DIAL: Duration = Duration::from_secs(6);
+/// Finding a computer through the relays can take a few seconds more than the local network.
+const DIAL_FAR: Duration = Duration::from_secs(15);
+/// How long the local addresses get to answer before the relays are tried too.
+const FAR_AFTER: Duration = Duration::from_millis(750);
 const SILENT: Duration = Duration::from_secs(50);
 const MAX_MESSAGE: usize = 64 << 20;
 
@@ -77,7 +83,10 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws) -> bool {
     }
     let version = match timeout(DIAL, stream.next()).await {
         Ok(Some(Ok(Message::Text(t)))) => match serde_json::from_str::<Down>(&t) {
-            Ok(Down::Welcome { version, .. }) => version,
+            Ok(Down::Welcome { version, far, .. }) => {
+                peers.reach(&saved.id, far);
+                version
+            }
             Ok(Down::Denied { forget: true, .. }) => {
                 peers.forget(&saved.id);
                 return false;
@@ -171,16 +180,20 @@ pub(super) async fn pair(link: &str) -> Result<(Saved, String), String> {
     } else {
         code
     };
+    let far = get("i");
+    let hosts: Vec<String> = get("h")
+        .map(|h| h.split(',').map(str::to_string).collect())
+        .unwrap_or_default();
+    if hosts.is_empty() && far.is_none() {
+        return Err(bad());
+    }
     let saved = Saved {
         id: fingerprint.clone(),
         name: get("n").unwrap_or_else(|| "Computer".into()),
-        hosts: get("h")
-            .ok_or_else(bad)?
-            .split(',')
-            .map(str::to_string)
-            .collect(),
+        hosts,
         port: get("p").and_then(|p| p.parse().ok()).ok_or_else(bad)?,
         token: String::new(),
+        far,
     };
     let ws = dial(&saved).await?;
     let (mut sink, mut stream) = ws.split();
@@ -203,10 +216,12 @@ pub(super) async fn pair(link: &str) -> Result<(Saved, String), String> {
                 version,
                 token: Some(token),
                 proof: Some(proof),
+                far,
             }) if proof == prove(&code, &format!("desktop {fingerprint}")) => Ok((
                 Saved {
                     name: desktop,
                     token,
+                    far: far.or(saved.far.clone()),
                     ..saved
                 },
                 version,
@@ -218,34 +233,61 @@ pub(super) async fn pair(link: &str) -> Result<(Saved, String), String> {
     }
 }
 
-/// The first of the host's addresses that answers, each tried a quarter second after the last.
+/// The first way to the host that answers: each of its addresses a quarter second after the
+/// last, then its key through the relays.
 async fn dial(saved: &Saved) -> Result<Ws, String> {
     let tls = TlsConnector::from(config(&saved.id));
     let port = saved.port;
-    let tries = saved.hosts.iter().enumerate().map(|(i, host)| {
-        let (tls, host) = (tls.clone(), host.clone());
-        async move {
-            tokio::time::sleep(Duration::from_millis(250 * i as u64)).await;
-            connect(tls, &host, port).await
-        }
-        .boxed()
-    });
+    let mut tries: Vec<_> = saved
+        .hosts
+        .iter()
+        .enumerate()
+        .map(|(i, host)| {
+            let (tls, host) = (tls.clone(), host.clone());
+            async move {
+                tokio::time::sleep(Duration::from_millis(250 * i as u64)).await;
+                let ip: std::net::IpAddr = host.parse().map_err(|_| ())?;
+                let tcp = tokio::net::TcpStream::connect((ip, port))
+                    .await
+                    .map_err(|_| ())?;
+                let _ = tcp.set_nodelay(true);
+                connect(tls, Box::new(tcp)).await
+            }
+            .boxed()
+        })
+        .collect();
+    if let Some(far) = saved.far.clone() {
+        let (tls, wait) = (
+            tls.clone(),
+            if tries.is_empty() {
+                Duration::ZERO
+            } else {
+                FAR_AFTER
+            },
+        );
+        tries.push(
+            async move {
+                tokio::time::sleep(wait).await;
+                let stream = crate::phone::far::dial(&far).await?;
+                connect(tls, Box::new(stream)).await
+            }
+            .boxed(),
+        );
+    }
     let unreachable = format!("Can't reach {}.", saved.name);
-    if saved.hosts.is_empty() {
+    if tries.is_empty() {
         return Err(unreachable);
     }
-    match timeout(DIAL, futures::future::select_ok(tries)).await {
+    let limit = if saved.far.is_some() { DIAL_FAR } else { DIAL };
+    match timeout(limit, futures::future::select_ok(tries)).await {
         Ok(Ok((ws, _))) => Ok(ws),
         _ => Err(unreachable),
     }
 }
 
-async fn connect(tls: TlsConnector, host: &str, port: u16) -> Result<Ws, ()> {
-    let ip: std::net::IpAddr = host.parse().map_err(|_| ())?;
-    let tcp = TcpStream::connect((ip, port)).await.map_err(|_| ())?;
-    let _ = tcp.set_nodelay(true);
+async fn connect(tls: TlsConnector, raw: Box<dyn Io>) -> Result<Ws, ()> {
     let name = ServerName::try_from("hyprspace").map_err(|_| ())?;
-    let stream = tls.connect(name, tcp).await.map_err(|_| ())?;
+    let stream = tls.connect(name, raw).await.map_err(|_| ())?;
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE))
         .max_frame_size(Some(MAX_MESSAGE));

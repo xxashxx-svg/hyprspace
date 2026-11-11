@@ -228,3 +228,54 @@ fn a_message_for_an_offline_computer_fails_instead_of_vanishing() {
     assert!(peers.route(send).is_none());
     assert!(matches!(rx.try_recv(), Ok(Event::Failed { id: got, .. }) if got == id));
 }
+
+#[test]
+#[ignore = "reaches n0's public relays"]
+fn a_computer_pairs_from_anywhere() {
+    let host_dir = tempfile::tempdir().unwrap();
+    let (host, hc, mut he) = Engine::start_in(host_dir.path().into()).unwrap();
+    hc.send(Command::Phone(PhoneCommand::Enable {
+        on: true,
+        network: Network::Anywhere,
+        browser: false,
+    }));
+    wait(&mut he, |e| match e {
+        Event::Phone(PhoneEvent::Status { status }) if status.on => Some(()),
+        _ => None,
+    });
+    hc.send(Command::Phone(PhoneCommand::Board {
+        board: Box::new(Board {
+            spaces: vec![BoardSpace {
+                id: 1,
+                name: "w".into(),
+                path: "/w".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+    }));
+    hc.send(Command::Phone(PhoneCommand::Pair));
+    let link = wait(&mut he, |e| match e {
+        Event::Phone(PhoneEvent::Pairing { pairing: Some(p) }) => Some(p.link),
+        _ => None,
+    });
+    let (head, rest) = link.split_once("&h=").unwrap();
+    let rest = rest.split_once('&').unwrap().1;
+    let link = format!("{head}&h=&{rest}");
+    assert!(link.contains("&i="), "{link}");
+
+    let client_dir = tempfile::tempdir().unwrap();
+    let (client, cc, mut ce) = Engine::start_in(client_dir.path().into()).unwrap();
+    cc.send(Command::Peer(PeerCommand::Pair { link }));
+    wait(&mut ce, |e| match e {
+        Event::Peer(PeerEvent::Peers { peers }) => peers.into_iter().find(|p| p.online),
+        Event::Peer(PeerEvent::PairFailed { message }) => panic!("{message}"),
+        _ => None,
+    });
+    wait(&mut ce, |e| match e {
+        Event::Peer(PeerEvent::Board { board, .. }) if board.spaces.len() == 1 => Some(()),
+        _ => None,
+    });
+    client.shutdown();
+    host.shutdown();
+}

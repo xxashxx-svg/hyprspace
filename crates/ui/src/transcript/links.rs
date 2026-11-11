@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -80,12 +80,26 @@ pub fn target(cwd: &Path, text: &str) -> Option<(PathBuf, Option<u32>, Option<u3
         }
     }
     let p = Path::new(path);
-    let full = if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        cwd.join(p)
-    };
-    is_file(&full).then_some((full, line, col))
+    if p.is_absolute() {
+        return is_file(p).then(|| (p.to_path_buf(), line, col));
+    }
+    let full = cwd.join(p);
+    if is_file(&full) {
+        return Some((full, line, col));
+    }
+    within(cwd, p).map(|full| (full, line, col))
+}
+
+/// `p` written from a folder above `cwd`, like `projects/game/notes.md` from inside `game`, when
+/// it lands back inside `cwd`.
+fn within(cwd: &Path, p: &Path) -> Option<PathBuf> {
+    if p.components().any(|c| !matches!(c, Component::Normal(_))) {
+        return None;
+    }
+    cwd.ancestors()
+        .skip(1)
+        .map(|up| up.join(p))
+        .find(|full| full.starts_with(cwd) && is_file(full))
 }
 
 /// What a click on a link in this thread's replies does.
@@ -145,11 +159,17 @@ mod tests {
         let absolute = a.to_string_lossy().to_string();
         assert_eq!(
             target(&dir, &format!("{absolute}:3")),
-            Some((a, Some(3), None))
+            Some((a.clone(), Some(3), None))
         );
         assert_eq!(target(&dir, "src/missing.rs"), None);
         assert_eq!(target(&dir, "cargo test"), None);
         assert_eq!(target(&dir, "https://x.dev/src/a.rs"), None);
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(
+            target(&dir, &format!("{name}/src/a.rs:5")),
+            Some((a.clone(), Some(5), None))
+        );
+        assert_eq!(target(&dir, &format!("{name}/src/missing.rs")), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

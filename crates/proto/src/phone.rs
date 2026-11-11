@@ -268,6 +268,9 @@ pub enum Down {
         /// computer can't make it.
         #[serde(default)]
         proof: Option<String>,
+        /// The key other computers can dial this one by from any network, when it listens there.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        far: Option<String>,
     },
     /// The phone isn't let in. `message` is user-facing. With `forget`, the computer removed
     /// this phone, which forgets the computer in turn.
@@ -663,6 +666,8 @@ pub enum Network {
     Everywhere,
     /// Only Tailscale's addresses.
     Tailscale,
+    /// Every network, and other computers from anywhere through n0's relays.
+    Anywhere,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -898,6 +903,7 @@ mod tests {
                 version: "0.25.0".into(),
                 token: Some("tok".into()),
                 proof: Some("aGk".into()),
+                far: None,
             },
             Down::Denied {
                 message: "no".into(),

@@ -41,6 +41,9 @@ paths, project names, or anything joined to an account.
 The phone bridge is the one way in. It listens only once the user switches it on in Settings,
 Phone, speaks TLS under a certificate the phone pins, and answers only phones the user paired.
 It never goes through a server of ours, and its Settings copy says what a phone sees and can do.
+With its network set to Anywhere, the bridge and the computers paired to it also use n0's public
+iroh relays and address lookup, which learn each computer's key and addresses and carry TLS
+traffic they can't read. Nothing else goes to n0, and nothing does at all on the other settings.
 
 ### 3. Fast on a busy machine
 

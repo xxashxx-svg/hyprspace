@@ -8,7 +8,7 @@ use gpui::{
 };
 use hyprspace_proto::Command;
 use hyprspace_proto::peer::{Found, PeerCommand};
-use hyprspace_proto::phone::PhoneCommand;
+use hyprspace_proto::phone::{Network, PhoneCommand};
 
 use super::Root;
 use super::controls::{group, row, text};
@@ -245,9 +245,15 @@ impl Root {
                                 .text_color(colors::text1())
                                 .child(p.code.clone()),
                         )
-                        .child(text(format!(
-                            "Type it on the other computer, or copy the link over. New code at {until}."
-                        )))
+                        .child(text(if prefs.network == Network::Anywhere {
+                            format!(
+                                "Type it on a computer on this network, or copy the link to one anywhere. New code at {until}."
+                            )
+                        } else {
+                            format!(
+                                "Type it on the other computer, or copy the link over. New code at {until}."
+                            )
+                        }))
                         .child(
                             div()
                                 .flex()

@@ -325,7 +325,7 @@ pub(crate) static NETWORKS: Setting = setting(
     "Access",
     "Networks",
     "Wi-Fi at home, Tailscale away.",
-    "wifi tailscale tailnet lan",
+    "wifi tailscale tailnet lan anywhere relay iroh n0 remote",
     &[],
 );
 pub(crate) static PHONES: Setting = setting(

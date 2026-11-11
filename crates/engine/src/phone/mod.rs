@@ -4,6 +4,7 @@
 //! from an emulator of its own (`mirror`). What a phone asks the app to do goes to the UI,
 //! which does it the way a click would. Shape and reasons: docs/internals/phone.md.
 
+pub(crate) mod far;
 mod idle;
 mod mirror;
 mod net;
@@ -69,6 +70,8 @@ struct Hub {
     network: Network,
     port: u16,
     fingerprint: String,
+    /// The key other computers dial this one by from any network, while it listens there.
+    far: Option<String>,
     error: Option<String>,
     browser: bool,
     browser_url: Option<String>,
@@ -152,6 +155,7 @@ impl Phone {
             network: Network::Everywhere,
             port: 0,
             fingerprint: String::new(),
+            far: None,
             error: None,
             browser: false,
             browser_url: None,
@@ -312,7 +316,7 @@ impl Phone {
             .identity()
             .map_err(|e| format!("Couldn't make the certificate: {e}"))?;
         let tls = server::acceptor(&id).map_err(|e| format!("Couldn't set up TLS: {e}"))?;
-        hub.fingerprint = id.fingerprint;
+        hub.fingerprint = id.fingerprint.clone();
         let only_ts = hub.network == Network::Tailscale;
         let binds = net::binds(only_ts);
         if binds.is_empty() {
@@ -340,6 +344,20 @@ impl Phone {
         for l in listeners {
             hub.tasks
                 .push(tokio::spawn(server::listen(self.clone(), l, tls.clone())));
+        }
+        if hub.network == Network::Anywhere {
+            let key = far::key(&id);
+            hub.far = Some(key.public().to_string());
+            let me = self.clone();
+            hub.tasks.push(tokio::spawn(async move {
+                if let Err(e) = far::listen(me.clone(), key, tls).await {
+                    let mut hub = me.hub();
+                    hub.far = None;
+                    hub.error = Some(e);
+                    hub.send_status();
+                    hub.send_pairing();
+                }
+            }));
         }
         if hub.browser {
             self.start_browser(hub);
@@ -527,6 +545,7 @@ impl Phone {
                 version: env!("CARGO_PKG_VERSION").into(),
                 token,
                 proof,
+                far: hub.far.clone(),
             },
         ))
     }
@@ -1119,12 +1138,16 @@ impl Hub {
                 .collect();
             Pairing {
                 link: format!(
-                    "hyprspace://pair?n={}&h={}&p={}&f={}&c={}",
+                    "hyprspace://pair?n={}&h={}&p={}&f={}&c={}{}",
                     encode(&host_name()),
                     hosts.join(","),
                     self.port,
                     self.fingerprint,
-                    p.long
+                    p.long,
+                    self.far
+                        .as_ref()
+                        .map(|id| format!("&i={id}"))
+                        .unwrap_or_default()
                 ),
                 code: format!("{}-{}-{}", &p.code[..4], &p.code[4..8], &p.code[8..]),
                 expires: p.expires,
@@ -1300,6 +1323,7 @@ impl Hub {
         }
         self.on = false;
         self.port = 0;
+        self.far = None;
         self.error = None;
         self.browser_url = None;
         self.browser_error = None;

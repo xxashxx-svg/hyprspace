@@ -45,6 +45,9 @@ struct Saved {
     hosts: Vec<String>,
     port: u16,
     token: String,
+    /// The host's key, when it can be reached from any network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    far: Option<String>,
 }
 
 #[derive(Default)]
@@ -384,6 +387,17 @@ impl Peers {
             return true;
         }
         false
+    }
+
+    /// The host's key for reaching it from any network, as it last said.
+    fn reach(&self, peer: &str, far: Option<String>) {
+        let mut inner = self.lock();
+        if let Some(s) = inner.saved.iter_mut().find(|s| s.id == peer)
+            && s.far != far
+        {
+            s.far = far;
+            inner.save();
+        }
     }
 
     /// Connected: what was routed to the host before comes back.

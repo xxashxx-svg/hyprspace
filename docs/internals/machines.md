@@ -8,11 +8,20 @@ connections), `crates/engine/src/phone/` (the host's side, shared with the phone
 
 ## The shape
 
-- **Direct, with no server between.** The computer that runs a thread is its host. It runs the
-  same bridge a phone pairs with (docs/internals/phone.md): TLS under a certificate the client
-  pins, a WebSocket over it, pairing by code, a revocable token per device. A computer reaches
-  another on the local network or over Tailscale, the way the phone does. There is no relay and
-  no account, so nothing about a thread ever leaves the two machines.
+- **Direct, or through a relay that can't read it.** The computer that runs a thread is its
+  host. It runs the same bridge a phone pairs with (docs/internals/phone.md): TLS under a
+  certificate the client pins, a WebSocket over it, pairing by code, a revocable token per
+  device. A computer reaches another on the local network or over Tailscale, the way the phone
+  does. With the host's network set to Anywhere, it can also dial the host by an iroh key
+  (`phone/far.rs`): iroh punches through both routers when it can and goes through n0's public
+  relays when it can't. The bridge's TLS runs inside that stream, so a relay only sees which keys
+  talk and encrypted bytes. There is no account and no server of ours.
+- **The key comes from the certificate.** The iroh key is derived from the bridge's TLS key, so
+  it lasts as long as pairings do and needs no storage of its own. The pairing link carries it as
+  `i`, and every welcome repeats it, so computers paired before Anywhere was on learn it on their
+  next connection. A client dials the local addresses first and the key 750 ms later, and the
+  first that answers wins. The lookup can miss a host for a few seconds after it starts
+  listening, so the dial retries until its 15 second limit.
 - **The host owns the thread.** It lives in the host's state and sidebar and in its journal, and
   the host's UI does what the other computer asks the same way a click would (`Ask`), so both
   screens show it. A thread started from here on the host appears in the host's sidebar too.
