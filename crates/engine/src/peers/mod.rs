@@ -16,7 +16,7 @@ use base64::engine::general_purpose::STANDARD;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use hyprspace_proto::peer::{Found, Peer, PeerCommand, PeerEvent};
-use hyprspace_proto::phone::{Ask, Down, INPUT, Up, frame};
+use hyprspace_proto::phone::{Ask, Down, INPUT, Route as Via, Up, frame};
 use hyprspace_proto::{Command, Event, Prompt, SessionId};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
@@ -55,6 +55,7 @@ struct Link {
     tx: Option<UnboundedSender<Message>>,
     error: Option<String>,
     version: String,
+    route: Option<Via>,
     task: Option<JoinHandle<()>>,
 }
 
@@ -401,10 +402,11 @@ impl Peers {
     }
 
     /// Connected: what was routed to the host before comes back.
-    fn online(&self, peer: &str, tx: UnboundedSender<Message>, version: String) {
+    fn online(&self, peer: &str, tx: UnboundedSender<Message>, version: String, route: Via) {
         let mut inner = self.lock();
         let link = inner.links.entry(peer.to_string()).or_default();
         link.tx = Some(tx);
+        link.route = Some(route);
         link.error = None;
         link.version = version;
         let ups: Vec<Up> = inner
@@ -567,6 +569,7 @@ impl Inner {
                     id: s.id.clone(),
                     name: s.name.clone(),
                     online: link.is_some_and(|l| l.tx.is_some()),
+                    route: link.filter(|l| l.tx.is_some()).and_then(|l| l.route),
                     error: link.and_then(|l| l.error.clone()),
                     version: link.map(|l| l.version.clone()).unwrap_or_default(),
                 }

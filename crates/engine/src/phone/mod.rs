@@ -7,7 +7,7 @@
 pub(crate) mod far;
 mod idle;
 mod mirror;
-mod net;
+pub(crate) mod net;
 mod server;
 pub(crate) mod squeeze;
 mod store;
@@ -25,7 +25,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use futures::channel::mpsc::UnboundedSender;
 use hyprspace_proto::phone::{
     Ask, Board, BoardKind, Down, Network, PROTOCOL, Pairing, PhoneCommand, PhoneEvent, PhoneStatus,
-    Slash, Up,
+    Route, Slash, Up,
 };
 use hyprspace_proto::{Entry, Event, FolderCommand, SessionId};
 use tokio::task::JoinHandle;
@@ -108,6 +108,7 @@ struct Conn {
     device: String,
     name: String,
     computer: bool,
+    route: Route,
     tx: UnboundedSender<Down>,
     watching: HashMap<u64, Watch>,
     attached: HashSet<u64>,
@@ -416,7 +417,13 @@ impl Phone {
 
     /// The first message on a connection: a hello from a paired phone or a pairing. Returns
     /// the connection's id and what to tell the phone, or why it isn't let in.
-    fn admit(&self, up: Up, tx: UnboundedSender<Down>, web: bool) -> Result<(u64, Down), Down> {
+    fn admit(
+        &self,
+        up: Up,
+        tx: UnboundedSender<Down>,
+        web: bool,
+        route: Route,
+    ) -> Result<(u64, Down), Down> {
         let denied = |message: &str| Down::Denied {
             message: message.into(),
             forget: false,
@@ -530,6 +537,7 @@ impl Phone {
                 device,
                 name,
                 computer,
+                route,
                 tx,
                 watching: HashMap::new(),
                 attached: HashSet::new(),
@@ -1110,7 +1118,11 @@ impl Hub {
     }
 
     fn send_status(&self) {
-        let online: HashSet<&str> = self.conns.values().map(|c| c.device.as_str()).collect();
+        let online: HashMap<&str, Route> = self
+            .conns
+            .values()
+            .map(|c| (c.device.as_str(), c.route))
+            .collect();
         let status = PhoneStatus {
             on: self.on,
             port: self.port,
@@ -1123,7 +1135,7 @@ impl Hub {
                 Vec::new()
             },
             error: self.error.clone(),
-            devices: self.store.devices(|id| online.contains(id)),
+            devices: self.store.devices(|id| online.get(id).copied()),
             browser: self.browser_url.clone().filter(|_| self.on),
             browser_error: self.browser_error.clone().filter(|_| self.on),
         };

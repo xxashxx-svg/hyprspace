@@ -79,7 +79,8 @@ data class Attachment(
 
 private const val SIDE = 2048
 private const val THUMB = 160
-private const val MAX_FILE = 20 * 1024 * 1024
+// sent as one base64 message, and OkHttp closes the line on anything past 16 MiB queued
+private const val MAX_FILE = 10 * 1024 * 1024
 
 private suspend fun shrink(context: Context, uri: Uri): Pair<ByteArray, Bitmap> = withContext(Dispatchers.IO) {
     val bmp = ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { d, info, _ ->
@@ -134,7 +135,7 @@ fun rememberAttach(app: App, files: Boolean, onPick: (Attachment) -> Unit): () -
                 when {
                     bytes == null -> onPick(Attachment(System.nanoTime(), name = name, failed = true))
                     bytes.size > MAX_FILE -> {
-                        app.link.fail("$name is over 20 MB, too big to send.")
+                        app.link.fail("$name is over 10 MB, too big to send.")
                         onPick(Attachment(System.nanoTime(), name = name, failed = true))
                     }
                     else -> send(Attachment(System.nanoTime(), name = name), bytes, name)
@@ -229,14 +230,16 @@ fun AttachmentThumb(p: Attachment, onRemove: () -> Unit) {
         Box(
             Modifier
                 .align(Alignment.TopEnd)
-                .padding(3.dp)
-                .size(20.dp)
-                .clip(CircleShape)
-                .background(h.bg.copy(alpha = 0.8f))
+                .size(36.dp)
                 .clickableQuiet { host.feel(Feel.Tick); onRemove() },
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.TopEnd,
         ) {
-            Icon(painterResource(R.drawable.ic_x), "Remove", Modifier.size(11.dp), tint = h.text1)
+            Box(
+                Modifier.padding(3.dp).size(20.dp).clip(CircleShape).background(h.bg.copy(alpha = 0.8f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.ic_x), "Remove", Modifier.size(11.dp), tint = h.text1)
+            }
         }
     }
 }

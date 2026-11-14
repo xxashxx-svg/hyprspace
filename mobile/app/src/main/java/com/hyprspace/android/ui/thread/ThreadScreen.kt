@@ -111,21 +111,21 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
             app.notifier.viewing = id
             app.notifier.cancel(id)
         }
-        fun hide() {
-            app.link.unwatch(id)
+        fun hide(gone: Boolean) {
+            app.link.unwatch(id, keepEarlier = !gone)
             if (app.notifier.viewing == id) app.notifier.viewing = null
         }
         val watcher = LifecycleEventObserver { _, e ->
             when (e) {
                 Lifecycle.Event.ON_START -> show()
-                Lifecycle.Event.ON_STOP -> hide()
+                Lifecycle.Event.ON_STOP -> hide(gone = false)
                 else -> {}
             }
         }
         lifecycle.addObserver(watcher)
         onDispose {
             lifecycle.removeObserver(watcher)
-            hide()
+            hide(gone = true)
         }
     }
     // the thread went away on the computer

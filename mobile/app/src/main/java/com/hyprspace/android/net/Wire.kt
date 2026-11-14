@@ -409,7 +409,35 @@ data class BoardThread(
     val tasks: List<BgTask> = emptyList(),
     /** The thread that delegated this one, which lists it under itself. */
     val parent: Long? = null,
+    /** The pull request from its branch. */
+    val pr: Pr? = null,
 )
+
+@Serializable
+data class Pr(
+    val number: Long = 0,
+    val title: String = "",
+    val branch: String = "",
+    val url: String = "",
+    val state: PrState = PrState.Open,
+    val checks: Checks = Checks.None,
+)
+
+@Serializable
+enum class PrState {
+    @SerialName("open") Open,
+    @SerialName("draft") Draft,
+    @SerialName("merged") Merged,
+    @SerialName("closed") Closed,
+}
+
+@Serializable
+enum class Checks {
+    @SerialName("none") None,
+    @SerialName("pending") Pending,
+    @SerialName("passing") Passing,
+    @SerialName("failing") Failing,
+}
 
 @Serializable
 enum class TaskKind {

@@ -6,7 +6,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use futures::{FutureExt, SinkExt, StreamExt};
 use hyprspace_proto::peer::Found;
-use hyprspace_proto::phone::{Down, OUTPUT, PROTOCOL, Up, unframe};
+use hyprspace_proto::phone::{Down, OUTPUT, PROTOCOL, Route, Up, unframe};
+
+use crate::phone::net::route;
 use sha2::{Digest, Sha256};
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
@@ -45,7 +47,7 @@ const MAX_MESSAGE: usize = 64 << 20;
 enum End {
     Dropped,
     Forgotten,
-    Home(Box<Ws>),
+    Home(Box<(Ws, Route)>),
 }
 
 pub(super) async fn run(peers: Peers, id: String) {
@@ -56,16 +58,16 @@ pub(super) async fn run(peers: Peers, id: String) {
             return;
         };
         let dialed = match home.take() {
-            Some(ws) => Ok((ws, false)),
+            Some(near) => Ok(near),
             None => dial(&saved).await,
         };
         match dialed {
-            Ok((ws, far)) => {
+            Ok((ws, route)) => {
                 wait = 1;
-                match session(&peers, &saved, ws, far).await {
+                match session(&peers, &saved, ws, route).await {
                     End::Forgotten => return,
-                    End::Home(ws) => {
-                        home = Some(*ws);
+                    End::Home(near) => {
+                        home = Some(*near);
                         continue;
                     }
                     End::Dropped => {}
@@ -87,7 +89,7 @@ pub(super) async fn run(peers: Peers, id: String) {
 
 /// One connection, from hello to close. One through the relays ends early when the host's
 /// local addresses answer, and hands that line back to take over.
-async fn session(peers: &Peers, saved: &Saved, ws: Ws, far: bool) -> End {
+async fn session(peers: &Peers, saved: &Saved, ws: Ws, route: Route) -> End {
     let (mut sink, mut stream) = ws.split();
     let hello = Up::Hello {
         token: saved.token.clone(),
@@ -122,28 +124,28 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws, far: bool) -> End {
         }
     };
     let (tx, mut rx) = futures::channel::mpsc::unbounded();
-    peers.online(&saved.id, tx, version);
+    peers.online(&saved.id, tx, version, route);
     let mut unsqueeze = Unsqueeze::default();
     let mut ping = tokio::time::interval(Duration::from_secs(20));
     let mut heard = tokio::time::Instant::now();
     let mut forgotten = false;
     let mut back = None;
     let home = async {
-        if !far {
+        if route != Route::Anywhere {
             return std::future::pending().await;
         }
         loop {
             tokio::time::sleep(HOME_EVERY).await;
-            if let Ok((ws, false)) = dial_near(saved).await {
-                return ws;
+            if let Ok(near) = dial_near(saved).await {
+                return near;
             }
         }
     };
     tokio::pin!(home);
     loop {
         tokio::select! {
-            ws = &mut home => {
-                back = Some(ws);
+            near = &mut home => {
+                back = Some(near);
                 break;
             }
             msg = stream.next() => match msg.inspect(|_| heard = tokio::time::Instant::now()) {
@@ -183,8 +185,8 @@ async fn session(peers: &Peers, saved: &Saved, ws: Ws, far: bool) -> End {
         }
     }
     let _ = sink.close().await;
-    if let Some(ws) = back {
-        return End::Home(Box::new(ws));
+    if let Some(near) = back {
+        return End::Home(Box::new(near));
     }
     peers.offline(&saved.id, None);
     if forgotten {
@@ -277,16 +279,16 @@ pub(super) async fn pair(link: &str) -> Result<(Saved, String), String> {
 }
 
 /// The first way to the host that answers: each of its addresses a quarter second after the
-/// last, then its key through the relays. True when it came through the relays.
-async fn dial(saved: &Saved) -> Result<(Ws, bool), String> {
+/// last, then its key through the relays.
+async fn dial(saved: &Saved) -> Result<(Ws, Route), String> {
     race(saved, true).await
 }
 
-async fn dial_near(saved: &Saved) -> Result<(Ws, bool), String> {
+async fn dial_near(saved: &Saved) -> Result<(Ws, Route), String> {
     race(saved, false).await
 }
 
-async fn race(saved: &Saved, relays: bool) -> Result<(Ws, bool), String> {
+async fn race(saved: &Saved, relays: bool) -> Result<(Ws, Route), String> {
     let tls = TlsConnector::from(config(&saved.id));
     let port = saved.port;
     let mut tries: Vec<_> = saved
@@ -302,7 +304,7 @@ async fn race(saved: &Saved, relays: bool) -> Result<(Ws, bool), String> {
                     .await
                     .map_err(|_| ())?;
                 let _ = tcp.set_nodelay(true);
-                Ok::<_, ()>((connect(tls, Box::new(tcp)).await?, false))
+                Ok::<_, ()>((connect(tls, Box::new(tcp)).await?, route(&ip)))
             }
             .boxed()
         })
@@ -320,7 +322,7 @@ async fn race(saved: &Saved, relays: bool) -> Result<(Ws, bool), String> {
             async move {
                 tokio::time::sleep(wait).await;
                 let stream = hyprspace_far::dial(&far).await.ok_or(())?;
-                Ok::<_, ()>((connect(tls, Box::new(stream)).await?, true))
+                Ok::<_, ()>((connect(tls, Box::new(stream)).await?, Route::Anywhere))
             }
             .boxed(),
         );

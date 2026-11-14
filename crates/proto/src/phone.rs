@@ -444,6 +444,9 @@ pub struct BoardThread {
     /// The thread that delegated this one, which lists it under itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<u64>,
+    /// The pull request from its branch, as the sidebar badges it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr: Option<crate::git::PullRequest>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -670,6 +673,16 @@ pub enum Network {
     Anywhere,
 }
 
+/// The way a connection reached the other side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Route {
+    Lan,
+    Tailscale,
+    /// Through iroh: direct across routers, or through n0's relays.
+    Anywhere,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PhoneStatus {
@@ -695,6 +708,9 @@ pub struct Device {
     pub paired: u64,
     pub seen: u64,
     pub online: bool,
+    /// How it's connected, while it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route: Option<Route>,
     /// The app version it last connected with.
     pub app: String,
     /// Another computer rather than a phone.
@@ -950,6 +966,14 @@ mod tests {
                             tool: Some("2".into()),
                         }],
                         parent: Some(1),
+                        pr: Some(crate::git::PullRequest {
+                            number: 7,
+                            title: "Fix it".into(),
+                            branch: "fix".into(),
+                            url: "https://github.com/a/b/pull/7".into(),
+                            state: crate::git::PrState::Open,
+                            checks: crate::git::Checks::Failing,
+                        }),
                     }],
                     agents: vec![AgentInfo {
                         agent: Agent::Claude,

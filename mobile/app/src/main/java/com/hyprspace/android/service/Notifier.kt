@@ -26,6 +26,7 @@ class Notifier(private val ctx: Context, private val store: Store) {
     /** The thread on screen, if one is. */
     @Volatile var viewing: Long? = null
     private var last: Map<Long, BoardStatus>? = null
+    private var present = false
 
     init {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -44,12 +45,19 @@ class Notifier(private val ctx: Context, private val store: Store) {
 
     fun board(b: Board) {
         val before = last
+        val left = present && !b.present
+        present = b.present
         last = b.threads.associate { it.id to it.status }
         val s = store.saved.value
         // back at the computer: what the phone said is on the screen there now
         if (b.present) cancelAll()
         if (before == null || !s.alerts || foreground || b.present) return
         for (t in b.threads) {
+            // what asked while the user sat at the computer still needs them once they leave
+            if (left && t.status == BoardStatus.Waiting) {
+                post(t, t.doing ?: "Waiting for your answer.")
+                continue
+            }
             val was = before[t.id] ?: continue
             if (t.status == was) continue
             // a thread that stops waiting no longer needs the user

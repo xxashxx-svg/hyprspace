@@ -60,6 +60,7 @@ class App : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 notifier.foreground = true
+                link.awake = true
                 notifier.cancelAll()
                 pause?.cancel()
                 quiet?.cancel()
@@ -71,6 +72,7 @@ class App : Application() {
 
             override fun onStop(owner: LifecycleOwner) {
                 notifier.foreground = false
+                link.awake = false
                 quiet = scope.launch {
                     delay(60_000)
                     updater.install(quiet = true)

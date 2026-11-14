@@ -54,7 +54,8 @@ fun ComputerRow(
     val host = LocalView.current
     val (dot, status) = when {
         !current -> null to (d.last?.let { "Last at $it" } ?: "Paired ${ago(d.paired, System.currentTimeMillis())} ago")
-        conn is Conn.Online -> h.ok to ("Connected" + (d.last?.let { " at $it" } ?: ""))
+        conn is Conn.Online -> h.ok to listOfNotNull("Connected", conn.via.ifEmpty { null }, d.last.takeIf { conn.via != "Anywhere" })
+            .joinToString(" · ")
         conn is Conn.Denied -> h.error to conn.message
         conn is Conn.Offline -> h.error to "Can't reach it right now"
         else -> h.busy to "Connecting"

@@ -104,6 +104,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hyprspace.android.R
 import com.hyprspace.android.model.AgentState
+import com.hyprspace.android.model.Fold
 import com.hyprspace.android.model.Item
 import com.hyprspace.android.model.PLAN
 import com.hyprspace.android.model.QUESTION
@@ -151,9 +152,8 @@ private fun carded(items: List<Item>, ix: Int, name: String): Boolean {
     return items.subList(from, to).any { it is Item.Approval && special(it.tool) == name }
 }
 
-private fun fold(items: List<Item>, unfolded: Set<String>): List<Shown> {
+private fun fold(items: List<Item>, folds: List<Fold>, unfolded: Set<String>): List<Shown> {
     val out = ArrayList<Shown>()
-    val folds = folds(items)
     val heads = folds.associateBy { it.first }
     val hidden = folds.flatMap { f -> if (f.prompt in unfolded) listOf(f.finish) else f.hide + f.finish }.toSet()
     val lastTodo = items.indexOfLast { it is Item.Call && special(it.tool) == TODO }
@@ -230,11 +230,13 @@ fun Chat(
     val h = LocalHues.current
     val host = LocalView.current
     var unfolded by remember { mutableStateOf(setOf<String>()) }
-    val shown = remember(view.items, unfolded) { fold(view.items, unfolded) }
+    val runs = remember(view.items) { folds(view.items) }
+    val shown = remember(runs, unfolded) { fold(view.items, runs, unfolded) }
     val ending = remember(view.items) { ends(view.items) }
     // a run that ended well shows its time under the reply instead of on a line of its own
     val footed = remember(ending) { ending.values.filter { it.status == RunStatus.Done }.map { it.key }.toSet() }
-    val timed = remember(view.items) { folds(view.items).filter { it.ms != null }.map { it.finish }.toSet() }
+    val rows = remember(shown, footed) { shown.filterNot { it is Shown.One && it.item.key in footed }.asReversed() }
+    val timed = remember(runs) { runs.filter { it.ms != null }.map { it.finish }.toSet() }
     // the prompt each ending reply answers, which a fork keeps along with everything before it
     val owner = remember(view.items) {
         var at: Item.User? = null
@@ -273,8 +275,8 @@ fun Chat(
     }
     // a line that dropped may have taken a message with it: once the new line has brought the
     // transcript and the queue back, what still isn't there goes again
-    LaunchedEffect(lines) {
-        delay(3000)
+    LaunchedEffect(lines, view.line) {
+        delay(if (view.line >= lines) 500 else 15_000)
         val stale = pending.filter { it.line < lines }
         if (stale.isEmpty()) return@LaunchedEffect
         pending = pending.map { if (it.line < lines) it.copy(id = System.nanoTime(), line = lines) else it }
@@ -341,7 +343,7 @@ fun Chat(
                         One(Item.User("pending", p.text, 0, steer = working), false, answered, answer, live = false, end = null)
                     }
                 }
-                items(shown.filterNot { it is Shown.One && it.item.key in footed }.asReversed(), key = { it.key }) { s ->
+                items(rows, key = { it.key }) { s ->
                     Box(rise()) {
                         when (s) {
                             is Shown.Calls -> CallRun(s.calls)

@@ -89,6 +89,9 @@ pub struct Peer {
     pub id: String,
     pub name: String,
     pub online: bool,
+    /// How it's connected, while it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route: Option<crate::phone::Route>,
     /// Why it isn't connected. User-facing.
     pub error: Option<String>,
     /// The host's app version.

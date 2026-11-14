@@ -143,9 +143,12 @@ the next CLI process starts: always on a whole journal, and live only when a ste
 since a process can also restart in the middle of a run.
 
 OkHttp's `send` returns true once a frame is queued, so a message can vanish into a socket that
-died without closing. The link pings when it has heard nothing for 4 seconds and drops the
-socket after 15. After a reconnect, the phone resends a message the computer's transcript and
-queue don't show. A queued message still unconfirmed after 30 seconds goes back into the box.
+died without closing. The link pings when a tick (5 seconds on screen, 30 behind) passes with
+nothing heard, and drops the socket after two unanswered pings, or three seconds after a network
+change with no answer. It counts ticks rather than reading the clock, because Android's
+`delay` stops in deep sleep and the clock doesn't: a phone waking up pings before it gives up.
+After a reconnect, once the new line has brought the whole transcript, the phone resends a
+message the computer's transcript and queue don't show. A queued message still unconfirmed after 30 seconds goes back into the box.
 The Android emulator's NAT (`10.0.2.2`) freezes a fresh socket in both directions a few
 seconds in, so test link behavior over `adb reverse` and `127.0.0.1` instead. Keystrokes for a terminal go straight to the PTY; a paste with line
 breaks goes in bracketed when the program asked for that.
@@ -165,7 +168,8 @@ fonts (Geist, and the terminal's Nerd Font build).
   waiting, and if asked, one that finishes or fails. Never while the app is open, and never while
   someone is at the computer: the engine reads how long since the keyboard or mouse was used
   (`GetLastInputInfo`, `CGEventSourceSecondsSinceLastEventType`) and sets the board's `present`
-  within two minutes of it.
+  within two minutes of it. When `present` turns off, whatever is still waiting notifies then,
+  since it asked while the user was at the computer. The service starts again after a reboot.
 - Typing in a terminal goes straight in, with no text box (`KeyInput`): a view that poses to the
   keyboard as an editor holding nothing, so whatever the keyboard commits, deletes or presses
   becomes terminal bytes, and a Ctrl key leaves no stray letters. The screen follows its bottom

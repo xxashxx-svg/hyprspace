@@ -14,6 +14,13 @@ use serde_json::Value;
 const CLAUDE_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 const CODEX_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
+fn medium(id: &str, label: &str) -> ModelInfo {
+    ModelInfo {
+        default_effort: Some("medium".into()),
+        ..model(id, label, None, &[])
+    }
+}
+
 fn model(id: &str, label: &str, note: Option<&str>, efforts: &[&str]) -> ModelInfo {
     ModelInfo {
         id: id.into(),
@@ -30,29 +37,34 @@ pub fn fallback(agent: Agent) -> AgentCatalog {
     let (models, efforts) = match agent {
         Agent::Claude => (
             vec![
-                ModelInfo {
-                    default_effort: Some("medium".into()),
-                    ..model("claude-opus-5-5", "Opus 5.5", None, &[])
-                },
+                medium("claude-opus-5-5", "Opus 5.5"),
+                medium("claude-fable-5-2", "Fable 5.2"),
                 model("claude-fable-5-1", "Fable 5.1", None, &[]),
                 model("claude-fable-5", "Fable 5", None, &[]),
                 model("claude-opus-5", "Opus 5", None, &[]),
                 model("claude-opus-4-8", "Opus 4.8", None, &[]),
-                model("claude-opus-4-7", "Opus 4.7", None, &[]),
+                ModelInfo {
+                    default_effort: Some("xhigh".into()),
+                    ..model("claude-opus-4-7", "Opus 4.7", None, &[])
+                },
                 model("claude-opus-4-6", "Opus 4.6", None, &[]),
                 model("claude-opus-4-5-20251101", "Opus 4.5", None, &[]),
-                model("claude-sonnet-5-5", "Sonnet 5.5", None, &[]),
+                medium("claude-sonnet-5-5", "Sonnet 5.5"),
                 model("claude-sonnet-5", "Sonnet 5", None, &[]),
                 model("claude-sonnet-4-6", "Sonnet 4.6", None, &[]),
-                model("claude-haiku-5-5", "Haiku 5.5", None, &[]),
+                medium("claude-haiku-5-5", "Haiku 5.5"),
                 model("claude-haiku-4-5-20251001", "Haiku 4.5", None, &[]),
             ],
             CLAUDE_EFFORTS,
         ),
         Agent::Codex => (
             vec![
+                model("gpt-6.1-sol", "GPT-6.1 Sol", None, &ultra),
                 model("gpt-6-astra", "GPT-6 Astra", None, &ultra),
+                model("gpt-6-sol", "GPT-6 Sol", None, &ultra),
+                model("gpt-6-luna", "GPT-6 Luna", None, &[]),
                 model("gpt-5.6-sol", "GPT-5.6 Sol", None, &ultra),
+                model("gpt-6.1-terra", "GPT-6.1 Terra", None, &ultra),
                 model("gpt-5.6-terra", "GPT-5.6 Terra", None, &ultra),
                 model("gpt-5.6-luna", "GPT-5.6 Luna", None, &[]),
                 model(
@@ -74,7 +86,14 @@ pub fn fallback(agent: Agent) -> AgentCatalog {
 
 /// Codex models a thread starts on when the config names none, newest first: the first one the
 /// account lists.
-const CODEX_PREFERRED: &[&str] = &["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"];
+const CODEX_PREFERRED: &[&str] = &[
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-5.6-sol",
+    "gpt-6.1-terra",
+    "gpt-5.6-terra",
+];
 
 /// The catalog to offer: Codex's own cache under `home` when it has models, else the fallback.
 /// Each agent's default is the model its own config names, so a thread runs what the user set
@@ -97,7 +116,8 @@ pub fn catalog(agent: Agent, home: &Path) -> AgentCatalog {
                 .map(str::to_string)
         };
         if let Some(effort) = get("effortLevel").filter(|e| out.efforts.contains(e)) {
-            for m in &mut out.models {
+            // Claude Code ignores a top-level effortLevel for Opus 5.5
+            for m in out.models.iter_mut().filter(|m| m.id != "claude-opus-5-5") {
                 m.default_effort = Some(effort.clone());
             }
         }
@@ -212,6 +232,10 @@ mod tests {
         );
         assert_eq!(
             claude.default_effort("claude-sonnet-5-5").as_deref(),
+            Some("medium")
+        );
+        assert_eq!(
+            claude.default_effort("claude-opus-4-6").as_deref(),
             Some("high")
         );
         assert_eq!(claude.efforts_for("claude-opus-5-5"), CLAUDE_EFFORTS);
@@ -300,6 +324,18 @@ model = \"other\"
             ("claude-opus-5-5".into(), Some("medium".into()))
         );
         assert_eq!(first("{}").1.as_deref(), Some("medium"));
-        assert_eq!(first(r#"{"model":"sonnet"}"#).1.as_deref(), Some("high"));
+        assert_eq!(first(r#"{"model":"sonnet"}"#).1.as_deref(), Some("medium"));
+        assert_eq!(
+            first(r#"{"model":"opus","effortLevel":"high"}"#)
+                .1
+                .as_deref(),
+            Some("medium")
+        );
+        assert_eq!(
+            first(r#"{"model":"sonnet","effortLevel":"high"}"#)
+                .1
+                .as_deref(),
+            Some("high")
+        );
     }
 }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use hyprspace_proto::phone::Route;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -94,7 +95,7 @@ fn find(path: &str) -> Option<(&'static str, &'static [u8], bool)> {
 pub async fn listen(phone: Phone, listener: TcpListener) {
     let waiting = Arc::new(Semaphore::new(server::WAITING));
     loop {
-        let Ok((tcp, _)) = listener.accept().await else {
+        let Ok((tcp, from)) = listener.accept().await else {
             tokio::time::sleep(Duration::from_millis(200)).await;
             continue;
         };
@@ -102,14 +103,20 @@ pub async fn listen(phone: Phone, listener: TcpListener) {
             continue;
         };
         let _ = tcp.set_nodelay(true);
-        tokio::spawn(handle(phone.clone(), tcp, permit, true));
+        let route = super::net::route(&from.ip().to_canonical());
+        tokio::spawn(handle(phone.clone(), tcp, permit, true, route));
     }
 }
 
 /// A request on either listener: a WebSocket for a phone or a browser, or one of the page's
 /// files once the page is switched on.
-pub(super) async fn handle<S>(phone: Phone, mut stream: S, permit: OwnedSemaphorePermit, web: bool)
-where
+pub(super) async fn handle<S>(
+    phone: Phone,
+    mut stream: S,
+    permit: OwnedSemaphorePermit,
+    web: bool,
+    route: Route,
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let Ok(Some(head)) = timeout(server::HANDSHAKE, read_head(&mut stream)).await else {
@@ -129,7 +136,7 @@ where
             at: 0,
             inner: stream,
         };
-        server::accept(phone, stream, permit, web).await;
+        server::accept(phone, stream, permit, web, route).await;
         return;
     }
     if let Some(token) = path.strip_prefix("/media/") {

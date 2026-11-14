@@ -4,7 +4,7 @@
 
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, div, prelude::*};
 use hyprspace_proto::Command;
-use hyprspace_proto::phone::{Network, PhoneCommand};
+use hyprspace_proto::phone::{Network, PhoneCommand, Route};
 
 use super::Root;
 use super::controls::{group, row, text};
@@ -293,7 +293,10 @@ impl Root {
             .map(|d| {
                 let id = d.id.clone();
                 let mut seen = if d.online {
-                    "Online".to_string()
+                    match d.route {
+                        Some(r) => format!("Online · {}", route(r)),
+                        None => "Online".to_string(),
+                    }
                 } else {
                     match ago(d.seen, now).as_str() {
                         "now" => "Seen just now".to_string(),
@@ -317,6 +320,14 @@ impl Root {
                 )
             })
             .collect()
+    }
+}
+
+pub(super) fn route(r: Route) -> &'static str {
+    match r {
+        Route::Lan => "LAN",
+        Route::Tailscale => "Tailscale",
+        Route::Anywhere => "Anywhere",
     }
 }
 

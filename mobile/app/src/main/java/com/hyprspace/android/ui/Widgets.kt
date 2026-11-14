@@ -259,8 +259,9 @@ fun Pill(text: String, color: Color = LocalHues.current.text2) {
 /** A click with no ripple, for text-like buttons. */
 fun Modifier.clickableQuiet(onClick: () -> Unit): Modifier = this.then(
     Modifier.clickable(
-        interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
+        interactionSource = null,
         indication = null,
+        role = androidx.compose.ui.semantics.Role.Button,
         onClick = onClick,
     ),
 )

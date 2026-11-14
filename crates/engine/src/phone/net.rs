@@ -4,6 +4,16 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
+use hyprspace_proto::phone::Route;
+
+pub fn route(ip: &IpAddr) -> Route {
+    if tailscale(ip) {
+        Route::Tailscale
+    } else {
+        Route::Lan
+    }
+}
+
 /// Tailscale gives each machine an address in 100.64.0.0/10.
 pub fn tailscale(ip: &IpAddr) -> bool {
     match ip {

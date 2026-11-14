@@ -11,7 +11,7 @@ import com.hyprspace.android.service.LinkService
 class Installed : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.applicationContext as App
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED || intent.action == Intent.ACTION_BOOT_COMPLETED) {
             LinkService.sync(app)
             return
         }

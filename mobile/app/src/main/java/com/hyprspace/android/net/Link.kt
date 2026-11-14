@@ -38,7 +38,8 @@ sealed interface Conn {
     /** Nothing paired yet. */
     data object None : Conn
     data object Connecting : Conn
-    data class Online(val desktop: String, val version: String) : Conn
+    /** [via] is how it's connected: LAN, Tailscale or Anywhere. */
+    data class Online(val desktop: String, val version: String, val via: String = "") : Conn
     /** Lost or couldn't reach it; trying again at [retry] (ms since the epoch). */
     data class Offline(val message: String, val retry: Long) : Conn
     /** The computer won't let this phone in until something changes (pair again, update). */
@@ -53,6 +54,8 @@ data class TranscriptView(
     val earlier: Boolean = false,
     val prompts: Int = 0,
     val loaded: Boolean = false,
+    /** The [Link.lines] that brought the whole transcript, last time it came whole. */
+    val line: Int = 0,
 )
 
 private sealed interface WsEvent {
@@ -86,8 +89,12 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
     @Volatile private var socket: Socket? = null
     /** A local line found while on the relays, for the next session to take over. */
     @Volatile private var handoff: Socket? = null
-    /** When the computer last said anything on the open line. */
+    /** Counts what the computer said on the open line. */
     @Volatile private var heard = 0L
+    /** The app is on screen, so a dead line should be noticed in seconds rather than a minute. */
+    @Volatile var awake = false
+    /** Asks the open line to prove it's alive now: the network under it changed. */
+    private val check = Channel<Unit>(Channel.CONFLATED)
     private val _lines = MutableStateFlow(0)
     /** Goes up each time a line to the computer comes up, so the screens know to check what they sent. */
     val lines: StateFlow<Int> = _lines
@@ -142,6 +149,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
 
     fun nudge() {
         nudge.trySend(Unit)
+        check.trySend(Unit)
     }
 
     private suspend fun run() {
@@ -200,7 +208,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             val first = withTimeoutOrNull(10_000) { next(s) }
             when (first) {
                 is Down.Welcome -> {
-                    _conn.value = Conn.Online(first.desktop, first.version)
+                    _conn.value = Conn.Online(first.desktop, first.version, via(s))
                     seen = d.id to first.version
                     store.update { saved ->
                         saved.copy(desktops = saved.desktops.map {
@@ -217,17 +225,37 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             for ((t, size) in fitted) send(s, Up.Fit(t, size.first, size.second))
             _lines.value++
             // a line can go quiet without closing, and whatever is sent into it then is lost:
-            // ask after a few quiet seconds, and start over when nothing answers
+            // ping when it's quiet, and start over after two pings nobody answered. Ticks are
+            // counted, not timed, so a phone waking from sleep pings before it gives up.
+            while (check.tryReceive().isSuccess) Unit
             val watchdog = scope.launch {
+                var last = heard
+                var missed = 0
                 while (true) {
-                    delay(5_000)
-                    val quiet = System.currentTimeMillis() - heard
-                    if (quiet > 15_000) {
-                        if (BuildConfig.DEBUG) Log.d(TAG, "quiet for ${quiet}ms, starting over")
+                    val changed = withTimeoutOrNull(if (awake) 5_000L else 30_000L) { check.receive() } != null
+                    if (changed) {
+                        last = heard
+                        send(s, Up.Ping)
+                        delay(3_000)
+                        if (heard == last) {
+                            if (BuildConfig.DEBUG) Log.d(TAG, "no answer after a network change, starting over")
+                            s.ws.cancel()
+                            break
+                        }
+                    }
+                    // a ping waits behind an upload on a slow line, so a quiet line isn't a dead one then
+                    if (heard != last || uploads.isNotEmpty()) {
+                        last = heard
+                        missed = 0
+                        continue
+                    }
+                    if (missed == 2) {
+                        if (BuildConfig.DEBUG) Log.d(TAG, "two pings unanswered, starting over")
                         s.ws.cancel()
                         break
                     }
-                    if (quiet > 4_000) send(s, Up.Ping)
+                    missed++
+                    send(s, Up.Ping)
                 }
             }
             val home = if (s.far && d.hosts.isNotEmpty()) scope.launch {
@@ -266,7 +294,7 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 is WsEvent.Text -> runCatching { wire.decodeFromString(Down.serializer(), e.text) }
                     .onFailure { if (BuildConfig.DEBUG) Log.w(TAG, "unreadable: ${e.text.take(200)}", it) }
                     .getOrNull()?.let {
-                        heard = System.currentTimeMillis()
+                        heard++
                         if (BuildConfig.DEBUG) Log.d(TAG, "down ${it::class.simpleName} ${e.text.length}b")
                         return it
                     }
@@ -331,6 +359,16 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         won
     }
 
+    private fun via(s: Socket): String {
+        val v4 = s.host.split('.').mapNotNull { it.toIntOrNull() }
+        return when {
+            s.far -> "Anywhere"
+            v4.size == 4 && v4[0] == 100 && v4[1] in 64..127 -> "Tailscale"
+            s.host.lowercase().startsWith("fd7a:115c:a1e0") -> "Tailscale"
+            else -> "LAN"
+        }
+    }
+
     private fun send(s: Socket, up: Up) {
         s.ws.send(wire.encodeToString(Up.serializer(), up))
     }
@@ -385,7 +423,8 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
                 val (t, flow) = transcripts.getOrPut(d.thread) { Transcript() to MutableStateFlow(TranscriptView()) }
                 if (d.reset) t.reset(d.before)
                 d.entries.forEach { t.add(it, replay = d.reset) }
-                flow.value = TranscriptView(t.items(), t.model, t.context, loaded = true, earlier = t.before > 0, prompts = t.prompts)
+                val line = if (d.reset) _lines.value else flow.value.line
+                flow.value = TranscriptView(t.items(), t.model, t.context, loaded = true, earlier = t.before > 0, prompts = t.prompts, line = line)
             }
             is Down.Term -> synchronized(lock) {
                 val (b, flow) = terms.getOrPut(d.frame.thread) { TermBuffer() to MutableStateFlow(TermView()) }
@@ -513,11 +552,12 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
         send(Up.Watch(thread, tail(thread)))
     }
 
-    fun unwatch(thread: Long) {
+    /** Stops watching [thread]; [keepEarlier] keeps how far back it was read, for a return from another app. */
+    fun unwatch(thread: Long, keepEarlier: Boolean = false) {
         synchronized(lock) {
             watching -= thread
             fits -= thread
-            tails -= thread
+            if (!keepEarlier) tails -= thread
         }
         send(Up.Unwatch(thread))
     }

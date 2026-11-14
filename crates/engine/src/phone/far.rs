@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use hyprspace_proto::phone::Route;
 use iroh::SecretKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
@@ -40,7 +41,7 @@ pub async fn listen(phone: Phone, key: SecretKey, tls: TlsAcceptor) -> Result<()
                 return;
             };
             let stream = hyprspace_far::Stream::new(conn, send, recv);
-            server::serve(phone, stream, tls, permit).await;
+            server::serve(phone, stream, tls, permit, Route::Anywhere).await;
         });
     }
     Ok(())

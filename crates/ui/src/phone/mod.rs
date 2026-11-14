@@ -319,6 +319,7 @@ impl Root {
             rank: t.pinned.map_or(t.rank(), |at| i64::MAX - at as i64),
             live: self.views.contains_key(&id),
             parent: t.parent.filter(|_| !t.side),
+            pr: self.pr_of(t).cloned(),
             pinned: t.pinned.is_some(),
             queue: t.queue.clone(),
             tasks,

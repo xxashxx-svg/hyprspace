@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use hyprspace_proto::phone::Device;
+use hyprspace_proto::phone::{Device, Route};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -150,7 +150,7 @@ impl Store {
         self.save();
     }
 
-    pub fn devices(&self, online: impl Fn(&str) -> bool) -> Vec<Device> {
+    pub fn devices(&self, route: impl Fn(&str) -> Option<Route>) -> Vec<Device> {
         self.saved
             .devices
             .iter()
@@ -159,7 +159,8 @@ impl Store {
                 name: d.name.clone(),
                 paired: d.paired,
                 seen: d.seen,
-                online: online(&d.id),
+                online: route(&d.id).is_some(),
+                route: route(&d.id),
                 app: d.app.clone(),
                 computer: d.computer,
             })
@@ -197,8 +198,8 @@ mod tests {
         let mut s = Store::load(dir.path());
         assert_eq!(s.check(&token, "Pixel 9", "0.25.0", 2), Some(id.clone()));
         assert_eq!(s.check("nope", "", "", 2), None);
-        assert_eq!(s.devices(|_| false)[0].app, "0.25.0");
-        assert_eq!(s.devices(|_| false)[0].name, "Pixel 9");
+        assert_eq!(s.devices(|_| None)[0].app, "0.25.0");
+        assert_eq!(s.devices(|_| None)[0].name, "Pixel 9");
         s.forget(&id);
         assert_eq!(s.check(&token, "", "", 3), None);
     }

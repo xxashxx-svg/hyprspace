@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
-use hyprspace_proto::phone::{Down, INPUT, OUTPUT, Up, frame, unframe};
+use hyprspace_proto::phone::{Down, INPUT, OUTPUT, Route, Up, frame, unframe};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -44,7 +44,7 @@ pub fn acceptor(id: &Identity) -> anyhow::Result<TlsAcceptor> {
 pub async fn listen(phone: Phone, listener: TcpListener, tls: TlsAcceptor) {
     let waiting = Arc::new(Semaphore::new(WAITING));
     loop {
-        let Ok((tcp, _)) = listener.accept().await else {
+        let Ok((tcp, from)) = listener.accept().await else {
             tokio::time::sleep(Duration::from_millis(200)).await;
             continue;
         };
@@ -52,22 +52,33 @@ pub async fn listen(phone: Phone, listener: TcpListener, tls: TlsAcceptor) {
             continue;
         };
         let _ = tcp.set_nodelay(true);
-        tokio::spawn(serve(phone.clone(), tcp, tls.clone(), permit));
+        let route = super::net::route(&from.ip().to_canonical());
+        tokio::spawn(serve(phone.clone(), tcp, tls.clone(), permit, route));
     }
 }
 
-pub(super) async fn serve<S>(phone: Phone, raw: S, tls: TlsAcceptor, permit: OwnedSemaphorePermit)
-where
+pub(super) async fn serve<S>(
+    phone: Phone,
+    raw: S,
+    tls: TlsAcceptor,
+    permit: OwnedSemaphorePermit,
+    route: Route,
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let Ok(Ok(stream)) = timeout(HANDSHAKE, tls.accept(raw)).await else {
         return;
     };
-    super::web::handle(phone, stream, permit, false).await;
+    super::web::handle(phone, stream, permit, false, route).await;
 }
 
-pub(super) async fn accept<S>(phone: Phone, stream: S, permit: OwnedSemaphorePermit, web: bool)
-where
+pub(super) async fn accept<S>(
+    phone: Phone,
+    stream: S,
+    permit: OwnedSemaphorePermit,
+    web: bool,
+    route: Route,
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let config = WebSocketConfig::default()
@@ -91,7 +102,7 @@ where
     };
     drop(permit);
     let (tx, mut rx) = mpsc::unbounded();
-    let conn = match phone.admit(first, tx, web) {
+    let conn = match phone.admit(first, tx, web, route) {
         Ok((conn, welcome)) => {
             if send(&mut sink, &welcome).await.is_err() {
                 phone.left(conn);

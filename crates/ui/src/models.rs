@@ -69,7 +69,7 @@ pub(crate) fn takes_fast(agent: Agent, id: &str) -> bool {
     agent == Agent::Claude
         && matches!(
             bare(id),
-            "claude-opus-5-5" | "claude-opus-5" | "claude-opus-4-8"
+            "claude-fable-5-2" | "claude-opus-5-5" | "claude-opus-5" | "claude-opus-4-8"
         )
 }
 

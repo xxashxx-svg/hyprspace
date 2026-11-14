@@ -25,8 +25,16 @@ impl Root {
         for (i, p) in self.machines.peers.iter().enumerate() {
             let id = p.id.clone();
             let note = match (&p.error, p.online) {
-                (_, true) if p.version.is_empty() => "Connected".to_string(),
-                (_, true) => format!("Connected · HyprSpace {}", p.version),
+                (_, true) => {
+                    let mut note = "Connected".to_string();
+                    if let Some(r) = p.route {
+                        note += &format!(" · {}", super::phone::route(r));
+                    }
+                    if !p.version.is_empty() {
+                        note += &format!(" · HyprSpace {}", p.version);
+                    }
+                    note
+                }
                 (Some(e), false) => e.clone(),
                 (None, false) => "Connecting".to_string(),
             };

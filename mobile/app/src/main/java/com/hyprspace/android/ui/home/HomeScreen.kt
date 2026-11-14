@@ -6,6 +6,7 @@ package com.hyprspace.android.ui.home
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -52,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,7 +70,10 @@ import com.hyprspace.android.net.BoardKind
 import com.hyprspace.android.net.BoardSpace
 import com.hyprspace.android.net.BoardStatus
 import com.hyprspace.android.net.BoardThread
+import com.hyprspace.android.net.Checks
 import com.hyprspace.android.net.Conn
+import com.hyprspace.android.net.Pr
+import com.hyprspace.android.net.PrState
 import com.hyprspace.android.net.Shelf
 import com.hyprspace.android.net.SnoozeUntil
 import com.hyprspace.android.ui.AgentMark
@@ -134,8 +140,8 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
                     Icon(painterResource(R.drawable.ic_chevron_down), "Switch computer", Modifier.padding(start = 6.dp).size(18.dp), tint = h.text3)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val (dot, label) = when (conn) {
-                        is Conn.Online -> h.ok to "Connected"
+                    val (dot, label) = when (val c = conn) {
+                        is Conn.Online -> h.ok to listOf("Connected", c.via).filter { it.isNotEmpty() }.joinToString(" · ")
                         is Conn.Denied -> h.error to "Not connected"
                         else -> h.busy to "Connecting"
                     }
@@ -587,8 +593,41 @@ private fun ThreadRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                t.model?.takeIf { t.agent != null }?.let { Pill(it) }
             }
+            t.pr?.let { PrBadge(it) }
+            if (doing == null) t.model?.takeIf { t.agent != null }?.let { Pill(it) }
         }
+    }
+}
+
+/** The desktop sidebar's pull request badge: its state, number, and a dot while checks fail or run. */
+@Composable
+private fun PrBadge(pr: Pr) {
+    val h = LocalHues.current
+    val uri = LocalUriHandler.current
+    val open = pr.state == PrState.Open || pr.state == PrState.Draft
+    val (glyph, tint) = when (pr.state) {
+        PrState.Open -> R.drawable.ic_git_pull_request to h.ok
+        PrState.Draft -> R.drawable.ic_git_pull_request to h.text3
+        PrState.Merged -> R.drawable.ic_git_merge to h.text3
+        PrState.Closed -> R.drawable.ic_git_pull_request_closed to h.text3
+    }
+    val dot = when (pr.checks) {
+        Checks.Failing -> h.error
+        Checks.Pending -> h.busy
+        else -> null
+    }?.takeIf { open }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(h.ink(0.06f))
+            .clickable { runCatching { uri.openUri(pr.url) } }
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icon(painterResource(glyph), null, Modifier.size(11.dp), tint = tint)
+        Text("#${pr.number}", fontFamily = Mono, fontSize = 11.sp, color = tint)
+        if (dot != null) Box(Modifier.size(5.dp).clip(CircleShape).background(dot))
     }
 }
