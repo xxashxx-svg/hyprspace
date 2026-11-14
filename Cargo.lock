@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "gpui",
  "gpui_platform",
@@ -3103,7 +3103,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-engine"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -3138,7 +3138,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-far"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "iroh",
  "tokio",
@@ -3146,7 +3146,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-harness"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "base64 0.22.1",
  "hyprspace-proto",
@@ -3159,7 +3159,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-media"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "block2 0.6.2",
  "objc2 0.6.4",
@@ -3175,7 +3175,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-notify"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -3186,7 +3186,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-proto"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "futures",
  "serde",
@@ -3195,7 +3195,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-syntax"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "tree-sitter",
  "tree-sitter-bash",
@@ -3220,11 +3220,11 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-theme"
-version = "0.24.52"
+version = "0.24.53"
 
 [[package]]
 name = "hyprspace-ui"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "alacritty_terminal",
  "chrono",
@@ -3246,7 +3246,7 @@ dependencies = [
 
 [[package]]
 name = "hyprspace-update"
-version = "0.24.52"
+version = "0.24.53"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

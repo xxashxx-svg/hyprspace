@@ -4,6 +4,14 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.53 — 2026-11-14
+
+- Fable 5.2 in the model list, with fast mode
+- GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna and GPT-6.1 Terra in the Codex list
+- Fable 5.2, Sonnet 5.5 and Haiku 5.5 start at Medium effort, as in Claude Code
+- Settings shows whether each phone and computer is on LAN, Tailscale or Anywhere
+- The phone app shows each thread's pull request and its checks
+
 ## 0.24.52 — 2026-11-11
 
 - Phones can now reach a computer set to Anywhere from any network, with the latest Android app
