@@ -4,6 +4,13 @@ Release notes for HyprSpace. Written **at ship time** — when you ask to ship, 
 changed since the last release and writes a few user-facing bullets; `deploy.ps1` records them here
 and uses them as the release notes + the in-app "What's new" notification. No per-task bookkeeping.
 
+## 0.24.54 — 2026-11-26
+
+- Sharper text everywhere, with thinner icons to match
+- A tidier composer, settings and sidebar
+- Deeper green and red for diff counts on light themes
+- The phone app gets your theme's code colors, fast mode and approvals it can answer from a notification
+
 ## 0.24.53 — 2026-11-14
 
 - Fable 5.2 in the model list, with fast mode
