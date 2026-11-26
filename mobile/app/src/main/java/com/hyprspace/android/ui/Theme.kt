@@ -60,6 +60,8 @@ data class Hues(
     val termFg: Color,
     val cursor: Color,
     val ansi: List<Color>,
+    /** Code colors, in [com.hyprspace.android.model.Tint]'s order. */
+    val syntax: List<Color>,
 ) {
     /** The theme's ink at an alpha: lines and washes, white on dark and black on light. */
     fun ink(a: Float) = ink.copy(alpha = a)
@@ -78,6 +80,15 @@ fun hues(p: Palette, dark: Boolean) = Hues(
     diffAdd = rgba(p.diffAdd), diffDel = rgba(p.diffDel),
     termBg = rgba(p.termBg), termFg = rgba(p.termFg), cursor = rgba(p.cursor),
     ansi = p.ansi.map(::rgba),
+    // a desktop from before it sent code colors: the terminal's own, which every theme has
+    syntax = p.syntax.takeIf { it.size == 8 }?.map(::rgba)
+        ?: listOf(5, 2, 3, -1, 4, 6, 1, -2).map { i ->
+            when (i) {
+                -1 -> rgba(p.text3)
+                -2 -> rgba(p.text2)
+                else -> p.ansi.getOrNull(i)?.let(::rgba) ?: rgba(p.text1)
+            }
+        },
 )
 
 /** The default theme, from crates/theme's build("t3", ...). */
@@ -89,7 +100,7 @@ val DefaultTheme = BoardTheme(
         text1 = 0x1B1B1BFF, text2 = 0x585858FF, text3 = 0x808080FF,
         border0 = 0x0000000D, border1 = 0x00000014, border2 = 0x00000021, ink = 0x000000FF,
         busy = 0xF59E0BFF, waiting = 0x3B82F6FF, ok = 0x10B981FF, error = 0xEF4444FF,
-        diffAdd = 0x059669FF, diffDel = 0xDC2626FF,
+        diffAdd = 0x047857FF, diffDel = 0xB91C1CFF,
         termBg = 0xF7F7F7FF, termFg = 0x222222FF, cursor = 0x1B1B1BFF,
         ansi = listOf(
             0x282C34FF, 0xC4283CFF, 0x248444FF, 0xAA7400FF, 0x1E64D6FF, 0x923CBAFF, 0x00869AFF, 0x78808CFF,

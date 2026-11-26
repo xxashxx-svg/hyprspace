@@ -36,7 +36,7 @@ fn shape(
     window: &mut Window,
 ) -> Vec<(usize, WrappedLine)> {
     let (text, color): (SharedString, _) = if input.content.is_empty() {
-        (input.placeholder.clone(), colors::text3())
+        (input.placeholder.clone(), colors::text2())
     } else {
         (input.content.clone().into(), style.color)
     };

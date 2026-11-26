@@ -97,7 +97,7 @@ pub fn bar(v: &TranscriptView, s: &Sender, cx: &mut Context<TranscriptView>) -> 
         Some(secs) => format!("Working {} \u{b7} reports back to {}", took(secs), s.title),
         None => format!("Reports back to {}", s.title),
     };
-    widgets::composer_box(false)
+    widgets::composer_box()
         .child(
             div()
                 .flex()

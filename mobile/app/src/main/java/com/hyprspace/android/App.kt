@@ -7,11 +7,13 @@ import android.provider.Settings
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.hyprspace.android.data.Notes
 import com.hyprspace.android.data.Store
 import com.hyprspace.android.net.Link
 import com.hyprspace.android.service.LinkService
 import com.hyprspace.android.service.Notifier
 import com.hyprspace.android.update.Updater
+import com.hyprspace.android.widget.UsageWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +34,9 @@ class App : Application() {
         private set
     lateinit var updater: Updater
         private set
+    lateinit var notes: Notes
+        private set
+    private lateinit var shortcuts: Shortcuts
     val nav = com.hyprspace.android.ui.Nav()
     private var pause: Job? = null
     private var quiet: Job? = null
@@ -42,15 +47,34 @@ class App : Application() {
         link = Link(store, scope)
         notifier = Notifier(this, store)
         updater = Updater(this, scope)
+        notes = Notes(this, store)
+        shortcuts = Shortcuts(this)
         link.finder = { fingerprint -> com.hyprspace.android.net.find(this, fingerprint) }
         Link.deviceName = {
             Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
                 ?: android.os.Build.MODEL
         }
-        scope.launch { link.board.collect { b -> b?.let(notifier::board) } }
+        scope.launch {
+            link.board.collect { b ->
+                b ?: return@collect
+                notifier.board(b)
+                shortcuts.sync(b)
+                notes.prune(b.threads.map { it.id }.toSet())
+                val now = System.currentTimeMillis()
+                val kept = store.saved.value
+                // the same numbers still move the widget's time on, but not on every board
+                if (b.usage.isNotEmpty() && (b.usage != kept.usage || now - kept.usageAt > 5 * 60_000)) {
+                    store.update { it.copy(usage = b.usage, usageAt = now) }
+                    UsageWidget.refresh(this@App)
+                }
+            }
+        }
         // a computer that removed this phone takes the background connection with it
         scope.launch {
-            store.saved.map { it.current() != null }.distinctUntilChanged().drop(1).collect { LinkService.sync(this@App) }
+            store.saved.map { it.current() != null }.distinctUntilChanged().drop(1).collect { paired ->
+                LinkService.sync(this@App)
+                if (!paired) shortcuts.sync(null)
+            }
         }
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(
             object : ConnectivityManager.NetworkCallback() {
@@ -72,6 +96,7 @@ class App : Application() {
 
             override fun onStop(owner: LifecycleOwner) {
                 notifier.foreground = false
+                notifier.left()
                 link.awake = false
                 quiet = scope.launch {
                     delay(60_000)

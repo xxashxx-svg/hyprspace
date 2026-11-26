@@ -306,7 +306,7 @@ impl Root {
                 .h(px(32.))
                 .px(px(10.))
                 .rounded(px(6.))
-                .text_size(px(13.))
+                .text_size(px(14.))
                 .cursor_pointer()
                 .when(on, |d| {
                     d.bg(colors::ink(0.07))
@@ -319,8 +319,8 @@ impl Root {
                 })
                 .child(icon(
                     e.icon,
-                    15.,
-                    if on { colors::text1() } else { colors::text3() },
+                    16.,
+                    if on { colors::text1() } else { colors::text2() },
                 ))
                 .child(e.label)
                 .on_click(cx.listener(move |r, _: &ClickEvent, _, cx| {
@@ -339,11 +339,11 @@ impl Root {
             .h(px(32.))
             .px(px(10.))
             .rounded(px(6.))
-            .text_size(px(13.))
+            .text_size(px(14.))
             .text_color(colors::text2())
             .cursor_pointer()
             .hover(|s| s.bg(colors::ink(0.04)).text_color(colors::text1()))
-            .child(icon("arrow-left", 15., colors::text3()))
+            .child(icon("arrow-left", 16., colors::text2()))
             .child(div().flex_1().child("Back"))
             .when(!searching, |d| d.child(widgets::keycap("Esc")))
             .on_click(cx.listener(|r, _: &ClickEvent, window, cx| r.close_settings(window, cx)));

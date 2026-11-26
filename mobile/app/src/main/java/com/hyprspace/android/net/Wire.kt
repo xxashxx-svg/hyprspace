@@ -141,7 +141,7 @@ sealed interface Ask {
     data class Interrupt(val thread: Long) : Ask
 
     @Serializable @SerialName("new")
-    data class New(val space: Long, val start: NewThread, val folder: String? = null) : Ask
+    data class New(val space: Long, val start: NewThread, val folder: String? = null, val request: Long? = null) : Ask
 
     @Serializable @SerialName("settle")
     data class Settle(val thread: Long, val on: Boolean) : Ask
@@ -150,7 +150,12 @@ sealed interface Ask {
     data class Snooze(val thread: Long, val until: SnoozeUntil) : Ask
 
     @Serializable @SerialName("model")
-    data class Model(val thread: Long, val model: String, val effort: String) : Ask
+    data class Model(
+        val thread: Long,
+        val model: String,
+        val effort: String,
+        @EncodeDefault(EncodeDefault.Mode.NEVER) val fast: Boolean = false,
+    ) : Ask
 
     @Serializable @SerialName("pin")
     data class Pin(val thread: Long, val on: Boolean) : Ask
@@ -196,6 +201,7 @@ data class NewThread(
     val permission: Permission,
     val terminal: Boolean,
     val prompt: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val images: List<String> = emptyList(),
 )
 
 // ---- desktop to phone ----
@@ -246,6 +252,10 @@ sealed interface Down {
 
     @Serializable @SerialName("folder")
     data class Folder(val event: FolderEvt) : Down
+
+    /** The thread an [Ask.New] with a request made. */
+    @Serializable @SerialName("started")
+    data class Started(val request: Long, val thread: Long) : Down
 }
 
 /** What the phone may ask about a thread's folder: read it, and work its git. */
@@ -411,6 +421,10 @@ data class BoardThread(
     val parent: Long? = null,
     /** The pull request from its branch. */
     val pr: Pr? = null,
+    /** Whether fast mode is on, when its model has one. */
+    val fast: Boolean? = null,
+    /** The tool approval it waits on, which a plain allow or deny answers. */
+    val ask: String? = null,
 )
 
 @Serializable
@@ -551,6 +565,8 @@ data class Palette(
     val termFg: Long = 0,
     val cursor: Long = 0,
     val ansi: List<Long> = emptyList(),
+    /** Code colors: keyword, string, number, comment, function, type, constant, punctuation. */
+    val syntax: List<Long> = emptyList(),
 )
 
 @Serializable

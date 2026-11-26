@@ -8,6 +8,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +44,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hyprspace.android.App
 import com.hyprspace.android.R
+import com.hyprspace.android.data.Notes
 import com.hyprspace.android.net.Ask
 import com.hyprspace.android.net.Board
 import com.hyprspace.android.net.BoardKind
@@ -82,6 +88,7 @@ import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.Pill
+import com.hyprspace.android.ui.Shared
 import com.hyprspace.android.ui.SpaceTag
 import com.hyprspace.android.ui.StatusMark
 import com.hyprspace.android.ui.UpdateStrip
@@ -91,6 +98,8 @@ import com.hyprspace.android.ui.elapsed
 import com.hyprspace.android.ui.feel
 import com.hyprspace.android.ui.felt
 import com.hyprspace.android.ui.start.NewThreadScreen
+import com.hyprspace.android.ui.start.OpenStarted
+import com.hyprspace.android.ui.thread.STARTED
 import com.hyprspace.android.ui.ticking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -125,7 +134,27 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
         before = null
         onOpen(made.id)
     }
+    var asked by remember { mutableStateOf<Long?>(null) }
+    OpenStarted(app, asked) {
+        asked = null
+        onOpen(it)
+    }
     val name = (conn as? Conn.Online)?.desktop ?: saved.current()?.name ?: "HyprSpace"
+    val list = rememberLazyListState()
+    val atTop by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
+    // the space the list is narrowed to, while it still has threads
+    val only = saved.space?.takeIf { id -> board?.threads?.any { it.space == id } == true }
+    // where New thread starts: the narrowed space, else the space of the thread on top
+    val fresh = {
+        val b = board
+        only ?: b?.threads?.filter { it.shelf == Shelf.Active }?.maxByOrNull { it.rank }?.space ?: b?.spaces?.firstOrNull()?.id
+    }
+    LaunchedEffect(app.nav.starting, board == null) {
+        if (app.nav.starting && board != null) {
+            starting = fresh()
+            app.nav.starting = false
+        }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         query?.let { q -> Search(q, onQuery = { query = it }, onClose = { query = null }) } ?: Row(
@@ -166,6 +195,7 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
         ConnStrip(conn) { app.link.start(); app.link.nudge() }
         val update by app.updater.state.collectAsStateWithLifecycle()
         UpdateStrip(update) { app.updater.install() }
+        app.nav.shared?.let { SharedStrip(it) { app.nav.shared = null } }
         Crossfade(
             board == null,
             Modifier.weight(1f).clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)).background(h.canvas),
@@ -177,13 +207,23 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
             } else {
                 val q = query?.trim().orEmpty()
                 val names = b.spaces.associate { it.id to it.name }
-                val found = if (q.isEmpty()) b else b.copy(
+                val found = b.copy(
                     threads = b.threads.filter { t ->
-                        t.title.contains(q, ignoreCase = true) || names[t.space].orEmpty().contains(q, ignoreCase = true)
+                        if (q.isEmpty()) {
+                            only == null || t.space == only
+                        } else {
+                            t.title.contains(q, ignoreCase = true) || names[t.space].orEmpty().contains(q, ignoreCase = true)
+                        }
                     },
                 )
                 Threads(
                     found,
+                    list = list,
+                    notes = app.notes,
+                    // only worth a row when there's more than one space to pick from
+                    filters = b.spaces.filter { s -> b.threads.any { it.space == s.id } }.takeIf { it.size > 1 && q.isEmpty() }.orEmpty(),
+                    only = only,
+                    onFilter = { id -> app.store.update { it.copy(space = id) } },
                     current = current,
                     searching = q.isNotEmpty(),
                     onOpen = onOpen,
@@ -223,12 +263,9 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
     if (board?.spaces?.isNotEmpty() == true) {
         Box(Modifier.fillMaxSize().navigationBarsPadding().padding(20.dp), contentAlignment = Alignment.BottomEnd) {
             ExtendedFloatingActionButton(
-                // the space of the thread on top, where work last started
-                onClick = {
-                    val b = board
-                    starting = b?.threads?.filter { it.shelf == Shelf.Active }?.maxByOrNull { it.rank }?.space
-                        ?: b?.spaces?.firstOrNull()?.id
-                },
+                onClick = { starting = fresh() },
+                // out of the way of the rows once the list moves
+                expanded = atTop,
                 containerColor = h.accent,
                 contentColor = h.onAccent,
                 shape = RoundedCornerShape(14.dp),
@@ -246,9 +283,76 @@ fun HomeScreen(app: App, onOpen: (Long) -> Unit, onSettings: () -> Unit, onPair:
                 space,
                 name,
                 onDismiss = { starting = null },
-                onStarted = { before = b.threads.map { it.id }.toSet() },
+                onStarted = { request ->
+                    if (app.link.desktopAtLeast(STARTED)) asked = request else before = b.threads.map { it.id }.toSet()
+                },
+                shared = app.nav.shared,
+                onShared = { app.nav.shared = null },
             )
         }
+    }
+}
+
+/** Something another app shared is waiting for a thread to take it. */
+@Composable
+private fun SharedStrip(shared: Shared, onCancel: () -> Unit) {
+    val h = LocalHues.current
+    val what = when {
+        shared.files.isEmpty() -> "the text you shared"
+        shared.files.size == 1 -> "the file you shared"
+        else -> "the ${shared.files.size} files you shared"
+    }
+    Row(
+        Modifier.fillMaxWidth().background(h.waiting.copy(alpha = 0.12f)).padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Pick a thread for $what, or start a new one.",
+            Modifier.weight(1f).padding(vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = h.text1,
+        )
+        IconButton(onClick = onCancel) {
+            Icon(painterResource(R.drawable.ic_x), "Don't send it", Modifier.size(16.dp), tint = h.text2)
+        }
+    }
+}
+
+/** One chip per space with threads, and All: tapping one narrows the list to it. */
+@Composable
+private fun Filters(spaces: List<BoardSpace>, only: Long?, onFilter: (Long?) -> Unit) {
+    val h = LocalHues.current
+    val host = LocalView.current
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val chip = @Composable { space: BoardSpace? ->
+            val on = space?.id == only
+            Row(
+                Modifier
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(h.ink(if (on) 0.12f else 0.05f))
+                    .clickableQuiet {
+                        host.feel(Feel.Tick)
+                        onFilter(space?.id.takeIf { !on })
+                    }
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                if (space != null) SpaceTag(space, 15.dp)
+                Text(
+                    space?.name ?: "All",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (on) h.text1 else h.text2,
+                    maxLines = 1,
+                )
+            }
+        }
+        chip(null)
+        for (s in spaces) chip(s)
     }
 }
 
@@ -283,6 +387,7 @@ private sealed interface Row {
     data class Child(val thread: BoardThread, val last: Boolean) : Row { override val key = "t${thread.id}" }
     data class Shelf(val name: String, val count: Int, val open: Boolean) : Row { override val key = "shelf$name" }
     data object Empty : Row { override val key = "empty" }
+    data object Filters : Row { override val key = "filters" }
 }
 
 /**
@@ -292,6 +397,11 @@ private sealed interface Row {
 @Composable
 private fun Threads(
     b: Board,
+    list: LazyListState,
+    notes: Notes,
+    filters: List<BoardSpace>,
+    only: Long?,
+    onFilter: (Long?) -> Unit,
     current: Long?,
     searching: Boolean,
     onOpen: (Long) -> Unit,
@@ -324,6 +434,7 @@ private fun Threads(
     val spaces = b.spaces.associateBy { it.id }
     val shown = b.threads.filter { it.id !in gone }
     val rows = buildList {
+        if (filters.isNotEmpty()) add(Row.Filters)
         val active = shown.filter { it.shelf == Shelf.Active }.sortedByDescending { it.rank }
         if (active.isEmpty()) add(Row.Empty)
         // a delegated thread stays under the thread that sent it
@@ -356,9 +467,10 @@ private fun Threads(
         if (host.felt(onSettle(t.id, false))) hide(t) else resets[t.id] = (resets[t.id] ?: 0) + 1
     }
     val now = ticking(b.threads.any { it.since != null })
-    LazyColumn(Modifier.fillMaxSize().clipToBounds(), contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)) {
+    LazyColumn(Modifier.fillMaxSize().clipToBounds(), state = list, contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)) {
         items(rows, key = { it.key }) { r ->
             when (r) {
+                Row.Filters -> Filters(filters, only, onFilter)
                 is Row.Thread -> {
                     val t = r.thread
                     val right = if (r.shelved) {
@@ -372,7 +484,7 @@ private fun Threads(
                         null
                     }
                     SwipeRow(left, right, resets[t.id] ?: 0, Modifier.animateItem()) {
-                        ThreadRow(t, r.space, r.shelved, now, t.id == current, onOpen) { holding = r }
+                        ThreadRow(t, r.space, r.shelved, notes.unread(t), now, t.id == current, onOpen) { holding = r }
                     }
                 }
                 is Row.Child -> Box(Modifier.animateItem()) {
@@ -397,10 +509,16 @@ private fun Threads(
     holding?.let { r ->
         val t = r.thread
         val close = { holding = null }
+        val read = if (notes.unread(t)) {
+            Action("Mark read", R.drawable.ic_check) { close(); host.feel(Feel.Tick); notes.markRead(t) }
+        } else {
+            Action("Mark unread", R.drawable.ic_circle_dot) { close(); host.feel(Feel.Tick); notes.markUnread(t.id) }
+        }
         val actions = if (r.shelved) {
-            listOf(Action("Bring back", R.drawable.ic_archive_restore) { close(); bringBack(t) })
+            listOf(read, Action("Bring back", R.drawable.ic_archive_restore) { close(); bringBack(t) })
         } else {
             listOfNotNull(
+                read,
                 onPin?.let {
                     if (t.pinned) {
                         Action("Unpin", R.drawable.ic_pin_off) { close(); host.felt(it(t.id, false)) }
@@ -511,6 +629,7 @@ private fun ThreadRow(
     t: BoardThread,
     space: BoardSpace?,
     shelved: Boolean,
+    unread: Boolean,
     now: Long,
     selected: Boolean,
     onOpen: (Long) -> Unit,
@@ -518,8 +637,8 @@ private fun ThreadRow(
 ) {
     val h = LocalHues.current
     val waiting = t.status == BoardStatus.Waiting
-    // background work takes less attention than a thread that needs you
-    val recede = t.status == BoardStatus.Working
+    // the desktop sidebar's rule: a thread that needs nothing from you reads quieter
+    val recede = !selected && !unread && !waiting && t.status != BoardStatus.Failed
     Column(
         Modifier
             .fillMaxWidth()
@@ -558,12 +677,17 @@ private fun ThreadRow(
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (recede) FontWeight.Normal else FontWeight.Medium,
-                color = h.text1,
+                color = if (recede) h.text1.copy(alpha = 0.75f) else h.text1,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(8.dp))
-            StatusMark(t.status)
+            when {
+                // a finished thread keeps its check only until it's read, as on the desktop
+                t.status == BoardStatus.Done -> if (unread) StatusMark(t.status)
+                unread && t.status == BoardStatus.Idle -> Box(Modifier.size(8.dp).clip(CircleShape).background(h.accent))
+                else -> StatusMark(t.status)
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AgentMark(t.agent, 12.dp)

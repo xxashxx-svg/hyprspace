@@ -225,8 +225,8 @@ fn make(hue: f64, tint: f64, (al, ac): (f64, f64), dark: bool) -> Theme {
             waiting: status.waiting,
             ok: status.ok,
             error: status.error,
-            diff_add: Color::rgb(0x059669),
-            diff_del: Color::rgb(0xdc2626),
+            diff_add: Color::rgb(0x047857),
+            diff_del: Color::rgb(0xb91c1c),
             term_fg: oklch(0.25, tint, hue),
             cursor: oklch(al, ac, hue),
             selection: if ac > 0.0 {

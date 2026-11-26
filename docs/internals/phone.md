@@ -179,6 +179,27 @@ fonts (Geist, and the terminal's Nerd Font build).
   play nothing on older phones, so each kind names a fallback that exists from Android 10. The
   thread on screen gets no notification, so it buzzes instead: ticks while a reply streams, a
   firmer one when it waits on you, and one when the run ends.
+- Allow and Deny sit on the notification itself when the thread waits on a plain tool approval,
+  which the board names in the thread's `ask`. Questions and plans need the thread open, so they
+  get no buttons. Allow asks for the phone's unlock (`setAuthenticationRequired`), and before
+  Android 12, where nothing enforces that, only Deny is offered. The answer goes over the line
+  the service already holds; if it can't, the notification comes back saying so.
+- What's read is the phone's own (`data/Notes.kt`). The board's `unseen` only clears when the
+  thread is opened on the computer, so the phone keeps the `touched` each thread had when it last
+  showed it, and a row is unread while `unseen` is set and that differs. Drafts live in the same
+  file, per computer and thread, since every computer numbers its threads from the start.
+- Code is colored on the phone by `model/Highlight.kt`, which reads characters rather than
+  grammar: tree-sitter's grammars are native code the app would carry for every language, and a
+  block that is still streaming in has to color without failing. The colors are the theme's own,
+  in the palette's `syntax`; a desktop from before it sent them gets the terminal's ANSI colors.
+- A model pick sends fast mode along (`Ask::Model.fast`, from the board's `fast`), because the
+  computer reads a pick without it as fast mode switched off.
+- A thread the phone starts opens from `Down::Started`, which names it. Guessing it from the
+  board's new ids, as a fork still does, opens the wrong thread when two appear together.
+- The usage widget draws what the app last saved from the board. A widget can't hold a
+  connection, so it shows when its numbers are from.
+- What another app shares (text, photos, files) waits in `Nav.shared` until the user picks a
+  thread or starts one; it becomes that thread's draft and attachments, or a paste in a terminal.
 - The QR reader is ML Kit from Google Play services, which fetches its model once; bundling it
   would add 20 MB of native code.
 - The wire fixtures in `app/src/test/resources/wire` are written by the proto test

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.hyprspace.android.net.BoardTheme
+import com.hyprspace.android.net.BoardUsage
 import com.hyprspace.android.net.Desktop
 import com.hyprspace.android.net.wire
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,11 @@ data class Saved(
     /** On top of the phone's own font size. */
     val textScale: Float = 1f,
     val theme: BoardTheme? = null,
+    /** The space the thread list is narrowed to. */
+    val space: Long? = null,
+    /** The plan limits the computer last sent, for the home screen widget, and when (unix ms). */
+    val usage: List<BoardUsage> = emptyList(),
+    val usageAt: Long = 0,
 ) {
     fun current(): Desktop? = desktops.firstOrNull { it.id == active } ?: desktops.firstOrNull()
 }

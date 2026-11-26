@@ -37,7 +37,7 @@ pub(super) fn page(title: &str, desc: &str, body: impl IntoElement) -> Div {
                     .mt(px(4.))
                     .px(px(4.))
                     .text_size(px(13.))
-                    .text_color(colors::text3())
+                    .text_color(colors::text2())
                     .child(desc.to_string()),
             )
             .child(div().mt(px(26.)).flex().flex_col().gap(px(28.)).child(body)),
@@ -53,8 +53,9 @@ pub(super) fn section(title: &str, block: impl IntoElement) -> Div {
         .child(
             div()
                 .px(px(4.))
-                .text_size(px(13.))
-                .text_color(colors::text3())
+                .text_size(px(16.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(colors::text1())
                 .child(title.to_string()),
         )
         .child(block)
@@ -98,7 +99,7 @@ pub(super) fn row(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(13.))
+                    .text_size(px(14.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors::text1())
                     .child(name.into()),
@@ -139,7 +140,7 @@ pub(super) fn row_with(
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(px(14.))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(colors::text1())
                         .child(name.into()),
@@ -161,7 +162,7 @@ pub(super) fn row_with(
 pub(super) fn text(desc: impl Into<SharedString>) -> Div {
     div()
         .text_size(px(12.))
-        .text_color(colors::text3())
+        .text_color(colors::text2())
         .child(desc.into())
 }
 

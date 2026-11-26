@@ -437,12 +437,23 @@ class Link(private val store: Store, private val scope: CoroutineScope) {
             is Down.Uploaded -> uploads.remove(d.id)?.complete(d)
             is Down.Fetched -> fetches.remove(d.id)?.complete(d)
             is Down.Folder -> _folder.tryEmit(d.event)
+            is Down.Started -> _started.tryEmit(d.request to d.thread)
             is Down.Welcome, is Down.Denied, Down.Pong -> {}
         }
     }
 
     fun transcript(thread: Long): StateFlow<TranscriptView> = synchronized(lock) {
         transcripts.getOrPut(thread) { Transcript() to MutableStateFlow(TranscriptView()) }.second
+    }
+
+    private val _started = MutableSharedFlow<Pair<Long, Long>>(extraBufferCapacity = 4)
+    /** Each new thread the phone asked for: the request [start] returned, and the thread. */
+    val started: SharedFlow<Pair<Long, Long>> = _started
+
+    /** Asks for a new thread and returns the request its [started] will carry, or null when offline. */
+    fun start(space: Long, start: NewThread, folder: String?): Long? {
+        val request = nextUpload.getAndIncrement()
+        return request.takeIf { ask(Ask.New(space, start, folder, request)) }
     }
 
     private val _commands = MutableStateFlow<List<Slash>>(emptyList())

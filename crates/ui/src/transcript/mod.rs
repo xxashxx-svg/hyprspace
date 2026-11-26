@@ -591,6 +591,22 @@ impl TranscriptView {
         &self.model.background
     }
 
+    /// The tool approval this waits on, if it's one a plain allow or deny answers.
+    pub fn approval(&self) -> Option<String> {
+        self.model.items.iter().find_map(|i| match i {
+            Item::Approval {
+                request,
+                tool,
+                answer: None,
+                expired: false,
+                ..
+            } if !self.held.contains(request) && ask::named(tool).is_none() => {
+                Some(request.clone())
+            }
+            _ => None,
+        })
+    }
+
     pub fn background_work(&self) -> Vec<String> {
         self.model
             .background
@@ -1073,7 +1089,11 @@ impl TranscriptView {
         }
         self.pick_model(model, cx);
         self.pick_effort(effort, cx);
-        self.pick_fast(fast, cx);
+        let model = self.launch.model.as_deref().unwrap_or_default();
+        self.pick_fast(
+            fast && crate::models::takes_fast(self.launch.agent, model),
+            cx,
+        );
     }
 
     fn pick_model(&mut self, model: String, cx: &mut Context<Self>) {
@@ -1877,7 +1897,7 @@ pub fn bind_keys(cx: &mut gpui::App) {
     );
 }
 
-const IDLE_HINT: &str = "Reply. @ for files, / for commands";
+const IDLE_HINT: &str = "Ask anything. @ for files, / for commands";
 const CONTINUE: &str = "The usage limit has reset. Continue where you left off.";
 const RESUME: &str = "The app closed before your last run finished. Continue where you left off.";
 

@@ -64,13 +64,15 @@ import com.hyprspace.android.ui.Mono
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.feel
 import com.hyprspace.android.ui.thread.Diff
+import com.hyprspace.android.ui.thread.colorize
 
 private enum class Tab { Changes, Files }
 
 /** What the screen shows over its tab: one file's diff, or one file's text. */
 private sealed interface Open {
-    data class Diff(val path: String) : Open
-    data class Read(val path: String) : Open
+    val path: String
+    data class Diff(override val path: String) : Open
+    data class Read(override val path: String) : Open
 }
 
 @Composable
@@ -388,7 +390,12 @@ private fun Shown(open: Open, text: Result<String>?) {
             if (d.isBlank()) Quiet("No changes to show.") else Diff(open.path, d)
         }
         else -> {
-            val lines = text.getOrThrow().lines()
+            val whole = text.getOrThrow()
+            val styled = remember(whole, open.path, h) { colorize(whole, name(open.path), h) }
+            val lines = remember(styled) {
+                var at = 0
+                whole.split('\n').map { l -> styled.subSequence(at, at + l.length).also { at += l.length + 1 } }
+            }
             val gutter = "${lines.size}".length
             Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {

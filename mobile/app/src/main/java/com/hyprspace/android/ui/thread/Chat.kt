@@ -25,6 +25,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -60,6 +61,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -76,6 +78,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -88,12 +92,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.TextFieldValue
@@ -127,6 +135,7 @@ import com.hyprspace.android.ui.Eclipse
 import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
+import com.hyprspace.android.ui.Shared
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.elapsed
 import com.hyprspace.android.ui.feel
@@ -217,7 +226,7 @@ fun Chat(
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
     onAnswer: Answers,
-    attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
+    attach: (@Composable ((Attachment) -> Unit) -> Attach)?,
     modifier: Modifier = Modifier,
     model: (@Composable (Boolean) -> Unit)? = null,
     extras: Extras? = null,
@@ -226,12 +235,17 @@ fun Chat(
     onEarlier: (() -> Unit)? = null,
     commands: List<Slash> = emptyList(),
     onFork: ((Int, String) -> Unit)? = null,
+    // what was left in the box last time, and where to keep what's in it now
+    kept: String = "",
+    onKeep: (String) -> Unit = {},
+    shared: Shared? = null,
+    onShared: () -> Unit = {},
 ) {
     val h = LocalHues.current
     val host = LocalView.current
     var unfolded by remember { mutableStateOf(setOf<String>()) }
     val runs = remember(view.items) { folds(view.items) }
-    val shown = remember(runs, unfolded) { fold(view.items, runs, unfolded) }
+    val shown = remember(view.items, runs, unfolded) { fold(view.items, runs, unfolded) }
     val ending = remember(view.items) { ends(view.items) }
     // a run that ended well shows its time under the reply instead of on a line of its own
     val footed = remember(ending) { ending.values.filter { it.status == RunStatus.Done }.map { it.key }.toSet() }
@@ -247,7 +261,13 @@ fun Chat(
     }
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(working) { if (!working) stopping = false }
-    var draft by rememberSaveable { mutableStateOf("") }
+    var draft by rememberSaveable { mutableStateOf(kept) }
+    val keep by rememberUpdatedState(onKeep)
+    LaunchedEffect(draft) {
+        delay(400)
+        keep(draft)
+    }
+    DisposableEffect(Unit) { onDispose { keep(draft) } }
     // laid out from the bottom, so a growing reply stays pinned to the box without scrolling
     val list = rememberLazyListState()
     var stuck by remember { mutableStateOf(true) }
@@ -440,6 +460,9 @@ fun Chat(
             attach = attach,
             model = model,
             commands = commands,
+            context = view.context,
+            shared = shared,
+            onShared = onShared,
         )
     }
 }
@@ -1128,9 +1151,12 @@ private fun Composer(
     ultra: Boolean,
     onSend: (String, List<String>) -> Unit,
     onStop: () -> Unit,
-    attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))?,
+    attach: (@Composable ((Attachment) -> Unit) -> Attach)?,
     model: (@Composable (Boolean) -> Unit)?,
     commands: List<Slash>,
+    context: Pair<Long, Long>?,
+    shared: Shared?,
+    onShared: () -> Unit,
 ) {
     val h = LocalHues.current
     val text = draft
@@ -1142,10 +1168,18 @@ private fun Composer(
     if (offered.isNotEmpty()) Slashes(offered) { onDraft("/${it.name} ") }
     val glow = ultra && saysUltrathink(text)
     val photos = remember { mutableStateListOf<Attachment>() }
-    val pick = attach?.invoke { p ->
+    val attached = attach?.invoke { p ->
         val i = photos.indexOfFirst { it.key == p.key }
         if (i >= 0) photos[i] = p else photos.add(p)
     }
+    val pick = attached?.pick
+    LaunchedEffect(shared) {
+        shared ?: return@LaunchedEffect
+        if (shared.text.isNotBlank()) onDraft(if (text.isBlank()) shared.text else "$text\n\n${shared.text}")
+        attached?.add?.invoke(shared.files)
+        onShared()
+    }
+    val full = context?.takeIf { it.second > 0 }?.let { (it.first.toFloat() / it.second).coerceIn(0f, 1f) }
     val ready = photos.none { it.path == null && !it.failed }
     val sendable = (text.isNotBlank() || photos.any { it.path != null }) && ready
     var focused by remember { mutableStateOf(false) }
@@ -1235,6 +1269,8 @@ private fun Composer(
                 )
             }
             if (!open) {
+                // closed, the ring only shows once the window is filling up
+                if (full != null && full >= 0.7f) ContextRing(full, label = false)
                 model?.invoke(true)
                 send()
             }
@@ -1243,10 +1279,37 @@ private fun Composer(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 plus()
                 Spacer(Modifier.weight(1f))
+                if (full != null) ContextRing(full, label = true)
                 if (model != null) Box(Modifier.padding(end = 6.dp)) { model(false) }
                 send()
             }
         }
+    }
+}
+
+/** How full the agent's context window is: a ring that warms as it fills. */
+@Composable
+private fun ContextRing(full: Float, label: Boolean) {
+    val h = LocalHues.current
+    val tint = when {
+        full >= 0.9f -> h.error
+        full >= 0.7f -> h.busy
+        else -> h.text3
+    }
+    val track = h.ink(0.1f)
+    val percent = (full * 100).roundToInt()
+    Row(
+        Modifier.padding(horizontal = 6.dp).semantics { contentDescription = "Context $percent% full" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Canvas(Modifier.size(14.dp)) {
+            val w = 2.dp.toPx()
+            val box = Size(size.width - w, size.height - w)
+            drawArc(track, 0f, 360f, false, Offset(w / 2, w / 2), box, style = Stroke(w))
+            drawArc(tint, -90f, 360f * full, false, Offset(w / 2, w / 2), box, style = Stroke(w, cap = StrokeCap.Round))
+        }
+        if (label) Text("$percent%", style = MaterialTheme.typography.labelMedium, color = tint)
     }
 }
 

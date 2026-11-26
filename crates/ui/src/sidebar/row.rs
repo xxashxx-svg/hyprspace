@@ -673,7 +673,7 @@ impl Root {
         let quiet =
             !selected && !unseen && !waiting && status != Status::Failed && t.resume_at.is_none();
         let group: SharedString = format!("row-{id}").into();
-        let title: AnyElement = match self.rename_box(id, false, px(13.5), FontWeight::MEDIUM) {
+        let title: AnyElement = match self.rename_box(id, false, px(14.), FontWeight::MEDIUM) {
             Some(rename) => rename,
             None if let Some((shown, caret)) = self.typed(id, &t.title) => div()
                 .flex()
@@ -684,7 +684,7 @@ impl Root {
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(13.5))
+                        .text_size(px(14.))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(if self.naming(id) {
                             colors::text2()
@@ -706,7 +706,7 @@ impl Root {
             None => div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.5))
+                .text_size(px(14.))
                 .font_weight(if quiet {
                     FontWeight::NORMAL
                 } else {
@@ -850,7 +850,7 @@ impl Root {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(11.5))
+                            .text_size(px(12.))
                             .text_color(match look.hue {
                                 Some(h) => colors::tag(&space, Some(h)).1,
                                 None => colors::text3(),

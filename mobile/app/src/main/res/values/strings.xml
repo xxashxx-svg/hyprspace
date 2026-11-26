@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">HyprSpace</string>
+    <string name="widget_usage">Usage</string>
+    <string name="widget_usage_about">Your Claude and Codex plan limits, as of the last time the app was connected to your computer.</string>
+    <string name="widget_usage_empty">Open HyprSpace while your computer is on to load your limits.</string>
 </resources>

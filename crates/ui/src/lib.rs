@@ -44,6 +44,8 @@ pub use root::Root;
 /// Binds the app's keys. Call once before opening the window.
 pub fn init(cx: &mut gpui::App) {
     assets::load_fonts(cx);
+    // Windows' ClearType default fringes light text on dark themes; browsers draw grayscale.
+    cx.set_text_rendering_mode(gpui::TextRenderingMode::Grayscale);
     input::bind_keys(cx);
     workbench::bind_keys(cx);
     palette::bind_keys(cx);

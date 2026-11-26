@@ -19,6 +19,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -170,6 +172,43 @@ internal fun PickRow(label: String, note: String, on: Boolean, badge: Boolean = 
             if (on) "Current" else null,
             Modifier.padding(start = 10.dp).size(18.dp).alpha(if (on) 1f else 0f),
             tint = h.accent,
+        )
+    }
+}
+
+/** Fast mode, for a thread whose model has one. */
+@Composable
+fun FastToggle(on: Boolean, onChange: (Boolean) -> Unit) {
+    val h = LocalHues.current
+    val host = LocalView.current
+    var shown by remember(on) { mutableStateOf(on) }
+    val flip = { to: Boolean ->
+        host.feel(if (to) Feel.On else Feel.Off)
+        shown = to
+        onChange(to)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(h.ink(0.04f))
+            .clickableQuiet { flip(!shown) }
+            .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(painterResource(R.drawable.ic_zap), null, Modifier.size(16.dp), tint = h.text2)
+        Text("Fast mode", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = h.text1)
+        Switch(
+            checked = shown,
+            onCheckedChange = flip,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = h.accent,
+                checkedThumbColor = h.onAccent,
+                uncheckedTrackColor = h.surface3,
+                uncheckedThumbColor = h.text3,
+                uncheckedBorderColor = h.border2,
+            ),
         )
     }
 }

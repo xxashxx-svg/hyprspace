@@ -6,8 +6,7 @@
 use std::path::PathBuf;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Focusable, FontWeight, IntoElement, MouseButton, Window, div,
-    prelude::*,
+    AnyElement, ClickEvent, Context, FontWeight, IntoElement, MouseButton, div, prelude::*,
 };
 use hyprspace_proto::state::Pick;
 use hyprspace_theme::MONO;
@@ -28,9 +27,8 @@ pub fn model_label(c: &Composer, pick: &Pick) -> String {
     crate::models::name(catalog, &pick.model)
 }
 
-pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> AnyElement {
+pub fn card(c: &Composer, cx: &mut Context<Composer>) -> AnyElement {
     let pick = c.pick();
-    let focused = c.input.focus_handle(cx).is_focused(window);
     let empty = c.input.read(cx).text().trim().is_empty() && c.images.is_empty();
     let model_chip: AnyElement = match &pick {
         Some(p) => model_menu::anchored_chip(
@@ -152,7 +150,7 @@ pub fn card(c: &Composer, window: &mut Window, cx: &mut Context<Composer>) -> An
             .on_click(cx.listener(|c, _: &ClickEvent, _, cx| c.toggle_plan(cx)))
             .into_any_element()
     });
-    widgets::composer_box(focused)
+    widgets::composer_box()
         .when(crate::wallpaper::showing(), |d| {
             d.bg(colors::surface2().opacity(0.94))
         })

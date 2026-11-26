@@ -77,6 +77,7 @@ import com.hyprspace.android.ui.feel
 import com.hyprspace.android.ui.felt
 import com.hyprspace.android.ui.home.SnoozeSheet
 import com.hyprspace.android.ui.start.NewThreadScreen
+import com.hyprspace.android.ui.start.OpenStarted
 
 @Composable
 fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit = {}, onFiles: () -> Unit = {}) {
@@ -99,6 +100,11 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
         before = null
         onOpen(made.id)
     }
+    var asked by remember { mutableStateOf<Long?>(null) }
+    OpenStarted(app, asked) {
+        asked = null
+        onOpen(it)
+    }
 
     // streamed only while it's on screen: a phone in a pocket shouldn't keep a terminal its size
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -110,6 +116,7 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
             app.link.watch(id)
             app.notifier.viewing = id
             app.notifier.cancel(id)
+            app.link.board.value?.threads?.firstOrNull { it.id == id }?.let(app.notes::markRead)
         }
         fun hide(gone: Boolean) {
             app.link.unwatch(id, keepEarlier = !gone)
@@ -127,6 +134,10 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
             lifecycle.removeObserver(watcher)
             hide(gone = true)
         }
+    }
+    // what finishes while it's on screen was read as it came
+    LaunchedEffect(t?.touched, t?.unseen) {
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) t?.let(app.notes::markRead)
     }
     // the thread went away on the computer
     LaunchedEffect(board, t) {
@@ -199,6 +210,12 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                     if (t != null && app.link.desktopAtLeast(RENAME)) item("Rename", R.drawable.ic_pencil) { renaming = true }
                     if (t?.kind == BoardKind.Structured && t.live && app.link.desktopAtLeast(NEXT)) {
                         item("Regenerate title", R.drawable.ic_sparkles) { host.felt(app.link.ask(Ask.Retitle(id)), Feel.Tick) }
+                    }
+                    if (t != null) {
+                        item("Mark unread", R.drawable.ic_circle_dot) {
+                            app.notes.markUnread(id)
+                            onBack()
+                        }
                     }
                     if (t?.shelf == Shelf.Active) {
                         if (app.link.desktopAtLeast(PINS)) {
@@ -306,6 +323,10 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                     lines = lines,
                     onEarlier = { app.link.earlier(id) },
                     commands = slashes.filter { it.agent == null || it.agent == t.agent },
+                    kept = remember(id) { app.notes.draft(id) },
+                    onKeep = { app.notes.draft(id, it) },
+                    shared = app.nav.shared,
+                    onShared = { app.nav.shared = null },
                     onFork = if (app.link.desktopAtLeast(NEXT)) {
                         { keep, prompt ->
                             if (app.link.ask(Ask.Fork(id, keep, prompt))) {
@@ -325,12 +346,21 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                         catalog,
                         t.modelId,
                         t.effort,
-                        onPick = { m, e -> if (!app.link.ask(Ask.Model(id, m, e))) host.feel(Feel.Fail) },
+                        // a pick carries fast mode along, or the computer would read it as switched off
+                        onPick = { m, e -> if (!app.link.ask(Ask.Model(id, m, e, t.fast == true))) host.feel(Feel.Fail) },
                         onDismiss = { picking = false },
-                        bottom = if (queueing) {
-                            { PermissionPicker(t.permission) { if (!app.link.ask(Ask.SetPermission(id, it))) host.feel(Feel.Fail) } }
-                        } else {
-                            null
+                        note = view.context?.takeIf { it.second > 0 }
+                            ?.let { (used, window) -> "Applies from your next message. ${tokens(used)} of ${tokens(window)} tokens of context used." }
+                            ?: "Applies from your next message.",
+                        bottom = {
+                            t.fast?.let { on ->
+                                FastToggle(on) { to ->
+                                    if (!app.link.ask(Ask.Model(id, t.modelId.substringBefore('['), t.effort, to))) host.feel(Feel.Fail)
+                                }
+                            }
+                            if (queueing) {
+                                PermissionPicker(t.permission) { if (!app.link.ask(Ask.SetPermission(id, it))) host.feel(Feel.Fail) }
+                            }
                         },
                     )
                 }
@@ -346,6 +376,8 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
                         onKeys = { app.link.send(Up.Keys(id, it)) },
                         onPaste = { app.link.send(Up.Paste(id, it)) },
                         attach = if (app.link.desktopAtLeast(PHOTOS)) { onPick -> rememberAttach(app, app.link.desktopAtLeast(FILES), onPick) } else null,
+                        shared = app.nav.shared,
+                        onShared = { app.nav.shared = null },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -382,8 +414,8 @@ fun ThreadScreen(app: App, id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit 
             t.space,
             computer,
             onDismiss = { fresh = false },
-            onStarted = {
-                before = b.threads.map { it.id }.toSet()
+            onStarted = { request ->
+                if (app.link.desktopAtLeast(STARTED)) asked = request else before = b.threads.map { it.id }.toSet()
                 fresh = false
             },
         )
@@ -399,6 +431,14 @@ private const val MODELS = "0.24.14"
 private const val FILES = "0.24.14"
 private const val QUEUE = "0.24.35"
 private const val REDIRECT = "0.24.36"
+internal const val STARTED = "0.24.15"
+
+/** A token count the short way: "840", "84k", "1.2M". */
+private fun tokens(n: Long): String = when {
+    n < 1_000 -> "$n"
+    n < 1_000_000 -> "${n / 1_000}k"
+    else -> "%.1fM".format(n / 1_000_000.0).replace(".0M", "M")
+}
 
 @Composable
 private fun Rename(was: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {

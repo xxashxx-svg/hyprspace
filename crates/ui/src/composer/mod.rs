@@ -173,7 +173,7 @@ impl EventEmitter<ComposerEvent> for Composer {}
 impl Composer {
     pub fn new(client: Client, cx: &mut Context<Self>) -> Self {
         let input =
-            cx.new(|cx| TextInput::new("Describe the task. @ for files, / for commands", true, cx));
+            cx.new(|cx| TextInput::new("Ask anything. @ for files, / for commands", true, cx));
         let name = cx.new(|cx| TextInput::new("folder name", false, cx));
         let setup = cx.new(|cx| TextInput::new("npm install", false, cx));
         let schedule_at = cx.new(|cx| {
@@ -1064,7 +1064,7 @@ impl Render for Composer {
                             .on_action(cx.listener(Self::suggest_next))
                             .on_action(cx.listener(Self::suggest_accept))
                             .on_action(cx.listener(Self::suggest_dismiss))
-                            .child(card::card(self, window, cx))
+                            .child(card::card(self, cx))
                             .children(self.suggest.open.as_ref().map(|open| {
                                 let composer = cx.entity().downgrade();
                                 gpui::deferred(crate::suggest::render(

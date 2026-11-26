@@ -115,7 +115,7 @@ fn draft_card(
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(11.5))
+                        .text_size(px(12.))
                         .text_color(match look.hue {
                             Some(h) => colors::tag(space, Some(h)).1,
                             None => colors::text3(),
@@ -127,7 +127,7 @@ fn draft_card(
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.5))
+                .text_size(px(14.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors::text1())
                 .child(crate::composer::title_of(text)),

@@ -1,7 +1,8 @@
 # HyprSpace for Android
 
-Your desktop's threads on your phone: follow your agents, answer approvals, reply, stop a run,
-type into terminals and start new threads. The phone talks to HyprSpace on your computer
+Your desktop's threads on your phone: follow your agents, answer approvals (from the
+notification too), reply, stop a run, type into terminals and start new threads. Share text or
+photos from another app into a thread, and put your plan limits on the home screen as a widget. The phone talks to HyprSpace on your computer
 directly, over your network or Tailscale, under a certificate it pins when it pairs.
 
 ## Pairing

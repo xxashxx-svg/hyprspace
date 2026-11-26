@@ -3,6 +3,8 @@
 
 package com.hyprspace.android.ui.thread
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -14,18 +16,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -38,9 +51,16 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hyprspace.android.R
+import com.hyprspace.android.model.Tint
+import com.hyprspace.android.model.tint
+import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.Hues
 import com.hyprspace.android.ui.LocalHues
 import com.hyprspace.android.ui.Mono
+import com.hyprspace.android.ui.clickableQuiet
+import com.hyprspace.android.ui.feel
+import kotlinx.coroutines.delay
 import org.commonmark.ext.autolink.AutolinkExtension
 import org.commonmark.ext.gfm.strikethrough.Strikethrough
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
@@ -195,32 +215,70 @@ private fun Block(n: Node) {
     }
 }
 
+/** [code] in the theme's code colors, for a language [tint] knows. */
+internal fun colorize(code: String, lang: String, h: Hues): AnnotatedString = buildAnnotatedString {
+    append(code)
+    for (t in tint(code, lang)) {
+        addStyle(
+            SpanStyle(color = h.syntax[t.tint.ordinal], fontStyle = if (t.tint == Tint.Comment) FontStyle.Italic else null),
+            t.start,
+            t.end,
+        )
+    }
+}
+
 @Composable
 fun CodeBlock(code: String, lang: String?) {
     val h = LocalHues.current
-    Column(
+    val name = lang?.substringBefore(' ').orEmpty()
+    val clipboard = LocalContext.current.getSystemService(ClipboardManager::class.java)
+    val host = LocalView.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+    Box(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(h.ink(0.045f)),
     ) {
-        lang?.takeIf { it.isNotBlank() }?.let {
+        Column {
+            if (name.isNotEmpty()) {
+                Box(Modifier.height(34.dp).padding(start = 14.dp), contentAlignment = Alignment.CenterStart) {
+                    Text(name, fontSize = 11.sp, color = h.text3, maxLines = 1)
+                }
+            }
             Text(
-                it.substringBefore(' '),
-                Modifier.padding(start = 14.dp, top = 9.dp),
-                fontSize = 11.sp,
-                color = h.text3,
+                remember(code, name, h) { colorize(code, name, h) },
+                Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(start = 14.dp, end = 14.dp, top = if (name.isEmpty()) 10.dp else 0.dp, bottom = 10.dp),
+                fontFamily = Mono,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = h.text1,
+                softWrap = false,
             )
         }
-        Text(
-            code,
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp),
-            fontFamily = Mono,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
-            color = h.text1,
-            softWrap = false,
-        )
+        Box(
+            Modifier.align(Alignment.TopEnd).size(34.dp).clip(CircleShape).clickableQuiet {
+                clipboard?.setPrimaryClip(ClipData.newPlainText("Code", code))
+                host.feel(Feel.Tap)
+                copied = true
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painterResource(if (copied) R.drawable.ic_check else R.drawable.ic_copy),
+                if (copied) "Copied" else "Copy code",
+                Modifier.size(14.dp),
+                tint = h.text3,
+            )
+        }
     }
 }
 

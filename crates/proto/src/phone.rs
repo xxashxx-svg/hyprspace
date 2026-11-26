@@ -447,6 +447,13 @@ pub struct BoardThread {
     /// The pull request from its branch, as the sidebar badges it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr: Option<crate::git::PullRequest>,
+    /// Whether fast mode is on, when its model has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast: Option<bool>,
+    /// The tool approval it waits on, for an answer from a notification. Questions and plans
+    /// need the thread open, so they aren't named here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -529,6 +536,9 @@ pub struct Palette {
     pub term_fg: u32,
     pub cursor: u32,
     pub ansi: Vec<u32>,
+    /// Code colors: keyword, string, number, comment, function, type, constant, punctuation.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub syntax: Vec<u32>,
 }
 
 /// A terminal thread's screen and scrollback, as changes to the phone's copy. The phone drops
@@ -911,6 +921,7 @@ mod tests {
         let palette = Palette {
             bg: 0x161616ff,
             ansi: vec![0xff0000ff; 16],
+            syntax: vec![0x00ff00ff; 8],
             ..Default::default()
         };
         let down = [
@@ -974,6 +985,8 @@ mod tests {
                             state: crate::git::PrState::Open,
                             checks: crate::git::Checks::Failing,
                         }),
+                        fast: Some(true),
+                        ask: Some("r".into()),
                     }],
                     agents: vec![AgentInfo {
                         agent: Agent::Claude,

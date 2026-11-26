@@ -45,6 +45,17 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="hyprspace" android:host="pair" />
             </intent-filter>
+            <!-- text, photos and files shared from another app, for a thread the user then picks -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
         <service
@@ -55,6 +66,23 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps the connection to the user's own computer open, so the user hears when a coding agent there needs them." />
         </service>
+
+        <!-- Allow and Deny on a notification, answered over the connection the service keeps -->
+        <receiver
+            android:name=".service.Answers"
+            android:exported="false" />
+
+        <receiver
+            android:name=".widget.UsageWidget"
+            android:exported="false"
+            android:label="@string/widget_usage">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_usage" />
+        </receiver>
 
         <receiver
             android:name=".update.Installed"

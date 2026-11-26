@@ -11,6 +11,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -25,7 +27,8 @@ class Notifier(private val ctx: Context, private val store: Store) {
     @Volatile var foreground = false
     /** The thread on screen, if one is. */
     @Volatile var viewing: Long? = null
-    private var last: Map<Long, BoardStatus>? = null
+    private val asked = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+    private var last: Map<Long, BoardThread>? = null
     private var present = false
 
     init {
@@ -47,10 +50,17 @@ class Notifier(private val ctx: Context, private val store: Store) {
         val before = last
         val left = present && !b.present
         present = b.present
-        last = b.threads.associate { it.id to it.status }
+        last = b.threads.associateBy { it.id }
         val s = store.saved.value
         // back at the computer: what the phone said is on the screen there now
         if (b.present) cancelAll()
+        if (before != null && foreground) {
+            val now = SystemClock.elapsedRealtime()
+            for (t in b.threads) {
+                val old = before[t.id] ?: continue
+                if (t.status == BoardStatus.Waiting && (old.status != BoardStatus.Waiting || t.ask != old.ask)) asked[t.id] = now
+            }
+        }
         if (before == null || !s.alerts || foreground || b.present) return
         for (t in b.threads) {
             // what asked while the user sat at the computer still needs them once they leave
@@ -58,8 +68,11 @@ class Notifier(private val ctx: Context, private val store: Store) {
                 post(t, t.doing ?: "Waiting for your answer.")
                 continue
             }
-            val was = before[t.id] ?: continue
-            if (t.status == was) continue
+            val old = before[t.id] ?: continue
+            val was = old.status
+            // one approval answered and the next asked inside a single board is news too
+            val asked = t.status == BoardStatus.Waiting && t.ask != null && t.ask != old.ask
+            if (t.status == was && !asked) continue
             // a thread that stops waiting no longer needs the user
             if (was == BoardStatus.Waiting) cancel(t.id)
             when {
@@ -73,6 +86,19 @@ class Notifier(private val ctx: Context, private val store: Store) {
         }
     }
 
+    // the process counts as in front for a moment after its screen is gone, and a thread that
+    // asked in that moment was never seen
+    fun left() {
+        val now = SystemClock.elapsedRealtime()
+        val late = asked.filterValues { now - it < 1500 }.keys
+        asked.clear()
+        if (!store.saved.value.alerts || present) return
+        for (id in late) {
+            val t = last?.get(id)?.takeIf { it.status == BoardStatus.Waiting } ?: continue
+            post(t, t.doing ?: "Waiting for your answer.")
+        }
+    }
+
     /** The app came to the front: everything it would say is on its screen. */
     fun cancelAll() {
         val nm = NotificationManagerCompat.from(ctx)
@@ -80,6 +106,27 @@ class Notifier(private val ctx: Context, private val store: Store) {
     }
 
     fun cancel(thread: Long) = NotificationManagerCompat.from(ctx).cancel(thread.toInt())
+
+    /** An answer tapped on a notification never reached the computer. */
+    fun unsent(thread: Long) {
+        last?.get(thread)?.let { post(it.copy(ask = null), "That didn't reach your computer. Open the thread to answer.") }
+    }
+
+    private fun answer(t: BoardThread, request: String, allow: Boolean): NotificationCompat.Action {
+        val send = PendingIntent.getBroadcast(
+            ctx,
+            t.id.toInt() * 2 + if (allow) 1 else 0,
+            Intent(ctx, Answers::class.java)
+                .putExtra(Answers.THREAD, t.id)
+                .putExtra(Answers.REQUEST, request)
+                .putExtra(Answers.ALLOW, allow),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Action.Builder(0, if (allow) "Allow" else "Deny", send)
+            // letting an agent run something takes the phone's owner, not whoever holds it locked
+            .setAuthenticationRequired(allow)
+            .build()
+    }
 
     private fun post(t: BoardThread, text: String) {
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -101,8 +148,12 @@ class Notifier(private val ctx: Context, private val store: Store) {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(open)
-            .build()
-        NotificationManagerCompat.from(ctx).notify(t.id.toInt(), n)
+        t.ask?.takeIf { t.status == BoardStatus.Waiting && t.live }?.let { request ->
+            n.addAction(answer(t, request, allow = false))
+            // before Android 12 nothing asks for the unlock, so Allow stays inside the app there
+            if (Build.VERSION.SDK_INT >= 31) n.addAction(answer(t, request, allow = true))
+        }
+        NotificationManagerCompat.from(ctx).notify(t.id.toInt(), n.build())
     }
 
     companion object {

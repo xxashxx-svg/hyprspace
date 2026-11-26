@@ -64,6 +64,7 @@ import com.hyprspace.android.net.Span
 import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.Hues
 import com.hyprspace.android.ui.LocalHues
+import com.hyprspace.android.ui.Shared
 import com.hyprspace.android.ui.TermFont
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.feel
@@ -161,7 +162,9 @@ fun Terminal(
     onKeys: (String) -> Unit,
     onPaste: (String) -> Unit,
     modifier: Modifier = Modifier,
-    attach: (@Composable ((Attachment) -> Unit) -> (() -> Unit))? = null,
+    attach: (@Composable ((Attachment) -> Unit) -> Attach)? = null,
+    shared: Shared? = null,
+    onShared: () -> Unit = {},
 ) {
     val h = LocalHues.current
     val measure = rememberTextMeasurer()
@@ -270,9 +273,19 @@ fun Terminal(
             modifier = Modifier.size(1.dp),
         )
         val photos = remember { mutableStateListOf<Attachment>() }
-        val pick = attach?.invoke { p ->
+        val attached = attach?.invoke { p ->
             val i = photos.indexOfFirst { it.key == p.key }
             if (i >= 0) photos[i] = p else photos.add(p)
+        }
+        val pick = attached?.pick
+        LaunchedEffect(shared) {
+            shared ?: return@LaunchedEffect
+            if (shared.text.isNotBlank()) {
+                follow = true
+                onPaste(shared.text)
+            }
+            attached?.add?.invoke(shared.files)
+            onShared()
         }
         // once every photo is up, they go in together, as paths the agent attaches
         LaunchedEffect(photos.toList()) {

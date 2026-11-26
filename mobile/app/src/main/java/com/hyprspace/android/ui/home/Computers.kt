@@ -97,7 +97,7 @@ fun ComputerRow(
 
 fun switchTo(app: App, d: Desktop) {
     if (app.store.saved.value.current()?.id == d.id) return
-    app.store.update { it.copy(active = d.id) }
+    app.store.update { it.copy(active = d.id, space = null) }
     app.link.restart()
     LinkService.sync(app)
 }

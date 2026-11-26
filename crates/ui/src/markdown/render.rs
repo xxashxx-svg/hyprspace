@@ -141,13 +141,7 @@ fn entry(start: Option<u64>, n: usize, item: &[Block], key: &str) -> gpui::Div {
     div()
         .flex()
         .gap_2()
-        .child(
-            div()
-                .flex_none()
-                .min_w(px(14.))
-                .text_color(colors::text2())
-                .child(marker),
-        )
+        .child(div().flex_none().min_w(px(14.)).child(marker))
         .child(
             div()
                 .flex_1()

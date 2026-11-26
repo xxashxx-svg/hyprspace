@@ -249,9 +249,20 @@ impl Root {
         } else {
             self.subagents(id, cx).len()
         };
-        let tasks = match self.views.get(&id) {
-            Some(View::Structured(v)) => v.read(cx).tasks().to_vec(),
-            _ => Vec::new(),
+        let (tasks, ask) = match self.views.get(&id) {
+            Some(View::Structured(v)) => {
+                let v = v.read(cx);
+                (v.tasks().to_vec(), v.approval())
+            }
+            _ => (Vec::new(), None),
+        };
+        // from the saved launch, since a thread nobody opened has no view, and from the model it
+        // runs, since one on the default names none
+        let fast = match &t.kind {
+            ThreadKind::Structured { launch } => {
+                crate::models::takes_fast(launch.agent, &self.runs(launch).0).then_some(launch.fast)
+            }
+            ThreadKind::Terminal { .. } => None,
         };
         let (running, doing) = match self.views.get(&id) {
             Some(View::Structured(v)) => {
@@ -323,6 +334,8 @@ impl Root {
             pinned: t.pinned.is_some(),
             queue: t.queue.clone(),
             tasks,
+            fast,
+            ask,
         }
     }
 
@@ -565,5 +578,18 @@ fn palette(t: &Theme) -> Palette {
         term_fg: t.term_fg.0,
         cursor: t.cursor.0,
         ansi: t.ansi.iter().map(|c| c.0).collect(),
+        syntax: [
+            t.syntax.keyword,
+            t.syntax.string,
+            t.syntax.number,
+            t.syntax.comment,
+            t.syntax.function,
+            t.syntax.ty,
+            t.syntax.constant,
+            t.syntax.punctuation,
+        ]
+        .iter()
+        .map(|c| c.0)
+        .collect(),
     }
 }

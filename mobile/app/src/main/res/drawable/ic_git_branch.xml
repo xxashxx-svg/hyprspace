@@ -8,19 +8,19 @@
     <path
         android:pathData="M15 6a9 9 0 0 0-9 9V3"
         android:strokeColor="#FF000000"
-        android:strokeWidth="2"
+        android:strokeWidth="1.75"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
         android:pathData="M15.0,6.0a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0"
         android:strokeColor="#FF000000"
-        android:strokeWidth="2"
+        android:strokeWidth="1.75"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
         android:pathData="M3.0,18.0a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0"
         android:strokeColor="#FF000000"
-        android:strokeWidth="2"
+        android:strokeWidth="1.75"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
 </vector>

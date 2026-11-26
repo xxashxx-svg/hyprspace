@@ -1,5 +1,6 @@
 package com.hyprspace.android.ui
 
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -15,12 +16,18 @@ sealed interface Screen {
     data object Pair : Screen
 }
 
+data class Shared(val text: String, val files: List<Uri>)
+
 /** Where the app is. Kept by the process, so turning the phone doesn't send it home. */
 class Nav {
     var screen by mutableStateOf<Screen>(Screen.Home)
         private set
     /** A pairing link that arrived from outside: a scan with the camera app, or a tap. */
     var link by mutableStateOf<PairLink?>(null)
+    /** Text or files another app shared here, until a thread takes them. */
+    var shared by mutableStateOf<Shared?>(null)
+    /** The launcher's New thread shortcut was tapped. */
+    var starting by mutableStateOf(false)
 
     fun go(s: Screen) {
         screen = s

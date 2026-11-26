@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_bg">#FF161616</color>
+    <!-- the usage widget draws outside the app, so it carries the default theme's colors itself -->
+    <color name="widget_bg">#FFFDFDFD</color>
+    <color name="widget_text">#FF1B1B1B</color>
+    <color name="widget_muted">#FF585858</color>
+    <color name="widget_track">#14000000</color>
+    <color name="widget_warn">#FFF59E0B</color>
+    <color name="widget_full">#FFEF4444</color>
 </resources>

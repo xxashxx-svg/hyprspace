@@ -101,12 +101,15 @@ private fun nameOf(context: Context, uri: Uri): String =
         if (it.moveToFirst()) it.getString(0) else null
     } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
 
+/** Opens the picker with [pick]; [add] takes what another app shared instead. */
+class Attach(val pick: () -> Unit, val add: (List<Uri>) -> Unit)
+
 /**
  * Picks photos, or files too when [files] is on, through a small sheet. Each one shows on
  * [onPick] at once, goes up to the computer, and shows again with its path (or as failed).
  */
 @Composable
-fun rememberAttach(app: App, files: Boolean, onPick: (Attachment) -> Unit): () -> Unit {
+fun rememberAttach(app: App, files: Boolean, onPick: (Attachment) -> Unit): Attach {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf(false) }
@@ -117,32 +120,30 @@ fun rememberAttach(app: App, files: Boolean, onPick: (Attachment) -> Unit): () -
             onPick(a.copy(path = path, failed = path == null))
         }
     }
-    val photos = rememberLauncherForActivityResult(PickMultipleVisualMedia(4)) { uris ->
-        for (uri in uris) {
-            scope.launch {
-                val (bytes, thumb) = runCatching { shrink(ctx, uri) }.getOrNull() ?: return@launch
-                send(Attachment(System.nanoTime(), thumb.asImageBitmap()), bytes, null)
+    fun photo(uri: Uri) {
+        scope.launch {
+            val (bytes, thumb) = runCatching { shrink(ctx, uri) }.getOrNull() ?: return@launch
+            send(Attachment(System.nanoTime(), thumb.asImageBitmap()), bytes, null)
+        }
+    }
+    fun file(uri: Uri) {
+        scope.launch {
+            val name = runCatching { nameOf(ctx, uri) }.getOrDefault("file")
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            }
+            when {
+                bytes == null -> onPick(Attachment(System.nanoTime(), name = name, failed = true))
+                bytes.size > MAX_FILE -> {
+                    app.link.fail("$name is over 10 MB, too big to send.")
+                    onPick(Attachment(System.nanoTime(), name = name, failed = true))
+                }
+                else -> send(Attachment(System.nanoTime(), name = name), bytes, name)
             }
         }
     }
-    val documents = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris ->
-        for (uri in uris.take(4)) {
-            scope.launch {
-                val name = runCatching { nameOf(ctx, uri) }.getOrDefault("file")
-                val bytes = withContext(Dispatchers.IO) {
-                    runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-                }
-                when {
-                    bytes == null -> onPick(Attachment(System.nanoTime(), name = name, failed = true))
-                    bytes.size > MAX_FILE -> {
-                        app.link.fail("$name is over 10 MB, too big to send.")
-                        onPick(Attachment(System.nanoTime(), name = name, failed = true))
-                    }
-                    else -> send(Attachment(System.nanoTime(), name = name), bytes, name)
-                }
-            }
-        }
-    }
+    val photos = rememberLauncherForActivityResult(PickMultipleVisualMedia(4)) { uris -> uris.forEach(::photo) }
+    val documents = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris -> uris.take(4).forEach(::file) }
     val pickPhotos = { photos.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) }
     if (choosing) {
         AttachSheet(
@@ -151,7 +152,15 @@ fun rememberAttach(app: App, files: Boolean, onPick: (Attachment) -> Unit): () -
             onDismiss = { choosing = false },
         )
     }
-    return if (files) ({ choosing = true }) else pickPhotos
+    return Attach(
+        pick = if (files) ({ choosing = true }) else pickPhotos,
+        add = { uris ->
+            for (uri in uris) {
+                val image = ctx.contentResolver.getType(uri)?.startsWith("image/") == true
+                if (image) photo(uri) else if (files) file(uri) else app.link.fail("This computer's HyprSpace only takes photos.")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

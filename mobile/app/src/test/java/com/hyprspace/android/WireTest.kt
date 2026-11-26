@@ -41,6 +41,9 @@ class WireTest {
         assertEquals(com.hyprspace.android.net.TaskKind.Subagent, board.threads[0].tasks.single().kind)
         assertEquals("2", board.threads[0].tasks.single().tool)
         assertEquals(1L, board.threads[0].parent)
+        assertEquals(true, board.threads[0].fast)
+        assertEquals("r", board.threads[0].ask)
+        assertEquals(8, board.theme.dark.syntax.size)
         val entries = (all[3] as Down.Transcript).entries
         val tools = entries.filterIsInstance<Entry.Run>().map { it.event }.filterIsInstance<RunEvent.ToolCall>().map { it.tool }
         assertTrue(tools.any { it is Tool.AgentCall && it.agentType == "general-purpose" })

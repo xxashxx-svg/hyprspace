@@ -6,6 +6,9 @@ package com.hyprspace.android.ui.start
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.platform.LocalView
 import com.hyprspace.android.net.Agent
 import androidx.compose.ui.platform.LocalDensity
@@ -64,24 +67,51 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.hyprspace.android.App
 import com.hyprspace.android.R
-import com.hyprspace.android.net.Ask
 import com.hyprspace.android.net.Board
 import com.hyprspace.android.net.NewThread
 import com.hyprspace.android.net.Permission
 import com.hyprspace.android.ui.AgentMark
 import com.hyprspace.android.ui.Feel
 import com.hyprspace.android.ui.LocalHues
+import com.hyprspace.android.ui.Shared
 import com.hyprspace.android.ui.SpaceTag
 import com.hyprspace.android.ui.clickableQuiet
 import com.hyprspace.android.ui.feel
 import com.hyprspace.android.ui.felt
+import com.hyprspace.android.ui.thread.Attachment
+import com.hyprspace.android.ui.thread.AttachmentThumb
 import com.hyprspace.android.ui.thread.ModelChip
 import com.hyprspace.android.ui.thread.ModelSheet
+import com.hyprspace.android.ui.thread.rememberAttach
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class Page { Start, Projects, Browse }
 
+/** Opens the thread [request] asked for ([com.hyprspace.android.net.Link.start]) once the computer has made it. */
 @Composable
-fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDismiss: () -> Unit, onStarted: (Long) -> Unit = {}) {
+fun OpenStarted(app: App, request: Long?, onOpen: (Long) -> Unit) {
+    LaunchedEffect(request) {
+        request ?: return@LaunchedEffect
+        val (_, thread) = app.link.started.first { it.first == request }
+        // the board that lists it comes first, but a thread opened before it would close again
+        withTimeoutOrNull(3_000) { app.link.board.first { b -> b?.threads?.any { it.id == thread } == true } }
+        onOpen(thread)
+    }
+}
+
+/** [onStarted] gets the request to hand [OpenStarted]. [shared] fills the prompt and its attachments. */
+@Composable
+fun NewThreadScreen(
+    app: App,
+    board: Board,
+    space: Long,
+    computer: String,
+    onDismiss: () -> Unit,
+    onStarted: (Long) -> Unit = {},
+    shared: Shared? = null,
+    onShared: () -> Unit = {},
+) {
     val h = LocalHues.current
     val host = LocalView.current
     val installed = board.agents.filter { it.status.installed }.map { it.agent }
@@ -101,7 +131,21 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
     }
     var permission by remember { mutableStateOf(board.start.permission) }
     var terminal by remember { mutableStateOf(!board.start.structured) }
-    var prompt by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf(shared?.text.orEmpty()) }
+    val photos = remember { mutableStateListOf<Attachment>() }
+    val attached = if (app.link.desktopAtLeast(PHOTOS)) {
+        rememberAttach(app, files = true) { p ->
+            val i = photos.indexOfFirst { it.key == p.key }
+            if (i >= 0) photos[i] = p else photos.add(p)
+        }
+    } else {
+        null
+    }
+    LaunchedEffect(shared) {
+        shared ?: return@LaunchedEffect
+        attached?.add?.invoke(shared.files)
+        onShared()
+    }
     var folder by remember { mutableStateOf<String?>(null) }
     var page by remember { mutableStateOf(Page.Start) }
     var picking by remember { mutableStateOf(false) }
@@ -195,6 +239,17 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
                         .clip(RoundedCornerShape(18.dp))
                         .background(h.ink(0.045f)),
                 ) {
+                    // a terminal thread types its prompt into the CLI, which takes no attachments that way
+                    val attaching = attached != null && agent != null && !terminal
+                    val uploading = attaching && photos.any { it.path == null && !it.failed }
+                    if (attaching && photos.isNotEmpty()) {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            for (p in photos) AttachmentThumb(p) { photos.remove(p) }
+                        }
+                    }
                     Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)) {
                         if (prompt.isEmpty()) {
                             Text(
@@ -216,6 +271,11 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
                         Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        if (attaching) {
+                            Box(Modifier.size(36.dp).clip(CircleShape).clickableQuiet { attached?.pick?.invoke() }, contentAlignment = Alignment.Center) {
+                                Icon(painterResource(R.drawable.ic_plus), "Attach", Modifier.size(20.dp), tint = h.text2)
+                            }
+                        }
                         if (agent != null) {
                             RunChip(terminal, permission) { running = true }
                         }
@@ -232,11 +292,14 @@ fun NewThreadScreen(app: App, board: Board, space: Long, computer: String, onDis
                             Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(h.accent)
+                                .background(if (uploading) h.ink(0.08f) else h.accent)
                                 .clickableQuiet {
-                                    val start = NewThread(agent, model, effort, permission, terminal || agent == null, prompt.trim())
-                                    if (host.felt(app.link.ask(Ask.New(if (folder != null) 0 else spaceId, start, folder)))) {
-                                        onStarted(spaceId)
+                                    if (uploading) return@clickableQuiet
+                                    val images = if (attaching) photos.mapNotNull { it.path } else emptyList()
+                                    val start = NewThread(agent, model, effort, permission, terminal || agent == null, prompt.trim(), images)
+                                    val request = app.link.start(if (folder != null) 0 else spaceId, start, folder)
+                                    if (host.felt(request != null)) {
+                                        request?.let(onStarted)
                                         onDismiss()
                                     }
                                 },
@@ -354,6 +417,7 @@ private fun Option(label: String, about: String, on: Boolean, onClick: () -> Uni
 }
 
 internal const val FOLDERS = "0.24.8"
+private const val PHOTOS = "0.24.15"
 
 internal fun leaf(path: String): String =
     path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/').ifEmpty { path }

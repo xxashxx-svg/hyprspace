@@ -94,14 +94,14 @@ pub fn tabular() -> gpui::FontFeatures {
 
 pub const BOX_RADIUS: f32 = 16.;
 
-pub fn composer_box(focused: bool) -> Div {
+pub fn composer_box() -> Div {
     div()
         .w_full()
         .flex()
         .flex_col()
         .rounded(px(BOX_RADIUS))
         .border_1()
-        .border_color(colors::ink(if focused { 0.1 } else { 0.05 }))
+        .border_color(colors::ink(0.05))
         .bg(colors::surface2())
         .shadow(colors::lift())
 }

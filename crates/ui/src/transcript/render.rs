@@ -706,7 +706,7 @@ fn reply(v: &TranscriptView, ix: usize, part: usize, view: gpui::EntityId) -> An
         .gap(px(2.))
         .text_size(px(14.))
         .line_height(relative(1.65))
-        .text_color(colors::text1())
+        .text_color(colors::text1().opacity(0.9))
         .child(body)
         .when(last && !streaming(v, ix), |d| {
             let key = msg_key(view, ix);
@@ -2062,7 +2062,7 @@ fn composer(
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.submit(false, cx)))
     };
-    let pill = widgets::composer_box(focused)
+    let pill = widgets::composer_box()
         .when(attach::held(), |d| {
             d.border_color(colors::accent())
                 .bg(colors::accent().opacity(0.06))
@@ -2086,7 +2086,7 @@ fn composer(
                 }),
             )))
         })
-        .child(bar::field(&v.input))
+        .child(bar::field(&v.input).min_h(px(70.)))
         .child(bar::bar(
             bar::attach("thread-attach")
                 .on_click(cx.listener(|v, _: &ClickEvent, _, cx| v.pick_images(cx))),
